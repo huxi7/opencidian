@@ -2516,5 +2516,7 @@
  "nouns.snippet-active-with-count": "{{count}} snippet",
  "nouns.snippet-active-with-count_plural": "{{count}} snippets",
  "nouns.theme-with-count": "{{count}} theme",
- "nouns.theme-with-count_plural": "{{count}} themes"
+ "nouns.theme-with-count_plural": "{{count}} themes",
+ "plugins.file-explorer.msg-error-move-failed": "Could not move “{{name}}”",
+ "plugins.file-explorer.msg-error-move-file-failed": "Could not move file."
 }

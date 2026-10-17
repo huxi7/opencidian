@@ -2509,5 +2509,7 @@
  "nouns.snippet-active-with-count": "{{count}}个片段",
  "nouns.snippet-active-with-count_plural": "{{count}}个片段",
  "nouns.theme-with-count": "{{count}} 个主题",
- "nouns.theme-with-count_plural": "{{count}} 个主题"
+ "nouns.theme-with-count_plural": "{{count}} 个主题",
+ "plugins.file-explorer.msg-error-move-failed": "无法移动“{{name}}”",
+ "plugins.file-explorer.msg-error-move-file-failed": "无法移动文件。"
 }

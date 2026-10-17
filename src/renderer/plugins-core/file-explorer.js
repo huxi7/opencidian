@@ -520,7 +520,7 @@ export class FileExplorerView extends View {
     const ok = item instanceof TFolder
       ? await this.app.fileManager.renameFolder(item, newPath)
       : await this.app.fileManager.renameFile(item, newPath);
-    if (!ok) new Notice('Could not move file.');
+    if (!ok) new Notice(tt('plugins.file-explorer.msg-error-move-file-failed', '无法移动文件。'));
   }
 }
 

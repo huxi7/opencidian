@@ -2,7 +2,7 @@
 
 > L2 | 父级: /src/renderer/CLAUDE.md
 
-应用内核。依赖方向：dom/events/i18n/icons/ipc 为叶子；vault/settings 之上是 metadata/fileManager；workspace/app 为装配层；plugins 提供宿主与 obsidian API shim。
+应用内核。依赖方向：dom/events/i18n/icons/ipc/tooltip 为叶子；vault/settings 之上是 metadata/fileManager；workspace/app 为装配层；plugins 提供宿主与 obsidian API shim。
 
 成员清单
 dom.js: Element/Document 原型的 createEl/setText/addClass 等助手(安装即生效)，并导出 createEl/createDiv/createSpan。
