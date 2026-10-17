@@ -6,6 +6,8 @@
  * [POS]: views/ 画布类链的末端：View → CanvasViewport（视口）→ CanvasInteractions（交互）→ CanvasView（装配与调度）。持有 .canvas-wrapper DOM、节点/边集合、选择集合、JSON Canvas 读写。
  *        ResizeObserver 在挂载后更新视口。节点与边几何分层；数据防抖 500ms 写回，关闭时 flush。
  *        vault modify 的外部修改重载磁盘内容并保留视口；自身写入用 _writing 标记排除，避免覆盖在途编辑。
+ *        撤销/重做历史（上限 100）与写盘共用一个 requestSave；控件组含快速设置（对齐网格/对齐物体/只读）与撤销/重做。
+ *        只读标记按原版 localDataManager 存 localStorage('canvas-<路径>')，重命名迁移、删除清理。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 /* Canvas view — DOM assembly + scheduling on top of the viewport and interaction layers. */
@@ -15,6 +17,7 @@ import { t } from '../core/i18n.js';
 import { setIcon } from '../core/icons.js';
 import { Notice } from '../core/notices.js';
 import { debounce } from '../core/events.js';
+import { Menu } from '../core/menu.js';
 import {
   genId, boxesIntersect, containsBox, expandBBox, nearestSide, rectFromPos, distanceToBox, rectOf, MultiMap,
 } from './canvas-utils.js';
@@ -22,8 +25,9 @@ import {
   CanvasNode, CanvasTextNode, CanvasLinkNode, CanvasGroupNode, CanvasDummyNode,
 } from './canvas-node.js';
 import { CanvasFileNode } from './canvas-file-node.js';
+import { loadCanvasLocalData, saveCanvasLocalData, migrateCanvasLocalData, dropCanvasLocalData } from './canvas-local-data.js';
 import { CanvasEdge } from './canvas-edge.js';
-import { FileSuggestModal, LinkSuggestModal, JumpToGroupModal } from './canvas-menu.js';
+import { FileSuggestModal, LinkSuggestModal, JumpToGroupModal, showQuickSettingsMenu } from './canvas-menu.js';
 
 const SAVE_DELAY = 500;
 
@@ -43,7 +47,7 @@ export class CanvasView extends CanvasInteractions {
       defaultTextNodeDimensions: { width: 250, height: 60 },
       defaultFileNodeDimensions: { width: 400, height: 400 },
     };
-    this.options = { snapToGrid: false, snapToObjects: false };
+    this.options = { snapToGrid: true, snapToObjects: true };
     this.nodes = new Map();
     this.edges = new Map();
     this.edgeFrom = new MultiMap();
@@ -112,17 +116,26 @@ export class CanvasView extends CanvasInteractions {
     this.buildDom();
     this._resizeObserver = new ResizeObserver(() => this.onResize());
     this._resizeObserver.observe(this.wrapperEl);
-    this.options = { snapToGrid: false, snapToObjects: false, ...this.loadOptions() };
+    this.options = { snapToGrid: true, snapToObjects: true, ...this.loadOptions() };
     window.addEventListener('keydown', this.onGlobalKeydown);
     window.addEventListener('keyup', this.onGlobalKeyup);
     // 原版文本文件视图基类行为：外部修改（同步、文件恢复）重载磁盘内容
     this._modifyRef = this.app.vault.on('modify', (file) => this.onExternalModify(file));
+    // 只读标记随重命名/删除迁移（原版 localDataManager.handleRename/handleDelete）
+    this._renameRef = this.app.vault.on('rename', (file, oldPath) => {
+      if (file && file.extension === 'canvas') migrateCanvasLocalData(oldPath, file.path);
+    });
+    this._deleteRef = this.app.vault.on('delete', (file) => {
+      if (file && file.extension === 'canvas') dropCanvasLocalData(file.path);
+    });
   }
 
   async onClose() {
     window.removeEventListener('keydown', this.onGlobalKeydown);
     window.removeEventListener('keyup', this.onGlobalKeyup);
     if (this._modifyRef) { this._modifyRef.unregister(); this._modifyRef = null; }
+    if (this._renameRef) { this._renameRef.unregister(); this._renameRef = null; }
+    if (this._deleteRef) { this._deleteRef.unregister(); this._deleteRef = null; }
     if (this._saveTimer) { clearTimeout(this._saveTimer); this._saveTimer = null; }
     this.data = this.getData();
     await this.save();
@@ -140,6 +153,7 @@ export class CanvasView extends CanvasInteractions {
     this.data = {};
     this.history.clear();
     this.requestPushHistory.cancel();
+    this.setReadonly(false);
     this.setViewport(0, 0, 0);
   }
 
@@ -203,6 +217,22 @@ export class CanvasView extends CanvasInteractions {
 
   buildControls() {
     const controls = this.canvasControlsEl = this.wrapperEl.createDiv('canvas-controls');
+    // 快速设置组（原版第一组）：只读状态下直接点击退出只读，否则弹菜单
+    const settingsGroup = controls.createDiv('canvas-control-group mod-raised');
+    this.quickSettingsButton = settingsGroup.createDiv({ cls: 'canvas-control-item' });
+    setIcon(this.quickSettingsButton, this.readonly ? 'lucide-lock' : 'lucide-settings');
+    this.quickSettingsButton.setAttr('aria-label', t('plugins.canvas.label-canvas-settings'));
+    this.quickSettingsButton.addEventListener('click', (ev) => {
+      if (this.readonly) {
+        this.setReadonly(false);
+        this.saveLocalData();
+        return;
+      }
+      if (this.quickSettingsButton.hasClass('has-active-menu')) return;
+      const menu = new Menu(this.app);
+      showQuickSettingsMenu(this, menu);
+      menu.setParentElement(this.quickSettingsButton).showAtMouseEvent(ev);
+    });
     const group = controls.createDiv('canvas-control-group mod-raised');
     const addButton = (icon, title, onClick) => {
       const el = group.createDiv({ cls: 'canvas-control-item', attr: { 'aria-label': title } });
@@ -570,10 +600,25 @@ export class CanvasView extends CanvasInteractions {
     this.requestSave();
   }
 
+  /** 只读模式（原版 setReadonly）：更新快速设置按钮的图标与提示，供快速设置菜单切换。 */
   setReadonly(readonly) {
     this.readonly = readonly;
+    const btn = this.quickSettingsButton;
+    if (btn) {
+      setIcon(btn, readonly ? 'lucide-lock' : 'lucide-settings');
+      btn.setAttr('aria-label', readonly
+        ? t('plugins.canvas.label-disable-readonly')
+        : t('plugins.canvas.label-canvas-settings'));
+    }
     this.wrapperEl.toggleClass('mod-readonly', readonly);
   }
+
+  /* ------------------------------------------------------------ 本地数据 */
+
+  /** 原版 localDataManager：按 'canvas-<路径>' 存 localStorage（实现见 canvas-local-data.js）。 */
+  loadLocalData() { return loadCanvasLocalData(this.file ? this.file.path : ''); }
+
+  saveLocalData() { saveCanvasLocalData(this.file ? this.file.path : '', this.readonly); }
 
   /* ---------------------------------------------------------------- 存取 */
 
@@ -692,7 +737,12 @@ export class CanvasView extends CanvasInteractions {
     }
     // 初次装载/切换文件：清空内容与历史（原版 setViewData 初次装载走 view.clear）；
     // 外部重载：按 id 差量更新，保留视口与撤销历史（原版 setData → importData(prune)）。
-    if (!keepViewport) this.clear();
+    if (!keepViewport) {
+      this.clear();
+      // 原版 setViewData 初次装载读取本地数据（只读标记）
+      const local = this.loadLocalData();
+      this.setReadonly(!!(local && local.readonly));
+    }
     if (data) this.setData(data);
     else { this.createPlaceholder(); this.requestFrame(); }
     this._savedText = JSON.stringify(this.getData(), null, '\t');

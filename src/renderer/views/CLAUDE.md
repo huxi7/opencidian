@@ -15,15 +15,16 @@ settings-tabs-appearance.js: AppearanceTab + FontManagerModal。对齐原版 Jee
 settings-tabs-plugins.js: HotkeysTab + HotkeyRecorderModal(按键录制)、CorePluginsTab(搜索+齿轮→openPluginOptions)、CommunityPluginsTab(安全模式语义+已安装插件列表；市场不接入)。
 graph-view.js: 全局/局部图视图生命周期。跟随文件变化，关闭时清理引擎和渲染器。
 graph-renderer.js: 画布绘制、命中、拖拽和平移。设备像素统一换算，销毁释放监听与帧。
-canvas-view.js: 画布装配。观察挂载尺寸，防抖保存，切换文件前落盘，关闭后释放帧与节点。vault modify 的外部修改按磁盘内容重载并保留视口，自身写入按 _savedText 过滤 watcher 回声。撤销/重做：requestSave 防抖推进全量快照历史（上限 100），applyHistory 经 importData 差量重建且不产生新条目；控件组含撤销/重做按钮（is-disabled 随历史变化）。
+canvas-view.js: 画布装配。观察挂载尺寸，防抖保存，切换文件前落盘，关闭后释放帧与节点。vault modify 的外部修改按磁盘内容重载并保留视口，自身写入按 _savedText 过滤 watcher 回声。撤销/重做：requestSave 防抖推进全量快照历史（上限 100），applyHistory 经 importData 差量重建且不产生新条目；控件组含快速设置（对齐网格/对齐物体/只读）与撤销/重做按钮。只读标记按原版 localDataManager 存 localStorage('canvas-<路径>')，重命名迁移、删除清理，初次装载恢复。
 diff-view.js: renderDiffView(prev,next)。行级 LCS 对齐，删除/插入按块配对，行内差异标 diff-changed；相等行按原版阈值折叠(N lines folded 可点击展开)。供文件恢复弹窗"显示差异"。
-canvas-viewport.js: 画布坐标与缩放。限制缩放目标，按缩放挂载正文，收敛后停止帧。
-canvas-interactions.js: 指针、滚轮、框选、键盘与拖拽原语。键盘含 Escape/Delete、Mod+A 全选、Mod+Z/Mod+Shift+Z/Mod+Y 撤销重做、Shift+1/2 缩放，焦点在输入控件内不抢按键。几何结果交给视图保存。
+canvas-viewport.js: 画布坐标与缩放。限制缩放目标，按缩放挂载正文，收敛后停止帧。帧内把移动节点的关联边一并加入重绘集合。
+canvas-interactions.js: 指针、滚轮、框选、键盘与拖拽原语。键盘含 Escape/Delete、Mod+A 全选、Mod+Z/Mod+Shift+Z/Mod+Y 撤销重做、Shift+1/2 缩放、方向键微移选中节点（Shift 5 倍、对齐网格时吸附），焦点在输入控件内不抢按键。几何结果交给视图保存。
 canvas-history.js: CanvasHistory 有界快照栈（push 截断重做尾部、超限丢最旧、replace/clear）。撤销/重做的存储层，条目为 getData() 全量对象。
 canvas-node.js: 文本、链接与分组节点。输入请求保存，正文可读时挂载。文本卡片菜单追加编辑与转换为文件。
+canvas-local-data.js: 画布本地数据（原版 localDataManager 等价物）。localStorage key 'canvas-<路径>' 存 {readonly:true}；load/save/migrate/drop，供视图与快速设置菜单调用。
 canvas-file-node.js: 文件卡片（从 canvas-node.js 拆出）。md/canvas 渲染预览、图片直显、其余占位；挂载前对 contentEl 判空。
 canvas-edge.js: 连线与标签几何。拖动连接点吸附节点并保存端点。
-canvas-menu.js: 文件、链接、分组选择与画布上下文菜单。
+canvas-menu.js: 文件、链接、分组选择与画布上下文菜单。快速设置菜单三项：对齐网格/对齐物体/只读。
 canvas-utils.js: 无状态几何、颜色与多值索引。供节点、边与视口共用。
 bookmarks-view.js: 书签树与行内重命名。空分组可见，活动项按文件路径匹配。
 slides-presentation.js: SlidesPresentation。全窗口演示宿主（对齐原版 M9：document.body 上的 .slides-container + Escape 关闭；无 reveal.js，分页自有）。按顶层 hr 分页，保留代码围栏和引用内分隔线，每页 renderMarkdown；←/→/点击左右半屏翻页、Esc/关闭按钮销毁覆盖层。演示期间不动底层 markdown 视图，退出后模式、滚动与选区天然保持；导出 splitSlides。

@@ -21,7 +21,7 @@ default-hotkeys.js: 30 条原版默认快捷键(id → hotkeys)。
 commands.js: CommandManager 注册与分派命令。执行检查回调传 false，编辑器回调带活动视图。
 notices.js: Notice 右下角 toast。
 modals.js: 可复开的 Modal 基座与确认、输入弹窗。确认先结算结果，关闭取消待处理输入。FileNameModal：重命名式文件名弹窗（保存/取消、Enter 提交、非法字符校验），画布转换为文件使用。
-menu.js: Menu/MenuItem。上下文菜单、子菜单、键盘导航。
+menu.js: Menu/MenuItem。上下文菜单、子菜单、键盘导航；setParentElement 在打开期间标记触发元素（has-active-menu）。
 suggest.js: 文件与命令建议。输入位于结果前，选择结果与取消关闭分开结算。
 view.js: View 基类(load/onOpen/onClose/getState/setState/_rootEl 契约) + ViewRegistry。
 workspace.js: 布局装配、导航与序列化。新文档进入中心，侧栏工具禁止用户关闭。恢复布局后按插件状态补齐入口。

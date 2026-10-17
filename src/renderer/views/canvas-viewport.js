@@ -3,12 +3,13 @@
  * [OUTPUT]: 导出 CanvasViewport 类，供 canvas-interactions.js 继承。含视口状态机（x,y 为视口中心世界坐标，zoom=log2(scale)）、
  *           坐标换算（posFromDom/domFromPos 等）、requestFrame/renderFrame 动画帧、markViewportChanged/markMoved/markDirty 标记。
  * [POS]: views/ 画布类链的第二层：View → CanvasViewport → CanvasInteractions → CanvasView。所有画布子视图共享这一层视口语义；
- *        节点/边通过 markMoved 请求重绘。缩放夹在边界内并刷新正文挂载，停止后释放动画帧。
+ *        节点/边通过 markMoved 请求重绘；帧内先把移动节点的关联边一并加入重绘集合（边坐标由节点推导），再统一 render。缩放夹在边界内并刷新正文挂载，停止后释放动画帧。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 /* Canvas viewport engine — original viewport math + animation frame (class chain layer 2). */
 import { View } from '../core/view.js';
 import { clamp, unionBBox, expandBBox, rectOf } from './canvas-utils.js';
+import { CanvasNode } from './canvas-node.js';
 
 const ZOOM_MIN = -4;
 const ZOOM_MAX = 1;
@@ -191,6 +192,14 @@ export class CanvasViewport extends View {
       }
     }
 
+    if (this.moved.size) {
+      // 原版帧渲染：把移动节点的关联边一并加入重绘集合（边坐标由节点推导）
+      for (const el of Array.from(this.moved)) {
+        if (el instanceof CanvasNode) {
+          for (const edge of this.getEdgesForNode(el)) this.moved.add(edge);
+        }
+      }
+    }
     for (const el of Array.from(this.moved)) {
       this.moved.delete(el);
       if (el.isAttached) el.render();

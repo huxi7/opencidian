@@ -1,3 +1,10 @@
+/**
+ * [INPUT]: 依赖 core/icons.js 的 setIcon；使用 dom.js 安装的元素助手。
+ * [OUTPUT]: 导出 Menu（addItem/addSeparator/setParentElement/showAtMouseEvent/showAtPosition/close）与 MenuItem（title/icon/checked/section/submenu/callback）。
+ * [POS]: core/ 的通用菜单层。菜单挂 document.body，外部 mousedown/contextmenu 关闭，键盘上下/Enter/Esc 导航。
+ *        setParentElement 让触发元素在菜单打开期间带 has-active-menu（原版语义），供画布快速设置按钮防重复打开。
+ * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
+ */
 /* Menu — context menus & dropdown menus with keyboard navigation. */
 import { setIcon } from './icons.js';
 
@@ -33,7 +40,11 @@ export class Menu {
     this.dom = null;
     this.selected = -1;
     this.parentMenu = null;
+    this.parentEl = null;
   }
+
+  /** 绑定触发元素：菜单打开期间元素带 has-active-menu（原版 setParentElement 语义）。 */
+  setParentElement(el) { this.parentEl = el; return this; }
 
   addItem(cb) {
     const item = new MenuItem(this);
@@ -78,6 +89,7 @@ export class Menu {
       document.addEventListener('contextmenu', this._docContext, true);
       document.addEventListener('keydown', this._docKeyDown, true);
     }, 0);
+    if (this.parentEl) this.parentEl.addClass('has-active-menu');
     this.onShow && this.onShow();
     return dom;
   }
@@ -178,6 +190,7 @@ export class Menu {
       document.removeEventListener('keydown', this._docKeyDown, true);
       this._docMouseDown = null;
     }
+    if (this.parentEl) this.parentEl.removeClass('has-active-menu');
     this.onHide && this.onHide();
   }
 }

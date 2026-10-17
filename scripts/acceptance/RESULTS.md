@@ -94,3 +94,10 @@ MathJax 独立适配器子代理的41项基础/故障测试见 assets/mathjax/SO
 - 新增断言：覆盖层挂 document.body 且铺满窗口、演示期间 markdown 视图原样、弹窗层级在覆盖层之上、Esc 摘除覆盖层并保持模式/选区、容器与监听释放。
 - 依赖审计：katex 移出 package.json 直接依赖（JS 无引用；lock 保留为 mermaid 传递依赖）。
 - 回归：core-ribbon 47 项、工作区 19 组通过；日志 0 未捕获异常。证据 `/tmp/obs-copy-acceptance/recovery-exercise-result-dHzVQf`、`recovery-restart-result-kRfoNr`。
+
+## 画布快速设置、方向键微移与边跟随修复（2026-10-17，主 agent 接续）
+
+- canvas：`--no-screenshot` 通过。新增断言：边跟随节点移动（往返路径一致）、方向键步长与 Shift 5 倍、对齐网格吸附、快速设置三项菜单与 has-active-menu、对齐网格切换写入 canvas.json、只读切换与 localStorage 持久化、重开后只读恢复、按钮退出只读。
+- 修复：拖动/微移节点时边不跟随（帧渲染缺少 moved→edges 传播）；画布选项默认改为原版的 snapToGrid/snapToObjects 均为 true。
+- 日志 0 未捕获异常；证据 `/tmp/obs-copy-acceptance/canvas-run-result-kOY03b`。
+- 未覆盖：图片导出、CM6 卡片编辑、画布空间索引/可视区域渲染。见 AGENT-STATE.md §15。

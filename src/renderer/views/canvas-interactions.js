@@ -3,6 +3,7 @@
  * [OUTPUT]: 导出 CanvasInteractions 类（指针/键盘/拖拽/框选/滚轮/右键菜单）与 startDrag、suppressClick 两个拖拽原语。
  * [POS]: views/ 画布类链的第三层：View → CanvasViewport → CanvasInteractions → CanvasView。所有画布指针语义（阈值 5px 才成拖拽、拖到视口边缘 30px 自动平移、拖拽后吞掉一次 click）集中于此；
  *        CanvasView 只负责装配 DOM 与调度，节点/边自身不注册窗口级监听。startDrag 是原版 wg 的等价物：超过 threshold 后调用一次 factory，cleanup 先于 end/cancel。
+ *        键盘含 Esc/Delete、Mod+A、Mod+Z/Mod+Shift+Z/Mod+Y、Shift+1/2，以及方向键微移选中节点（Shift 为 5 倍、对齐网格时吸附网格线）。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 /* Canvas pointer + keyboard interactions (class chain layer 3). */
@@ -103,7 +104,42 @@ export class CanvasInteractions extends CanvasViewport {
     if (e.shiftKey && !mod && !e.altKey && (e.code === 'Digit1' || e.code === 'Digit2')) {
       e.preventDefault();
       if (e.code === 'Digit1') this.zoomToFit(); else this.zoomToSelection();
+      return;
     }
+    // 方向键微移选中节点（原版 scope 的 nudgeSelection；Shift 为 5 倍步长）
+    if (!mod && !e.altKey && (e.key === 'ArrowUp' || e.key === 'ArrowDown' || e.key === 'ArrowLeft' || e.key === 'ArrowRight')) {
+      if (!this.selection.size) return;
+      e.preventDefault();
+      this.nudgeSelection(e, e.key.slice(5).toLowerCase());
+    }
+  }
+
+  /** 方向键微移选中节点（原版 nudgeSelection：步长 = 网格间距，Shift 为 5 倍；对齐网格时吸附网格线）。 */
+  nudgeSelection(ev, direction) {
+    const nodes = Array.from(this.selection).filter((el) => el instanceof CanvasNode);
+    if (!nodes.length) return;
+    const step = ev.shiftKey ? 5 * this.gridSpacing : this.gridSpacing;
+    const delta = { x: 0, y: 0 };
+    if (direction === 'down') delta.y = step;
+    else if (direction === 'up') delta.y = -step;
+    else if (direction === 'left') delta.x = -step;
+    else delta.x = step;
+    if (this.options.snapToGrid) {
+      const g = this.gridSpacing;
+      const bbox = unionBBox(nodes.map((n) => n.getBBox()));
+      const offsetX = Math.round(bbox.minX % g);
+      const offsetY = Math.round(bbox.minY % g);
+      if ((direction === 'left' || direction === 'right') && offsetX > 0) {
+        delta.x = -offsetX;
+        if (direction === 'right') delta.x += g;
+      } else if ((direction === 'up' || direction === 'down') && offsetY > 0) {
+        delta.y = -offsetY;
+        // 原版此行把增量误加到 x（笔误）；按方向修正为 y。
+        if (direction === 'down') delta.y += g;
+      }
+    }
+    for (const node of nodes) node.moveTo({ x: node.x + delta.x, y: node.y + delta.y });
+    this.requestSave();
   }
 
   /** 空格：进入平移模式（挂上 .canvas-mover 遮罩层）。焦点在输入控件时不生效。 */

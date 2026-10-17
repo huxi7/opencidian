@@ -311,3 +311,19 @@ node --experimental-vm-modules src/renderer/core/workspace-regression.js
   - 依赖审计：katex 移出 package.json 直接依赖（JS 无引用；CSS 仅存 `.katex-error` 规则；lock 保留为 mermaid 传递依赖）。MathJax 资源不受影响。
 - 验收：recovery exercise 84 项、restart 45 项通过（新增：body 级全窗口覆盖、底层视图保持、Esc 后选区保持、弹窗层在覆盖层之上、覆盖层摘除与监听释放）；core-ribbon 47 项、工作区 19 组回归通过；日志 0 未捕获异常。
 - 未覆盖：reveal.js 的过渡动画与主题 CSS；旧布局中的 'slides' 叶子降级为空视图（workspace 对未知类型的既有回退）。
+
+## 15. 画布快速设置、方向键微移与边跟随修复（2026-10-17，主 agent 接续）
+
+- 原版事实：
+  - 控件第一组为快速设置按钮：非只读时点击弹菜单（对齐网格 lucide-grid / 对齐物体 snap-to-object / 只读 lucide-lock），只读时点击直接退出只读；按钮图标 `lucide-settings ↔ lucide-lock`，提示 `label-canvas-settings / label-disable-readonly`。
+  - 只读标记存 localStorage：key `canvas-<路径>`，值 `{readonly:true}` 或删除；重命名迁移、删除清理；初次装载 `setViewData` 读取并 setReadonly。
+  - 画布插件选项默认 `{snapToObjects:true, snapToGrid:true}`（此前我们误为 false/false，已修正）。
+  - 方向键微移 `nudgeSelection`：步长 = gridSpacing，Shift 为 5 倍；snapToGrid 时按选中包围盒 min 对齐网格（原版 down 分支把增量误加到 x，本实现修正为 y 并在代码注明）。
+  - 帧渲染：moved 集合中的节点会先把其关联边加入 moved，再统一 render（原版 renderFrame）——我们此前遗漏，导致拖动/微移节点时边不跟随。
+- 本实现：
+  - `canvas-viewport.renderFrame`：补 moved 节点 → 关联边传播。
+  - `canvas-view`：快速设置控件组 + 按钮（has-active-menu 防重复打开）、setReadonly 图标/提示切换、初次装载恢复只读；选项默认改 true/true。本地数据存取拆到 `canvas-local-data.js`（load/save/migrate/drop；canvas-view.js 781 行）。
+  - `canvas-menu.showQuickSettingsMenu` 增加只读项（三项，对齐原版）；`canvas-interactions` 增加方向键微移与吸附。
+  - `core/menu.js`：新增 `setParentElement`（打开期间 has-active-menu）；补 L3 头部。
+- 验收：canvas 场景通过（新增：边跟随节点移动且往返路径一致、ArrowRight 步长、Shift 5 倍、吸附网格线、快速设置三项菜单、has-active-menu 标记、对齐网格切换写入 canvas.json、只读切换 class/图标/localStorage、重开后只读恢复、按钮退出只读并清理标记）。日志 0 未捕获异常。
+- 未覆盖：图片导出（`canvas:export-as-image`）、CM6 卡片编辑、画布大图的空间索引与可视区域渲染（原版 nodeIndex/edgeIndex + virtualize）。

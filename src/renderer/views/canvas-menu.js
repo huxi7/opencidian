@@ -28,7 +28,7 @@ export function showCreationMenu(canvas, menu, pos, size) {
     .onClick(() => canvas.createGroupNode({ pos, size })));
 }
 
-/** 快速设置：对齐网格 / 对齐物体（原版选项逐项对应）。 */
+/** 快速设置：对齐网格 / 对齐物体 / 只读（原版选项逐项对应）。 */
 export function showQuickSettingsMenu(canvas, menu) {
   menu.addItem((item) => item.setSection('canvas').setTitle(t('plugins.canvas.option-snap-to-grid')).setIcon('lucide-grid')
     .setChecked(!!canvas.options.snapToGrid)
@@ -36,6 +36,9 @@ export function showQuickSettingsMenu(canvas, menu) {
   menu.addItem((item) => item.setSection('canvas').setTitle(t('plugins.canvas.option-snap-to-objects')).setIcon('snap-to-object')
     .setChecked(!!canvas.options.snapToObjects)
     .onClick(() => { canvas.options.snapToObjects = !canvas.options.snapToObjects; canvas.saveOptions(); }));
+  menu.addItem((item) => item.setSection('canvas').setTitle(t('plugins.canvas.label-readonly')).setIcon('lucide-lock')
+    .setChecked(canvas.readonly)
+    .onClick(() => { canvas.setReadonly(!canvas.readonly); canvas.saveLocalData(); }));
 }
 
 /** 文件选择弹窗：showAttachments=false 只列笔记，media=true 只列媒体。 */
