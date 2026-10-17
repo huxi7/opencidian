@@ -1,0 +1,91 @@
+/*
+ * [INPUT]: 依赖 tokens.css 的颜色、间距变量；依赖 tree.css 的 .tree-item 体系；依赖 search.css 的面板/结果容器类。
+ * [OUTPUT]: 提供出链面板（outgoing-link.js）与属性面板（properties.js）的样式。
+ * [POS]: styles/ 的两个核心插件面板样式。出链段逐字移植原版 app.css 的 outgoing-link 段；
+ *        all-properties/file-properties 取原版 data-type 规则，并补足只读列表与滚动容器。
+ * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
+ */
+/* ==========================================================================
+   properties.css — outgoing links pane + properties panes
+   ========================================================================== */
+
+/* --- 出链面板（原版 app.css：data-type=outgoing-link、outgoing-link-pane 段） --- */
+.workspace-leaf-content[data-type='outgoing-link'] .view-content {
+  padding: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+.outgoing-link-pane {
+  padding-top: var(--size-4-3);
+  overflow-y: auto;
+  flex: 1 0 0;
+  padding-inline-start: var(--size-4-3);
+  padding-inline-end: var(--size-4-3);
+  padding-bottom: max(var(--safe-area-inset-bottom), var(--size-4-8));
+}
+.outgoing-link-pane .search-result-container {
+  padding: var(--size-4-1) 1px var(--size-4-4);
+}
+.outgoing-link-pane > .tree-item-self {
+  color: var(--nav-heading-color);
+  padding-inline-start: var(--size-4-2);
+}
+.outgoing-link-pane > .tree-item-self .tree-item-inner {
+  font-weight: var(--nav-heading-weight);
+}
+.outgoing-link-pane > .tree-item-self.is-clickable.is-collapsed {
+  color: var(--nav-heading-color-collapsed);
+}
+.outgoing-link-pane > .tree-item-self .collapse-icon {
+  display: none;
+}
+@media (hover: hover) {
+  .outgoing-link-pane > .tree-item-self.is-clickable.is-collapsed:hover {
+    color: var(--nav-heading-color-collapsed-hover);
+  }
+  .outgoing-link-pane > .tree-item-self:hover {
+    color: var(--nav-heading-color-hover);
+    font-weight: var(--nav-heading-weight-hover);
+  }
+}
+/* 本轮补充：原版未解析出链只换图标与 tooltip，这里补链接色以便一眼分辨。 */
+.outgoing-link-pane .outgoing-link-item.is-unresolved .tree-item-inner-text {
+  color: var(--link-unresolved-color);
+  opacity: var(--link-unresolved-opacity);
+}
+.outgoing-link-pane .outgoing-link-item .tree-item-inner-subtext {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* --- 属性面板（原版 app.css：data-type=all-properties / file-properties） --- */
+.workspace-leaf-content[data-type='all-properties'] .view-content,
+.workspace-leaf-content[data-type='properties'] .view-content {
+  padding-top: var(--size-4-1);
+}
+.workspace-leaf-content[data-type='file-properties'] .metadata-properties-heading {
+  display: none;
+}
+.all-properties-view > .nav-header {
+  flex: 0 0 auto;
+  padding: var(--size-4-2);
+}
+.all-properties-view .nav-buttons-container {
+  padding: 0;
+  gap: var(--size-2-1);
+}
+.all-properties-view .properties-list {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  padding: var(--size-4-1) var(--size-4-2) max(var(--safe-area-inset-bottom), var(--size-4-8));
+}
+.properties-list .property-item {
+  padding: var(--nav-item-padding);
+  cursor: var(--cursor);
+}
+.file-properties-container {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  padding: var(--size-4-2) var(--size-4-3) max(var(--safe-area-inset-bottom), var(--size-4-8));
+}

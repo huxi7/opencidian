@@ -33,7 +33,7 @@ workspace-renderer.js: 分别渲染文档标签和固定工具图标。稳定挂
 workspace-interactions.js: 仅中心文档可关闭、新建、拆分或拖拽。侧栏图标不接入文档菜单。
 workspace-regression.js: 19 组内存回归。覆盖导航、分栏、恢复、固定入口与库栏身份。
 plugins.js: PluginManager(内部+社区插件)与 buildObsidianApi() shim。内部插件模块经 plugins-registry.js 汇总。安全模式对齐原版：localStorage 键 enable-plugin-<appId>（null=未表态，库内已有插件时弹信任模态 mod-trust-folder）；setEnable(false) 只卸载保留 community-plugins.json，disableCommunityPlugin 才从配置移除；enableCommunityPlugin 有安全模式守卫。插件设置页经 manifest.module.settingTab(app, containerEl) 由设置宿主打开。
-plugins-registry.js: corePluginModules 汇总表(id → 模块)。新增核心插件必须登记在此。
+plugins-registry.js: corePluginModules 汇总表(id → 模块)。新增核心插件必须登记在此；已含出链(outgoing-link)与属性(properties)。
 app-commands.js: 导航、设置与文档命令。关闭、固定标签操作只作用于中心文档。
 app.js: App 装配。新建与修改均进入元数据解析。initialize 顺序：bootTime → language(须最先，界面模块构造前) → 非 macOS 加 body.styled-scrollbars → vault 身份 → settings → vault+watch → metadata/fileManager/hotkeyManager/plugins → workspace.mount → 插件加载 → _loadWorkspace → _applyTheme → settings 'change' 监听 → Ctrl+滚轮字号 → _runOpeningBehavior。_applyTheme 应用 theme/accent/字体/--indent-size/根字号并调 _applyCustomCss(注入 themes/<x>/theme.css 与启用的 snippets)。OBS_ACT 调试钩子支持 open/open-settings/exec(命令)。
 

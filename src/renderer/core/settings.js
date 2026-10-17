@@ -94,6 +94,7 @@ export const DEFAULT_CORE_PLUGINS = {
   canvas: true,
   'outgoing-link': true,
   'tag-pane': true,
+  properties: true,
   'page-preview': true,
   'daily-notes': true,
   templates: true,

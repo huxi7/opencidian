@@ -13,6 +13,8 @@ import * as fileExplorer from '../plugins-core/file-explorer.js';
 import * as commandPalette from '../plugins-core/command-palette.js';
 import * as switcher from '../plugins-core/switcher.js';
 import * as backlink from '../plugins-core/backlink.js';
+import * as outgoingLink from '../plugins-core/outgoing-link.js';
+import * as properties from '../plugins-core/properties.js';
 import * as outline from '../plugins-core/outline.js';
 import * as tagPane from '../plugins-core/tag-pane.js';
 import * as globalSearch from '../plugins-core/global-search.js';
@@ -36,6 +38,8 @@ export const corePluginModules = {
   'command-palette': commandPalette,
   'switcher': switcher,
   'backlink': backlink,
+  'outgoing-link': outgoingLink,
+  'properties': properties,
   'outline': outline,
   'tag-pane': tagPane,
   'global-search': globalSearch,

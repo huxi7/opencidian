@@ -9,8 +9,10 @@ file-explorer.js: 文件树视图(type file-explorer)。排序/折叠/右键菜�
 command-palette.js: 命令面板与 terminal 功能区入口。启停对称注册和撤销。
 switcher.js: 快速切换器与 file-search 功能区入口。复用 switcher:open，禁用删除按钮和命令。
 backlink.js: 反链分节、上下文与筛选。折叠跨重绘保留；关闭释放全部事件与计时器。
+outgoing-link.js: 出链面板视图(type outgoing-link)。逐条列出当前文件的已解析与未解析出链；图标按标题/块/文件/未解析切换，已解析出链的副文本显示目标文件夹，未解析出链带 is-unresolved 与“尚未创建”提示。仅 Links 分节（原版还有 Unlinked mentions，本实现未覆盖）；不自动创建窗格，由命令 outgoing-links:open / outgoing-links:open-for-current 打开；关闭释放订阅与计时器，禁用撤销视图与命令。
 outline.js: 按标题层级建立大纲。跳级归最近父标题，同名标题按行号跳转，关闭释放资源。
 tag-pane.js: 标签面板视图(type tag)。标签树/排序/嵌套开关。
+properties.js: 属性插件(id properties，原版 properties)。all-properties 汇总全部属性键与出现文件数，四种排序(名称正/倒、频次高/低，默认频次高到低)，点击属性打开全局搜索 ["键"](Mod 点击切换 token)；file-properties 只读复用 markdown/properties.js 的行渲染并跟随活动文件；命令 properties:open / properties:open-local 与状态栏属性计数(点击打开 file-properties)。不自动创建窗格；禁用撤销视图、命令与状态栏条目。
 global-search.js: 全局搜索视图(type search)。关键词/正则/大小写、结果分组与跳转。
 editor-status.js: 状态栏视图状态图标与切换菜单(Reading/Source/Live Preview，tooltip，mod-clickable)。
 page-preview.js: 内部链接悬停预览 popover。四类来源(editor/preview/search/tab-header)可配 Mod 门控，未解析链接空态，设置写 page-preview.json。

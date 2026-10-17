@@ -2,7 +2,7 @@
 
 > L2 | 父级: /src/renderer/CLAUDE.md
 
-全部 CSS。加载顺序由 index.html 决定：fonts → tokens → base → layout → components → explorer → editor → markdown → search → graph → settings → canvas → bookmarks → slides。所有颜色/间距/字体一律引用 tokens.css 中的变量，禁止硬编码色值(阴影与罕见例外除外)。
+全部 CSS。加载顺序由 index.html 决定：fonts → tokens → base → layout → components → explorer → editor → markdown → search → properties → graph → settings → canvas → bookmarks → slides。所有颜色/间距/字体一律引用 tokens.css 中的变量，禁止硬编码色值(阴影与罕见例外除外)。
 
 成员清单
 starter.css: 仓库选择窗口布局与文件夹入口。
@@ -22,6 +22,7 @@ markdown-content.css: 阅读排版、表格、代码、引用与嵌入。
 markdown-properties.css: 属性、标签与内容补充规则。
 markdown-highlight.css: 阅读、实时预览与源码共用原版 token 色彩。
 search.css: 搜索面板、backlinks、outline、tag pane 的专属样式。树基础结构来自 tree.css。
+properties.css: 出链面板(outgoing-link，逐字移植原版 app.css 的 outgoing-link 段，含未解析链接色)与属性面板(all-properties/file-properties 的原版 data-type 规则、排序栏、只读列表滚动)。
 graph.css: 原版图谱颜色探针、筛选控件与折叠面板规则。
 popover.css: page-preview 的 .popover/.hover-popover 尺寸与内容规则（逐字移植 app.css）。
 settings.css: 设置页签完整样式，逐字移植原版 app.css 设置段(vertical-tab 导航/内容、setting-item、mod-toggle、设置组头、hotkey 胶囊、.hotkey-filter 筛选芯片、.input-right-decorator 装饰图标与清除按钮让位、CSS 片段列表、installed-plugins-container、community 免责行 .setting-icon 与 .community-modal-button-container、.mod-trust-folder 宽度)。
