@@ -110,3 +110,11 @@ MathJax 独立适配器子代理的41项基础/故障测试见 assets/mathjax/SO
 - 汇总日志：`/tmp/opencidian-full-regression.log`（含各场景 logfile 路径）。新增场景：community、settings-ui、appearance、page-preview。
 - 本批修复的关键缺陷：reading.js wiki 链接切片（`[[A]]` 目标丢前 2 字符）、插件 shim 未导入 Keymap、math 场景旧协议域名、字体检测（document.fonts.check 不可靠）、clipboard 未聚焦 rejection。
 - 已知缺口：菜单 `.menu-scroll` 结构、功能区配置弹窗、画布 CM6 卡片编辑/图片导出/对齐参考线、图谱颜色组拖拽、macOS 分发包。详见 AGENT-STATE.md §16。
+
+## 最终全量回归（2026-10-18，OpenSidian 收口）
+
+- 23 个场景 `--no-screenshot` 全量：**23/23 通过、0 失败**。汇总日志：`/tmp/opencidian-final-regression-2.log`。
+- 覆盖：basic-plugins 6、bookmarks、canvas 68、community 19、core-ribbon 47、core-views 83、dialogs 7、editor 113、editor-switch 2、folding-disabled、graph 72（本批连续 3 次稳定）、math、notes 72、notes-settings、settings-ui 22、settings-plugins 52、settings-write、sidebar 93、sidebar-shell 61、vault-hidden、appearance 32、page-preview 13、recovery。
+- 本批新增/更新场景：core-views（出链 + 属性视图 + Unlinked mentions）、settings-plugins（52）、appearance（+功能区配置）、canvas（+导出/参考线）、graph（+色组拖拽/悬停预览/力参数）、page-preview、community、settings-ui。
+- 运行前提：`npm run build`；Electron 场景一律 `--no-screenshot`；多代理并发时用 `sh scripts/with-lock.sh` 串行构建与验收。
+- 已知未完成项见 AGENT-STATE.md §16（画布 CM6 卡片编辑/空间索引、音频录制、macOS 分发、LICENSE、像素级视觉验收等）。
