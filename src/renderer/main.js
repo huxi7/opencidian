@@ -57,7 +57,7 @@ app.initialize().then(async () => {
   // expose command runner for main-process menu accelerators
   window.__runCommand = (id) => app.commands.executeCommandById(id);
 
-  console.log('Obsidian copy ready. Vault:', app.vaultPath);
+  console.log('OpenSidian ready. Vault:', app.vaultPath);
 }).catch((e) => reportError('boot', e));
 
 window.addEventListener('beforeunload', () => {
