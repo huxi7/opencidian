@@ -24,7 +24,7 @@ if(phase==='restart'){
 const dir=pth.join(app.settings.dir,'plugins','test-plugin');
 fsc.mkdirSync(dir,{recursive:true});
 fsc.writeFileSync(pth.join(dir,'manifest.json'),JSON.stringify({id:'test-plugin',name:'Acceptance Plugin',version:'1.0.0',author:'OpenSidian QA',description:'acceptance fixture'}));
-fsc.writeFileSync(pth.join(dir,'main.js'),"const { Plugin } = require('obsidian');\nmodule.exports = class extends Plugin {\n  async onload() { this.addCommand({ id: 'test-plugin:hello', name: 'Hello from acceptance plugin', callback() {} }); }\n};\n");
+fsc.writeFileSync(pth.join(dir,'main.js'),"const { Plugin } = require('obsidian');\nmodule.exports = class extends Plugin {\n  async onload() { this.addCommand({ id: 'hello', name: 'Hello from acceptance plugin', callback() {} }); }\n};\n");
 app.settings.setCommunityPlugins(['test-plugin']);
 localStorage.removeItem(key);
 for(const id of Object.keys(plugins.plugins)) await plugins.unloadCommunityPlugin(id);

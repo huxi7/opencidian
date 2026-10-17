@@ -68,7 +68,14 @@ export class Plugin extends Events {
     return evtRef;
   }
   registerInterval(id) { this._registered.push(() => clearInterval(id)); return id; }
-  addCommand(command) { this.app.commands.addCommand(command); this._registered.push(() => this.app.commands.removeCommand(command.id)); }
+  addCommand(command) {
+    // 原版插件 API：命令 id 自动加 "<pluginId>:" 前缀；插件显式写了前缀则不重复
+    const prefix = this.manifest && this.manifest.id ? this.manifest.id + ':' : '';
+    const id = prefix && !String(command.id || '').startsWith(prefix) ? prefix + command.id : command.id;
+    const registered = { ...command, id };
+    this.app.commands.addCommand(registered);
+    this._registered.push(() => this.app.commands.removeCommand(id));
+  }
   removeCommand(id) { this.app.commands.removeCommand(id); }
   addRibbonIcon(icon, title, callback) {
     const el = this.app.workspace.addRibbonItem(icon, title, callback);
