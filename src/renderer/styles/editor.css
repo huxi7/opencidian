@@ -173,13 +173,23 @@ body.is-readable-line-width .inline-title { max-width: var(--file-line-width); m
 .cm-inline-image img { display: block; }
 .cm-inline-image { padding-block: var(--size-4-1); }
 .cm-inline-math { font-family: var(--font-text); }
-.cm-codeblock-lang {
+/* 原版 app.css：.code-block-flair（实时预览代码块右上角语言/复制） */
+.markdown-source-view.mod-cm6 .code-block-flair {
   position: absolute;
-  inset-inline-end: var(--size-4-3);
-  font-family: var(--font-monospace);
+  right: 6px;
+  top: 6px;
+  z-index: 1;
+  display: inline-block;
+  padding: var(--size-4-1) var(--size-4-2);
+  border-radius: var(--code-radius);
+  font-family: var(--font-interface);
   font-size: var(--font-ui-smaller);
-  color: var(--text-faint);
+  color: var(--text-muted);
+  cursor: var(--cursor);
 }
+.markdown-source-view.mod-cm6 .code-block-flair:hover { background-color: var(--background-modifier-hover); }
+.markdown-source-view .lp-codeblock { position: relative; }
+.code-block-flair .svg-icon { width: var(--icon-s); height: var(--icon-s); }
 .cm-embed-block.cm-lang-mermaid { padding: var(--size-4-2) 0; }
 .cm-embed-block .mermaid { display: flex; justify-content: center; }
 
@@ -300,3 +310,25 @@ body.is-readable-line-width .inline-title { max-width: var(--file-line-width); m
   font-size: var(--font-ui-smaller);
   white-space: pre-wrap;
 }
+
+/* 实时预览中的笔记嵌入（原版 markdown-embed） */
+.markdown-source-view .markdown-embed {
+  display: block;
+  width: 100%;
+  margin-block: var(--size-4-2);
+  border-inline-start: var(--embed-border-start);
+  background-color: var(--embed-background);
+  border-radius: var(--embed-border-radius, var(--radius-s));
+  padding: var(--embed-padding);
+  position: relative;
+}
+.markdown-source-view .markdown-embed .markdown-embed-content { max-height: var(--embed-max-height); overflow: auto; }
+.markdown-source-view .markdown-embed .markdown-preview-view { padding: 0; }
+.markdown-source-view .markdown-embed .markdown-embed-link {
+  position: absolute;
+  top: var(--size-4-1);
+  inset-inline-end: var(--size-4-1);
+  color: var(--text-faint);
+  z-index: 1;
+}
+.markdown-source-view .markdown-embed .markdown-embed-link:hover { color: var(--text-normal); }

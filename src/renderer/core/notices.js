@@ -95,3 +95,6 @@ export class Notice {
     setTimeout(remove, 120);
   }
 }
+
+// 原版把 Notice 挂在 window 上(插件与调试脚本直接 `new Notice(...)`)
+globalThis.Notice = Notice;

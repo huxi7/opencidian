@@ -321,3 +321,28 @@
 
 /* nested / table wrapper scroll for wide tables */
 .markdown-rendered .table-wrapper { overflow-x: auto; }
+
+/* ------------------------------------------------ code block copy button */
+/* 原版 app.css：.copy-code-button（悬停显示） */
+.markdown-rendered pre { position: relative; }
+.markdown-rendered pre:not(:hover) > button.copy-code-button { display: none; }
+.markdown-rendered button.copy-code-button {
+  margin: 6px;
+  padding: 6px 8px;
+  height: auto;
+  background-color: transparent;
+  box-shadow: none;
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+  font-family: var(--font-interface);
+  position: absolute;
+  top: 0;
+  inset-inline-end: 0;
+  border: none;
+  border-radius: var(--radius-s);
+  cursor: var(--cursor);
+  display: flex;
+  align-items: center;
+}
+.markdown-rendered button.copy-code-button:hover { background-color: var(--background-modifier-hover); }
+.markdown-rendered button.copy-code-button .svg-icon { width: var(--icon-s); height: var(--icon-s); }

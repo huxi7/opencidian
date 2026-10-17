@@ -10,6 +10,7 @@ events.js: Events 基类(on/off/once/trigger/offref) + debounce(带 run/cancel)/
 i18n.js: setLanguage/detectLanguage(systemLocale)/t(带 {{var}} 与 _plural 处理)/tt(key,fallback,vars)(设置界面兜底)/getNouns(连字符 key)。
 icons.js: resolveIcon/createIcon/setIcon/getIconData/iconExists/getIconIds/addIcon/removeIcon。解析链逐字复刻原版 Zm()：lucide- 前缀 → 运行时图标 → 36 个自有图标(assets/icons-obsidian.json) → 152 条别名映射(assets/icon-aliases.json) → 1874 个 Lucide 图标(assets/icons.json)。
 ipc.js: ipcSync/ipcSend/ipcInvoke/ipcOn + Desktop 门面(与主进程通道一一对应)。
+tooltip.js: 全局 tooltip 单例(叶子，仅用 DOM 助手)。导入即安装 body 级 pointerover/pointerout 委托(只认鼠标)与 pointerdown/滚动/blur/Escape 收起；文案取 aria-label(其次被暂存的 title)，data-tooltip-delay 默认 1000ms，data-tooltip-position 默认 bottom(放不下翻 mod-top)，data-tooltip-classes 追加类；补 Element.prototype.setTooltip/setTooltipGenerator。
 vault.js: Vault/TFile/TFolder/FileSystemAdapter/normalizePath/parentPathOf/isHiddenPath。文件 IO 走 Node fs；watch 用 chokidar。首次扫描与文件监听均拒绝点开头路径段。
 vault-utils.js: getUniquePath 等路径纯函数。
 metadata.js: MetadataCache。内存态：headings/links/embeds/tags/frontmatter；getFirstLinkpathDest 解析短链。
@@ -19,10 +20,10 @@ setting.js: 设置控件层。Setting/SettingGroup/SettingTab 基类与全部控
 keymap.js: Keymap/HotkeyManager/hotkeyToString/eventToHotkey/IS_MAC。按键归一化与作用域栈；全局 keydown 入口。
 default-hotkeys.js: 30 条原版默认快捷键(id → hotkeys)。
 commands.js: CommandManager 注册与分派命令。执行检查回调传 false，编辑器回调带活动视图。
-notices.js: Notice 右下角 toast。
+notices.js: Notice 右上角通知栈。默认 4000ms；hover 暂停、移开后 1000ms 再隐藏；出场 120ms opacity + margin-top 收拢后摘除，容器随最后一个通知一起摘除。addButton 生成 .notice-button-container > .notice-cta。容器与 Notice 都挂在 globalThis。
 modals.js: 可复开的 Modal 基座与确认、输入弹窗。确认先结算结果，关闭取消待处理输入。FileNameModal：重命名式文件名弹窗（保存/取消、Enter 提交、非法字符校验），画布转换为文件使用。
 menu.js: Menu/MenuItem。上下文菜单、子菜单、键盘导航；setParentElement 在打开期间标记触发元素（has-active-menu）。
-suggest.js: 文件与命令建议。输入位于结果前，选择结果与取消关闭分开结算。
+suggest.js: 文件与命令建议。输入位于结果前，选择结果与取消关闭分开结算。输入容器带 .search-input-clear-button(非空清空并触发 input，空则关闭)。键盘：上下、PageUp/PageDown(按实测行高整页跳跃)、Home/End、Enter/auxclick、macOS Ctrl+p/n；isComposing 抑制。空态文案 tt('setting.third-party-plugin.label-no-results-found')。
 view.js: View 基类(load/onOpen/onClose/getState/setState/_rootEl 契约) + ViewRegistry。
 workspace.js: 布局装配、导航与序列化。新文档进入中心，侧栏工具禁止用户关闭。恢复布局后按插件状态补齐入口。
 workspace-sidebar.js: 固定工具映射与关闭判定。恢复旧布局遗漏的入口，插件禁用才撤销对应工具。

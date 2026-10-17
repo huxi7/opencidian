@@ -4,6 +4,7 @@
  * (settings -> vault -> workspace -> plugins -> layout).
  */
 import './core/dom.js';
+import './core/tooltip.js';
 import { App } from './core/app.js';
 import { registerBuiltinViews } from './views/index.js';
 import { registerEditorCommands } from './editor/editor-commands.js';

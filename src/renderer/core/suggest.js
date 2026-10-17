@@ -139,6 +139,7 @@ export class SuggestModal extends Modal {
       this.renderSuggestion(value, el, this.inputEl.value);
       el.onmousemove = () => this.setSelectedIndex(i);
       el.onclick = (ev) => this.selectSuggestion(i, ev);
+      el.onauxclick = (ev) => this.selectSuggestion(i, ev);
     });
     const selected = this.resultContainerEl.children[this._selectedIndex];
     if (selected) selected.scrollIntoView({ block: 'nearest' });

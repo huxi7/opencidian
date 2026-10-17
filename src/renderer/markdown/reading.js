@@ -12,7 +12,8 @@ import MarkdownIt from 'markdown-it';
 import footnote from 'markdown-it-footnote';
 import taskLists from 'markdown-it-task-lists';
 import { Desktop } from '../core/ipc.js';
-import { createIcon } from '../core/icons.js';
+import { createIcon, setIcon } from '../core/icons.js';
+import { tt } from '../core/i18n.js';
 import { normalizePath, parentPathOf } from '../core/vault.js';
 import { codeLanguageName, highlightCodeBlocks } from './highlight.js';
 import { renderMathBlocks } from './math.js';
@@ -461,6 +462,7 @@ export async function renderMarkdown(app, markdown, el, sourcePath, options = {}
   let html = md.render(markdown, env);
   el.innerHTML = html;
   const highlighting = highlightCodeBlocks(el);
+  addCodeBlockCopyButtons(el);
   const mathematics = renderMathBlocks(el);
 
   // nested embeds
@@ -520,6 +522,22 @@ export async function renderMermaidBlocks(el) {
       }
     }
   } catch (e) { console.error('mermaid load failed', e); }
+}
+
+/** 原版 post-processor：为每个 pre > code 添加 .copy-code-button（悬停显示，点击复制）。 */
+function addCodeBlockCopyButtons(el) {
+  for (const code of el.querySelectorAll('pre > code')) {
+    const pre = code.parentElement;
+    if (!pre || pre.querySelector(':scope > .copy-code-button')) continue;
+    const button = createEl('button', { cls: 'copy-code-button' });
+    setIcon(button, 'lucide-copy');
+    button.setAttr('aria-label', tt('interface.menu.copy', '复制'));
+    button.onclick = (ev) => {
+      ev.preventDefault();
+      try { const p = navigator.clipboard.writeText(code.textContent || ''); if (p && p.catch) p.catch(() => {}); } catch (e) {}
+    };
+    pre.appendChild(button);
+  }
 }
 
 export function stripFrontmatter(text) {

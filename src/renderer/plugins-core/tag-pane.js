@@ -178,7 +178,7 @@ export class TagView extends View {
 
   _showTagMenu(ev, tag) {
     const menu = new Menu(this.app);
-    menu.addItem((i) => i.setTitle('Copy tag').setIcon('clipboard').onClick(() => navigator.clipboard.writeText(tag)));
+    menu.addItem((i) => i.setTitle('Copy tag').setIcon('clipboard').onClick(() => { try { const p = navigator.clipboard.writeText(tag); if (p && p.catch) p.catch(() => {}); } catch (e) {} }));
     menu.addItem((i) => i.setTitle(t('plugins.tag-pane.label-sort-by-frequency-high-to-low') || 'Sort by frequency').onClick(() => {
       this._sort = 'frequency'; this._render();
     }));

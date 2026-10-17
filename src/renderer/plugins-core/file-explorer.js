@@ -1,12 +1,12 @@
 /**
- * [INPUT]: 依赖 ../core/view.js 的 View；依赖 ../core/i18n.js 的 t；依赖 ../core/icons.js 的 setIcon；依赖 ../core/menu.js 的 Menu；依赖 ../core/notices.js 的 Notice；依赖 ../core/modals.js 的 PromptModal/confirmDialog；依赖 ../core/suggest.js 的 GenericSuggester；依赖 ../core/vault.js 的 TFile/TFolder/normalizePath/parentPathOf
+ * [INPUT]: 依赖 ../core/view.js 的 View；依赖 ../core/i18n.js 的 t/tt；依赖 ../core/icons.js 的 setIcon；依赖 ../core/menu.js 的 Menu；依赖 ../core/notices.js 的 Notice；依赖 ../core/modals.js 的 PromptModal/confirmDialog；依赖 ../core/suggest.js 的 GenericSuggester；依赖 ../core/vault.js 的 TFile/TFolder/normalizePath/parentPathOf
  * [OUTPUT]: 导出 FileExplorerView 与插件注册（左侧栏 'file-explorer' 视图）
  * [POS]: plugins-core/ 的导航面板。DOM 逐字对齐原版：tree-item nav-folder > tree-item-self nav-folder-title.is-clickable > (tree-item-icon.collapse-icon[+right-triangle] + tree-item-inner nav-folder-title-content)。折叠状态同时写在 nav-folder 与 collapse-icon 上（原版 _L() 语义）。文件标题显示去扩展名 basename，非 md 文件追加 nav-file-tag。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 /* Core plugin: file-explorer — navigation pane with the vault tree. */
 import { View } from '../core/view.js';
-import { t } from '../core/i18n.js';
+import { t, tt } from '../core/i18n.js';
 import { setIcon } from '../core/icons.js';
 import { Menu } from '../core/menu.js';
 import { Notice } from '../core/notices.js';
@@ -282,7 +282,7 @@ export class FileExplorerView extends View {
       const newPath = normalizePath((folder.path === '/' ? '' : folder.path + '/') + item.name);
       if (newPath === item.path) return;
       const ok = await this.app.fileManager.renameFile(item, newPath);
-      if (!ok) new Notice('Could not move: ' + item.name);
+      if (!ok) new Notice(tt('plugins.file-explorer.msg-error-move-failed', `无法移动“${item.name}”`));
     });
   }
 

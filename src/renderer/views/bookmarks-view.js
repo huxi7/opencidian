@@ -245,7 +245,7 @@ export class BookmarksView extends View {
     else if (item.type === 'search') value = item.query;
     else if (item.type === 'url') value = item.url;
     else value = this._plugin.getItemTitle(item) || '';
-    if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(value);
+    if (navigator.clipboard && navigator.clipboard.writeText) { try { const p = navigator.clipboard.writeText(value); if (p && p.catch) p.catch(() => {}); } catch (e) {} }
     new Notice(t('interface.menu.copy-path') || 'Copy path');
   }
 

@@ -13,7 +13,7 @@ tokens-interface.css: 后半全局变量、明暗主题与字体族。
 base.css: 重置、滚动条(仅 body.styled-scrollbars 下生效，macOS 用系统 overlay 滚动条，逐字移植原版)、输入/按钮/开关/滑块基础样式、clickable-icon、.is-hidden。
 layout.css: 外层 workspace-root 与中心 mod-root 分开。只给中心文档应用主背景。
 workspace-sidebar.css: 原版侧栏图标、库信息栏、开关与 macOS 留白。窄栏保留帮助和设置。
-components.css: 菜单、弹窗、建议、通知、设置外壳与快照历史。原版布局规则保持闭合。
+components.css: 菜单、弹窗、建议、通知、悬浮提示、设置外壳与快照历史。原版布局规则保持闭合。通知为右上角固定栈(app.css 7923-7978)，tooltip 含 mod-top/mod-left/mod-right 翻转与 tooltip-arrow(app.css 9324-9445)，建议弹层 .suggestion-container 取 --suggestion-background(app.css 8858-8867)。
 tree.css: .tree-item 体系(collapse-icon 尺寸与旋转、tree-item-self/icon/inner/children/flair)，逐字移植自原版 app.css 7263-7287 与 9446-9591。全部树视图共用。
 explorer.css: .nav-* 文件树层(标题内容、nav-file-tag、拖拽高亮)，被 explorer/outline/tag 面板共用。基础结构来自 tree.css。
 editor.css: CodeMirror 与 live preview(HyperMD-*)、inline-title、media 视图。

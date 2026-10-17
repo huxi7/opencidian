@@ -142,6 +142,9 @@
     assert(!preview.readingEl.querySelector('code img'), 'code HTML remains inert');
     const readingColor = getComputedStyle(reading[0].querySelector('.token.keyword')).color;
     assert(readingColor !== getComputedStyle(reading[0]).color, 'reading token CSS has semantic color');
+    const copyBtn = preview.readingEl.querySelector('pre > button.copy-code-button');
+    assert(copyBtn && copyBtn.querySelector('svg'), 'reading copy button present');
+    copyBtn.click();
 
     await preview.setState({ file: codesFile.path, mode: 'live' });
     preview.editor.setSelection(0);
@@ -160,6 +163,11 @@
       assert(example.selector ? code.querySelector(example.selector) : !code.querySelector('.token'),
         'live tokens: ' + (example.lang || 'plain'));
       if (index === 0) assert(getComputedStyle(code.querySelector('.token.keyword')).color === readingColor, 'reading and live share token color');
+      if (index === 0) {
+        const flair = code.parentElement.querySelector('.code-block-flair');
+        assert(flair && flair.textContent.trim().length > 0, 'live code block flair shows language');
+        flair.click();
+      }
     }
     const keywordLine = codeText.split('\n').findIndex(line => line === 'const answer = 42;');
     preview.editor.setSelection({ line: keywordLine, ch: 3 });
@@ -168,6 +176,17 @@
     preview.editor.setSelection(0);
     await scrollToCode(0);
     assert(liveBlocks().some(code => code.querySelector('.token.keyword')), 'leaving code restores highlighted widget');
+    const embedTarget = await create('embed-target', '# Embed Target\n\nEMBED_CONTENT_MARKER\n');
+    const embedHost = await create('embed-host', '# Host\n\n![[embed-target]]\n');
+    const embedView = await openFresh(embedHost, 'live');
+    await wait(() => {
+      const body = embedView.sourceEl.querySelector('.markdown-embed .markdown-preview-view');
+      return body && body.textContent.includes('EMBED_CONTENT_MARKER');
+    }, 'live note embed renders');
+    assert(!!embedView.sourceEl.querySelector('.markdown-embed .markdown-embed-link svg'), 'live embed has open-link button');
+    await embedView.setState({ file: embedHost.path, mode: 'preview' });
+    await delay(250);
+    assert(!!embedView.readingEl.querySelector('.markdown-embed'), 'reading note embed renders');
     await applySettings({ livePreview: false });
     assert(!preview.sourceEl.classList.contains('is-live-preview') && !preview.editor.cm.dom.querySelector('.lp-codeblock'), 'global live preview switch removes widgets');
     await applySettings({ livePreview: true });

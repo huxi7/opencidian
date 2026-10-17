@@ -16,7 +16,12 @@ import { GraphRenderer } from './graph-renderer.js';
 async function copyCanvasToClipboard(canvas) {
   const blob = await new Promise((resolve) => canvas.toBlob(resolve, 'image/png'));
   if (!blob) throw new Error('Failed to export the graph canvas');
-  await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
+  try {
+    await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
+  } catch (e) {
+    // 窗口未聚焦等场景 clipboard 会拒绝；导出失败不产生未处理 rejection
+    console.warn('clipboard write failed', e && e.message);
+  }
 }
 
 // 视图：全局图谱（原版 bJ）与局部图谱（原版 kJ）

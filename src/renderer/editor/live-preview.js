@@ -17,11 +17,13 @@ import { Decoration, ViewPlugin, WidgetType, EditorView } from '@codemirror/view
 import { RangeSet, Facet, StateField, StateEffect } from '@codemirror/state';
 import { foldedRanges } from '@codemirror/language';
 import { Desktop } from '../core/ipc.js';
-import { getMarkdownIt, attachMarkdownInteractions, renderMermaidBlocks } from '../markdown/reading.js';
+import { getMarkdownIt, attachMarkdownInteractions, renderMermaidBlocks, renderMarkdown, stripFrontmatter } from '../markdown/reading.js';
 import { buildMetadataContainer } from '../markdown/properties.js';
 import { parseFrontmatterText } from '../core/metadata.js';
 import { codeLanguageName, highlightCodeElement, cancelCodeHighlight } from '../markdown/highlight.js';
 import { renderMath } from '../markdown/math.js';
+import { setIcon } from '../core/icons.js';
+import { tt } from '../core/i18n.js';
 
 const appFacet = Facet.define({ combine: (values) => values[0] });
 const sourcePathFacet = Facet.define({ combine: (values) => values[0] });
@@ -88,8 +90,10 @@ class LangWidget extends WidgetType {
   constructor(lang) { super(); this.lang = lang; }
   eq(o) { return o.lang === this.lang; }
   toDOM() {
-    const el = createSpan({ cls: 'cm-codeblock-lang' });
-    el.setText(this.lang || '');
+    // 原版 code-block-flair：语言名（无语言时给复制图标）
+    const el = createSpan({ cls: 'code-block-flair' });
+    if (this.lang) el.setText(this.lang);
+    else setIcon(el, 'lucide-copy');
     return el;
   }
 }
@@ -105,13 +109,38 @@ class LinkWidget extends WidgetType {
       other.embed === this.embed && other.sourcePath === this.sourcePath && other.external === this.external;
   }
   toDOM(view) {
+    const app = view.state.facet(appFacet);
+    // 原版：![[笔记]] 在实时预览中渲染为 markdown-embed（只读预览 + 打开源文件按钮）
+    if (this.embed && app) {
+      const dest = app.metadataCache.getFirstLinkpathDest(this.target, this.sourcePath);
+      const file = dest ? app.vault.getFileByPath(dest) : null;
+      if (file && file.extension === 'md') {
+        const wrap = createDiv({ cls: 'markdown-embed inline-embed' });
+        wrap.createDiv({ cls: 'markdown-embed-title', text: file.basename });
+        const content = wrap.createDiv({ cls: 'markdown-embed-content' });
+        const body = content.createDiv({ cls: 'markdown-preview-view markdown-rendered' });
+        body.setText('');
+        app.vault.read(file).then((text) => renderMarkdown(app, stripFrontmatter(text), body, file.path, { depth: 1 }))
+          .then(() => { if (view.dom.isConnected) view.requestMeasure(); })
+          .catch(() => {});
+        attachMarkdownInteractions(app, wrap, () => file.path);
+        const linkBtn = wrap.createDiv({ cls: 'markdown-embed-link clickable-icon' });
+        setIcon(linkBtn, 'lucide-maximize-2');
+        linkBtn.setAttr('aria-label', tt('editor.link-popover.tooltip-open-link', '打开链接'));
+        linkBtn.onclick = (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          app.workspace.openLinkText(this.target, this.sourcePath, e.metaKey || e.ctrlKey);
+        };
+        return wrap;
+      }
+    }
     const span = createSpan({ cls: this.embed ? 'cm-wikilink cm-wikilink-embed' : this.external ? 'cm-url cm-external-link' : 'cm-wikilink' });
     span.setText(this.text);
     span.setAttr('data-href', this.target);
     span.onclick = (e) => {
       e.preventDefault();
       e.stopPropagation();
-      const app = view.state.facet(appFacet);
       if (!app) return;
       if (this.external) {
         Desktop.openExternal(this.target);
@@ -152,6 +181,16 @@ class CodeBlockWidget extends WidgetType {
     highlightCodeElement(code, this.lang).then(() => {
       if (view.dom.isConnected) view.requestMeasure();
     });
+    // 原版 code-block-flair：显示语言名（无语言显示复制图标），点击复制代码
+    const flair = pre.createSpan({ cls: 'code-block-flair' });
+    if (this.lang) flair.setText(this.lang);
+    else setIcon(flair, 'lucide-copy');
+    flair.setAttr('aria-label', tt('interface.menu.copy', '复制'));
+    flair.onclick = (ev) => {
+      ev.preventDefault();
+      ev.stopPropagation();
+      try { const p = navigator.clipboard.writeText(this.code); if (p && p.catch) p.catch(() => {}); } catch (e) {}
+    };
     return pre;
   }
   destroy(dom) { cancelCodeHighlight(dom.querySelector('code')); }
