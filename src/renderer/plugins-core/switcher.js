@@ -1,3 +1,11 @@
+/**
+ * [INPUT]: SuggestModal 提供模糊建议；i18n 与 vault 提供文案和路径。
+ *          宿主提供文件列表、文件打开、命令与功能区。
+ * [OUTPUT]: 导出 nameKey、create(app)，注册快速切换命令与功能区入口。
+ * [POS]: 快速切换器列出 Markdown、画布与最近打开文件。
+ *        功能区复用打开命令；重复加载不新增入口，卸载删除入口与命令。
+ * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
+ */
 /* Core plugin: switcher — quick switcher for files (Mod+O), with create-on-enter. */
 import { SuggestModal, fuzzyMatch, renderHighlightedText } from '../core/suggest.js';
 import { t } from '../core/i18n.js';
@@ -83,14 +91,30 @@ class QuickSwitcherModal extends SuggestModal {
 }
 
 export function create(app) {
+  let ribbonEl = null;
   return {
     onload() {
+      if (ribbonEl) return;
       app.commands.addCommand({
         id: 'switcher:open',
         name: t('plugins.quick-switcher.action-open') || 'Open quick switcher',
         icon: 'file-search',
         callback: () => new QuickSwitcherModal(app).open(),
       });
+      ribbonEl = app.workspace.addRibbonItem(
+        'lucide-file-search',
+        t('plugins.quick-switcher.action-open') || 'Open quick switcher',
+        (ev) => app.commands.executeCommandById('switcher:open', ev),
+      );
+      ribbonEl.setAttr('data-command-id', 'switcher:open');
+    },
+    onunload() {
+      ribbonEl?.detach();
+      ribbonEl = null;
+      this.deregisterCommands();
+    },
+    deregisterCommands() {
+      app.commands.removeCommand('switcher:open');
     },
   };
 }

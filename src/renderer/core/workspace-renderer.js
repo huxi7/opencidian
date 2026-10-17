@@ -1,13 +1,15 @@
 /**
- * [INPUT]: 依赖 workspace-model 的节点类型、i18n 与 icons；使用已安装的 DOM 助手。
+ * [INPUT]: 节点模型、workspace-profile 底栏、i18n、图标与桌面 IPC。
  * [OUTPUT]: 导出工作区挂载、DOM 渲染、标签同步、尺寸与 ribbon 函数。
- * [POS]: 由 Workspace 委托渲染。首参 workspace 提供树状态与交互入口。
+ * [POS]: 侧栏只创建固定工具图标，库信息栏独立于标签树。由 Workspace 委托渲染。首参 workspace 提供树状态与交互入口。
  * 视图 _rootEl 只迁移不重建；节点类型统一由 workspace-model 导入。
  * 分割方向保持 vertical 横排、horizontal 纵排。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 import { WorkspaceSplit, WorkspaceTabs, WorkspaceLeaf } from './workspace-model.js';
-import { t } from './i18n.js';
+import { t, tt } from './i18n.js';
+import { createVaultProfile } from './workspace-profile.js';
+import { Desktop } from './ipc.js';
 import { setIcon } from './icons.js';
 
 export function mount(workspace, container) {
@@ -59,13 +61,14 @@ export function render(workspace) {
       rootEl.appendChild(handle);
     }
   }
+  updateSidebarChrome(workspace);
   workspace._updateLeafSizes();
   workspace.trigger('layout-change');
 }
 
 export function _getRootEl(workspace) {
   if (!workspace._rootEl) {
-    workspace._rootEl = createDiv('workspace-split mod-root');
+    workspace._rootEl = createDiv('workspace-split workspace-root');
     workspace.containerEl.appendChild(workspace._rootEl);
   }
   return workspace._rootEl;
@@ -75,8 +78,8 @@ export function _renderNode(workspace, node) {
   if (node instanceof WorkspaceSplit) {
     const el = createDiv('workspace-split');
     el.addClass('mod-' + node.direction);
-    if (node.side === 'left') el.addClass('mod-left-split');
-    if (node.side === 'right') el.addClass('mod-right-split');
+    if (node.side === 'left') el.addClass('mod-left-split', 'mod-sidedock');
+    if (node.side === 'right') el.addClass('mod-right-split', 'mod-sidedock');
     if (node.side === 'center') el.addClass('mod-root');
     node.containerEl = el;
     el._split = node;
@@ -95,6 +98,10 @@ export function _renderNode(workspace, node) {
       if (i < node.children.length - 1) {
         el.appendChild(workspace._createResizeHandle(node, i, node.direction));
       }
+    }
+    if (node.side === 'left') {
+      workspace.vaultProfileEl ||= createVaultProfile(workspace);
+      el.appendChild(workspace.vaultProfileEl);
     }
     return el;
   }
@@ -123,14 +130,16 @@ export function _renderTabs(workspace, tabs) {
   const headersInner = headersOuter.createDiv('workspace-tab-header-container-inner');
   tabs._headersInner = headersInner;
 
-  const newTabBtn = headersOuter.createDiv('workspace-tab-header-new-tab clickable-icon');
-  newTabBtn.setAttr('aria-label', t('menu-items.new-tab') || 'New tab');
-  setIcon(newTabBtn, 'plus');
-  newTabBtn.onclick = () => workspace._onNewTab(tabs);
-  const tabListBtn = headersOuter.createDiv('workspace-tab-header-tab-list clickable-icon');
-  tabListBtn.setAttr('aria-label', 'Tab list');
-  setIcon(tabListBtn, 'chevrons-up-down');
-  tabListBtn.onclick = (ev) => { ev.stopPropagation(); workspace._showTabListMenu(ev, tabs); };
+  if (isRoot) {
+    const newTabBtn = headersOuter.createDiv('workspace-tab-header-new-tab clickable-icon');
+    newTabBtn.setAttr('aria-label', tt('menu-items.new-tab', '新标签页'));
+    setIcon(newTabBtn, 'plus');
+    newTabBtn.onclick = () => workspace._onNewTab(tabs);
+    const tabListBtn = headersOuter.createDiv('workspace-tab-header-tab-list clickable-icon');
+    tabListBtn.setAttr('aria-label', '标签页列表');
+    setIcon(tabListBtn, 'chevrons-up-down');
+    tabListBtn.onclick = (ev) => { ev.stopPropagation(); workspace._showTabListMenu(ev, tabs); };
+  }
   headersOuter.createDiv('workspace-tab-header-spacer');
 
   for (const leaf of tabs.children) {
@@ -248,24 +257,39 @@ export function _createTabHeader(workspace, leaf) {
   const inner = header.createDiv('workspace-tab-header-inner');
   const iconEl = inner.createDiv('workspace-tab-header-inner-icon');
   const titleEl = inner.createDiv('workspace-tab-header-inner-title');
-  const closeEl = inner.createDiv('workspace-tab-header-inner-close-button');
-  closeEl.setAttr('aria-label', t('interface.menu.close') || 'Close');
-  setIcon(closeEl, 'x');
+  const isDocument = workspace.canCloseLeaf(leaf);
+  if (isDocument) {
+    const closeEl = inner.createDiv('workspace-tab-header-inner-close-button');
+    closeEl.setAttr('aria-label', tt('interface.menu.close', '关闭'));
+    setIcon(closeEl, 'x');
+    closeEl.onclick = (ev) => { ev.stopPropagation(); if (workspace.canCloseLeaf(leaf)) leaf.detach(); };
+  }
   header._leaf = leaf;
   leaf._tabHeaderEl = header;
-  header.setAttr('draggable', 'true');
-  closeEl.onclick = (ev) => { ev.stopPropagation(); leaf.detach(); };
-  header.onclick = (ev) => {
-    if (ev.target.closest('.workspace-tab-header-inner-close-button')) return;
+  header.setAttr('draggable', String(isDocument));
+  header.setAttr('role', 'tab');
+  header.setAttr('tabindex', '0');
+  const activate = () => {
     const tabs = leaf.parent;
     if (tabs) tabs.currentTab = tabs.children.indexOf(leaf);
-    workspace.setActiveLeaf(leaf, { focus: true, clear: true });
+    workspace.setActiveLeaf(leaf, { focus: true });
   };
+  header.onclick = (ev) => {
+    if (ev.target.closest('.workspace-tab-header-inner-close-button')) return;
+    activate();
+  };
+  header.onkeydown = (ev) => {
+    if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); activate(); }
+  };
+  header.onmousedown = (ev) => { if (ev.button === 1) ev.preventDefault(); };
   header.onauxclick = (ev) => {
-    if (ev.button === 1) { ev.preventDefault(); leaf.detach(); }
+    if (ev.button === 1) { ev.preventDefault(); if (workspace.canCloseLeaf(leaf)) leaf.detach(); }
   };
-  header.oncontextmenu = (ev) => { ev.preventDefault(); ev.stopPropagation(); workspace._showTabContextMenu(ev, leaf); };
-  workspace._setupTabDrag(header, leaf);
+  header.oncontextmenu = (ev) => {
+    ev.preventDefault(); ev.stopPropagation();
+    if (workspace.canCloseLeaf(leaf)) workspace._showTabContextMenu(ev, leaf);
+  };
+  if (isDocument) workspace._setupTabDrag(header, leaf);
   return header;
 }
 
@@ -294,6 +318,7 @@ export function _syncTabsVisibility(workspace, tabs) {
     if (leaf._leafEl) leaf._leafEl.toggle(isActive);
     if (leaf._tabHeaderEl) {
       leaf._tabHeaderEl.toggleClass('is-active', isActive);
+      leaf._tabHeaderEl.setAttr('aria-selected', String(isActive));
       leaf._tabHeaderEl.toggleClass('is-pinned', !!leaf.pinned);
     }
   }
@@ -367,26 +392,28 @@ export function _updateLeafSizes(workspace) {
 }
 
 export function _createRibbon(workspace) {
-  const ribbon = createDiv('workspace-ribbon mod-left');
+  const ribbon = createDiv('workspace-ribbon side-dock-ribbon mod-left');
   const actions = ribbon.createDiv('side-dock-actions');
   workspace.ribbonActionsEl = actions;
   const bottom = ribbon.createDiv('side-dock-settings');
   workspace.ribbonSettingsEl = bottom;
-  const toggle = ribbon.createDiv('workspace-ribbon-collapse-btn clickable-icon');
-  toggle.setAttr('aria-label', 'Collapse');
-  setIcon(toggle, 'chevrons-left');
-  toggle.onclick = () => {
-    const collapsed = ribbon.toggleClass('is-collapsed');
-    setIcon(toggle, collapsed ? 'chevrons-right' : 'chevrons-left');
-  };
   return ribbon;
 }
 
 export function addRibbonItem(workspace, icon, title, callback, target) {
   const el = createDiv('side-dock-ribbon-action clickable-icon');
   el.setAttr('aria-label', title);
+  el.setAttr('title', title);
+  el.setAttr('role', 'button');
+  el.setAttr('tabindex', '0');
   setIcon(el, icon);
   el.onclick = (ev) => callback(ev);
+  el.onkeydown = (event) => {
+    if (!event.repeat && (event.key === 'Enter' || event.key === ' ')) {
+      event.preventDefault();
+      callback(event);
+    }
+  };
   const container = target === 'bottom' ? workspace.ribbonSettingsEl : workspace.ribbonActionsEl;
   container.appendChild(el);
   return el;
@@ -395,4 +422,62 @@ export function addRibbonItem(workspace, icon, title, callback, target) {
 export function refreshHeaderVisibility(workspace) {
   const show = workspace.app.settings.config.showViewHeader !== false;
   workspace.containerEl.findAll('.view-header').forEach((el) => el.toggleClass('is-hidden', !show));
+}
+
+/** 左栏收起后开关移至中心标题栏，底部操作保留在功能区。 */
+function updateSidebarChrome(workspace) {
+  const centerTabs = [];
+  const collect = node => {
+    if (node instanceof WorkspaceTabs) centerTabs.push(node);
+    else for (const child of node.children || []) collect(child);
+  };
+  collect(workspace.centerSplit);
+  const leftTabs = workspace._firstTabsIn(workspace.leftSplit);
+  const rightTabs = workspace._firstTabsIn(workspace.rightSplit);
+  const left = !workspace.leftSplit.collapsed && leftTabs ? leftTabs : centerTabs[0];
+  const right = !workspace.rightSplit.collapsed && rightTabs ? rightTabs : centerTabs.at(-1);
+  for (const side of ['left', 'right']) {
+    const split = side === 'left' ? workspace.leftSplit : workspace.rightSplit;
+    workspace.containerEl.toggleClass(`is-${side}-sidedock-open`, !split.collapsed);
+    const key = side === 'left' ? 'leftSidebarToggleEl' : 'rightSidebarToggleEl';
+    if (!workspace[key]) {
+      const toggle = workspace[key] = createDiv(`sidebar-toggle-button mod-${side}`);
+      toggle.setAttr('role', 'button'); toggle.setAttr('tabindex', '0');
+      setIcon(toggle.createDiv('clickable-icon'), 'sidebar-toggle-button-icon');
+      toggle.onclick = () => workspace.toggleSidebar(side);
+      toggle.onkeydown = event => {
+        if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); workspace.toggleSidebar(side); }
+      };
+    }
+    const toggle = workspace[key];
+    const target = side === 'left' ? left : right;
+    const name = side === 'left' ? '左侧边栏' : '右侧边栏';
+    const title = (split.collapsed ? '展开' : '收起') + name;
+    toggle.setAttr('aria-label', title); toggle.setAttr('title', title);
+    toggle.setAttr('aria-expanded', String(!split.collapsed));
+    if (target?._headersOuter) {
+      if (side === 'left' && workspace.leftSplit.collapsed) target._headersOuter.insertBefore(toggle, target._headersOuter.firstChild);
+      else target._headersOuter.appendChild(toggle);
+    }
+  }
+  if (left?.containerEl) left.containerEl.addClass('mod-top-left-space');
+  if (right?.containerEl) right.containerEl.addClass('mod-top-right-space');
+  if (!workspace._ribbonSettingsFallback) {
+    workspace._ribbonSettingsFallback = createDiv('sidebar-profile-fallback');
+    const actions = [
+      ['open-vault', '切换仓库', () => Desktop.openStarter()],
+      ['lucide-settings', tt('interface.settings', '设置'), () => workspace.app.setting.open()],
+    ];
+    for (const [icon, label, action] of actions) {
+      const button = workspace._ribbonSettingsFallback.createDiv('clickable-icon side-dock-ribbon-action');
+      button.setAttr('role', 'button'); button.setAttr('tabindex', '0');
+      button.setAttr('aria-label', label); button.setAttr('title', label);
+      setIcon(button, icon); button.onclick = action;
+      button.onkeydown = event => {
+        if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); action(); }
+      };
+    }
+    workspace.ribbonSettingsEl.appendChild(workspace._ribbonSettingsFallback);
+  }
+  workspace._ribbonSettingsFallback.toggle(workspace.leftSplit.collapsed);
 }

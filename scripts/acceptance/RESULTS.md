@@ -40,3 +40,11 @@ MathJax 独立适配器子代理的41项基础/故障测试见 assets/mathjax/SO
 截图已由主代理逐张查看，交互由真实 Electron 内 DOM 事件与应用入口执行。
 并未宣称手工鼠标手感、超大图库性能、原版全屏逐像素截图比对全部完成。
 未覆盖项以 AGENT-STATE.md §8 为准。
+
+## 侧栏与功能区补漏
+
+- 侧栏外壳：53项包含真实双库切换、设置点击、固定工具及旧布局恢复；180px窄栏50项；重启3项通过。用户已确认视觉无问题并要求停止视觉验收。
+- 功能区：`core-ribbon --no-screenshot` 的47项逻辑断言通过；重启10项通过。覆盖五插件的启停、重复注册、命令撤销、图谱打开与Mod新标签。
+- 日志：`core-ribbon-run-result-dYoVlv/run.log`、`core-ribbon-restart-result-XDp9li/run.log`，均位于 `/tmp/obs-copy-acceptance/`，无截图。
+- 工作区内存回归现为19组，包含固定侧栏不可关闭和底部库栏的稳定节点。
+- `run.mjs` 新增 `--no-screenshot`，仅收集日志并按异常与场景断言判定。

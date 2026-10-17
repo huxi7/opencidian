@@ -24,14 +24,16 @@ modals.js: 可复开的 Modal 基座与确认、输入弹窗。确认先结算�
 menu.js: Menu/MenuItem。上下文菜单、子菜单、键盘导航。
 suggest.js: 文件与命令建议。输入位于结果前，选择结果与取消关闭分开结算。
 view.js: View 基类(load/onOpen/onClose/getState/setState/_rootEl 契约) + ViewRegistry。
-workspace.js: 布局装配、文件导航与序列化。链接路径转为文件后打开，保留公开接口。侧栏沿用最近中心文件。
+workspace.js: 布局装配、导航与序列化。新文档进入中心，侧栏工具禁止用户关闭。恢复布局后按插件状态补齐入口。
+workspace-sidebar.js: 固定工具映射与关闭判定。恢复旧布局遗漏的入口，插件禁用才撤销对应工具。
+workspace-profile.js: 稳定的库名、帮助与设置入口。每次展开读取库注册表，菜单调用真实打开库 IPC。
 workspace-model.js: 分割、标签组与叶子模型。视图切换依次关闭旧视图、装载新视图。
-workspace-renderer.js: 将节点树映射为 DOM。重绘迁移已有视图根，避免重复加载。
-workspace-interactions.js: 标签拖拽与菜单。委托 Workspace 改树，不持有额外布局。
-workspace-regression.js: 17 组内存回归。固定接口、导航、分栏、恢复与事件边界。
+workspace-renderer.js: 分别渲染文档标签和固定工具图标。稳定挂载底栏及左右开关，功能区支持鼠标与键盘。
+workspace-interactions.js: 仅中心文档可关闭、新建、拆分或拖拽。侧栏图标不接入文档菜单。
+workspace-regression.js: 19 组内存回归。覆盖导航、分栏、恢复、固定入口与库栏身份。
 plugins.js: PluginManager(内部+社区插件)与 buildObsidianApi() shim。内部插件模块经 plugins-registry.js 汇总。restrictedMode(安全模式，默认 true)开启时不加载社区插件；插件设置页经 manifest.module.settingTab(app, containerEl) 由设置宿主打开。
 plugins-registry.js: corePluginModules 汇总表(id → 模块)。新增核心插件必须登记在此。
-app-commands.js: registerAppCommands(app)：导航历史、标签/窗格命令、设置/帮助、主题切换。
+app-commands.js: 导航、设置与文档命令。关闭、固定标签操作只作用于中心文档。
 app.js: App 装配。新建与修改均进入元数据解析。initialize 顺序：bootTime → language(须最先，界面模块构造前) → 非 macOS 加 body.styled-scrollbars → vault 身份 → settings → vault+watch → metadata/fileManager/hotkeyManager/plugins → workspace.mount → 插件加载 → _loadWorkspace → _applyTheme → settings 'change' 监听 → Ctrl+滚轮字号 → _runOpeningBehavior。_applyTheme 应用 theme/accent/字体/--indent-size/根字号并调 _applyCustomCss(注入 themes/<x>/theme.css 与启用的 snippets)。OBS_ACT 调试钩子支持 open/open-settings/exec(命令)。
 
 [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md

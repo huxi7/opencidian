@@ -1,3 +1,10 @@
+/**
+ * [INPUT]: Workspace 分割树、文档标签及功能区 DOM。
+ * [OUTPUT]: 桌面外壳布局，侧栏细节委托 workspace-sidebar.css。
+ * [POS]: 只给中心文档 .mod-root 语义，侧栏保留独立背景与底部入口。
+ * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
+ */
+@import url('./workspace-sidebar.css');
 /* ==========================================================================
    layout.css — app shell: ribbon, workspace splits, tabs, leaves, status bar
    Split semantics follow the original DOM:
@@ -108,7 +115,7 @@ body.is-frameless.is-hidden-frameless:not(.mod-macos) .titlebar-button-container
 .workspace-split.mod-left-split > *, .workspace-split.mod-right-split > * { flex: 1 1 auto; }
 
 .workspace-split.mod-root { background-color: var(--background-primary); }
-body.workspace > .workspace-split.mod-root { flex: 1 1 0; min-width: 0; }
+body.workspace > .workspace-root { flex: 1 1 0; min-width: 0; }
 .workspace-split.mod-root .view-content { background-color: var(--background-primary); }
 
 .workspace-split.mod-left-split,

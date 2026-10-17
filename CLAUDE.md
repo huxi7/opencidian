@@ -28,6 +28,7 @@ src/renderer/starter.html - 仓库选择窗口 HTML
 5. 视图生命周期：setViewState → view._rootEl=createDiv('view-content') → load() → setState(state) → _ensureLeafDom。
 6. 插件 id 与 .obsidian/core-plugins.json 一致 (file-explorer, global-search, switcher...)。
 7. 单文件 ≤800 行；超出即重构。
+8. 侧栏工具固定，文档标签属于中心。左下角库信息栏独立于标签树；功能区入口随所属插件启停。
 </rules>
 
 [PROTOCOL]: 变更时更新此头部，然后检查 src/CLAUDE.md 与本文件

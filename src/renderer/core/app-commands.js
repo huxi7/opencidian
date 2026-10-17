@@ -1,3 +1,9 @@
+/**
+ * [INPUT]: 命令注册、Workspace、设置宿主与桌面 IPC。
+ * [OUTPUT]: 注册导航、设置、窗口及文档标签命令。
+ * [POS]: 用户命令层。关闭与固定标签命令只作用于中心文档。
+ * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
+ */
 /*
  * App-level commands: navigation history, tab/leaf lifecycle, settings,
  * window controls. Registered once from the renderer entry point.
@@ -106,7 +112,7 @@ export function registerAppCommands(app) {
     icon: 'x',
     checkCallback: (checking) => {
       const leaf = app.workspace.activeLeaf;
-      if (!leaf) return false;
+      if (!app.workspace.canCloseLeaf(leaf)) return false;
       if (!checking) {
         const state = leaf.view && leaf.view.getState ? leaf.view.getState() : null;
         const type = leaf.view && leaf.view.getViewType ? leaf.view.getViewType() : null;
@@ -221,7 +227,7 @@ export function registerAppCommands(app) {
     icon: 'pin',
     checkCallback: (checking) => {
       const leaf = app.workspace.activeLeaf;
-      if (!leaf) return false;
+      if (!app.workspace.canCloseLeaf(leaf)) return false;
       if (!checking) {
         leaf.pinned = !leaf.pinned;
         app.workspace._syncAllTabs();

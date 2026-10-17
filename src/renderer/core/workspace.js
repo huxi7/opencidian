@@ -3,7 +3,7 @@
  * 依赖 workspace-model 的节点；委托 workspace-renderer 与 workspace-interactions。
  * [OUTPUT]: 导出 Workspace、WorkspaceItem、WorkspaceSplit、WorkspaceTabs、
  * WorkspaceLeaf 与 parseSubpath。保留既有方法签名和调用入口。
- * [POS]: 装配分割树与导航。侧栏沿用最近中心文件，链接路径由 vault 转为文件。
+ * [POS]: 装配分割树与导航。侧栏工具固定，文档新标签始终进入中心。侧栏沿用最近中心文件，链接路径由 vault 转为文件。
  * loadLayout 只替换布局；旧视图保存与关闭仍由调用方负责。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
@@ -14,6 +14,7 @@ import { Desktop } from './ipc.js';
 import { WorkspaceSplit, WorkspaceTabs, WorkspaceLeaf } from './workspace-model.js';
 import * as workspaceRenderer from './workspace-renderer.js';
 import * as workspaceInteractions from './workspace-interactions.js';
+import { reconcileSidebars, canCloseLeaf } from './workspace-sidebar.js';
 
 export { WorkspaceItem, WorkspaceSplit, WorkspaceTabs, WorkspaceLeaf } from './workspace-model.js';
 
@@ -95,7 +96,8 @@ export class Workspace extends Events {
     let tabs = null;
     if (parent instanceof WorkspaceTabs) tabs = parent;
     else if (parent instanceof WorkspaceLeaf) tabs = parent.parent;
-    else if (this.activeLeaf && this.activeLeaf.parent instanceof WorkspaceTabs) tabs = this.activeLeaf.parent;
+    else if (this.activeLeaf && this._sideOf(this.activeLeaf) === 'center' && this.activeLeaf.parent instanceof WorkspaceTabs) tabs = this.activeLeaf.parent;
+    if (!tabs && !parent) tabs = this._firstTabsIn(this.centerSplit);
 
     if (newLeaf === 'split') {
       const relativeTabs = tabs || this._firstTabsIn(this.centerSplit);
@@ -155,6 +157,7 @@ export class Workspace extends Events {
   }
 
   createLeafBySplit(referenceLeaf, direction, before = false) {
+    if (this._sideOf(referenceLeaf) !== 'center') referenceLeaf = this._firstLeafInCenter();
     const tabs = referenceLeaf.parent;
     const splitParent = tabs ? tabs.parent : null;
     const newTabs = new WorkspaceTabs(this);
@@ -176,6 +179,14 @@ export class Workspace extends Events {
     }
     this.render();
     return this.createLeafInTabGroup(newTabs);
+  }
+
+  canCloseLeaf(leaf) { return canCloseLeaf(this, leaf); }
+
+  reconcileSidebars() {
+    const previous = this._sidebarUpdate || Promise.resolve();
+    this._sidebarUpdate = previous.then(() => reconcileSidebars(this));
+    return this._sidebarUpdate;
   }
 
   detachLeaf(leaf) {
@@ -387,7 +398,7 @@ export class Workspace extends Events {
   async ensureSideLeaf(type, side, options = {}) {
     const leaves = this.getLeavesOfType(type).filter((l) => this._sideOf(l) === side);
     if (leaves.length) {
-      this.revealLeaf(leaves[0]);
+      if (options.reveal !== false) this.revealLeaf(leaves[0]);
       return leaves[0];
     }
     const split = side === 'left' ? this.leftSplit : this.rightSplit;
@@ -399,8 +410,10 @@ export class Workspace extends Events {
     const leaf = this.createLeafInTabGroup(tabs);
     await leaf.setViewState({ type, state: options.state || {} });
     this.render();
-    this.revealLeaf(leaf);
-    this.showSidebar(side);
+    if (options.reveal !== false) {
+      this.revealLeaf(leaf);
+      this.showSidebar(side);
+    }
     return leaf;
   }
 
@@ -606,7 +619,7 @@ export class Workspace extends Events {
         if (tabs && tabs.activeLeaf) this._syncTabsVisibility(tabs);
       }
     }
-    // title
+    await this.reconcileSidebars();
     this.updateTitle();
   }
 

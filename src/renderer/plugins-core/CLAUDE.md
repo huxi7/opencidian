@@ -6,20 +6,20 @@
 
 成员清单
 file-explorer.js: 文件树视图(type file-explorer)。排序/折叠/右键菜单/拖拽移动/inline 重命名/新建文件与文件夹命令。
-command-palette.js: 命令面板(type 无视图)。command-palette:open。
-switcher.js: 快速切换器(switcher:open)。文件模糊搜索 + 新建同名文件。
+command-palette.js: 命令面板与 terminal 功能区入口。启停对称注册和撤销。
+switcher.js: 快速切换器与 file-search 功能区入口。复用 switcher:open，禁用删除按钮和命令。
 backlink.js: 反链分节、上下文与筛选。折叠跨重绘保留；关闭释放全部事件与计时器。
 outline.js: 按标题层级建立大纲。跳级归最近父标题，同名标题按行号跳转，关闭释放资源。
 tag-pane.js: 标签面板视图(type tag)。标签树/排序/嵌套开关。
 global-search.js: 全局搜索视图(type search)。关键词/正则/大小写、结果分组与跳转。
 editor-status.js: 状态栏编辑模式显示与切换(Reading/Source/Live Preview)。
 word-count.js: 状态栏字数统计(中英混排规则)，点击弹详情。
-canvas.js: 注册画布视图与新建、分组跳转命令。JSON Canvas 编辑委托视图。
+canvas.js: 注册画布视图、命令与新建功能区按钮。Mod 点击新标签并聚焦，禁用撤销按钮与注册。
 bookmarks.js: 持久化文件、目录、搜索与分组书签。目录改名同步子路径。
 daily-notes.js: 串行创建日期笔记与嵌套目录。模板变量及 createMarkdownNote 供其余笔记插件复用。
-templates.js: 选择模板、展开变量、合并属性。parseNote/mergeProperties/joinNote 供重组复用。
+templates.js: 模板功能区执行已有插入命令。展开变量、合并属性；属性函数供重组复用。
 note-composer.js: 提取或合并未保存文本。目标确认落盘后替换来源并重定向反链，遵循回收策略。
-graph.js: 图谱插件入口。注册全局和局部视图，兼容原导出。
+graph.js: 图谱视图、命令与功能区入口。普通点击复用中心，Mod 点击新标签并聚焦；禁用撤销按钮和命令。
 graph-engine.js: 协调查询、元数据变化、图谱选项与节点操作。
 graph-controls.js: 筛选、颜色、显示与力学控件。变更交给引擎。
 graph-data.js: 根据 Vault 清单构图。计算局部邻域和孤立节点。

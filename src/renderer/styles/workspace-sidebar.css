@@ -1,0 +1,425 @@
+/**
+ * [INPUT]: 依赖 tokens、base 与 layout；消费工作区侧栏 DOM。
+ * [OUTPUT]: 侧栏图标标签、仓库底条、开关、背景与分隔线样式。
+ * [POS]: layout.css 顶部导入的侧栏模块。
+ * 原版段逐字保留；适配段覆盖后加载的通用标签规则。
+ * mod-sidedock 限定侧栏；workspace-root 只承载外层分割。
+ * 开关由渲染器迁移到可见 header；左底条只挂左 split。
+ * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
+ */
+
+/* --------------------------------------------------------------------------
+ * 原版事实：Obsidian 1.12.4，_analysis/obsidian-asar/app.css。
+ * 每段标注原版行号；不引入拖拽、移动端或文档标签规则。
+ * -------------------------------------------------------------------------- */
+
+/* 原版 app.css:3962-3973 | 平台留白 */
+.mod-macos {
+  --frame-left-space: calc(80px - var(--ribbon-width));
+  --frame-right-space: 0px;
+}
+.mod-macos.is-popout-window {
+  --frame-left-space: 80px;
+}
+.mod-windows,
+.mod-linux {
+  --frame-left-space: 0px;
+  --frame-right-space: 126px;
+}
+
+/* 原版 app.css:3996-4017 | 顶部焦点背景与 ribbon 开关 */
+.sidebar-toggle-button,
+.workspace-tabs.mod-top {
+  --tab-container-background: var(--titlebar-background);
+}
+body.is-focused .titlebar,
+body.is-focused .workspace-ribbon.mod-left {
+  --titlebar-background: var(--titlebar-background-focused);
+}
+body.is-focused .sidebar-toggle-button,
+body.is-focused .workspace-tabs.mod-top {
+  --tab-container-background: var(--titlebar-background-focused);
+}
+.is-hidden-frameless {
+  --divider-vertical-height: 100%;
+}
+.workspace-ribbon .sidebar-toggle-button {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: var(--ribbon-width);
+  justify-content: center;
+}
+
+/* 原版 app.css:4037-4042 | 非全屏窗口留白 */
+.is-hidden-frameless:not(.is-fullscreen) .workspace-tabs.mod-top-left-space .workspace-tab-header-container {
+  padding-left: calc(var(--size-4-2) + var(--frame-left-space));
+}
+.is-hidden-frameless:not(.is-fullscreen) .workspace-tabs.mod-top-right-space .workspace-tab-header-container {
+  padding-right: calc(var(--size-4-2) + var(--frame-right-space));
+}
+
+/* 原版 app.css:4393-4415 | ribbon 顶部填色与隐藏 */
+.workspace-ribbon.mod-left {
+  margin-top: var(--header-height);
+  /* Add the tab background in the top left corner */
+}
+.workspace-ribbon.mod-left:before {
+  -webkit-app-region: drag;
+  position: absolute;
+  left: 0;
+  top: 0;
+  background-color: var(--titlebar-background);
+  content: " ";
+  border-bottom: var(--tab-outline-width) solid var(--tab-outline-color);
+  height: var(--header-height);
+  width: var(--ribbon-width);
+  box-sizing: border-box;
+}
+body:not(.show-ribbon) {
+  --ribbon-width: 0px;
+}
+body:not(.show-ribbon) .workspace-ribbon,
+body:not(.show-ribbon) .side-dock-ribbon {
+  display: none;
+}
+
+/* 原版 app.css:4429-4433 | 左侧栏折叠时的 ribbon 背景 */
+.workspace-ribbon.mod-left.is-collapsed {
+  transition: background-color 250ms 95ms ease-in-out;
+  background-color: var(--ribbon-background-collapsed);
+  border-right-color: var(--divider-color);
+}
+
+/* 原版 app.css:4440-4442 | 折叠 ribbon 基底 */
+.workspace-ribbon.is-collapsed {
+  background-color: var(--background-secondary);
+}
+
+/* 原版 app.css:5778-5833 | 桌面左侧仓库底条 */
+body:not(.is-mobile) .workspace-split.mod-left-split .workspace-sidedock-vault-profile {
+  background-color: var(--background-secondary);
+  border-top: var(--tab-outline-width) solid var(--tab-outline-color);
+  display: var(--vault-profile-display);
+  align-items: center;
+  height: unset;
+  flex: 0 0 auto;
+  gap: var(--size-4-1);
+  justify-content: space-between;
+  padding: var(--size-4-2) var(--size-4-2);
+  order: 1;
+}
+body:not(.is-mobile) .workspace-split.mod-left-split .workspace-sidedock-vault-profile .workspace-drawer-vault-switcher {
+  color: var(--vault-profile-color);
+  border-radius: var(--radius-s);
+  corner-shape: var(--corner-shape);
+  display: flex;
+  flex-grow: 1;
+  align-items: center;
+  gap: var(--size-4-2);
+  overflow: hidden;
+  padding: var(--size-4-1) var(--size-4-2);
+}
+body:not(.is-mobile) .workspace-split.mod-left-split .workspace-sidedock-vault-profile .workspace-drawer-vault-switcher.has-active-menu {
+  background-color: var(--background-modifier-hover);
+}
+body:not(.is-mobile) .workspace-split.mod-left-split .workspace-sidedock-vault-profile .workspace-drawer-vault-switcher.has-active-menu .workspace-drawer-vault-switcher-icon {
+  color: var(--text-muted);
+}
+@media (hover: hover) {
+  body:not(.is-mobile) .workspace-split.mod-left-split .workspace-sidedock-vault-profile .workspace-drawer-vault-switcher:hover {
+    color: var(--vault-profile-color-hover);
+    background-color: var(--background-modifier-hover);
+  }
+  body:not(.is-mobile) .workspace-split.mod-left-split .workspace-sidedock-vault-profile .workspace-drawer-vault-switcher:hover .workspace-drawer-vault-switcher-icon {
+    color: var(--text-muted);
+  }
+}
+body:not(.is-mobile) .workspace-split.mod-left-split .workspace-sidedock-vault-profile .workspace-drawer-vault-name {
+  font-size: var(--vault-profile-font-size);
+  font-weight: var(--vault-profile-font-weight);
+  text-overflow: ellipsis;
+  overflow: hidden;
+  white-space: nowrap;
+}
+body:not(.is-mobile) .workspace-split.mod-left-split .workspace-sidedock-vault-profile .workspace-drawer-vault-switcher-icon {
+  --icon-size: var(--icon-s);
+  --icon-stroke: var(--icon-s-stroke-width);
+  display: flex;
+  align-items: center;
+  color: var(--text-faint);
+}
+body:not(.is-mobile) .workspace-split.mod-left-split .workspace-sidedock-vault-profile .workspace-drawer-vault-actions {
+  display: var(--vault-profile-actions-display);
+  align-items: center;
+}
+
+/* 原版 app.css:6350-6359 | 侧栏隐藏标题与关闭按钮 */
+.workspace-fake-target-overlay.is-in-sidebar .workspace-tab-header-inner-title,
+.mod-left-split .workspace-tab-header-inner-title,
+.mod-right-split .workspace-tab-header-inner-title {
+  display: var(--sidebar-tab-text-display);
+}
+.workspace-fake-target-overlay.is-in-sidebar .workspace-tab-header-inner-close-button,
+.mod-left-split .workspace-tab-header-inner-close-button,
+.mod-right-split .workspace-tab-header-inner-close-button {
+  display: none;
+}
+
+/* 原版 app.css:6391-6437 | 侧栏图标标签与活动态 */
+/* Sidebar tabs */
+.mod-left-split .workspace-tab-header-container .workspace-tab-header-container-inner,
+.mod-right-split .workspace-tab-header-container .workspace-tab-header-container-inner {
+  padding: 1px 0 7px;
+  margin: 6px 0 0 0;
+  gap: 3px;
+}
+.mod-left-split .workspace-tab-header-container .workspace-tab-header,
+.mod-right-split .workspace-tab-header-container .workspace-tab-header {
+  box-shadow: none;
+  background-color: transparent;
+  padding: 0;
+  margin: 0;
+  border-radius: var(--radius-s);
+  corner-shape: var(--corner-shape);
+}
+.mod-left-split .workspace-tab-header-container .workspace-tab-header:before,
+.mod-right-split .workspace-tab-header-container .workspace-tab-header:before,
+.mod-left-split .workspace-tab-header-container .workspace-tab-header:after,
+.mod-right-split .workspace-tab-header-container .workspace-tab-header:after {
+  display: none;
+}
+.mod-left-split .workspace-tab-header-container .workspace-tab-header:active .workspace-tab-header-inner-icon,
+.mod-right-split .workspace-tab-header-container .workspace-tab-header:active .workspace-tab-header-inner-icon {
+  color: var(--icon-color-focused);
+}
+.mod-left-split .workspace-tab-header-container .workspace-tab-header.has-active-menu,
+.mod-right-split .workspace-tab-header-container .workspace-tab-header.has-active-menu,
+.mod-left-split .workspace-tab-header-container .workspace-tab-header.is-active,
+.mod-right-split .workspace-tab-header-container .workspace-tab-header.is-active {
+  background-color: var(--background-modifier-hover);
+}
+@media (hover: hover) {
+  .mod-left-split .workspace-tab-header-container .workspace-tab-header.has-active-menu:hover,
+  .mod-right-split .workspace-tab-header-container .workspace-tab-header.has-active-menu:hover,
+  .mod-left-split .workspace-tab-header-container .workspace-tab-header.is-active:hover,
+  .mod-right-split .workspace-tab-header-container .workspace-tab-header.is-active:hover {
+    background-color: var(--background-modifier-hover);
+  }
+}
+.mod-left-split .workspace-tab-header-container .workspace-tab-header.has-active-menu .workspace-tab-header-inner-icon,
+.mod-right-split .workspace-tab-header-container .workspace-tab-header.has-active-menu .workspace-tab-header-inner-icon,
+.mod-left-split .workspace-tab-header-container .workspace-tab-header.is-active .workspace-tab-header-inner-icon,
+.mod-right-split .workspace-tab-header-container .workspace-tab-header.is-active .workspace-tab-header-inner-icon {
+  opacity: var(--icon-opacity-active);
+  color: var(--icon-color-focused);
+}
+
+/* 原版 app.css:6591-6631 | 侧栏开关、图形宽度与 macOS 固定右开关 */
+.sidebar-toggle-button {
+  position: relative;
+  -webkit-app-region: inherit;
+  height: calc(var(--header-height) - 1px);
+  display: flex;
+  justify-content: center;
+  padding: var(--size-4-2) 0 7px 0;
+  -webkit-app-region: no-drag;
+  --icon-size: var(--icon-l);
+  --icon-stroke: var(--icon-l-stroke-width);
+}
+.sidebar-toggle-button .sidebar-toggle-icon-inner {
+  stroke: none;
+}
+.sidebar-toggle-button.mod-left .sidebar-toggle-icon-inner {
+  width: var(--sidebar-left-toggle-inner-width);
+}
+.workspace.is-left-sidedock-open .sidebar-toggle-button.mod-left .sidebar-toggle-icon-inner {
+  --sidebar-left-toggle-inner-width: var(--sidebar-left-toggle-inner-width-open);
+}
+.sidebar-toggle-button.mod-right .clickable-icon {
+  transform: scale(-1, 1);
+}
+.sidebar-toggle-button.mod-right .clickable-icon .sidebar-toggle-icon-inner {
+  width: var(--sidebar-right-toggle-inner-width);
+}
+.workspace.is-right-sidedock-open .sidebar-toggle-button.mod-right .clickable-icon .sidebar-toggle-icon-inner {
+  --sidebar-right-toggle-inner-width: var(--sidebar-right-toggle-inner-width-open);
+}
+/* Smoother animation for right sidebar button positioning during close */
+.mod-macos.is-hidden-frameless:not(.is-popout-window) .sidebar-toggle-button.mod-right {
+  background-color: var(--tab-container-background);
+  position: fixed;
+  top: 0;
+  right: 0;
+  padding-right: var(--size-4-2);
+  z-index: var(--layer-cover);
+}
+.mod-macos.is-hidden-frameless:not(.is-popout-window) .workspace .workspace-tabs.mod-top-right-space .workspace-tab-header-container {
+  padding-right: 38px;
+}
+
+/* 原版 app.css:7366-7376 | ribbon 与侧栏图标尺寸 */
+.clickable-icon.side-dock-ribbon-action .svg-icon,
+.mod-left-split .workspace-tab-header-inner-icon .svg-icon,
+.mod-right-split .workspace-tab-header-inner-icon .svg-icon {
+  --icon-size: var(--icon-l);
+  --icon-stroke: var(--icon-l-stroke-width);
+}
+.clickable-icon.side-dock-ribbon-action:active,
+.mod-left-split .workspace-tab-header-inner-icon:active,
+.mod-right-split .workspace-tab-header-inner-icon:active {
+  color: var(--icon-color-focused);
+}
+
+/* --------------------------------------------------------------------------
+ * 复刻适配：仅修正现有 base/layout 与原版的差异。
+ * 选择器须高于后加载的通用规则；禁止依赖导入先后碰运气。
+ * -------------------------------------------------------------------------- */
+
+/* layout 的 body.workspace 与窄窗规则会覆盖平台变量。
+ * 保留原版 80px 安全区；隐藏 ribbon 后由其零宽度参与计算。 */
+body.workspace.mod-macos {
+  --frame-left-space: calc(80px - var(--ribbon-width));
+  --frame-right-space: 0px;
+}
+body.workspace.mod-macos.is-popout-window {
+  --frame-left-space: 80px;
+}
+body.workspace.mod-windows,
+body.workspace.mod-linux {
+  --frame-left-space: 0px;
+  --frame-right-space: 126px;
+}
+body.workspace.is-hidden-frameless.is-fullscreen .workspace-tabs.mod-top-left-space > .workspace-tab-header-container {
+  padding-left: var(--size-4-2);
+}
+
+/* 原版 6629 的 .workspace 是 body 后代；复刻将它放在 body。
+ * 38px = 原版右开关 30px 加右侧 8px，避免图标被覆盖。 */
+body.workspace.mod-macos.is-hidden-frameless:not(.is-popout-window) .workspace-tabs.mod-top-right-space > .workspace-tab-header-container {
+  padding-right: 38px;
+}
+
+/* 原版 4402 的顶部填色不能被 layout 的 transparent 抹去。
+ * 折叠侧栏只换 ribbon 背景；隐藏 ribbon 仍由 show-ribbon 控制。 */
+body.workspace .workspace-ribbon.mod-left::before {
+  background-color: var(--titlebar-background);
+}
+body.workspace.show-ribbon .workspace-ribbon.mod-left.is-collapsed {
+  display: flex;
+}
+
+/* 原版 6086-6088：侧栏叶子始终使用 secondary。
+ * mod-root 只属于中心；活动叶子的通用 primary 不得泄漏到侧栏。 */
+.workspace-split.mod-sidedock .workspace-leaf,
+.workspace-split.mod-sidedock .view-content {
+  background-color: var(--background-secondary);
+}
+
+/* 原版 5895-5945 用边框绘制分隔线。
+ * 复刻手柄是同级 flex 节点，保留其布局与拖动命中区域。 */
+.workspace-root > .workspace-leaf-resize-handle,
+.workspace-split.mod-sidedock > .workspace-leaf-resize-handle {
+  background-color: var(--divider-color);
+  flex: 0 0 auto;
+}
+.workspace-root > .workspace-leaf-resize-handle:hover,
+.workspace-split.mod-sidedock > .workspace-leaf-resize-handle:hover,
+body.is-resizing .workspace-root > .workspace-leaf-resize-handle,
+body.is-resizing .workspace-split.mod-sidedock > .workspace-leaf-resize-handle {
+  background-color: var(--divider-color-hover);
+}
+
+/* 原版 6092-6112 的默认交叉轴为 stretch。
+ * 标签高度由 header 减去边框、margin 与 padding 决定。 */
+.workspace-split.mod-sidedock .workspace-tab-header-container,
+.workspace-split.mod-sidedock .workspace-tab-header-container-inner {
+  align-items: stretch;
+}
+
+/* 原版 6398-6406 没有文档标签边框或固定宽度。
+ * 原版 6216 两侧各 8px，加 18px 图标得到自然宽度 34px。 */
+.workspace-split.mod-sidedock .workspace-tab-header-container .workspace-tab-header {
+  border: 0;
+  flex: 0 0 auto;
+  width: auto;
+  max-width: none;
+}
+.workspace-split.mod-sidedock .workspace-tab-header-inner {
+  gap: var(--size-2-1);
+  height: 100%;
+  width: 100%;
+  padding: 0 8px;
+  border-radius: var(--tab-radius);
+  corner-shape: var(--corner-shape);
+  justify-content: center;
+}
+.workspace-split.mod-sidedock .workspace-tab-header-inner-icon {
+  flex: 0 0 auto;
+  display: flex;
+  color: var(--icon-color);
+  opacity: var(--icon-opacity);
+}
+
+/* 原版 6163-6167、6223-6228：悬停只点亮内层。
+ * 活动图标仍由上方原版高特异性规则着色。 */
+@media (hover: hover) {
+  .mod-sidedock .workspace-tab-header-container .workspace-tab-header:not(.is-active):hover .workspace-tab-header-inner {
+    background-color: var(--background-modifier-hover);
+  }
+  .mod-sidedock .workspace-tab-header-inner:hover .workspace-tab-header-inner-icon {
+    color: var(--icon-color-hover);
+    opacity: var(--icon-opacity-hover);
+  }
+}
+
+/* 原版 7336-7340 读取 --icon-size；base/layout 写死 icon-m/icon-s。
+ * 仅修复本模块图标：侧栏与开关 18px，仓库切换箭头 16px。 */
+.mod-sidedock .workspace-tab-header-inner-icon svg.svg-icon,
+.sidebar-toggle-button svg.svg-icon,
+.workspace-sidedock-vault-profile svg.svg-icon,
+.workspace-ribbon .side-dock-ribbon-action svg.svg-icon {
+  height: var(--icon-size);
+  width: var(--icon-size);
+  stroke-width: var(--icon-stroke);
+}
+
+/* 原版 7389：按钮内边距 4px 6px。
+ * 覆盖 base 的重复类选择器，不改动其他按钮基座。 */
+body.workspace .sidebar-toggle-button .clickable-icon,
+.workspace-sidedock-vault-profile .workspace-drawer-vault-actions .clickable-icon,
+.workspace-ribbon .clickable-icon.side-dock-ribbon-action {
+  -webkit-app-region: no-drag;
+  padding: var(--size-2-2) var(--size-2-3);
+}
+
+/* app.js 的 sidebar-toggle-button-icon 内矩形填 currentColor。
+ * base 的全局 rect 填充重置会抹去开关状态图形。 */
+.sidebar-toggle-button .sidebar-toggle-icon-inner {
+  fill: currentColor;
+}
+
+/* 开关不收缩；无 spacer 的侧栏 header 用余量将末尾开关推到右侧。
+ * 收起后的左开关位于中心 header 开头，不匹配末尾规则。 */
+body.workspace .workspace-tab-header-container > .sidebar-toggle-button {
+  flex: 0 0 auto;
+  align-self: stretch;
+}
+.workspace-split.mod-sidedock .workspace-tab-header-container > .sidebar-toggle-button:last-child {
+  margin-inline-start: auto;
+}
+
+/* 窄侧栏保留底部操作；库名只在剩余空间内省略。 */
+.workspace-sidedock-vault-profile .workspace-drawer-vault-switcher,
+.workspace-sidedock-vault-profile .workspace-drawer-vault-name {
+  min-width: 0;
+}
+.workspace-sidedock-vault-profile .workspace-drawer-vault-actions,
+.workspace-sidedock-vault-profile .workspace-drawer-vault-switcher-icon {
+  flex-shrink: 0;
+}
+.sidebar-profile-fallback {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}

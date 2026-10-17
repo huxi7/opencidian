@@ -1,3 +1,11 @@
+/**
+ * [INPUT]: SuggestModal 提供模糊建议；i18n 与 keymap 提供文案和快捷键显示。
+ *          宿主提供命令列表、命令分派与功能区。
+ * [OUTPUT]: 导出 nameKey、create(app)，注册命令面板命令与功能区入口。
+ * [POS]: 命令面板按可用性筛选并保留最近使用顺序。
+ *        功能区复用打开命令；重复加载不新增入口，卸载删除入口与命令。
+ * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
+ */
 /* Core plugin: command-palette — fuzzy command runner (Mod+P). */
 import { SuggestModal, fuzzyMatch, renderHighlightedText } from '../core/suggest.js';
 import { t } from '../core/i18n.js';
@@ -74,9 +82,25 @@ class CommandPaletteModal extends SuggestModal {
 }
 
 export function create(app) {
+  let ribbonEl = null;
   return {
     onload() {
+      if (ribbonEl) return;
       this.registerCommands(app);
+      ribbonEl = app.workspace.addRibbonItem(
+        'lucide-terminal',
+        t('plugins.command-palette.action-open') || 'Open command palette',
+        (ev) => app.commands.executeCommandById('command-palette:open', ev),
+      );
+      ribbonEl.setAttr('data-command-id', 'command-palette:open');
+    },
+    onunload() {
+      ribbonEl?.detach();
+      ribbonEl = null;
+      this.deregisterCommands();
+    },
+    deregisterCommands() {
+      app.commands.removeCommand('command-palette:open');
     },
     registerCommands(app) {
       app.commands.addCommand({

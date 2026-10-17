@@ -1,7 +1,7 @@
 /**
  * [INPUT]: 依赖 i18n、Menu 与 Notice；首参 workspace 提供叶子与分割操作。
  * [OUTPUT]: 导出新标签、标签菜单、拖拽绑定与落点判定函数。
- * [POS]: 将标签与叶子的 DOM 事件转为 Workspace 操作。
+ * [POS]: 仅中心文档标签响应关闭、拆分与拖拽。侧栏图标保持固定入口。
  * 不持有独立状态，不导入 Workspace；拖拽继续使用宿主的 _dragData。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
@@ -10,6 +10,7 @@ import { Menu } from './menu.js';
 import { Notice } from './notices.js';
 
 export function _onNewTab(workspace, tabs) {
+  if (workspace._sideOf(tabs) !== 'center') return null;
   const leaf = workspace.createLeafInTabGroup(tabs);
   leaf.setViewState({ type: 'empty' });
   workspace.setActiveLeaf(leaf, { focus: true });
@@ -17,6 +18,7 @@ export function _onNewTab(workspace, tabs) {
 }
 
 export function _showTabContextMenu(workspace, ev, leaf) {
+  if (!workspace.canCloseLeaf(leaf)) return;
   const menu = new Menu(workspace.app);
   const isPinned = leaf.pinned;
   menu.addItem((item) => item.setTitle(isPinned ? (t('interface.menu.unpin') || 'Unpin') : (t('interface.menu.pin') || 'Pin')).setIcon('pin').onClick(() => { leaf.pinned = !leaf.pinned; workspace._syncAllTabs(); }));
@@ -57,6 +59,7 @@ export function _showTabContextMenu(workspace, ev, leaf) {
 }
 
 export function _showTabListMenu(workspace, ev, tabs) {
+  if (workspace._sideOf(tabs) !== 'center') return;
   const menu = new Menu(workspace.app);
   for (const leaf of tabs.children) {
     const active = tabs.activeLeaf === leaf;
@@ -68,6 +71,7 @@ export function _showTabListMenu(workspace, ev, tabs) {
 }
 
 export function _setupTabDrag(workspace, header, leaf) {
+  if (!workspace.canCloseLeaf(leaf)) return;
   header.addEventListener('dragstart', (ev) => {
     if (leaf.pinned) { ev.preventDefault(); return; }
     workspace._dragData = { leaf };
@@ -141,6 +145,7 @@ export function _setupTabDrag(workspace, header, leaf) {
 export function _dragGhost(workspace, ev) {}
 
 export function _setupLeafDrop(workspace, el, leaf) {
+  if (!workspace.canCloseLeaf(leaf)) return;
   el.addEventListener('dragover', (ev) => {
     if (!workspace._dragData) return;
     if (workspace._dragData.leaf === leaf) return;

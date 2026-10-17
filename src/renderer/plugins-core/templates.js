@@ -1,7 +1,9 @@
 /**
  * [INPUT]: 依赖 core 的设置控件、建议弹窗、路径与属性解析；依赖 daily-notes 的变量替换及 js-yaml 的属性序列化。
- * [OUTPUT]: 导出模板命令、settingTab、parseNote、mergeProperties、joinNote。属性函数供 note-composer 复用。
+ *          宿主命令检查编辑器可用性；workspace 提供功能区入口。
+ * [OUTPUT]: 导出模板命令、settingTab、parseNote、mergeProperties、joinNote。注册模板功能区入口。
  * [POS]: 模板使用当前编辑器插入正文并合并属性。配置保存后同步实例；属性语法错误阻止修改，日期插入使用宿主 setSelection 定位。
+ *        属性函数供 note-composer 复用。功能区执行插入命令；启停对称释放入口、命令和设置监听。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 /* Core plugin: templates — insert template file contents at the cursor. */
@@ -106,9 +108,11 @@ class Templates {
     this.app = app;
     this.options = { ...DEFAULT_OPTIONS };
     this._commandIds = [];
+    this._ribbonEl = null;
   }
 
   onload() {
+    if (this._ribbonEl) return;
     this.options = this.app.settings.loadPluginData(DATA_FILE, DEFAULT_OPTIONS);
     this._settingsRef = this.app.settings.on('change', () => {
       Object.assign(this.options, this.app.settings.loadPluginData(DATA_FILE, DEFAULT_OPTIONS));
@@ -140,9 +144,17 @@ class Templates {
       icon: 'lucide-clock',
       editorCallback: (editor) => this.insertCurrentTime(editor),
     });
+    this._ribbonEl = this.app.workspace.addRibbonItem(
+      'lucide-files',
+      t('plugins.templates.action-insert') || 'Insert template',
+      (ev) => this.app.commands.executeCommandById('insert-template', ev),
+    );
+    this._ribbonEl.setAttr('data-command-id', 'insert-template');
   }
 
   onunload() {
+    this._ribbonEl?.detach();
+    this._ribbonEl = null;
     this._settingsRef?.unregister();
     this._settingsRef = null;
     this.deregisterCommands();

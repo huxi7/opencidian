@@ -130,7 +130,8 @@ async function harness(settings = {}) {
     },
   });
   const mocks = {
-    'i18n.js': { t: (key) => key },
+    'i18n.js': { t: (key) => key, tt: (key, fallback) => fallback },
+    'workspace-profile.js': { createVaultProfile: () => new ElementStub('workspace-sidedock-vault-profile') },
     'icons.js': { setIcon: (el, icon) => el.setAttr('data-icon', icon) },
     'notices.js': { Notice: class { constructor(text) { notices.push(text); } } },
     'menu.js': { Menu: MenuStub },
@@ -468,4 +469,44 @@ test('侧栏保留最近中心文件，文件视图包含画布', async () => {
   assert.equal(ws.getActiveFile(), file('A.md'));
   await ws.openFile(file('Board.canvas'));
   assert.equal(ws.getActiveFile(), file('Board.canvas'));
+});
+
+test('侧栏工具不提供关闭、新建、拖动菜单，文档标签保持原交互', async () => {
+  const { workspace: ws, api, app, leaf: documentLeaf } = await harness();
+  const tabs = new api.WorkspaceTabs(ws);
+  ws.leftSplit.insertChild(0, tabs);
+  const side = ws.createLeafInTabGroup(tabs);
+  await side.setViewState({ type: 'outline' });
+  ws.render();
+  assert.equal(ws.canCloseLeaf(side), false);
+  assert.equal(side._tabHeaderEl.getAttr('draggable'), 'false');
+  assert.equal(side._tabHeaderEl.querySelector('.workspace-tab-header-inner-close-button'), null);
+  assert.equal(tabs._headersOuter.querySelector('.workspace-tab-header-new-tab'), null);
+  assert.equal(ws._onNewTab(tabs), null);
+  await side._tabHeaderEl.emit('auxclick', { button: 1 });
+  assert.ok(ws._leafMap.has(side.id));
+  ws._showTabContextMenu({}, side);
+  assert.equal(app.menu, undefined);
+  assert.ok(documentLeaf._tabHeaderEl.querySelector('.workspace-tab-header-inner-close-button'));
+  assert.equal(ws.canCloseLeaf(documentLeaf), true);
+});
+
+test('侧栏有焦点时新文档仍在中心，底部库栏经过重绘保持同一节点', async () => {
+  const { workspace: ws, api, file } = await harness();
+  const tabs = new api.WorkspaceTabs(ws);
+  ws.leftSplit.insertChild(0, tabs);
+  const side = ws.createLeafInTabGroup(tabs);
+  await side.setViewState({ type: 'outline' });
+  ws.render();
+  const profile = ws.vaultProfileEl;
+  ws.setActiveLeaf(side);
+  const next = ws.getLeaf('tab');
+  assert.equal(ws._sideOf(next), 'center');
+  const opened = await ws.openFile(file('A.md'), { newLeaf: true });
+  assert.equal(ws._sideOf(opened), 'center');
+  ws.hideSidebar('left');
+  assert.equal(ws.vaultProfileEl, profile);
+  ws.showSidebar('left');
+  assert.equal(ws.vaultProfileEl, profile);
+  assert.equal(profile.parentElement, ws.leftSplit.containerEl);
 });

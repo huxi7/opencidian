@@ -6,7 +6,9 @@
 
 成员清单
 RESULTS.md: 本轮结果、证据目录与复跑方式。
-run.mjs: 创建独立库、启动 Electron、收集截图与严格判定。
+run.mjs: 创建独立库、启动 Electron 与严格日志判定。--no-screenshot 跳过截图。
+core-ribbon.js: 插件入口启停、普通/Mod 点击、键盘、设置开关与重启同步。
+sidebar-shell.js: 固定侧栏、底部设置与切库、旧布局恢复和窄栏验收。
 basic-plugins.js: 搜索、文件树、切换器、命令、标签、字数。
 bookmarks.js: 分组、重命名、打开与保存。
 canvas.js: 画布输入、连线、缩放与重开。

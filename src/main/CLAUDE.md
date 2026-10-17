@@ -7,6 +7,8 @@ Electron 主进程。按运行入口与开发验收分离：窗口生命周期�
 成员清单
 main.js: 应用主进程装配。要点：`DATA_DIR=userData` 保存 vault 注册表(obsidian.json)；`APP_ORIGIN=app://obsidian.md/` 服务 src/renderer 与 dist/；`FILE_ORIGIN=app://<16hex>/` 流式读取任意 vault 文件(支持 Range)；`openVaultPath()` 打开/新建 vault；`windows[id]` 映射 vault 窗口；`frameWindowOptions()` 按 obsidian.json 的 frame 键选 hidden/custom/native 边框；disable-gpu 读写(启动时 app.disableHardwareAcceleration)；locale ipc(app.getLocale)；env 钩子 `OBS_VAULT_PATH`(直开 vault)/`OBS_SCREENSHOT`(截图自检)/`OBS_ACT`(调试动作：open/open-settings/exec/eval)。
 
-dev-hooks.js: OBS_* 门控的动作、DOM探针与截图。依赖主进程传入窗口。
+dev-hooks.js: OBS_* 门控的动作、DOM探针与截图。只向 OBS_VAULT_PATH 对应窗口注入验收，切库窗口不重放动作。
+
+原生 macOS 菜单保留 Settings 入口，直接分派 app:open-settings。
 
 [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md

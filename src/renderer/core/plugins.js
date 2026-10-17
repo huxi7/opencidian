@@ -1,3 +1,9 @@
+/**
+ * [INPUT]: 核心插件注册表、设置与工作区；兼容插件宿主接口。
+ * [OUTPUT]: 插件启停与命令、视图注册。
+ * [POS]: 插件启停后同步固定侧栏入口。首次启动由布局恢复统一装配。
+ * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
+ */
 /*
  * Plugin system — hosts internal ("core") plugins and loads community plugins
  * from <vault>/.obsidian/plugins/* with an `obsidian` module shim so that
@@ -149,6 +155,7 @@ export class PluginManager {
       if (instance.onload) await instance.onload();
       entry.enabled = true;
       this.app.settings.setCorePluginEnabled(id, true);
+      if (this.app.workspace._sidebarReady) await this.app.workspace.reconcileSidebars();
       this.app.workspace.trigger('layout-change');
       return true;
     } catch (e) {
@@ -171,6 +178,7 @@ export class PluginManager {
       entry.instance = null;
       entry.enabled = false;
       this.app.settings.setCorePluginEnabled(id, false);
+      if (this.app.workspace._sidebarReady) await this.app.workspace.reconcileSidebars();
       this.app.workspace.trigger('layout-change');
       return true;
     } catch (e) {

@@ -1,14 +1,17 @@
 /**
- * [INPUT]: 依赖 ../views/canvas-view.js 的 CanvasView；依赖 ../core/i18n.js 的 t
- * [OUTPUT]: 导出 nameKey 与 create(app)。注册 'canvas' 视图类型（扩展名 .canvas）与命令 canvas:new-file、canvas:jump-to-group。
+ * [INPUT]: CanvasView 提供画布视图；i18n 提供文案；keymap.IS_MAC 决定 Mod 键。
+ *          宿主提供视图注册、文件创建、命令与功能区。
+ * [OUTPUT]: 导出 nameKey 与 create(app)。注册 canvas 视图、两个画布命令与新建功能区入口。
  * [POS]: plugins-core/ 的画布插件入口。视图本体在 views/canvas-view.js（类链 CanvasViewport → CanvasInteractions → CanvasView）。
  *        命令命名对齐原版：canvas:new-file 在默认新文件位置建空画布并打开；canvas:jump-to-group 只在当前叶子是画布且有分组时可用。
+ *        功能区复用新建逻辑；Mod 点击新标签并聚焦。重复加载不新增入口，卸载释放入口、命令与视图注册。
  *        不做原版的 canvas:export-as-image 与 canvas:convert-to-file。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 /* Core plugin: canvas — view registration + commands. */
 import { CanvasView } from '../views/canvas-view.js';
 import { t } from '../core/i18n.js';
+import { IS_MAC } from '../core/keymap.js';
 
 export const nameKey = 'plugins.canvas';
 
@@ -19,17 +22,28 @@ class CanvasPlugin {
   constructor(app) {
     this.app = app;
     this._commandIds = [];
+    this._ribbonEl = null;
   }
 
   onload() {
+    if (this._ribbonEl) return;
     this.app.viewRegistry.registerView('canvas', (leaf) => new CanvasView(leaf));
     const creator = this.app.viewRegistry.getViewCreator('canvas');
     if (creator) creator.extensions = ['canvas'];
     this.registerCommands();
+    this._ribbonEl = this.app.workspace.addRibbonItem(
+      'lucide-layout-dashboard',
+      t('plugins.canvas.command-create-new-canvas') || 'Create new canvas',
+      (ev) => this.createNewCanvas(!!(IS_MAC ? ev?.metaKey : ev?.ctrlKey)),
+    );
+    this._ribbonEl.setAttr('data-command-id', 'canvas:new-file');
   }
 
   onunload() {
+    this._ribbonEl?.detach();
+    this._ribbonEl = null;
     this.deregisterCommands();
+    this.app.viewRegistry.unregisterView('canvas');
   }
 
   registerCommands() {
@@ -65,12 +79,14 @@ class CanvasPlugin {
     return this.app.workspace.getActiveViewOfType('canvas');
   }
 
-  /** canvas:new-file：在默认新文件位置建空画布并打开。 */
-  async createNewCanvas() {
+  /** 新建命令与功能区共用；功能区可指定新标签并聚焦。 */
+  async createNewCanvas(newLeaf = false) {
     const activeFile = this.app.workspace.getActiveFile();
     const folder = this.app.fileManager.getNewFileParent(activeFile ? activeFile.path : null);
     const file = await this.app.fileManager.createNewFile(folder, 'Untitled.canvas', EMPTY_CANVAS);
-    if (file) await this.app.workspace.openFile(file);
+    if (!file) return;
+    const leaf = await this.app.workspace.openFile(file, { newLeaf: newLeaf ? 'tab' : false });
+    if (newLeaf && leaf) this.app.workspace.setActiveLeaf(leaf, { focus: true });
   }
 }
 

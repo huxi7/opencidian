@@ -1,7 +1,7 @@
 /**
  * [INPUT]: Vault、Settings、MetadataCache、Workspace、命令、插件与桌面 IPC。
  * [OUTPUT]: 导出 App，装配启动、外观、事件与布局保存。
- * [POS]: 应用组合根。新建和修改文件均触发元数据解析。
+ * [POS]: 应用组合根。新建和修改进入元数据解析，启动修复固定侧栏入口。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 /*
@@ -276,7 +276,9 @@ export class App extends Events {
     }
     if (!loaded) {
       await this._defaultLayout();
+      await this.workspace.reconcileSidebars();
     }
+    this.workspace._sidebarReady = true;
     this.workspace.updateTitle();
     this.workspace.on('active-leaf-change', () => this.workspace.updateTitle());
     this.workspace.on('file-open', () => this.workspace.updateTitle());

@@ -1,7 +1,7 @@
 /**
  * [INPUT]: 依赖 electron 的 app/BrowserWindow/ipcMain/protocol/shell/dialog；Node 内置 fs/path
  * [OUTPUT]: 主进程全部 IPC handler（vault 注册表、文件读写、窗口控制、回收站）、app:// 协议、devScreenshotHook（OBS_* 环境变量门控的调试钩子）
- * [POS]: 应用主进程入口。vault 注册表存于 userData/obsidian.json；渲染进程经 preload/ipc.js 调用此处 handler。dev-hooks.js 承接 OBS_* 调试与验收。
+ * [POS]: 应用主进程入口。vault 注册表存于 userData/obsidian.json；渲染进程经 preload/ipc.js 调用此处 handler。原生菜单保留设置入口。dev-hooks 只在指定测试库窗口执行。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 /*
@@ -229,6 +229,11 @@ function buildAppMenu(FocusedWindowGetter) {
           },
         },
         { type: 'separator' },
+        { label: 'Settings…', accelerator: 'CommandOrControl+,', click: (item, win) => {
+          const target = win instanceof BrowserWindow ? win : BrowserWindow.getFocusedWindow();
+          if (target) target.webContents.executeJavaScript(executeCommandJS('app:open-settings'));
+        } },
+        { type: 'separator' },
         { role: 'services' },
         { type: 'separator' },
         { label: 'Hide Obsidian Copy', click: () => app.hide(), accelerator: 'Cmd+H' },
@@ -452,7 +457,9 @@ function openVaultWindow(id, focus = true) {
   win.loadURL(indexUrl).then(show, show);
   const entry = VAULTS[id];
   if (entry) { entry.open = true; entry.ts = Date.now(); saveConfig(); }
-  devScreenshotHook(win, id);
+  if (!process.env.OBS_VAULT_PATH || path.resolve(VAULTS[id].path) === path.resolve(process.env.OBS_VAULT_PATH)) {
+    devScreenshotHook(win, id);
+  }
   return win;
 }
 

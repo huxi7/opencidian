@@ -1,6 +1,6 @@
 /**
  * [INPUT]: Node 文件与进程 API、Electron、场景名称和可选既有测试库。
- * [OUTPUT]: 独立临时库、截图、日志和成功或失败退出码。
+ * [OUTPUT]: 独立临时库、日志与退出码；--no-screenshot 跳过截图。
  * [POS]: 桌面验收运行器。只打开带验收标记的临时库，不自行构建。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
@@ -37,7 +37,7 @@ if (scenario === 'recovery' && !selected) {
   fs.writeFileSync(path.join(vault, '.obsidian/file-recovery.json'), '{"intervalSeconds":0,"keepDays":7}');
 }
 const output = fs.mkdtempSync(path.join(base, scenario + '-' + phase + '-result-'));
-const screenshot = path.join(output, 'screen.png');
+const screenshot = arguments_.includes('--no-screenshot') ? null : path.join(output, 'screen.png');
 const logfile = path.join(output, 'run.log');
 const env = { ...process.env };
 for (const key of Object.keys(env)) if (key.startsWith('OBS_')) delete env[key];
@@ -47,7 +47,7 @@ const guard = `if (require('fs').realpathSync(app.vaultPath) !== ${JSON.stringif
 Object.assign(env, {
   OBS_ALLOW_MULTI: '1', OBS_VAULT_PATH: vault,
   OBS_ACT: JSON.stringify({ action: 'eval', js: guard + '\n' + source }),
-  OBS_SCREENSHOT: screenshot, OBS_SCREENSHOT_DELAY: '2500', OBS_SCREENSHOT_EXIT: '1',
+  OBS_SCREENSHOT: screenshot || '', OBS_SCREENSHOT_DELAY: '2500', OBS_SCREENSHOT_EXIT: '1',
   OBS_RECOVERY_PHASE: phase, OBS_NOTES_STAGE: phase,
   OBS_NOTES_SETTINGS: option('--tab', 'templates'),
   OBS_GRAPH_SCREEN: option('--screen', 'global'),
@@ -70,7 +70,7 @@ const receipt = log.split('\n').find(line => line.startsWith('[dev] eval: '));
 const failure = /\[dev\] act failed|\[error\]|\[unhandledrejection\]|uncaught|TypeError:|ReferenceError:|setState failed|View failed to load/i.test(log);
 let result;
 try { result = JSON.parse(receipt?.slice('[dev] eval: '.length)); } catch { result = null; }
-const passed = code === 0 && !failure && fs.existsSync(screenshot) &&
+const passed = code === 0 && !failure && (!screenshot || fs.existsSync(screenshot)) &&
   (result?.pass === true || result?.passed === true || result?.passed > 0 || result?.ok === true || result?.status === 'PASS');
 console.log(JSON.stringify({ passed, checks: result?.count || result?.checks?.length || result?.assertions?.length || result?.passed, logfile, screenshot, vault }));
 if (!passed) { console.error(log.slice(-6000)); process.exitCode = 1; }
