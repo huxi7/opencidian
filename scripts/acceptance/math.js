@@ -11,7 +11,7 @@ const f=await app.vault.create('Math-complete-'+Date.now()+'.md',text);await app
 for(let i=0;i<150&&(!v.readingEl.querySelector('mjx-container')||v.readingEl.querySelectorAll('.math-error').length<2);i++)await delay(100);
 ok(window.MathJax.version==='3.2.2','runtime version');ok(v.readingEl.querySelectorAll('.math-block mjx-container').length===2,'aligned and matrix');ok(v.readingEl.querySelectorAll('.math-error').length===2,'malformed and unknown extension isolated');ok(!v.readingEl.querySelector('a[href^="javascript:"]'),'unsafe link removed');ok(v.readingEl.querySelectorAll('mjx-container').length>=5,'valid formulas survive errors');
 await document.fonts.ready;ok([...document.fonts].some(f=>f.family.includes('MJX')&&f.status==='loaded'),'local math fonts loaded');
-const scripts=[...document.scripts].filter(s=>s.src.includes('mathjax/'));ok(scripts.every(s=>s.src.startsWith('app://obsidian.md/assets/mathjax/')),'offline assets only');
+const scripts=[...document.scripts].filter(s=>s.src.includes('mathjax/'));ok(scripts.every(s=>s.src.startsWith('app://opensidian.app/assets/mathjax/')),'offline assets only');
 await v.setState({file:f.path,mode:'live'});v.editor.setSelection(text.length);await delay(400);ok(v.editor.cm.dom.querySelector('.math-block mjx-container'),'live CHTML');
 await v.setState({file:f.path,mode:'preview'});await delay(200);return {pass:true,version:window.MathJax.version,formulas:v.readingEl.querySelectorAll('mjx-container').length,errors:2,fonts:true,offline:true,file:f.path};
 })()

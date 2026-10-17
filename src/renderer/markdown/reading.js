@@ -108,12 +108,13 @@ function installWikilinks(md) {
     const src = state.src;
     let embed = false;
     let pos = start;
-    if (src[pos] === '!' && src[pos + 1] === '[' && src[pos + 2] === '[') { embed = true; pos += 1; }
+    if (src[pos] === '!' && src[pos + 1] === '[' && src[pos + 2] === '[') { embed = true; pos += 3; }
     else if (src[pos] === '[' && src[pos + 1] === '[') { pos += 2; }
     else return false;
-    const end = src.indexOf(']]', pos + 2);
+    // pos 已越过 "[[" 或 "![["；此前误写为 pos+2，导致所有 wiki 链接被切掉前两个字符
+    const end = src.indexOf(']]', pos);
     if (end < 0) return false;
-    const inner = src.slice(pos + 2, end);
+    const inner = src.slice(pos, end);
     if (inner.includes('[') || inner.includes(']') || inner.includes('\n')) return false;
     if (silent) return true;
     const token = state.push(embed ? 'wikilink_embed' : 'wikilink', '', 0);

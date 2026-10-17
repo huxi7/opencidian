@@ -23,6 +23,7 @@ markdown-properties.css: 属性、标签与内容补充规则。
 markdown-highlight.css: 阅读、实时预览与源码共用原版 token 色彩。
 search.css: 搜索面板、backlinks、outline、tag pane 的专属样式。树基础结构来自 tree.css。
 graph.css: 原版图谱颜色探针、筛选控件与折叠面板规则。
+popover.css: page-preview 的 .popover/.hover-popover 尺寸与内容规则（逐字移植 app.css）。
 settings.css: 设置页签完整样式，逐字移植原版 app.css 设置段(vertical-tab 导航/内容、setting-item、mod-toggle、设置组头、hotkey 胶囊、CSS 片段列表、installed-plugins-container、community 免责行 .setting-icon 与 .community-modal-button-container、.mod-trust-folder 宽度)。
 canvas.css: 画布样式入口。按序导入节点规则与连接线规则。
 canvas-nodes.css: 原版画布布局、节点、分组与手柄规则。

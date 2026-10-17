@@ -1,0 +1,42 @@
+/*
+ * [INPUT]: 依赖 styles 的 tokens/base/markdown 样式层；页面预览 popover 专用规则。
+ * [OUTPUT]: .popover / .popover.hover-popover 及其内容尺寸规则（逐字移植 app.css）。
+ * [POS]: styles/ 的悬浮预览样式。由 views/markdown 视图的链接悬停触发，只服务 page-preview 插件。
+ * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
+ */
+/* Hover popover (page preview) — ported from the original app.css. */
+.popover {
+  display: flex;
+  position: absolute;
+  z-index: var(--layer-popover);
+  background-color: var(--background-primary);
+  border: var(--border-width) solid var(--background-modifier-border);
+  box-shadow: var(--shadow-s);
+  border-radius: var(--radius-m);
+  max-height: var(--popover-max-height);
+}
+.popover.hover-popover {
+  --callout-blend-mode: normal;
+  justify-content: stretch;
+  overflow: hidden;
+  max-width: 80vw;
+  max-height: inherit;
+  min-height: 30px;
+  width: fit-content;
+}
+.popover.hover-popover > * {
+  width: var(--popover-width);
+}
+.popover.hover-popover .markdown-preview-view {
+  font-size: var(--popover-font-size);
+  overflow-y: auto;
+  padding: var(--size-4-3) var(--size-4-4);
+}
+.popover.hover-popover > .mod-empty {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 20px;
+  font-size: var(--popover-font-size);
+  color: var(--text-muted);
+}

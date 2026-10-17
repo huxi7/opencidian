@@ -12,7 +12,8 @@ backlink.js: 反链分节、上下文与筛选。折叠跨重绘保留；关闭�
 outline.js: 按标题层级建立大纲。跳级归最近父标题，同名标题按行号跳转，关闭释放资源。
 tag-pane.js: 标签面板视图(type tag)。标签树/排序/嵌套开关。
 global-search.js: 全局搜索视图(type search)。关键词/正则/大小写、结果分组与跳转。
-editor-status.js: 状态栏编辑模式显示与切换(Reading/Source/Live Preview)。
+editor-status.js: 状态栏视图状态图标与切换菜单(Reading/Source/Live Preview，tooltip，mod-clickable)。
+page-preview.js: 内部链接悬停预览 popover。四类来源(editor/preview/search/tab-header)可配 Mod 门控，未解析链接空态，设置写 page-preview.json。
 word-count.js: 状态栏字数统计(中英混排规则)，点击弹详情。
 canvas.js: 注册画布视图、三个命令与新建功能区按钮。canvas:new-file 建空画布；canvas:jump-to-group 仅在画布含分组时可用；canvas:convert-to-file 仅在单选文本卡片时可用。Mod 点击新标签并聚焦，禁用撤销按钮与注册。
 bookmarks.js: 持久化文件、目录、搜索与分组书签。目录改名同步子路径。
