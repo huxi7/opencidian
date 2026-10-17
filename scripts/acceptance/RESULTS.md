@@ -118,3 +118,5 @@ MathJax 独立适配器子代理的41项基础/故障测试见 assets/mathjax/SO
 - 本批新增/更新场景：core-views（出链 + 属性视图 + Unlinked mentions）、settings-plugins（52）、appearance（+功能区配置）、canvas（+导出/参考线）、graph（+色组拖拽/悬停预览/力参数）、page-preview、community、settings-ui。
 - 运行前提：`npm run build`；Electron 场景一律 `--no-screenshot`；多代理并发时用 `sh scripts/with-lock.sh` 串行构建与验收。
 - 已知未完成项见 AGENT-STATE.md §16（画布 CM6 卡片编辑/空间索引、音频录制、macOS 分发、LICENSE、像素级视觉验收等）。
+- 重启/持久化阶段：recovery restart 45 项、community restart 3 项、settings-restart 通过（`/tmp/obs-copy-acceptance/recovery-restart-result-0D4oDX`、`community-restart-result-ahCzgN`、`settings-restart-result-kXSnfA`）。
+- 工作区内存回归：`node --experimental-vm-modules src/renderer/core/workspace-regression.js` 19 组通过。
