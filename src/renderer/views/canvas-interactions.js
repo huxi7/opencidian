@@ -80,9 +80,29 @@ export class CanvasInteractions extends CanvasViewport {
       this.deleteSelection();
       return;
     }
-    if ((e.metaKey || e.ctrlKey) && (e.key === 'a' || e.key === 'A')) {
+    // 焦点在输入控件内时不抢按键（原版 scope 的 isEditable 判定）
+    const target = e.target;
+    if (target instanceof Element && target.closest('input, textarea, [contenteditable="true"]')) return;
+    const mod = e.metaKey || e.ctrlKey;
+    if (mod && !e.altKey && (e.key === 'z' || e.key === 'Z')) {
+      e.preventDefault();
+      if (e.shiftKey) this.redo(); else this.undo();
+      return;
+    }
+    if (mod && !e.altKey && (e.key === 'y' || e.key === 'Y')) {
+      e.preventDefault();
+      this.redo();
+      return;
+    }
+    if (mod && (e.key === 'a' || e.key === 'A')) {
       e.preventDefault();
       this.selectAll();
+      return;
+    }
+    // Shift+1 总览全局 / Shift+2 聚焦当前卡片（原版 scope 用物理键位）
+    if (e.shiftKey && !mod && !e.altKey && (e.code === 'Digit1' || e.code === 'Digit2')) {
+      e.preventDefault();
+      if (e.code === 'Digit1') this.zoomToFit(); else this.zoomToSelection();
     }
   }
 

@@ -1,15 +1,17 @@
 /**
  * [INPUT]: CanvasView 提供画布视图；i18n 提供文案；keymap.IS_MAC 决定 Mod 键。
  *          宿主提供视图注册、文件创建、命令与功能区。
- * [OUTPUT]: 导出 nameKey 与 create(app)。注册 canvas 视图、两个画布命令与新建功能区入口。
+ * [OUTPUT]: 导出 nameKey 与 create(app)。注册 canvas 视图、三个画布命令与新建功能区入口。
  * [POS]: plugins-core/ 的画布插件入口。视图本体在 views/canvas-view.js（类链 CanvasViewport → CanvasInteractions → CanvasView）。
- *        命令命名对齐原版：canvas:new-file 在默认新文件位置建空画布并打开；canvas:jump-to-group 只在当前叶子是画布且有分组时可用。
+ *        命令命名对齐原版：canvas:new-file 在默认新文件位置建空画布并打开；canvas:jump-to-group 只在当前叶子是画布且有分组时可用；
+ *        canvas:convert-to-file 只在单选文本卡片时可用（建 md 后关联边改指文件节点）。
  *        功能区复用新建逻辑；Mod 点击新标签并聚焦。重复加载不新增入口，卸载释放入口、命令与视图注册。
- *        不做原版的 canvas:export-as-image 与 canvas:convert-to-file。
+ *        不做原版的 canvas:export-as-image。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 /* Core plugin: canvas — view registration + commands. */
 import { CanvasView } from '../views/canvas-view.js';
+import { CanvasTextNode } from '../views/canvas-node.js';
 import { t } from '../core/i18n.js';
 import { IS_MAC } from '../core/keymap.js';
 
@@ -65,6 +67,19 @@ class CanvasPlugin {
         const view = this.getActiveCanvasView();
         if (!view || !view.getGroupNodes().length) return false;
         if (!checking) view.openJumpToGroup();
+        return true;
+      },
+    });
+    add({
+      id: 'canvas:convert-to-file',
+      name: t('plugins.canvas.command-convert-to-file') || 'Convert to file...',
+      icon: 'lucide-file-input',
+      checkCallback: (checking) => {
+        const view = this.getActiveCanvasView();
+        if (!view || view.selection.size !== 1) return false;
+        const node = view.selection.values().next().value;
+        if (!(node instanceof CanvasTextNode)) return false;
+        if (!checking) node.convertToFile();
         return true;
       },
     });

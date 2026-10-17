@@ -272,6 +272,17 @@
 }
 .modal.mod-sidebar-layout .modal-content { display: flex; }
 .modal.mod-sync-history .modal-content { height: 100%; }
+.mod-file-rename .rename-textarea {
+  overflow: hidden;
+  padding: var(--size-2-3) var(--size-4-2);
+  resize: none;
+  width: 100%;
+}
+.mod-file-rename .rename-error {
+  color: var(--text-error);
+  font-size: var(--font-ui-small);
+  margin-top: var(--size-4-1);
+}
 .modal.mod-settings { background-color: var(--settings-background, var(--modal-background)); }
 .modal.mod-settings .modal-content { margin-top: 0; overflow: hidden; padding: 0; }
 .modal-sidebar { width: var(--modal-community-sidebar-width, 280px); flex: 0 0 auto; background-color: var(--background-secondary); overflow-y: auto; }

@@ -30,16 +30,30 @@ export class Events {
 export function debounce(fn, timeout = 300, resetTimer = false) {
   let timer = null;
   let lastArgs = null;
-  return function (...args) {
+  let lastThis = null;
+  const debounced = function (...args) {
     lastArgs = args;
+    lastThis = this;
     if (resetTimer || timer === null) {
       if (timer !== null) clearTimeout(timer);
       timer = setTimeout(() => {
         timer = null;
-        fn.apply(this, lastArgs);
+        fn.apply(lastThis, lastArgs);
       }, timeout);
     }
   };
+  // 立即执行挂起的调用（对齐原版 yc.run）
+  debounced.run = function () {
+    if (timer === null) return undefined;
+    clearTimeout(timer);
+    timer = null;
+    return fn.apply(lastThis, lastArgs);
+  };
+  // 丢弃挂起的调用（对齐原版 yc.cancel）
+  debounced.cancel = function () {
+    if (timer !== null) { clearTimeout(timer); timer = null; }
+  };
+  return debounced;
 }
 
 export function sleep(ms) { return new Promise((r) => setTimeout(r, ms)); }

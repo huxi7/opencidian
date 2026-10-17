@@ -268,3 +268,20 @@ node --experimental-vm-modules src/renderer/core/workspace-regression.js
 - 验收：recovery exercise 82 项、restart 43 项通过（新增迁移/设置页/复制/差异/Canvas 断言）；canvas 场景通过；日志 0 未捕获异常。
   - 证据：`/tmp/obs-copy-acceptance/recovery-exercise-result-VbjGga`、`recovery-restart-result-zTxmps`、`canvas-run-result-n4hJop`（均为 `--no-screenshot`）。
 - 未覆盖（不声称 1:1）：IndexedDB 存储、CLI `history:*` 命令、`onExternalSettingsChange`、supportsIndexedDb 回退文案、diff 的 jsdiff 语义清理（本实现为 LCS+前后缀裁剪）。
+
+## 12. 画布撤销/重做与转换为文件（2026-10-17，主 agent 接续）
+
+- 原版事实（`app.js` 定位）：
+  - 撤销栈 `a5`：有界快照栈 max=100；`requestPushHistory = debounce(pushHistory, 250, resetTimer)`；`requestSave(save=true)` 取 getData() 后推进历史；undo/redo 应用快照并只触发视图写盘（不产生新条目）；`clear()` 清历史（装载/卸载路径）；`overrideHistory()` 用当前数据替换当前条目（加载期几何修正用）。
+  - 初次装载/切换文件：`setViewData(text, initial)` 中 `initial && view.clear()` → canvas.clear()（清内容+历史+视口+readonly）；外部修改重载：不 clear，`setData` → importData(prune) + pushHistory。
+  - `importData(data, prune)`：按 id 复用节点/边，prune 时删除数据中已不存在的项；不整表重建。
+  - 键盘 scope：Mod+Z 撤销、Mod+Shift+Z / Mod+Y 重做、Mod+A 全选、Shift+1 总览、Shift+2 聚焦卡片；焦点在输入控件时不响应（`C$(targetNode)`）。
+  - 控件组：撤销/重做组（lucide-undo-2 / lucide-redo-2，tooltip `setting.mobile-toolbar.option-undo/redo`，`is-disabled` 随历史变化）。
+  - 转换为文件：命令 `canvas:convert-to-file`（仅单选文本卡片）；文本卡片菜单追加「编辑」「转换为笔记…」；命名弹窗 `aI/sI`（标题 `dialogue.label-rename-file-generic`、`textarea.rename-textarea`、保存/取消、Enter 提交、校验：非法字符 `\ / :` → 点开头 → 链接不安全 `# ^ [ ] |`）；流程 = 建 md（内容为卡片文本）→ 文件节点继承几何 → 关联边改指新节点 → 移除文本节点 → 选中新节点 → requestSave。
+- 本实现：
+  - `views/canvas-history.js`（CanvasHistory 100）；canvas-view 接入 `requestSave(saveHistory)` / undo / redo / applyHistory / pushHistory / overrideHistory / updateHistoryUI；`importData` 改差分式 prune；初次装载 clear、外部重载保留历史与视口。
+  - `canvas-interactions.onKeydown` 增加 scope 快捷键（含可编辑目标判定）。
+  - `core/events.js` debounce 增加 `run/cancel`（对齐 `yc`）；`core/modals.js` 新增 `FileNameModal`；canvas-node 文本卡片菜单 + `convertToFile`；`plugins-core/canvas.js` 新增 `canvas:convert-to-file` 命令。
+  - 修复历史遗留：`CanvasFileNode.mountContent/render` 未判空 `contentEl`，正常缩放下新建文件节点即崩溃（「库添加笔记」路径此前未覆盖）；拆出 `views/canvas-file-node.js` 守住 800 行（canvas-node.js 811→702）。
+- 验收：canvas 场景通过（新增断言：历史初始 is-disabled、动作后 undo 可用、Mod+Z 撤销节点、撤销落盘、Mod+Shift+Z 重做、按钮撤销/重做、转换命令可用性、弹窗默认 Untitled、非法名拦截、建文件/内容/几何/边改指、撤销恢复文本卡、重做再应用）；日志 0 未捕获异常。证据 `/tmp/obs-copy-acceptance/canvas-run-result-lpAd6p`。
+- 未覆盖：图片导出（`canvas:export-as-image`）、方向键微移（nudgeSelection）、快速设置菜单（对齐网格/对齐物体入口）、CM6 卡片编辑（仍 textarea）。

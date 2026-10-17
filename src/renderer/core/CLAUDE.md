@@ -6,7 +6,7 @@
 
 成员清单
 dom.js: Element/Document 原型的 createEl/setText/addClass 等助手(安装即生效)，并导出 createEl/createDiv/createSpan。
-events.js: Events 基类(on/off/once/trigger/offref) + debounce/sleep。
+events.js: Events 基类(on/off/once/trigger/offref) + debounce(带 run/cancel)/sleep。
 i18n.js: setLanguage/detectLanguage(systemLocale)/t(带 {{var}} 与 _plural 处理)/tt(key,fallback,vars)(设置界面兜底)/getNouns(连字符 key)。
 icons.js: resolveIcon/createIcon/setIcon/getIconData/iconExists/getIconIds/addIcon/removeIcon。解析链逐字复刻原版 Zm()：lucide- 前缀 → 运行时图标 → 36 个自有图标(assets/icons-obsidian.json) → 152 条别名映射(assets/icon-aliases.json) → 1874 个 Lucide 图标(assets/icons.json)。
 ipc.js: ipcSync/ipcSend/ipcInvoke/ipcOn + Desktop 门面(与主进程通道一一对应)。
@@ -20,7 +20,7 @@ keymap.js: Keymap/HotkeyManager/hotkeyToString/eventToHotkey/IS_MAC。按键归�
 default-hotkeys.js: 30 条原版默认快捷键(id → hotkeys)。
 commands.js: CommandManager 注册与分派命令。执行检查回调传 false，编辑器回调带活动视图。
 notices.js: Notice 右下角 toast。
-modals.js: 可复开的 Modal 基座与确认、输入弹窗。确认先结算结果，关闭取消待处理输入。
+modals.js: 可复开的 Modal 基座与确认、输入弹窗。确认先结算结果，关闭取消待处理输入。FileNameModal：重命名式文件名弹窗（保存/取消、Enter 提交、非法字符校验），画布转换为文件使用。
 menu.js: Menu/MenuItem。上下文菜单、子菜单、键盘导航。
 suggest.js: 文件与命令建议。输入位于结果前，选择结果与取消关闭分开结算。
 view.js: View 基类(load/onOpen/onClose/getState/setState/_rootEl 契约) + ViewRegistry。

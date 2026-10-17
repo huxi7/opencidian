@@ -14,7 +14,7 @@ tag-pane.js: 标签面板视图(type tag)。标签树/排序/嵌套开关。
 global-search.js: 全局搜索视图(type search)。关键词/正则/大小写、结果分组与跳转。
 editor-status.js: 状态栏编辑模式显示与切换(Reading/Source/Live Preview)。
 word-count.js: 状态栏字数统计(中英混排规则)，点击弹详情。
-canvas.js: 注册画布视图、命令与新建功能区按钮。Mod 点击新标签并聚焦，禁用撤销按钮与注册。
+canvas.js: 注册画布视图、三个命令与新建功能区按钮。canvas:new-file 建空画布；canvas:jump-to-group 仅在画布含分组时可用；canvas:convert-to-file 仅在单选文本卡片时可用。Mod 点击新标签并聚焦，禁用撤销按钮与注册。
 bookmarks.js: 持久化文件、目录、搜索与分组书签。目录改名同步子路径。
 daily-notes.js: 串行创建日期笔记与嵌套目录。模板变量及 createMarkdownNote 供其余笔记插件复用。
 templates.js: 模板功能区执行已有插入命令。展开变量、合并属性；属性函数供重组复用。

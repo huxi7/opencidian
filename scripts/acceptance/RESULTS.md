@@ -57,3 +57,10 @@ MathJax 独立适配器子代理的41项基础/故障测试见 assets/mathjax/SO
 - 日志：两场景 0 未捕获异常；开发版 CSP 提示仍存在。
 - 证据：`/tmp/obs-copy-acceptance/recovery-exercise-result-VbjGga`、`recovery-restart-result-zTxmps`、`canvas-run-result-n4hJop`（均无截图）。
 - 存储仍为按天 JSON（未迁移 IndexedDB）；快照范围含 canvas/base；间隔单位为分钟。行为差异与未覆盖项见 AGENT-STATE.md §11。
+
+## 画布撤销/重做与转换为文件（2026-10-17，主 agent 接续）
+
+- canvas：`--no-screenshot` 通过。新增断言：历史初始 `is-disabled`、动作后撤销可用、Mod+Z 撤销节点并落盘、Mod+Shift+Z 重做、按钮撤销/重做、`canvas:convert-to-file` 可用性、命名弹窗默认 Untitled、非法名拦截、建 md/内容/几何继承/关联边改指、撤销恢复文本卡、重做再应用。
+- 修复：文件卡片在正常缩放下创建即崩溃（`contentEl` 未初始化时无保护访问）；拆出 `views/canvas-file-node.js`。
+- 日志 0 未捕获异常；证据 `/tmp/obs-copy-acceptance/canvas-run-result-lpAd6p`。
+- 未覆盖：图片导出、方向键微移、快速设置菜单。见 AGENT-STATE.md §12。

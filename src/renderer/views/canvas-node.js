@@ -1,9 +1,10 @@
 /**
  * [INPUT]: 依赖 ./canvas-utils.js 的 genId/bboxOf/nearestSide/applyCanvasColor；依赖 ../core/i18n.js 的 t；依赖 ../core/icons.js 的 setIcon；依赖 ../core/menu.js 的 Menu；依赖 ../core/notices.js 的 Notice；依赖 ../core/ipc.js 的 Desktop；依赖 ../markdown/reading.js 的 renderMarkdown
- * [OUTPUT]: 导出 CanvasNode（基类）、CanvasTextNode、CanvasFileNode、CanvasLinkNode、CanvasGroupNode
+ * [OUTPUT]: 导出 CanvasNode（基类）、CanvasContentNode、CanvasTextNode、CanvasLinkNode、CanvasGroupNode、CanvasDummyNode；CanvasFileNode 见 canvas-file-node.js
  * [POS]: views/ 画布三件套的节点层。DOM 对齐原版：nodeEl(.canvas-node) > containerEl(.canvas-node-container) > contentEl(.canvas-node-content)
  *        + contentBlockerEl + placeholderEl；resizer（data-resize）与连接点（data-side）挂在 nodeEl 上（原版在 interaction layer，本复刻就近放置，靠 CSS 控制显隐）。
  *        可读缩放与编辑态挂载正文；输入逐次请求防抖保存。几何与事件写回由 canvas-view 统一调度。
+ *        文本卡片菜单含编辑与转换为文件（FileNameModal → fileManager.createNewMarkdownFile → 文件节点继承几何）。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 /* Canvas nodes — mirrors the original E5 / M5 / P5 / D5 / I5 / F5 classes. */
@@ -12,11 +13,12 @@ import { t } from '../core/i18n.js';
 import { setIcon } from '../core/icons.js';
 import { Menu } from '../core/menu.js';
 import { Desktop } from '../core/ipc.js';
+import { Notice } from '../core/notices.js';
+import { FileNameModal } from '../core/modals.js';
 import { renderMarkdown } from '../markdown/reading.js';
 
 const RESIZE_SIDES = ['top', 'right', 'bottom', 'left', 'topright', 'bottomright', 'bottomleft', 'topleft'];
 const CONNECT_SIDES = ['top', 'right', 'bottom', 'left'];
-const IMAGE_EXTENSIONS = ['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'bmp', 'avif'];
 
 export class CanvasNode {
   constructor(canvas, id) {
@@ -510,112 +512,42 @@ export class CanvasTextNode extends CanvasContentNode {
       this.canvas.markDirty(this);
     }
   }
-}
 
-/* --------------------------------------------------------------------------
- * 文件卡片 — md 渲染预览，图片显示图片，其余显示占位
- * ------------------------------------------------------------------------ */
-export class CanvasFileNode extends CanvasContentNode {
-  constructor(canvas, id) {
-    super(canvas, id);
-    this.filePath = '';
-    this.subpath = '';
-    this.file = null;
-    this._renderToken = 0;
+  /** 文本卡片菜单追加编辑与转换为文件（原版 P5.showMenu）。 */
+  showMenu(menu) {
+    super.showMenu(menu);
+    const canvas = this.canvas;
+    if (canvas.readonly) return;
+    menu.addItem((item) => item.setSection('canvas').setTitle(t('interface.menu.edit')).setIcon('lucide-edit')
+      .onClick(() => this.startEditing()));
+    menu.addItem((item) => item.setSection('canvas').setTitle(t('plugins.canvas.action-convert-to-file')).setIcon('lucide-file-input')
+      .onClick(() => this.convertToFile()));
   }
 
-  initialize() {
-    super.initialize();
-    this.initializeEditing();
-  }
-
-  setFilePath(filePath, subpath) {
-    const nextSub = subpath || '';
-    if (this.filePath === filePath && this.subpath === nextSub) return;
-    this.filePath = filePath;
-    this.subpath = nextSub;
-    const file = this.app.vault.getAbstractFileByPath(filePath);
-    this.file = file && file.extension !== undefined ? file : null;
-    this.placeholderText = this.file ? this.file.basename : filePath;
-    this.renderPlaceholder();
-    this.renderFile();
-    this.canvas.markDirty(this);
-  }
-
-  setFile(file, subpath) {
-    if (file) this.setFilePath(file.path, subpath);
-  }
-
-  renderFile() {
-    const token = ++this._renderToken;
-    if (!this.contentEl) return;
-    this.contentEl.empty();
-    this.contentEl.className = 'canvas-node-content';
-    const file = this.file;
-    if (!file) {
-      this.renderFilePlaceholder('lucide-file-question', this.filePath || t('plugins.canvas.label-no-section-found'));
-      return;
-    }
-    const ext = file.extension ? file.extension.toLowerCase() : '';
-    if (ext === 'md' || ext === 'canvas') {
-      this.contentEl.addClass('markdown-embed');
-      this.embedContent = this.contentEl.createDiv('markdown-embed-content');
-      this.previewEl = this.embedContent.createDiv('markdown-preview-view markdown-rendered');
-      this.previewSizerEl = this.previewEl.createDiv('markdown-preview-sizer');
-      this.app.vault.cachedRead(file)
-        .then((text) => renderMarkdown(this.app, text, this.previewSizerEl, file.path))
-        .then(() => { if (token !== this._renderToken) return; })
-        .catch((e) => console.error('canvas file render failed', e));
-      return;
-    }
-    if (IMAGE_EXTENSIONS.includes(ext)) {
-      this.contentEl.addClass('media-embed');
-      const img = this.contentEl.createEl('img');
-      img.src = this.app.vault.getResourcePath(file);
-      img.addEventListener('error', () => {
-        if (token !== this._renderToken) return;
-        this.contentEl.empty();
-        this.contentEl.className = 'canvas-node-content';
-        this.renderFilePlaceholder('lucide-image', file.basename);
-      });
-      return;
-    }
-    this.renderFilePlaceholder('lucide-file', file.basename);
-  }
-
-  renderFilePlaceholder(icon, text) {
-    this.contentEl.addClass('canvas-file-placeholder');
-    const iconEl = this.contentEl.createDiv('canvas-icon-placeholder');
-    setIcon(iconEl, icon);
-    this.contentEl.createDiv({ cls: 'canvas-file-name', text });
-  }
-
-  /** 双击打开文件（对齐原版：md 打开链接，图片/其他交给系统）。 */
-  startEditing() { this.openFile(); }
-
-  openFile() {
-    if (!this.filePath) return;
-    this.app.workspace.openLinkText(this.filePath + (this.subpath ? '#' + this.subpath : ''), '', false);
-  }
-
-  mountContent() {
-    super.mountContent();
-    if (!this.contentEl.childElementCount) this.renderFile();
-  }
-
-  render() {
-    super.render();
-    if (!this.initialized) return;
-    if (!this.contentEl.childElementCount) this.renderFile();
-  }
-
-  getData() {
-    return { ...super.getData(), type: 'file', file: this.file ? this.file.path : this.filePath, subpath: this.subpath || undefined };
-  }
-
-  setData(data) {
-    super.setData(data);
-    if (data.file) this.setFilePath(data.file, data.subpath || '');
+  /** 转换为文件：命名弹窗 → 建 md（正文为卡片文本）→ 文件节点继承几何 → 关联边改指新节点 → 移除文本节点。 */
+  convertToFile() {
+    const canvas = this.canvas;
+    const sourcePath = canvas.file ? canvas.file.path : '';
+    const text = this.text;
+    const modal = new FileNameModal(canvas.app, 'Untitled', async (name) => {
+      const parent = canvas.app.fileManager.getNewFileParent(sourcePath, name);
+      let file;
+      try {
+        file = await canvas.app.fileManager.createNewMarkdownFile(parent, name, text);
+      } catch (e) {
+        new Notice(String(e && e.message ? e.message : e));
+        return;
+      }
+      const node = canvas.createFileNode({ pos: this, size: this, file, save: false, focus: false });
+      for (const edge of canvas.getEdgesForNode(this)) {
+        if (edge.from.node === this) edge.update({ ...edge.from, node }, edge.to);
+        if (edge.to.node === this) edge.update(edge.from, { ...edge.to, node });
+      }
+      canvas.removeNode(this);
+      canvas.selectOnly(node);
+      canvas.requestSave();
+    });
+    modal.open();
   }
 }
 
@@ -768,4 +700,4 @@ export class CanvasDummyNode extends CanvasNode {
   }
 }
 
-export { RESIZE_SIDES, CONNECT_SIDES, IMAGE_EXTENSIONS };
+export { RESIZE_SIDES, CONNECT_SIDES };

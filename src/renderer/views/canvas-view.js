@@ -10,15 +10,18 @@
  */
 /* Canvas view — DOM assembly + scheduling on top of the viewport and interaction layers. */
 import { CanvasInteractions } from './canvas-interactions.js';
+import { CanvasHistory } from './canvas-history.js';
 import { t } from '../core/i18n.js';
 import { setIcon } from '../core/icons.js';
 import { Notice } from '../core/notices.js';
+import { debounce } from '../core/events.js';
 import {
   genId, boxesIntersect, containsBox, expandBBox, nearestSide, rectFromPos, distanceToBox, rectOf, MultiMap,
 } from './canvas-utils.js';
 import {
-  CanvasNode, CanvasTextNode, CanvasFileNode, CanvasLinkNode, CanvasGroupNode, CanvasDummyNode,
+  CanvasNode, CanvasTextNode, CanvasLinkNode, CanvasGroupNode, CanvasDummyNode,
 } from './canvas-node.js';
+import { CanvasFileNode } from './canvas-file-node.js';
 import { CanvasEdge } from './canvas-edge.js';
 import { FileSuggestModal, LinkSuggestModal, JumpToGroupModal } from './canvas-menu.js';
 
@@ -66,6 +69,10 @@ export class CanvasView extends CanvasInteractions {
     this._savedText = null;
     this._writing = false;
     this._modifyRef = null;
+    this.history = new CanvasHistory(100);
+    this.requestPushHistory = debounce((data) => this.pushHistory(data), 250, true);
+    this.undoBtnEl = null;
+    this.redoBtnEl = null;
     this.onGlobalKeydown = (e) => this._globalKeydown(e);
     this.onGlobalKeyup = (e) => this._globalKeyup(e);
   }
@@ -131,6 +138,8 @@ export class CanvasView extends CanvasInteractions {
     this.edges.clear();
     this.selection.clear();
     this.data = {};
+    this.history.clear();
+    this.requestPushHistory.cancel();
     this.setViewport(0, 0, 0);
   }
 
@@ -200,10 +209,21 @@ export class CanvasView extends CanvasInteractions {
       setIcon(el, icon);
       el.addEventListener('click', onClick);
     };
-    addButton('lucide-plus', t('plugins.canvas.label-zoom'), () => this.zoomBy(this.config.zoomMultiplier));
-    addButton('lucide-rotate-cw', t('plugins.canvas.action-zoom-to-fit'), () => this.zoomBy(-this.zoom));
+    addButton('lucide-plus', t('commands.zoom-in'), () => this.zoomBy(this.config.zoomMultiplier));
+    addButton('lucide-rotate-cw', t('commands.reset-zoom'), () => this.zoomBy(-this.zoom));
     addButton('lucide-maximize', t('plugins.canvas.action-zoom-to-fit'), () => this.zoomToFit());
-    addButton('lucide-minus', t('plugins.canvas.label-zoom'), () => this.zoomBy(-this.config.zoomMultiplier));
+    addButton('lucide-minus', t('commands.zoom-out'), () => this.zoomBy(-this.config.zoomMultiplier));
+    // 撤销/重做组（原版第三组控件）
+    const historyGroup = controls.createDiv('canvas-control-group mod-raised');
+    const addHistoryButton = (icon, title, onClick) => {
+      const el = historyGroup.createDiv({ cls: 'canvas-control-item', attr: { 'aria-label': title } });
+      setIcon(el, icon);
+      el.addEventListener('click', onClick);
+      return el;
+    };
+    this.undoBtnEl = addHistoryButton('lucide-undo-2', t('setting.mobile-toolbar.option-undo'), () => this.undo());
+    this.redoBtnEl = addHistoryButton('lucide-redo-2', t('setting.mobile-toolbar.option-redo'), () => this.redo());
+    this.updateHistoryUI();
     // 让 controls 与 card menu 一样浮在节点之上
     this.canvasControlsEl.style.zIndex = String(this.getZIndex() + 1);
   }
@@ -239,13 +259,14 @@ export class CanvasView extends CanvasInteractions {
     if (!data || Object.keys(data).length === 0) { this.createPlaceholder(); return; }
     this.importData(data, true);
     this.data = data;
+    this.pushHistory(data);
   }
 
-  /** 原版 importData：按 id 复用节点，重建边。clear=true 时先清空。 */
-  importData(data, clear) {
-    if (clear) this.clear();
+  /** 原版 importData：按 id 复用节点与边；prune=true 时移除数据中已不存在的项（不清历史/视口）。 */
+  importData(data, prune) {
     const nodes = Array.isArray(data.nodes) ? data.nodes : [];
     const edges = Array.isArray(data.edges) ? data.edges : [];
+    const keptNodes = new Set();
     for (const nodeData of nodes) {
       if (!nodeData || !nodeData.id) continue;
       let node = this.nodes.get(nodeData.id);
@@ -261,12 +282,23 @@ export class CanvasView extends CanvasInteractions {
       node.setData(nodeData);
       node.attach();
       node.render();
+      keptNodes.add(node);
     }
+    if (prune) {
+      for (const node of Array.from(this.nodes.values())) {
+        if (!keptNodes.has(node)) this.removeNode(node);
+      }
+    }
+    const keptEdges = new Set();
     for (const edgeData of edges) {
       if (!edgeData || !edgeData.id || !edgeData.fromNode || !edgeData.toNode) continue;
       const from = this.nodes.get(edgeData.fromNode);
       const to = this.nodes.get(edgeData.toNode);
-      if (!from || !to) continue;
+      if (!from || !to) {
+        const stale = this.edges.get(edgeData.id);
+        if (stale) this.removeEdge(stale);
+        continue;
+      }
       let edge = this.edges.get(edgeData.id);
       if (!edge) {
         edge = new CanvasEdge(this, edgeData.id, {
@@ -283,6 +315,12 @@ export class CanvasView extends CanvasInteractions {
       edge.setData(edgeData);
       edge.attach();
       edge.render();
+      keptEdges.add(edge);
+    }
+    if (prune) {
+      for (const edge of Array.from(this.edges.values())) {
+        if (!keptEdges.has(edge)) this.removeEdge(edge);
+      }
     }
     if (!this.nodes.size) this.createPlaceholder();
   }
@@ -539,10 +577,48 @@ export class CanvasView extends CanvasInteractions {
 
   /* ---------------------------------------------------------------- 存取 */
 
-  requestSave() {
+  requestSave(saveHistory = true) {
     this.data = this.getData();
+    if (saveHistory) this.requestPushHistory(this.data);
     if (this._saveTimer) clearTimeout(this._saveTimer);
     this._saveTimer = window.setTimeout(() => { this._saveTimer = null; this.save(); }, SAVE_DELAY);
+  }
+
+  /* ------------------------------------------------------------ 撤销/重做 */
+
+  undo() {
+    if (this.history.canUndo()) this.applyHistory(this.history.undo());
+  }
+
+  redo() {
+    if (this.history.canRedo()) this.applyHistory(this.history.redo());
+  }
+
+  /** 应用历史快照：重建节点后写盘，不推进历史（原版 applyHistory）。 */
+  applyHistory(entry) {
+    this.importData(entry, true);
+    this.data = entry;
+    this.requestSave(false);
+    this.updateHistoryUI();
+  }
+
+  pushHistory(entry) {
+    this.history.push(entry);
+    this.updateHistoryUI();
+  }
+
+  /** 替换当前历史条目为最新数据（原版 overrideHistory，供加载期几何修正使用）。 */
+  overrideHistory() {
+    this.requestPushHistory.run();
+    this.data = this.getData();
+    this.history.replace(this.data);
+    this.updateHistoryUI();
+    this.requestSave(false);
+  }
+
+  updateHistoryUI() {
+    if (this.undoBtnEl) this.undoBtnEl.toggleClass('is-disabled', !this.history.canUndo());
+    if (this.redoBtnEl) this.redoBtnEl.toggleClass('is-disabled', !this.history.canRedo());
   }
 
   async save() {
@@ -598,7 +674,7 @@ export class CanvasView extends CanvasInteractions {
     }).catch((e) => console.error('canvas external reload failed', e));
   }
 
-  /** 读取磁盘内容并重建节点/边；keepViewport 为真时保留当前缩放与位移。 */
+  /** 读取磁盘内容并重建节点/边；keepViewport 为真表示外部重载：保留视口与撤销历史。 */
   async _applyFileFromDisk(path, opts) {
     const keepViewport = !!(opts && opts.keepViewport);
     const file = this.app.vault.getFileByPath(path) || this.app.vault.getAbstractFileByPath(path);
@@ -614,11 +690,11 @@ export class CanvasView extends CanvasInteractions {
     if (text && text.trim()) {
       try { data = JSON.parse(text); } catch (e) { new Notice(t('plugins.canvas.msg-export-failed-empty-canvas') || 'Invalid canvas file'); }
     }
-    const viewport = { x: this.x, y: this.y, zoom: this.zoom };
-    this.clear();
+    // 初次装载/切换文件：清空内容与历史（原版 setViewData 初次装载走 view.clear）；
+    // 外部重载：按 id 差量更新，保留视口与撤销历史（原版 setData → importData(prune)）。
+    if (!keepViewport) this.clear();
     if (data) this.setData(data);
-    else this.createPlaceholder();
-    if (keepViewport) this.setViewport(viewport.x, viewport.y, viewport.zoom);
+    else { this.createPlaceholder(); this.requestFrame(); }
     this._savedText = JSON.stringify(this.getData(), null, '\t');
     if (!keepViewport) this.zoomToFitQueued = true;
     this.onResize();
