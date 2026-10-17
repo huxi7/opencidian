@@ -10,6 +10,8 @@ import { SettingGroup, SettingTab } from '../core/setting.js';
 import { Notice } from '../core/notices.js';
 import { Modal } from '../core/modals.js';
 import { Desktop } from '../core/ipc.js';
+import { setIcon } from '../core/icons.js';
+import { AbstractInputSuggest } from '../core/suggest.js';
 
 const fs = require('fs');
 const nodePath = require('path');
@@ -47,7 +49,15 @@ export class AppearanceTab extends SettingTab {
       if (!fs.existsSync(dir)) return [];
       return fs.readdirSync(dir, { withFileTypes: true })
         .filter((entry) => entry.isDirectory())
-        .map((entry) => entry.name);
+        .map((entry) => {
+          // 原版：旧主题目录只有 obsidian.css（没有 theme.css）→ 下拉显示 "name (Legacy)"
+          let legacy = false;
+          try {
+            const themeDir = nodePath.join(dir, entry.name);
+            legacy = fs.existsSync(nodePath.join(themeDir, 'obsidian.css')) && !fs.existsSync(nodePath.join(themeDir, 'theme.css'));
+          } catch (e) {}
+          return { name: entry.name, legacy };
+        });
     } catch (e) {
       return [];
     }
@@ -86,7 +96,7 @@ export class AppearanceTab extends SettingTab {
         if (!appearance.accentColor) b.extraSettingsEl.setAttr('aria-disabled', 'true');
       });
       s.addColorPicker((cp) => cp
-        .setValue(appearance.accentColor || '#7f6df2')
+        .setValue(appearance.accentColor || computedAccentHex())
         .onChange((v) => {
           update({ accentColor: v });
           this.display();
@@ -103,7 +113,9 @@ export class AppearanceTab extends SettingTab {
         .onClick(() => this.openFolder(nodePath.join(app.settings.dir, 'themes'))))
       .addDropdown((d) => {
         d.addOption('', tt('setting.appearance.label-default-theme', '默认'));
-        for (const theme of themes) d.addOption(theme, theme);
+        for (const theme of themes) {
+          d.addOption(theme.name, theme.legacy ? theme.name + ' (Legacy)' : theme.name);
+        }
         d.setValue(appearance.cssTheme || '');
         d.onChange((v) => update({ cssTheme: v }));
       }));
@@ -134,13 +146,26 @@ export class AppearanceTab extends SettingTab {
         s.setName(name);
         s.descEl.empty();
         s.descEl.appendText(desc);
+        const warnIfMissing = (host, font) => {
+          if (fontExists(font)) return;
+          const warn = host.createSpan({ cls: 'mod-warning' });
+          setIcon(warn.createSpan('font-missing-icon'), 'lucide-alert-circle');
+          warn.setAttr('aria-label', tt('setting.appearance.msg-font-not-found', '未找到 {{font}} 字体', { font }));
+          warn.setAttr('data-tooltip-classes', 'mod-error');
+          warn.createSpan({ text: ' ' + font });
+        };
         if (current.length === 1) {
           s.descEl.createSpan({ text: tt('setting.appearance.label-single-font-currently-in-effect', '当前使用的字体是：') });
-          s.descEl.createSpan({ cls: 'u-pop', text: current[0] });
+          if (fontExists(current[0])) s.descEl.createSpan({ cls: 'u-pop', text: current[0] });
+          else warnIfMissing(s.descEl, current[0]);
         } else if (current.length > 1) {
           s.descEl.createSpan({ text: tt('setting.appearance.label-multiple-fonts-currently-in-effect', '当前使用的字体是：') });
           const ul = s.descEl.createEl('ul');
-          for (const font of current) ul.createEl('li', { text: font });
+          for (const font of current) {
+            const li = ul.createEl('li');
+            if (fontExists(font)) li.setText(font);
+            else warnIfMissing(li, font);
+          }
         }
         s.addButton((b) => b
           .setButtonText(tt('setting.appearance.option-theme-button-manage', '管理'))
@@ -310,17 +335,45 @@ class FontManagerModal extends Modal {
     const container = this.contentEl;
     container.empty();
     const listEl = container.createDiv('font-manager-list');
-    for (const font of this.fonts) {
-      listEl.createDiv('mobile-option-setting-item', (row) => {
-        row.createSpan({ cls: 'mobile-option-setting-item-name', text: font });
-        row.createDiv('clickable-icon mobile-option-setting-item-option-icon', (btn) => {
-          btn.addEventListener('click', () => {
-            this.fonts = this.fonts.filter((x) => x !== font);
-            this.display();
-          });
-        });
+    this.fonts.forEach((font, index) => {
+      const exists = fontExists(font);
+      const row = listEl.createDiv('mobile-option-setting-item font-manager-item');
+      row.setAttr('draggable', 'true');
+      const handle = row.createDiv('clickable-icon font-manager-drag-handle');
+      setIcon(handle, 'lucide-menu');
+      row.createSpan({ cls: 'mobile-option-setting-item-name', text: font });
+      const indicator = row.createDiv('font-manager-item-indicator ' + (exists ? 'mod-success' : 'mod-warning'));
+      setIcon(indicator, exists ? 'lucide-check-circle-2' : 'lucide-alert-circle');
+      if (!exists) {
+        indicator.setAttr('aria-label', tt('setting.appearance.msg-font-not-found', '未找到 {{font}} 字体', { font }));
+        indicator.setAttr('data-tooltip-classes', 'mod-error');
+      }
+      const btn = row.createDiv('clickable-icon mobile-option-setting-item-option-icon');
+      setIcon(btn, 'lucide-x');
+      btn.addEventListener('click', () => {
+        this.fonts = this.fonts.filter((x) => x !== font);
+        this.display();
       });
-    }
+      // 原版：lucide-menu 手柄拖拽重排
+      row.ondragstart = (ev) => {
+        this._dragIndex = index;
+        row.addClass('is-being-dragged');
+        try { ev.dataTransfer.setData('text/plain', font); } catch (e) {}
+      };
+      row.ondragend = () => { row.removeClass('is-being-dragged'); };
+      row.ondragover = (ev) => { if (this._dragIndex == null) return; ev.preventDefault(); row.addClass('is-drop-target'); };
+      row.ondragleave = () => row.removeClass('is-drop-target');
+      row.ondrop = (ev) => {
+        ev.preventDefault();
+        row.removeClass('is-drop-target');
+        const from = this._dragIndex;
+        this._dragIndex = null;
+        if (from == null || from === index) return;
+        const [moved] = this.fonts.splice(from, 1);
+        this.fonts.splice(index, 0, moved);
+        this.display();
+      };
+    });
     if (!this.fonts.length) {
       container.createEl('p', { text: tt('setting.appearance.label-no-custom-font-set', '当前未指定自定义字体。请在下方添加一个。') });
     }
@@ -331,6 +384,7 @@ class FontManagerModal extends Modal {
       attr: { placeholder: tt('setting.appearance.option-font-placeholder', '请输入字体名称…') },
     });
     input.style.flex = '1';
+    new FontSuggest(this.app, input);
     const add = () => {
       const value = input.value.trim();
       if (!value) return;
@@ -349,5 +403,82 @@ class FontManagerModal extends Modal {
       this.close();
       this.onDone && this.onDone();
     });
+  }
+}
+
+/* ------------------------------------------------------------------ helpers */
+
+/**
+ * 字体是否存在（原版字体检测的等价实现）。
+ * Chromium 的 document.fonts.check 对未知族也返回 true，这里用“与回退字体测量宽度对比”判定：
+ * 未知字体在所有回退族下的宽度都与回退一致；已安装/已加载字体至少一个回退下的宽度不同。
+ */
+const fontExistsCache = new Map();
+function fontExists(font) {
+  try {
+    if (!font) return false;
+    const family = String(font).split(',')[0].trim().replace(/^['"]|['"]$/g, '');
+    if (!family) return false;
+    if (fontExistsCache.has(family)) return fontExistsCache.get(family);
+    const probe = document.createElement('span');
+    probe.textContent = 'mmmmmmmmmmlli';
+    probe.style.cssText = 'position:absolute;left:-9999px;top:-9999px;font-size:72px;white-space:nowrap;visibility:hidden;';
+    document.body.appendChild(probe);
+    let exists = false;
+    try {
+      for (const fallback of ['monospace', 'sans-serif', 'serif']) {
+        probe.style.fontFamily = fallback;
+        const baseWidth = probe.offsetWidth;
+        probe.style.fontFamily = '"' + family.replace(/"/g, '') + '",' + fallback;
+        if (probe.offsetWidth !== baseWidth) { exists = true; break; }
+      }
+    } finally {
+      probe.remove();
+    }
+    fontExistsCache.set(family, exists);
+    return exists;
+  } catch (e) {}
+  return true;
+}
+
+/** 原版 getAccentColor 的等价：读取未被自定义值覆盖的 --accent-h/s/l 并转 hex。 */
+function computedAccentHex() {
+  try {
+    const styles = getComputedStyle(document.body);
+    const h = parseFloat(styles.getPropertyValue('--accent-h'));
+    const s = parseFloat(styles.getPropertyValue('--accent-s'));
+    const l = parseFloat(styles.getPropertyValue('--accent-l'));
+    if ([h, s, l].every((v) => Number.isFinite(v))) return hslToHex(h, s, l);
+  } catch (e) {}
+  return '#7f6df2';
+}
+
+function hslToHex(h, s, l) {
+  const sat = s / 100;
+  const light = l / 100;
+  const k = (n) => (n + h / 30) % 12;
+  const a = sat * Math.min(light, 1 - light);
+  const f = (n) => light - a * Math.max(-1, Math.min(k(n) - 3, Math.min(9 - k(n), 1)));
+  const to = (x) => Math.round(255 * x).toString(16).padStart(2, '0');
+  return '#' + to(f(0)) + to(f(8)) + to(f(4));
+}
+
+/** 字体名建议：已加载字体 + 常见字体族。 */
+class FontSuggest extends AbstractInputSuggest {
+  getSuggestions(query) {
+    const q = String(query || '').toLowerCase();
+    const common = ['Inter', 'Arial', 'Helvetica', 'Times New Roman', 'Courier New', 'Georgia',
+      'Menlo', 'Monaco', 'JetBrains Mono', 'Fira Code', 'Source Code Pro',
+      'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', 'SimSun', 'Noto Sans', 'Roboto'];
+    const loaded = [];
+    try { if (document.fonts) for (const face of document.fonts) loaded.push(String(face.family).replace(/^"|"$/g, '')); } catch (e) {}
+    const all = [...new Set([...loaded, ...common])];
+    return all.filter((name) => !q || name.toLowerCase().includes(q)).slice(0, 30);
+  }
+  renderSuggestion(value, el) { el.setText(value); }
+  selectSuggestion(value) {
+    this.inputEl.value = value;
+    this.inputEl.dispatchEvent(new Event('input', { bubbles: true }));
+    this.close();
   }
 }

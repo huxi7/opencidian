@@ -164,12 +164,17 @@ export class App extends Events {
     const isDark = theme !== 'moonstone';
     document.body.toggleClass('theme-dark', isDark);
     document.body.toggleClass('theme-light', !isDark);
-    // accent color
-    const accent = appearance.accentColor || '#7f6df2';
-    const hsl = hexToHsl(accent);
-    document.body.style.setProperty('--accent-h', hsl.h);
-    document.body.style.setProperty('--accent-s', hsl.s + '%');
-    document.body.style.setProperty('--accent-l', hsl.l + '%');
+    // accent color：未自定义时移除内联覆盖，让主题默认的 --accent-* 生效（原版 getAccentColor 语义）
+    if (appearance.accentColor) {
+      const hsl = hexToHsl(appearance.accentColor);
+      document.body.style.setProperty('--accent-h', hsl.h);
+      document.body.style.setProperty('--accent-s', hsl.s + '%');
+      document.body.style.setProperty('--accent-l', hsl.l + '%');
+    } else {
+      document.body.style.removeProperty('--accent-h');
+      document.body.style.removeProperty('--accent-s');
+      document.body.style.removeProperty('--accent-l');
+    }
     // fonts
     if (appearance.interfaceFontFamily) document.body.style.setProperty('--font-interface-override', appearance.interfaceFontFamily);
     else document.body.style.removeProperty('--font-interface-override');

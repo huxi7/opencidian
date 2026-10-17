@@ -10,6 +10,8 @@ run.mjs: 创建独立库、启动 Electron 与严格日志判定。--no-screensh
 core-ribbon.js: 插件入口启停、普通/Mod 点击、键盘、设置开关与重启同步。
 sidebar-shell.js: 固定侧栏、底部设置与切库、旧布局恢复和窄栏验收；标签列表/固定标签/状态栏双段/拖拽幽灵/空标签。
 page-preview.js: 悬停预览：阅读模式 popover、未解析空态、Escape 关闭、编辑模式 Mod 门控。
+settings-ui.js: 设置页 UI：拼写词典/语言行、默认编辑模式同步、路径建议、忽略文件弹窗、重建缓存按钮、启动时间弹窗。
+appearance.js: 外观页：主题 (Legacy)、字体管理弹窗（指示/图标/拖拽/持久化）、主题色恢复默认。
 basic-plugins.js: 搜索、文件树、切换器、命令、标签、字数。
 bookmarks.js: 分组、重命名、打开与保存。
 canvas.js: 画布输入、连线、缩放、重开，撤销/重做（键盘+按钮+落盘）与文本卡片转换为文件（校验、几何继承、边改指、撤销恢复）。

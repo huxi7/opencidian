@@ -824,3 +824,15 @@ select.mod-hidden {
   margin-top: var(--size-4-2);
   align-items: center;
 }
+
+/* -------------------------------------------------- font manager (Vee) */
+.font-manager-item { align-items: center; gap: var(--size-2-3); }
+.font-manager-drag-handle { cursor: var(--cursor); color: var(--text-faint); }
+.font-manager-item-indicator { display: flex; align-items: center; margin-inline-start: auto; cursor: var(--cursor); }
+.font-manager-item-indicator.mod-success { color: var(--text-success, var(--color-green)); }
+.font-manager-item-indicator.mod-warning { color: var(--text-warning, var(--color-orange)); }
+.font-manager-item .mobile-option-setting-item-name { flex: 1; }
+.font-manager-item.is-being-dragged { opacity: 0.5; }
+.font-manager-item.is-drop-target { box-shadow: inset 0 2px 0 0 var(--interactive-accent); }
+.font-missing-icon { display: inline-flex; vertical-align: middle; margin-inline-end: 2px; }
+.font-missing-icon .svg-icon { width: var(--icon-xs); height: var(--icon-xs); }

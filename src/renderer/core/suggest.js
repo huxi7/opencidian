@@ -1,12 +1,13 @@
 /**
- * [INPUT]: Modal、图标与 DOM 助手。
+ * [INPUT]: Modal、DOM 助手与 i18n 的 tt。
  * [OUTPUT]: 模糊匹配、SuggestModal、GenericSuggester 与输入建议层。
  * [POS]: 命令、模板、文件选择的公共入口。输入位于结果前，接受选择后关闭。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 /* Suggestion framework: fuzzy matching + SuggestModal (quick switcher etc). */
 import { Modal } from './modals.js';
-import { setIcon } from './icons.js';
+import { tt } from './i18n.js';
+import { IS_MAC } from './keymap.js';
 
 export function fuzzyMatch(query, text) {
   if (!query) return { score: 0, matches: [] };
@@ -63,20 +64,30 @@ export function renderHighlightedText(el, text, matches) {
 export class SuggestModal extends Modal {
   constructor(app) {
     super(app);
-    this.inputEl = this.modalEl.createEl('input', { type: 'text', cls: 'prompt-input' });
-    this.inputEl.placeholder = this.getPlaceholder() || '';
+    this.inputEl = null;
+    this.clearButtonEl = null;
     this.modalEl.removeClass('modal');
     this.modalEl.addClass('prompt');
     this.headerEl.detach();
     this.closeButtonEl.detach();
     this.buttonContainerEl.detach();
+    // 输入容器：input 在前，清空按钮在后(原版 ob)
     const inputContainer = this.modalEl.createDiv('prompt-input-container');
-    inputContainer.appendChild(this.inputEl);
+    this.inputEl = inputContainer.createEl('input', {
+      cls: 'prompt-input', type: 'text', attr: { autocapitalize: 'off', spellcheck: 'false' },
+    });
+    this.inputEl.placeholder = this.getPlaceholder() || '';
+    this.clearButtonEl = inputContainer.createDiv('search-input-clear-button');
+    this.clearButtonEl.addEventListener('mousedown', (ev) => ev.preventDefault());
+    this.clearButtonEl.addEventListener('click', () => {
+      if (this.inputEl.value !== '') { this.inputEl.value = ''; this.inputEl.dispatchEvent(new Event('input')); }
+      else this.close();
+    });
     this.modalEl.insertBefore(inputContainer, this.contentEl);
     this.resultContainerEl = this.contentEl.createDiv('suggestion-container');
     this.resultContainerEl.addClass('prompt-results');
-    this.limit = 50;
-    this.emptyStateText = 'No results';
+    this.limit = 100;
+    this.emptyStateText = tt('setting.third-party-plugin.label-no-results-found', '无结果');
     this._selectedIndex = 0;
     this.results = [];
     this.instructionsEl = this.modalEl.createDiv('prompt-instructions');
@@ -134,6 +145,7 @@ export class SuggestModal extends Modal {
   }
   setSelectedIndex(i) {
     const n = this.results.length;
+    if (!n) return;
     this._selectedIndex = ((i % n) + n) % n;
     for (let k = 0; k < this.resultContainerEl.children.length; k++) {
       this.resultContainerEl.children[k].toggleClass('is-selected', k === this._selectedIndex);
@@ -142,11 +154,44 @@ export class SuggestModal extends Modal {
     if (selected) selected.scrollIntoView({ block: 'nearest' });
   }
   onInputKeyDown(ev) {
+    if (ev.isComposing) return;
     if (ev.key === 'ArrowDown') { ev.preventDefault(); this.setSelectedIndex(this._selectedIndex + 1); }
     else if (ev.key === 'ArrowUp') { ev.preventDefault(); this.setSelectedIndex(this._selectedIndex - 1); }
+    else if (ev.key === 'PageDown') { ev.preventDefault(); this.pageDown(); }
+    else if (ev.key === 'PageUp') { ev.preventDefault(); this.pageUp(); }
     else if (ev.key === 'Enter') { ev.preventDefault(); this.selectSuggestion(this._selectedIndex, ev); }
     else if (ev.key === 'Home' && !ev.shiftKey) { ev.preventDefault(); this.setSelectedIndex(0); }
     else if (ev.key === 'End') { ev.preventDefault(); this.setSelectedIndex(this.results.length - 1); }
+    else if (IS_MAC && ev.ctrlKey && ev.key === 'n') { ev.preventDefault(); this.setSelectedIndex(this._selectedIndex + 1); }
+    else if (IS_MAC && ev.ctrlKey && ev.key === 'p') { ev.preventDefault(); this.setSelectedIndex(this._selectedIndex - 1); }
+  }
+  /** 行高与可视行数：滚动量按结果容器实测，超出即整页跳跃(原版 ib.pageUp/pageDown)。 */
+  rowHeight() {
+    const selected = this.resultContainerEl.children[this._selectedIndex];
+    return selected ? selected.clientHeight : 0;
+  }
+  numVisibleItems() {
+    const height = this.rowHeight();
+    return height > 0 ? Math.floor(this.resultContainerEl.clientHeight / height) : 0;
+  }
+  pageUp() {
+    const container = this.resultContainerEl;
+    const rowHeight = this.rowHeight();
+    if (!rowHeight) return;
+    const paddingTop = parseFloat(getComputedStyle(container).paddingTop) || 0;
+    let row = Math.floor((container.scrollTop - paddingTop) / rowHeight);
+    if (this._selectedIndex <= row) row -= this.numVisibleItems();
+    this.setSelectedIndex(Math.max(0, row));
+  }
+  pageDown() {
+    const container = this.resultContainerEl;
+    const rowHeight = this.rowHeight();
+    if (!rowHeight) return;
+    const visible = this.numVisibleItems();
+    const paddingTop = parseFloat(getComputedStyle(container).paddingTop) || 0;
+    let row = Math.floor((container.scrollTop - paddingTop) / rowHeight) + (visible - 1);
+    if (this._selectedIndex >= row) row += visible;
+    this.setSelectedIndex(Math.min(this.results.length - 1, row));
   }
   selectSuggestion(i, ev) {
     const value = this.results[i];
