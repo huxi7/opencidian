@@ -135,7 +135,7 @@ async function harness(settings = {}) {
     'icons.js': { setIcon: (el, icon) => el.setAttr('data-icon', icon) },
     'notices.js': { Notice: class { constructor(text) { notices.push(text); } } },
     'menu.js': { Menu: MenuStub },
-    'ipc.js': { Desktop: { setTitle() {} } },
+    'ipc.js': { Desktop: { setTitle() {} }, ipcOn() {} },
   };
   function load(filename) {
     if (modules.has(filename)) return modules.get(filename);

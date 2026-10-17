@@ -74,30 +74,37 @@ export function mount(workspace, container) {
 
 /** 原版 updateStatus：同步 is-maximized / is-fullscreen / --zoom-factor，并补偿 macOS 红绿灯位置。 */
 function installWindowState() {
+  if (typeof window === 'undefined' || typeof document === 'undefined') return;
+  // 回归测试的 VM 宿主没有定时器/DOM 事件系统：直接跳过窗口状态同步
+  if (typeof setTimeout !== 'function' || typeof clearTimeout !== 'function') return;
   let timer = null;
   const sync = () => {
     clearTimeout(timer);
     timer = setTimeout(() => {
-      let state = { maximized: false, fullscreen: false };
-      try { state = Desktop.windowState() || state; } catch (e) {}
-      document.body.toggleClass('is-maximized', !!state.maximized);
-      document.body.toggleClass('is-fullscreen', !!state.fullscreen);
-      let zoom = 1;
-      try { zoom = require('electron').webFrame.getZoomFactor() || 1; } catch (e) {}
-      document.body.style.setProperty('--zoom-factor', String(zoom));
-      if (navigator.platform.startsWith('Mac')) {
-        const styles = getComputedStyle(document.body);
-        const reduce = (value) => { const t = Math.floor(value * zoom / 2 - 8); return t < -5 ? 0 : t; };
-        let ox = parseFloat(styles.getPropertyValue('--traffic-lights-offset-x')) || 40;
-        let oy = parseFloat(styles.getPropertyValue('--traffic-lights-offset-y')) || 40;
-        if (!oy) oy = 40;
-        try { Desktop.setTrafficLightPosition(reduce(ox) + 2, reduce(oy)); } catch (e) {}
-      }
+      try {
+        let state = { maximized: false, fullscreen: false };
+        try { state = Desktop.windowState() || state; } catch (e) {}
+        document.body.toggleClass('is-maximized', !!state.maximized);
+        document.body.toggleClass('is-fullscreen', !!state.fullscreen);
+        let zoom = 1;
+        try { zoom = require('electron').webFrame.getZoomFactor() || 1; } catch (e) {}
+        document.body.style.setProperty('--zoom-factor', String(zoom));
+        if (navigator.platform.startsWith('Mac') && typeof getComputedStyle === 'function') {
+          const styles = getComputedStyle(document.body);
+          const reduce = (value) => { const t = Math.floor(value * zoom / 2 - 8); return t < -5 ? 0 : t; };
+          const ox = parseFloat(styles.getPropertyValue('--traffic-lights-offset-x')) || 40;
+          let oy = parseFloat(styles.getPropertyValue('--traffic-lights-offset-y')) || 40;
+          if (!oy) oy = 40;
+          try { Desktop.setTrafficLightPosition(reduce(ox) + 2, reduce(oy)); } catch (e) {}
+        }
+      } catch (e) { /* 无 DOM/无 Electron 的宿主（回归测试）忽略 */ }
     }, 50);
   };
-  window.addEventListener('resize', sync);
-  document.addEventListener('fullscreenchange', sync);
-  window.addEventListener('focus', sync);
+  if (typeof window.addEventListener === 'function') {
+    window.addEventListener('resize', sync);
+    window.addEventListener('focus', sync);
+  }
+  if (typeof document.addEventListener === 'function') document.addEventListener('fullscreenchange', sync);
   if (typeof ipcOn === 'function') ipcOn('window-state-changed', sync);
   sync();
 }

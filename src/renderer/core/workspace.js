@@ -346,12 +346,13 @@ export class Workspace extends Events {
         return existing;
       }
     }
-    await leaf.setViewState(state);
-    this._addLastOpenFile(file.path);
-    // “始终聚焦新标签页”关闭时，新标签页在后台打开（保持当前标签页激活）
+    // 先激活再异步加载：避免加载较慢时，迟到的 setActiveLeaf 把用户随后切到的标签抢回来
+    // （原版同样是"标签立即激活，内容随后加载"的语义）
     if (!options.newLeaf || this.app.settings.appSettings.focusNewTab === true) {
       this.setActiveLeaf(leaf, { focus: true });
     }
+    await leaf.setViewState(state);
+    this._addLastOpenFile(file.path);
     if (options.eState) leaf.view.setEphemeralState && leaf.view.setEphemeralState(options.eState);
     this.trigger('file-open', file);
     return leaf;

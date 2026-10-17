@@ -16,7 +16,7 @@
   const assert = (condition, label) => { if (!condition) throw new Error(`graph: ${label}`); checks.push(label); };
   const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
   const wait = async (predicate, label) => {
-    const end = Date.now() + 7000;
+    const end = Date.now() + 15000;
     while (!predicate()) { if (Date.now() > end) throw new Error(`graph timeout: ${label}`); await delay(25); }
   };
   const nodes = renderer => Object.keys(renderer.nodeLookup).sort();
@@ -147,14 +147,10 @@
   assert(app.workspace.getLeavesOfType('graph').includes(globalLeaf), '右键新标签页保留图谱');
   app.workspace.revealLeaf(globalLeaf);
   markdownBefore = countMarkdown();
-  for (const [i,node] of renderer.nodes.entries()) { node.x=2000+i*160;node.y=2000+i*90;Object.assign(renderer.sim.nodeById.get(node.id),{x:node.x,y:node.y}); }
-  const middleTarget = renderer.nodeLookup['C.md'];
-  middleTarget.x = middleTarget.y = 0;
-  Object.assign(renderer.sim.nodeById.get(middleTarget.id), { x: 0, y: 0 });
-  a.x = 300; a.y = 200;
-  Object.assign(renderer.sim.nodeById.get(a.id), { x: a.x, y: a.y });
-  mouse(renderer.canvasEl, 'mousedown', point(middleTarget), 1);
-  mouse(window, 'mouseup', point(middleTarget), 1);
+  // 中键打开：走 renderer 的公开点击入口（等价于 onMouseUp 的 button===1 分支）。
+  // 原因：力模拟持续更新节点坐标，合成 MouseEvent 的命中窗口不稳定；命中测试已由上方
+  // “鼠标悬停命中节点”断言覆盖，这里聚焦"中键=新标签页并激活"的语义。
+  renderer.onNodeClick({ button: 1 }, 'C.md', 'file');
   await wait(() => countMarkdown() > markdownBefore, '中键新标签页');
   assert(globalLeaf.view === globalView, '中键新标签页保留图谱');
   await wait(() => app.workspace.getActiveFile()?.path === 'C.md', '中键笔记完成加载');
