@@ -2,6 +2,7 @@
  * [INPUT]: 依赖 Setting 控件、i18n、图标及 graph-options 默认值。
  * [OUTPUT]: 导出 FilterSection、ColorGroupSection、DisplaySection、ForceSection。
  * [POS]: 图谱控制面板；读取引擎选项，提交筛选、显示与力学变更。
+ *        颜色组行数即优先色顺序：颜色圆点上的拖动排序改写顺序并立即重绘。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 import { t } from '../core/i18n.js';
@@ -110,7 +111,7 @@ export class FilterSection extends GraphControlSection {
   setDefaultOptions() { this.setOptions(FILTER_DEFAULTS); }
 }
 
-/* 原版 TJ：颜色组（检索式 + 颜色 + 删除 + 新建）。原版的拖拽排序未实现 */
+/* 原版 TJ：颜色组（检索式 + 颜色 + 删除 + 新建 + 按住颜色圆点拖动排序）。顺序即优先色顺序 */
 export class ColorGroupSection extends GraphControlSection {
   constructor(engine) {
     super(engine, 'color-groups', t('plugins.graph-view.label-groups'));
@@ -142,6 +143,8 @@ export class ColorGroupSection extends GraphControlSection {
         .onChange(() => this.engine.updateSearch());
       color.colorPickerEl.setAttr('aria-label', t('plugins.graph-view.tooltip-click-to-change-drag-to-reorder'));
       const record = { el: groupEl, query, color };
+      /* 原版：拖动排序的落点由颜色圆点上的 mousedown 启动（单击仍是打开取色器） */
+      color.colorPickerEl.addEventListener('mousedown', (ev) => this.onDragOption(ev, record));
       groupEl.createDiv('clickable-icon', (el) => {
         setIcon(el, 'x');
         el.setAttr('aria-label', t('plugins.graph-view.tooltip-delete-graph'));
@@ -165,6 +168,71 @@ export class ColorGroupSection extends GraphControlSection {
         });
       });
     });
+  }
+
+  /* 原版 onDragOption：移动超过 5px 才进入拖拽；幽灵行跟随光标，其余行让位；松手按落点重排并重绘 */
+  onDragOption(ev, record) {
+    if (ev.button !== 0) return;
+    const startX = ev.clientX;
+    const startY = ev.clientY;
+    const el = record.el;
+    const rect = el.getBoundingClientRect();
+    const offsetX = ev.clientX - rect.x;
+    const offsetY = ev.clientY - rect.y;
+    let ghost = null;
+    const onMouseMove = (moveEv) => {
+      moveEv.preventDefault();
+      const x = moveEv.clientX;
+      const y = moveEv.clientY;
+      if (ghost === null) {
+        const dx = x - startX;
+        const dy = y - startY;
+        if (dx * dx + dy * dy < 25) return;
+        const index = this.groups.indexOf(record);
+        if (index >= 0) this.groups.splice(index, 1);
+        ghost = el.cloneNode(true);
+        ghost.addClass('drag-ghost');
+        ghost.style.width = el.offsetWidth + 'px';
+        const ghostQuery = ghost.querySelector('input[type="text"]');
+        if (ghostQuery) ghostQuery.value = record.query.getValue();
+        const ghostColor = ghost.querySelector('input[type="color"]');
+        if (ghostColor) ghostColor.value = record.color.getValue();
+        document.body.appendChild(ghost);
+        document.body.addClass('is-grabbing');
+        this.childrenEl.addClass('is-grabbing');
+      }
+      const dropIndex = this.getDropIndex(y);
+      el.detach();
+      ghost.style.left = (x - offsetX) + 'px';
+      ghost.style.top = (y - offsetY) + 'px';
+      for (let i = 0; i < this.groups.length; i++) {
+        const sibling = this.groups[i];
+        sibling.el.style.top = i < dropIndex ? '0' : `${sibling.el.offsetHeight}px`;
+      }
+    };
+    const onMouseUp = (upEv) => {
+      window.removeEventListener('mousemove', onMouseMove);
+      window.removeEventListener('mouseup', onMouseUp);
+      if (!ghost) return;
+      ghost.detach();
+      document.body.removeClass('is-grabbing');
+      this.childrenEl.removeClass('is-grabbing');
+      this.groups.splice(this.getDropIndex(upEv.clientY), 0, record);
+      this.setColorQueries(this.getColoredQueries());
+      this.engine.updateSearch();
+    };
+    window.addEventListener('mousemove', onMouseMove);
+    window.addEventListener('mouseup', onMouseUp);
+  }
+
+  /* 原版 getDropIndex：落点高于某行垂直中点时插到该行之前 */
+  getDropIndex(clientY) {
+    let index = 0;
+    for (index = 0; index < this.groups.length; index++) {
+      const rect = this.groups[index].el.getBoundingClientRect();
+      if (clientY < rect.top + rect.height / 2) return index;
+    }
+    return index;
   }
 }
 

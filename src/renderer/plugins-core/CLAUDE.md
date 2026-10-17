@@ -15,7 +15,7 @@ tag-pane.js: 标签面板视图(type tag)。标签树/排序/嵌套开关。
 properties.js: 属性插件(id properties，原版 properties)。all-properties 汇总全部属性键与出现文件数，四种排序(名称正/倒、频次高/低，默认频次高到低)，点击属性打开全局搜索 ["键"](Mod 点击切换 token)；file-properties 只读复用 markdown/properties.js 的行渲染并跟随活动文件；命令 properties:open / properties:open-local 与状态栏属性计数(点击打开 file-properties)。不自动创建窗格；禁用撤销视图、命令与状态栏条目。
 global-search.js: 全局搜索视图(type search)。关键词/正则/大小写、结果分组与跳转。
 editor-status.js: 状态栏视图状态图标与切换菜单(Reading/Source/Live Preview，tooltip，mod-clickable)。
-page-preview.js: 内部链接悬停预览 popover。四类来源(editor/preview/search/tab-header)可配 Mod 门控，未解析链接空态，设置写 page-preview.json。
+page-preview.js: 内部链接悬停预览 popover。五类来源(editor/preview/search/tab-header/graph)可配 Mod 门控，未解析链接空态，设置写 page-preview.json。graph 来源由 GraphEngine 经 workspace 的 hover-link 事件请求（无目标元素，按鼠标坐标定位），插件持有 parent.hoverPopover 句柄供引擎撤销悬停。
 word-count.js: 状态栏字数统计(中英混排规则)，点击弹详情。
 canvas.js: 注册画布视图、四个命令与新建功能区按钮。canvas:new-file 建空画布；canvas:export-as-image 仅在当前叶子是画布时可用（执行时渲染后弹保存对话框写 PNG）；canvas:jump-to-group 仅在画布含分组时可用；canvas:convert-to-file 仅在单选文本卡片时可用。Mod 点击新标签并聚焦，禁用撤销按钮与注册。
 bookmarks.js: 持久化文件、目录、搜索与分组书签。目录改名同步子路径。
@@ -23,8 +23,8 @@ daily-notes.js: 串行创建日期笔记与嵌套目录。模板变量及 create
 templates.js: 模板功能区执行已有插入命令。展开变量、合并属性；属性函数供重组复用。
 note-composer.js: 提取或合并未保存文本。目标确认落盘后替换来源并重定向反链，遵循回收策略。
 graph.js: 图谱视图、命令与功能区入口。普通点击复用中心，Mod 点击新标签并聚焦；禁用撤销按钮和命令。
-graph-engine.js: 协调查询、元数据变化、图谱选项与节点操作。
-graph-controls.js: 筛选、颜色、显示与力学控件。变更交给引擎。
+graph-engine.js: 协调查询、元数据变化、图谱选项、悬停预览与节点操作。悬停仅对文件/焦点/附件节点触发 hover-link 事件；标签与未解析节点不预览。
+graph-controls.js: 筛选、颜色、显示与力学控件。变更交给引擎。颜色组顺序即优先色顺序，按住颜色圆点拖动重排。
 graph-data.js: 根据 Vault 清单构图。计算局部邻域和孤立节点。
 graph-query.js: 文件、正文、路径与标签查询。供筛选及颜色组复用。
 graph-simulation.js: 节点力学模拟（对齐原版 d3-force 参数）。斥力为 Barnes-Hut 四叉树近似（theta²=0.81），碰撞按包围盒裁剪半径 120 的候选对；受力遍历内联为复用栈。拓扑变化时缓存节点度数。

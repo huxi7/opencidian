@@ -2,6 +2,7 @@
  * [INPUT]: OBS_ACT eval 注入；已启用 graph，且 vault 是新建的 graph-vault-* 临时目录。
  * [OUTPUT]: 返回 {role, passed, checks, screenshots}；断言失败会抛错。
  * [POS]: 图谱集成验收；创建独立 fixture，通过 DOM 事件验证交互。
+ *        覆盖筛选/局部图/画布交互之外，另验收颜色组拖拽排序、悬停预览（hover-link）与力参数落盘。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  * 截图终态：OBS_GRAPH_SCREEN=global|filter|local|menu，默认 local。
  */
@@ -90,6 +91,9 @@
   await search('');
   renderer.cancelInteraction();
   renderer.setScale(1); renderer.targetScale = 1; renderer.resetPan();
+  // 冻结模拟（alpha=0 不推进）：坐标断言与悬停预览用例都依赖节点静止。
+  // 悬停标签/未解析节点会重建构图并重启模拟，B 段收尾再冻结一次并重新固定坐标。
+  renderer.sim.alpha = 0; renderer.sim.alphaTarget = 0;
   // 固定初始坐标，避免力模拟随机落点影响同步 DOM 事件断言。
   for (const [index, node] of renderer.nodes.entries()) {
     node.x = index * 160; node.y = index * 90;
@@ -103,7 +107,71 @@
     return { clientX: rect.left + (node.x * renderer.scale + renderer.panX) / devicePixelRatio,
       clientY: rect.top + (node.y * renderer.scale + renderer.panY) / devicePixelRatio };
   };
+  // 同一换算用于其它 renderer（局部图、临时图谱）
+  const pointIn = (target, node) => {
+    const rect = target.canvasEl.getBoundingClientRect();
+    return { clientX: rect.left + (node.x * target.scale + target.panX) / devicePixelRatio,
+      clientY: rect.top + (node.y * target.scale + target.panY) / devicePixelRatio };
+  };
   const mouse = (target, type, point, button = 0) => target.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true, button, ...point }));
+  // A. 颜色组拖拽排序：行顺序即优先色顺序，拖拽写回 graph.json，重开视图保留
+  const findGhost = () => document.querySelector('.graph-color-group.drag-ghost');
+  const findPopover = () => document.querySelector('body > .popover.hover-popover');
+  const readGroups = () => (app.settings.readJson('graph.json').colorGroups || []).map(group => group.query);
+  engine.setOptions({ close: false });
+  engine.colorGroupOptions.setCollapsed(false);
+  const groupSection = engine.colorGroupOptions;
+  const newGroupButton = groupSection.childrenEl.querySelector('.graph-color-button-container button');
+  newGroupButton.click(); newGroupButton.click(); newGroupButton.click();
+  assert(groupSection.groups.length === 3, '新建颜色组按钮建出三行');
+  const setGroup = (index, query, hex) => {
+    const group = groupSection.groups[index];
+    group.query.inputEl.value = query;
+    group.query.inputEl.dispatchEvent(new Event('input', { bubbles: true }));
+    group.color.colorPickerEl.value = hex;
+    group.color.colorPickerEl.dispatchEvent(new Event('change', { bubbles: true }));
+  };
+  setGroup(0, 'file:A', '#ff0000');
+  setGroup(1, 'file:B', '#00ff00');
+  setGroup(2, 'tag:project', '#0000ff');
+  engine.updateSearch();
+  await delay(320);
+  await wait(() => !engine.queue, '颜色组排序筛选');
+  assert(renderer.nodeLookup['A.md'].color?.rgb === 0xff0000, '第一组优先给同时命中的 A.md 上色');
+  await delay(220);
+  assert(readGroups().join('|') === 'file:A|file:B|tag:project', 'graph.json 记录三组初始顺序');
+  const rowPoint = (index) => {
+    const rect = groupSection.groups[index].el.getBoundingClientRect();
+    return { clientX: rect.left + 6, clientY: rect.top + 6 };
+  };
+  const firstRowMiddle = groupSection.groups[0].el.getBoundingClientRect().top + 2;
+  const thirdRowInput = groupSection.groups[2].el.querySelector('input[type="color"]');
+  const grabPoint = rowPoint(2);
+  mouse(thirdRowInput, 'mousedown', grabPoint);
+  mouse(window, 'mousemove', { clientX: grabPoint.clientX, clientY: grabPoint.clientY - 30 });
+  assert(!!findGhost() && document.body.hasClass('is-grabbing'), '拖动颜色圆点出现幽灵行');
+  mouse(window, 'mousemove', { clientX: grabPoint.clientX, clientY: firstRowMiddle });
+  mouse(window, 'mouseup', { clientX: grabPoint.clientX, clientY: firstRowMiddle });
+  assert(!findGhost() && !document.body.hasClass('is-grabbing'), '松手移除幽灵行');
+  assert(groupSection.groups.map(group => group.query.getValue()).join('|') === 'tag:project|file:A|file:B', '第三组移动到第一位');
+  await delay(320);
+  await wait(() => !engine.queue, '重排后重绘');
+  assert(renderer.nodeLookup['A.md'].color?.rgb === 0x0000ff, '重排后优先色切换为第一位色组');
+  await delay(220);
+  assert(readGroups().join('|') === 'tag:project|file:A|file:B', 'graph.json 写入拖拽后的顺序');
+  const orderLeaf = app.workspace.getLeaf(true);
+  await orderLeaf.setViewState({ type: 'graph', state: {} });
+  const orderEngine = orderLeaf.view.dataEngine;
+  await wait(() => orderEngine?.colorGroupOptions.groups.map(group => group.query.getValue()).join('|') === 'tag:project|file:A|file:B', '重开视图读取颜色组顺序');
+  await wait(() => orderLeaf.view.renderer.nodeLookup['A.md']?.color?.rgb === 0x0000ff, '重开视图重建优先色');
+  assert(true, '重开视图保留颜色组顺序');
+  await orderLeaf.setViewState({ type: 'empty' });
+  orderLeaf.detach();
+  engine.setOptions({ colorGroups: [] });
+  engine.updateSearch();
+  await delay(320);
+  await wait(() => !engine.queue, '清理颜色组');
+  assert(!renderer.nodeLookup['A.md'].color, '清理后颜色立即清除');
   const start = point(a);
   mouse(renderer.canvasEl, 'mousemove', start);
   assert(renderer.highlightNode === a, '鼠标悬停命中节点');
@@ -136,6 +204,52 @@
   assert(renderer.zoomCenterX === 0 && renderer.zoomCenterY === 0, '滚轮缩小使用视口中心');
   renderer.zoomTo(1); renderer.setScale(1); renderer.resetPan();
   a.x = a.y = 0; Object.assign(renderer.sim.nodeById.get(a.id), { x: 0, y: 0 });
+  // B. 图谱悬停 → page-preview：原版 GraphEngine 经 workspace 的 hover-link 事件请求预览，
+  //    graph 来源默认需按住 Mod；标签与未解析节点不请求预览。
+  // 帧循环按「鼠标世界坐标是否仍在高亮节点半径内」清高亮，画布重排会改变坐标映射；
+  // 每次等待前把指针重新钉到节点上（命中同一节点不会产生新的 hover 事件）保证断言稳定。
+  const pinHover = (node, metaKey) => mouse(renderer.canvasEl, 'mousemove', { ...point(node), metaKey });
+  const holdHover = async (node, metaKey) => {
+    for (let i = 0; i < 4; i += 1) { await delay(150); pinHover(node, metaKey); }
+  };
+  mouse(renderer.canvasEl, 'mousemove', point(a));
+  assert(renderer.highlightNode === a, '悬停命中 A.md');
+  await holdHover(a, false);
+  assert(!findPopover(), '未按住 Mod 悬停节点不出现预览');
+  pinHover(a, false);
+  renderer.onMouseOut();
+  assert(!renderer.highlightNode, '移出画布清除高亮');
+  mouse(renderer.canvasEl, 'mousemove', { ...point(a), metaKey: true });
+  await holdHover(a, true);
+  const hoverPopover = findPopover();
+  assert(!!hoverPopover && hoverPopover.textContent.includes('alpha'), '按住 Mod 悬停节点显示目标笔记预览');
+  assert(!!hoverPopover.style.left && !!hoverPopover.style.top, '预览按鼠标坐标定位');
+  pinHover(a, true);
+  renderer.onMouseOut();
+  await delay(420);
+  assert(!findPopover(), '移出画布后预览关闭');
+  engine.setOptions({ showTags: true, hideUnresolved: false });
+  await delay(60);
+  for (const [id, far] of [['#project/root', -20000], ['Missing', -40000]]) {
+    const node = renderer.nodeLookup[id];
+    assert(!!node, `节点 ${id} 存在`);
+    node.x = 0; node.y = far;
+    Object.assign(renderer.sim.nodeById.get(id), { x: 0, y: far, vx: 0, vy: 0 });
+    mouse(renderer.canvasEl, 'mousemove', { ...point(node), metaKey: true });
+    assert(renderer.highlightNode === node, `悬停命中 ${id}`);
+    await delay(520);
+    assert(!findPopover(), `${id} 不显示预览`);
+  }
+  engine.setOptions({ showTags: false, hideUnresolved: true });
+  renderer.onMouseOut();
+  // 悬停标签/未解析节点会重建构图并重启模拟：重新冻结并固定坐标供后续命中断言。
+  renderer.sim.alpha = 0; renderer.sim.alphaTarget = 0;
+  for (const [index, node] of renderer.nodes.entries()) {
+    node.x = (index + 1) * 160; node.y = (index + 1) * 90;
+    Object.assign(renderer.sim.nodeById.get(node.id), { x: node.x, y: node.y, vx: 0, vy: 0 });
+  }
+  a.x = a.y = 0; Object.assign(renderer.sim.nodeById.get(a.id), { x: 0, y: 0, vx: 0, vy: 0 });
+  assert(!findPopover(), '悬停用例未残留预览');
   let markdownBefore = countMarkdown();
   mouse(renderer.canvasEl, 'contextmenu', point(a), 2);
   await wait(() => !!document.querySelector('.menu'), '右键菜单');
@@ -154,6 +268,29 @@
   await wait(() => countMarkdown() > markdownBefore, '中键新标签页');
   assert(globalLeaf.view === globalView, '中键新标签页保留图谱');
   await wait(() => app.workspace.getActiveFile()?.path === 'C.md', '中键笔记完成加载');
+  // C. 力参数：滑块写引擎选项与 graph.json，立即作用到模拟，重开视图保留
+  const forceSliders = engine.forceOptions.childrenEl.querySelectorAll('input[type="range"]');
+  assert(forceSliders.length === 4, '力设置含中心力/斥力/连线力/连线距离四项');
+  const distanceSlider = forceSliders[3];
+  const previousDistance = Number(distanceSlider.value);
+  const nextDistance = previousDistance === 300 ? 260 : 300;
+  distanceSlider.value = String(nextDistance);
+  distanceSlider.dispatchEvent(new Event('input', { bubbles: true }));
+  await delay(260);
+  assert(renderer.sim.linkDistance === nextDistance, '连线距离滑块立即作用于模拟');
+  assert(engine.options.linkDistance === nextDistance, '连线距离滑块写入引擎选项');
+  const forceJson = app.settings.readJson('graph.json');
+  assert(forceJson.linkDistance === nextDistance, 'graph.json 记录连线距离');
+  assert(['centerStrength', 'repelStrength', 'linkStrength'].every(key => Number.isFinite(forceJson[key])), 'graph.json 记录中心力/斥力/连线力');
+  const forceLeaf = app.workspace.getLeaf(true);
+  await forceLeaf.setViewState({ type: 'graph', state: {} });
+  await wait(() => forceLeaf.view.dataEngine?.renderer.sim.linkDistance === nextDistance, '重开视图读取力参数');
+  assert(forceLeaf.view.dataEngine.options.linkDistance === nextDistance, '重开视图保留力参数');
+  await forceLeaf.setViewState({ type: 'empty' });
+  forceLeaf.detach();
+  distanceSlider.value = String(previousDistance);
+  distanceSlider.dispatchEvent(new Event('input', { bubbles: true }));
+  await delay(120);
   const localLeaf = app.workspace.createLeafBySplit(globalLeaf, 'vertical');
   await localLeaf.setViewState({ type: 'localgraph', state: { file: 'A.md', options: { hideUnresolved: true, showAttachments: false, showTags: false } } });
   app.workspace.revealLeaf(localLeaf);
@@ -200,6 +337,32 @@
   assert(closedEngine.destroyed && closedEngine.queue === null && closedEngine.progression === 0, '关闭图谱取消查询与动画');
   assert(closedView.renderer.destroyed && !closedView.renderer.renderTimer && !closedView.renderer.canvasEl.isConnected, '关闭图谱停止渲染并移除画布');
   disposable.detach();
+  // 关闭视图时预览一并收起：句柄挂在该视图的引擎上（独立视图，不跑生长动画，避免节点移动干扰悬停）
+  const hoverLeaf = app.workspace.getLeaf(true);
+  await hoverLeaf.setViewState({ type: 'graph', state: {} });
+  const hoverRenderer = hoverLeaf.view.renderer;
+  await wait(() => !!hoverRenderer.nodeLookup['A.md'], '预览用例图谱节点');
+  const hoverNode = hoverRenderer.nodeLookup['A.md'];
+  const pinClosedHover = () => {
+    hoverRenderer.resetPan();
+    hoverRenderer.sim.alpha = 0; hoverRenderer.sim.alphaTarget = 0;
+    hoverNode.x = 0; hoverNode.y = 0;
+    Object.assign(hoverRenderer.sim.nodeById.get('A.md'), { x: 0, y: 0, vx: 0, vy: 0 });
+    mouse(hoverRenderer.canvasEl, 'mousemove', { ...pointIn(hoverRenderer, hoverNode), metaKey: true });
+    return hoverRenderer.highlightNode === hoverNode;
+  };
+  let closedPreview = false;
+  assert(pinClosedHover(), '独立图谱悬停命中 A.md');
+  for (let i = 0; i < 20 && !closedPreview; i += 1) {
+    await delay(120);
+    pinClosedHover();
+    closedPreview = !!findPopover();
+  }
+  assert(closedPreview, '独立图谱悬停显示预览');
+  await hoverLeaf.setViewState({ type: 'empty' });
+  await delay(80);
+  assert(!findPopover(), '关闭图谱视图收起悬停预览');
+  hoverLeaf.detach();
   engine.setOptions({ showTags: true, showAttachments: true, hideUnresolved: false, showOrphans: true, close: false, 'collapse-filter': false });
   await search('');
   const screen = process.env.OBS_GRAPH_SCREEN || 'local';

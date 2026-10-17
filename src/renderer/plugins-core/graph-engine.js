@@ -1,7 +1,7 @@
 /**
  * [INPUT]: 依赖 vault、metadataCache、workspace、Menu 与图谱数据、查询、面板模块。
- * [OUTPUT]: 导出 GraphEngine；连接筛选、节点动作、动画与渲染器。
- * [POS]: 图谱编排层；由全局和局部视图共同持有，关闭时停止异步任务。
+ * [OUTPUT]: 导出 GraphEngine；连接筛选、节点动作、悬停预览、动画与渲染器。
+ * [POS]: 图谱编排层；由全局和局部视图共同持有，关闭时停止异步任务并收起悬停预览。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 import { t } from '../core/i18n.js';
@@ -32,10 +32,14 @@ export class GraphEngine {
     this.currentFocusFile = '';
     this.destroyed = false;
     this.animationId = 0;
+    this.lastHoverLink = null;
+    this.hoverPopover = null;
     this.onOptionsChange = debounce(() => { if (!this.destroyed) this.view.onOptionsChange(); }, 100, true);
     this.requestUpdateSearch = debounce(() => this.updateSearch(), 250, true);
     renderer.onNodeClick = (ev, id, type) => this.onNodeClick(ev, id, type);
     renderer.onNodeRightClick = (ev, id, type) => this.onNodeRightClick(ev, id, type);
+    renderer.onNodeHover = (ev, id, type) => this.onNodeHover(ev, id, type);
+    renderer.onNodeUnhover = () => this.onNodeUnhover();
     const controlsEl = this.controlsEl = renderer.containerEl.createDiv('graph-controls');
     controlsEl.dataset.ignoreSwipe = 'true';
     controlsEl.createDiv('clickable-icon graph-controls-button mod-close', (el) => {
@@ -123,6 +127,10 @@ export class GraphEngine {
     if (this.queue) clearTimeout(this.queue.timer);
     this.queue = null;
     this.filterOptions.stopSearch();
+    /* 关闭视图时同步收起悬停预览（预览由 page-preview 插件持有） */
+    if (this.hoverPopover && this.hoverPopover.hide) this.hoverPopover.hide();
+    this.hoverPopover = null;
+    this.lastHoverLink = null;
   }
 
   onCssChange() { this.renderer.testCSS(); }
@@ -281,10 +289,35 @@ export class GraphEngine {
     menu.showAtMouseEvent(ev);
   }
 
-  /* 原版 onNodeHover/onNodeUnhover 走 hover-link 事件（本项目无来源），保留空实现 */
-  onNodeHover() {}
+  /* 原版 onNodeHover：文件、焦点与附件节点经 workspace 的 hover-link 事件请求页面预览；
+     标签与未解析节点不触发。同一节点的预览仍在时只续命，不重复请求。 */
+  onNodeHover(ev, id, type) {
+    this.onNodeUnhover();
+    if (!(ev instanceof MouseEvent)) return;
+    if (!(type === '' || type === 'focused' || type === 'attachment')) return;
+    const popover = this.hoverPopover;
+    if (popover && popover.isShown && this.lastHoverLink === id) {
+      popover.onTarget = true;
+      popover.transition();
+      return;
+    }
+    this.lastHoverLink = id;
+    this.app.workspace.trigger('hover-link', {
+      event: ev, source: 'graph', hoverParent: this, targetEl: null, linktext: id, sourcePath: '',
+    });
+  }
 
-  onNodeUnhover() {}
+  /* 原版 onNodeUnhover：预览的持有者是 page-preview 插件，这里只撤销悬停标记 */
+  onNodeUnhover() {
+    const popover = this.hoverPopover;
+    if (popover) { popover.onTarget = false; popover.transition(); }
+  }
+
+  /* page-preview 在延迟显示前回调本方法：悬停已结束时不再打开预览 */
+  isHoveringLink(id) {
+    const node = this.renderer.getHighlightNode();
+    return !!node && node.id === id;
+  }
 
   /* 标签节点点击：原版调用 global-search 插件的 openGlobalSearch("tag:xxx") */
   openTagSearch(tag) {
