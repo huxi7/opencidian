@@ -374,6 +374,7 @@ node --experimental-vm-modules src/renderer/core/workspace-regression.js
 ### §16 进度看板（2026-10-17 深夜，滚动更新）
 
 本次会话已完成并提交的批次（每批都有可复跑验收）：
+- `9cc2635` 修复新标签激活竞态（先激活后加载）+ graph 场景稳定化；`1967d6b` 文件树拖入编辑器插入链接（editor 113 项）。
 - `4c4fcc2` 社区插件安全模式：双布局/信任模态/setEnable 语义 + community 场景（run 19 + restart 3）。
 - `ab44cba` shell 手感批：drag-ghost、drop overlay、侧栏 140ms 补间、标签列表按钮/Close all/Close after、pin、关闭钮容器查询、窗口状态与红绿灯、非 mac 三按钮、状态栏双段、空标签、titlebar 镜像；sidebar-shell 61 项。
 - `8cf232a` 设置与窗口 IPC：拼写词典/语言 IPC + 启动恢复、启动耗时弹窗、窗口状态通道。
@@ -398,7 +399,7 @@ node --experimental-vm-modules src/renderer/core/workspace-regression.js
 - 功能区配置弹窗（Zee）未做（需 ribbon item registry；依赖 workspace-renderer）；自定义图标已完成。
 - 画布：CM6 卡片编辑、图片导出、对齐参考线、空间索引未做。
 - 图谱：颜色组拖拽、悬停高亮细节未做。
-- 编辑器：属性行编辑已存在；表格/嵌入右键菜单、链接 tooltip 细节未逐项核对；从系统拖文件进编辑器插入链接未做。
+- 编辑器：属性行编辑已存在；表格/嵌入右键菜单、链接 tooltip 细节未逐项核对；系统外部文件拖入（复制为附件）未做（文件树内部拖入已支持）。
 - 快捷键设置页：状态筛选仍为常驻下拉（原版是菜单按钮 + 可移除 chip + 按键筛选）、冲突 chip 点击筛选、搜索行 label/自动聚焦未补。
 - 核心插件页：每行"快捷键"按钮（跳转 hotkeys 并 setQuery）未做；齿轮显示条件仍为"有 settingTab 即显示"。
 - 第三方插件页：已装插件行的卸载/捐赠/设置齿轮/快捷键按钮未做（版本/作者/搜索/开关已有）。
