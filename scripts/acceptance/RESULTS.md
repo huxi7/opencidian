@@ -22,8 +22,9 @@
 
 ## 重跑
 
-先执行 `npm run build`，再运行 `node scripts/acceptance/run.mjs <场景>`。
-运行器输出创建的 vault、截图和日志路径。只接受带验收标记的临时库。
+先执行 `npm run build`，再运行 `node scripts/acceptance/run.mjs <场景> --no-screenshot`。
+用户已停止视觉验收；上文截图是历史证据。
+运行器输出创建的 vault 和日志路径；无截图模式的 screenshot 为 null。只接受带验收标记的临时库。
 
 重启验证用 `--vault <上次输出的路径>`：
 
@@ -32,7 +33,7 @@
 - settings-write 后使用 settings-restart 场景。
 - graph-persist-write 后使用 graph-persist-read 场景。
 
-额外运行 `node --experimental-vm-modules src/renderer/core/workspace-regression.js`，17组内存回归。
+额外运行 `node --experimental-vm-modules src/renderer/core/workspace-regression.js`，19组内存回归。
 MathJax 独立适配器子代理的41项基础/故障测试见 assets/mathjax/SOURCE.md 所指交付证据。
 
 ## 验收边界

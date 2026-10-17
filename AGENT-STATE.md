@@ -2,7 +2,7 @@
 
 > 本文件不属于 GEB 文档体系，是 agent 的跨上下文记忆。每次重要推进后更新。
 > 更新时机：阶段完成 / 提交前后 / 发现关键事实 / 子代理交付验收后。
-> **当前状态以 §9 为准，§8 保留上一阶段的功能边界。§3 和 §7 是历史记录。**
+> **交接安排以 §10 为准；实现状态见 §9，功能边界见 §8。§3 和 §7 是历史记录。**
 
 ---
 
@@ -38,9 +38,8 @@
 # 构建
 npm run build
 
-# 启动 + 截图（zsh，注意引号）
+# 历史截图方式（当前用户已停止视觉验收；日常使用 §10 无截图命令）
 T=/private/var/folders/st/nd9_l9b17zs6x6bg2cmysqph0000gn/T/opencode
-pgrep -f "node_modules/electron/dist/Electron.app" | xargs -I{} kill {} 2>/dev/null
 OBS_ALLOW_MULTI=1 OBS_VAULT_PATH=$T/vault-main OBS_SCREENSHOT=$T/shot.png OBS_SCREENSHOT_DELAY=5000 OBS_SCREENSHOT_EXIT=1 npx electron . > $T/run.log 2>&1
 
 # 打开文件 / 打开设置页签 / 执行命令 / 求值（dev 钩子，env 门控）
@@ -234,3 +233,17 @@ node --experimental-vm-modules src/renderer/core/workspace-regression.js
 - 功能区日志：`/tmp/obs-copy-acceptance/core-ribbon-run-result-dYoVlv/run.log` 与 `core-ribbon-restart-result-XDp9li/run.log`。两次 screenshot 均为 null。
 - 复跑：`node scripts/acceptance/run.mjs core-ribbon --no-screenshot`；使用输出 vault 加 `--phase restart --vault <路径> --no-screenshot` 验证重启。
 - 构建通过，原版事实源保持只读。本次源码修改需重新打开复刻程序后载入；不声称已热更新用户运行中的旧实例。
+
+## 10. 交回原主 agent（2026-10-17）
+
+- 当前实现基线是 `92f0eda`；其前两阶段为 `0fc1393`、`9be2517`。
+- `HANDOFF.md` 已重写。旧版“插件大多未验收、graph.js待拆、必须截图”已失效。
+- 本轮仅核对源码和文档。未改应用代码，未重跑构建/测试，未做视觉验收。
+- 代码抽查确认：恢复默认60秒/每日JSON；画布文字用textarea；图谱力学双层循环；幻灯片宿主在leaf。
+- 建议顺序：恢复默认值/间隔语义与Canvas快照 → 画布撤销/重做与转文件 → 图谱规模基线及优化 → 演示宿主与交付收尾。
+- 这些是待实施建议，不是本轮新增完成项。原版细节应在实施前再定位事实源。
+- 恢复存储迁移需兼容已有配置和快照；不为了内部结构一致先做破坏性迁移。
+- 故障恢复/外部修改冲突是待检查项，尚无新增缺陷结论。大库性能也未实测。
+- 用户停止视觉验收的要求持续生效。所有 Electron 验收命令加 `--no-screenshot`；§2/§8 截图命令仅作历史记录。
+- 所有子代理已停止，无需重复启动旧任务。后续继承当前模型、medium，不使用 sol。
+- 交接文档新增入口已登记在 L1。最新验收计数以 §9 与 RESULTS.md 末节为准。

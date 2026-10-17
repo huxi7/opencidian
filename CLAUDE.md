@@ -13,6 +13,8 @@ dist/ - esbuild 输出 (renderer.js, starter.js)
 </directory>
 
 <config>
+AGENT-STATE.md - 项目事实、阶段记录与当前交接安排
+HANDOFF.md - 原主 agent 的接续指令、剩余范围与无截图验收方式
 package.json - 依赖与脚本 (build/watch/start/dev)
 scripts/build.mjs - 打包入口: src/renderer/main.js → dist/renderer.js
 scripts/dev.mjs - 开发模式 (watch + electron 热重启)
