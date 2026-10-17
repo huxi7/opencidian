@@ -380,6 +380,9 @@ node --experimental-vm-modules src/renderer/core/workspace-regression.js
 - `a63e3ec` 外观页功能区配置弹窗（原版 Zee）：隐藏/恢复/拖拽排序，localStorage 持久化（appearance 32 项）。
 - `7b3ccd9` 画布：图片导出（离屏绘制 PNG/命令/菜单）+ 对齐参考线（svg.canvas-snaps）；canvas 68 项。
 - `01de8fc` 菜单结构对齐原版：.menu-scroll + 指针位置驱动滚动（Uv），功能区同款（dialogs/core-ribbon/sidebar-shell/settings-plugins/community/canvas/graph 全过）。
+- `402c786` 缺失核心插件：出链面板 + 属性视图（all-properties/file-properties/命令/状态栏计数），core-views 77 项。
+- `add712a` 出链面板补 Unlinked mentions 分节（计数/上下文/Link 按钮），core-views 83 项。
+- `2990964` 图谱批：颜色圆点拖拽排序（原版 TJ）+ 节点悬停 hover-link → page-preview（graph 来源默认 Mod、坐标定位）+ 力参数整链；graph 72 项 ×3。
 - `4c4fcc2` 社区插件安全模式：双布局/信任模态/setEnable 语义 + community 场景（run 19 + restart 3）。
 - `ab44cba` shell 手感批：drag-ghost、drop overlay、侧栏 140ms 补间、标签列表按钮/Close all/Close after、pin、关闭钮容器查询、窗口状态与红绿灯、非 mac 三按钮、状态栏双段、空标签、titlebar 镜像；sidebar-shell 61 项。
 - `8cf232a` 设置与窗口 IPC：拼写词典/语言 IPC + 启动恢复、启动耗时弹窗、窗口状态通道。
@@ -400,10 +403,10 @@ node --experimental-vm-modules src/renderer/core/workspace-regression.js
 - 全局 tooltip（`core/tooltip.js`，1000ms 延迟/100ms 宽限/上下左右/翻转/抑制原生 title）、Notice 右上角+4000ms+hover 暂停+收拢动画、Suggest clear 按钮/PageUp/PageDown/Ctrl+p/n/auxclick；dialogs 场景扩到 7 项。同时把 file-explorer 移动失败的英文硬编码改成 locale 键（zh/en 同步）。
 
 未完成/已知缺口（后续）：
-- 菜单快捷键右对齐无原版证据（不做）。
 - 画布：CM6 卡片编辑、空间索引/视口虚拟化未做；canvas-view.js 796 行，下批拆分控件/更多菜单装配。
-- 画布：CM6 卡片编辑、空间索引未做（导出/参考线已完成）。
-- 图谱：颜色组拖拽、悬停高亮细节未做。
-- 编辑器：属性行编辑已存在；表格/嵌入右键菜单、链接 tooltip 细节未逐项核对；系统外部文件拖入（复制为附件）未做（文件树内部拖入已支持）。
-- 第三方插件页：捐赠按钮未做（市场未接入）；其余（卸载/设置齿轮/版本/作者/搜索/开关）已完成。
-- 无 macOS 分发包；README 许可证待定（LICENSE 未加）。
+- 图谱：力学 worker 化未做（5000 节点约 77fps）；触屏拖拽重排未移植；"已悬停时再按 Mod"的延迟监听未做（既有缺口）。
+- 编辑器：表格/嵌入右键菜单、链接路径 tooltip、图片尺寸语法未逐项核对；系统外部文件拖入（复制为附件）未做（文件树内部拖入已支持）。
+- 核心插件：audio-recorder 未实现（需要麦克风权限，无头验收不可测）；slash-command/webviewer/bases/markdown-importer/publish/sync 按约定跳过。
+- 第三方插件页：捐赠按钮未做（市场未接入）；快捷键录制仍为弹窗（原版行内等待 chip）。
+- 无 macOS 分发包/签名/自动更新；README 许可证待定（LICENSE 未加）。
+- 未做像素级视觉验收（用户要求停截图）：只保证 DOM/逻辑/计算样式与回归。
