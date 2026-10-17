@@ -362,3 +362,11 @@ node --experimental-vm-modules src/renderer/core/workspace-regression.js
 - 已派：tooltip 全套、notice 位置/交互、suggest 细节、i18n 小修（通用组件批）；编辑器/文件/关于页签行级（设置批）。
 - 仍待派（等 settings.css/settings-tabs-appearance.js 占用释放）：外观页 ribbon 配置弹窗、自定义应用图标行、字体管理弹窗细节（存在性指示/拖拽/建议）、主题 Legacy 项、重设主题色 #7f6df2/getAccentColor；核心插件页齿轮显示条件（enabled&&settingTab）、快捷键页筛选菜单/chip/按键筛选、启动时间弹窗（已并入设置批 C8）；菜单/模态（键盘分层、勾选右侧 mod-checked、is-label、separator、焦点管理）→ 等 components.css 释放后派"菜单+模态"批。
 - 明确不做：设置全局搜索框、设置滚动记忆（原版无证据）。
+
+### §16 进度看板（2026-10-17 晚，滚动更新）
+
+- 已提交 `4c4fcc2` 社区插件安全模式（run 19 项 + restart 3 项 + core-ribbon 47 项）；顺带修复插件 shim 未导入 Keymap 的沉睡 bug（任何社区插件加载都会 ReferenceError）。新场景 `scripts/acceptance/community.js`。
+- 工作区未提交半成品（来自被限流中断的设置批）：`settings-tabs.js`（启动时间弹窗/编辑模式同步）、`main.js`+`ipc.js`（拼写词典/语言 IPC 与启动恢复）。续做批正在补齐编辑器/文件页签剩余项。
+- 在跑批次（6）：编辑器审计、核心插件审计、（shell 手感批）、（通用组件批 tooltip/notice/suggest）、（设置页续做）、（外观页批字体管理/主题）。
+- 待派队列：菜单+模态批（等 components.css 释放）、功能区配置行/自定义图标（等 shell 批释放 workspace-renderer.js/main.js）、编辑器保真批（等审计）、核心插件保真批（等审计）、画布 CM6 卡片编辑/图片导出等（等审计）。
+- 提醒：所有子代理用 `sh scripts/with-lock.sh` 跑构建与验收；不许 commit；完成后由主 agent 集成提交。
