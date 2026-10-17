@@ -1,7 +1,7 @@
 /**
- * [INPUT]: 依赖 ../core/i18n.js 的 tt
+ * [INPUT]: 依赖 i18n 的 tt；读取 settings.config.userIgnoreFilters 与 vault 的 Markdown 文件列表。
  * [OUTPUT]: 导出 nameKey、create(app)（命令 random-note + ribbon 图标）
- * [POS]: plugins-core/ 的漫游笔记插件，原版 random-note 的 1:1 移植：ribbon 与命令都打开 vault.getMarkdownFiles() 中随机一篇。ribbon/命令图标用自有图标 dice-glyph（原版写 "dice"，本地 Lucide 表缺该名，dice-glyph 是同一枚骰子图形）。Mod 键点击在新标签页打开（原版 isModEvent 语义）。
+ * [POS]: 漫游笔记从未排除的 Markdown 文件中随机打开一篇。排除规则沿用原版路径前缀和 /正则/ 语义；Mod 点击新标签页，无候选时保持当前页。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 /* Core plugin: random-note — open a random markdown note. */
@@ -12,12 +12,21 @@ export const nameKey = 'plugins.random-note';
 export function create(app) {
   let ribbonEl = null;
 
-  function openRandomNote(ev) {
-    const files = app.vault.getMarkdownFiles();
+  async function openRandomNote(ev) {
+    const rules = (app.settings.config.userIgnoreFilters || []).flatMap((value) => {
+      const rule = String(value).trim();
+      if (!rule) return [];
+      try {
+        return [rule.length > 2 && rule.startsWith('/') && rule.endsWith('/')
+          ? new RegExp(rule.slice(1, -1), 'i')
+          : new RegExp('^' + rule.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i')];
+      } catch { return []; }
+    });
+    const files = app.vault.getMarkdownFiles().filter((file) => !rules.some((rule) => rule.test(file.path)));
     if (!files.length) return;
     const file = files[Math.floor(Math.random() * files.length)];
     const mod = !!(ev && (ev.metaKey || ev.ctrlKey));
-    app.workspace.openFile(file, { newLeaf: mod });
+    return app.workspace.openFile(file, { newLeaf: mod });
   }
 
   return {
@@ -38,8 +47,8 @@ export function create(app) {
       if (ribbonEl) { ribbonEl.detach(); ribbonEl = null; }
       app.commands.removeCommand('random-note');
     },
-    deregister(app2) {
-      app2.commands.removeCommand('random-note');
+    deregister() {
+      app.commands.removeCommand('random-note');
     },
   };
 }

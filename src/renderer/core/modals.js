@@ -1,3 +1,9 @@
+/**
+ * [INPUT]: Events、图标与 Keymap 的弹窗作用域。
+ * [OUTPUT]: Modal、PromptModal、prompt、confirmDialog 和弹窗状态查询。
+ * [POS]: 弹窗生命周期基座。复开取消延迟卸载，确认值先于关闭回调结算。
+ * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
+ */
 /* Modal base class + prompt helpers. */
 import { Events } from './events.js';
 import { setIcon } from './icons.js';
@@ -32,6 +38,10 @@ export class Modal extends Events {
     return this;
   }
   open() {
+    clearTimeout(this._closeTimer);
+    if (openModals.includes(this)) return this;
+    this.bgEl.removeClass('is-hidden');
+    this.modalEl.removeClass('is-hidden');
     document.body.appendChild(this.containerEl);
     openModals.push(this);
     this.onOpen && this.onOpen();
@@ -49,12 +59,13 @@ export class Modal extends Events {
   }
   close() {
     const i = openModals.indexOf(this);
-    if (i >= 0) openModals.splice(i, 1);
+    if (i < 0) return;
+    openModals.splice(i, 1);
     if (this.scope && this.app.keymap) this.app.keymap.popScope(this.scope);
     if (this._onKeyDown) document.removeEventListener('keydown', this._onKeyDown, true);
     this.bgEl.addClass('is-hidden');
     this.modalEl.addClass('is-hidden');
-    setTimeout(() => this.containerEl.detach(), 150);
+    this._closeTimer = setTimeout(() => this.containerEl.detach(), 150);
     this.onClose && this.onClose();
     this.trigger('closed');
   }
@@ -96,21 +107,23 @@ export class PromptModal extends Modal {
   }
   submit() {
     const value = this.inputEl.value;
-    this.close();
     this.options.onSubmit && this.options.onSubmit(value);
+    this.close();
   }
 }
 
 export function prompt(app, title, options = {}) {
   return new Promise((resolve) => {
-    new PromptModal(app, {
+    const modal = new PromptModal(app, {
       title,
       placeholder: options.placeholder,
       value: options.value || '',
       cls: options.cls,
       onSubmit: (v) => resolve(v),
       onCancel: () => resolve(null),
-    }).open();
+    });
+    modal.onClose = () => resolve(null);
+    modal.open();
   });
 }
 
@@ -123,7 +136,7 @@ export function confirmDialog(app, title, body, options = {}) {
     const cancel = buttons.createEl('button', { text: options.cancelText || 'Cancel' });
     cancel.onclick = () => { modal.close(); resolve(false); };
     const cta = buttons.createEl('button', { text: options.cta || 'Continue', cls: options.warning ? 'mod-warning' : 'mod-cta' });
-    cta.onclick = () => { modal.close(); resolve(true); };
+    cta.onclick = () => { resolve(true); modal.close(); };
     modal.onClose = () => resolve(false);
     modal.onOpen = () => setTimeout(() => cta.focus(), 10);
     modal.open();

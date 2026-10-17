@@ -1,7 +1,7 @@
 /**
- * [INPUT]: 依赖 ../core/i18n.js 的 tt；依赖 ../core/notices.js 的 Notice；依赖 ../core/setting.js 的 SettingGroup；依赖 ../core/vault.js 的 normalizePath；依赖 ./daily-notes.js 的 applyTemplate（{{title}}/{{date}} 变量替换）；moment
- * [OUTPUT]: 导出 nameKey、DEFAULT_OPTIONS、DEFAULT_FORMAT、create(app)（命令 zk-prefixer + ribbon）、settingTab(app, containerEl)
- * [POS]: plugins-core/ 的时间戳笔记插件。插件 id 保持原版 "zk-prefixer"；文案沿用原版 locale 命名空间 plugins.unique-note-creator（1.12 界面名 Unique note creator）。数据 .obsidian/zk-prefixer.json（folder/template/format）。getUniquePath 复刻原版：命名冲突时按 分→时→日→周→月→年 递增直至唯一，无法生成则 Notice。
+ * [INPUT]: 依赖 core 的翻译、通知、设置与路径 API；复用 daily-notes 的变量替换和 Markdown 创建；依赖 moment。
+ * [OUTPUT]: 导出唯一笔记与 insert-unique-link 命令、settingTab 及命名 API。
+ * [POS]: 唯一前缀逐时间单位递增并串行创建。循环格式有终止边界；冲突保留标题后缀，配置保存后立即生效。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 /* Core plugin: zk-prefixer — unique timestamp-prefixed notes. */
@@ -9,7 +9,7 @@ import { tt } from '../core/i18n.js';
 import { Notice } from '../core/notices.js';
 import { SettingGroup } from '../core/setting.js';
 import { normalizePath } from '../core/vault.js';
-import { applyTemplate } from './daily-notes.js';
+import { applyTemplate, createMarkdownNote } from './daily-notes.js';
 
 const moment = require('moment');
 
@@ -27,6 +27,7 @@ class ZkPrefixer {
     this.options = { ...DEFAULT_OPTIONS };
     this._ribbonEl = null;
     this._commandIds = [];
+    this._creation = Promise.resolve();
   }
 
   getFormat() {
@@ -37,32 +38,45 @@ class ZkPrefixer {
   /* 原版 getUniquePath：格式串生成的名称已存在时逐单位递增。 */
   getUniquePath(suffix = '') {
     const files = this.app.vault.getFiles();
-    const exists = (name) => files.some((f) => f.name.startsWith(name));
+    const exists = (name) => files.some((f) => f.name.toLowerCase().startsWith(name.toLowerCase()));
     const now = moment();
     const format = this.getFormat();
-    let name = now.format(format);
-    if (suffix) name += ' ' + suffix;
+    const base = now.format(format);
+    const withSuffix = (prefix) => prefix + (suffix ? ' ' + suffix : '');
+    let name = withSuffix(base);
     if (exists(name)) {
       let unit = '';
       for (const u of ['m', 'h', 'd', 'w', 'M', 'y']) {
-        if (now.clone().add(1, u).format(format) !== name) { unit = u; break; }
+        if (now.clone().add(1, u).format(format) !== base) { unit = u; break; }
       }
       if (!unit) {
         new Notice(tt('plugins.unique-note-creator.msg-failed-to-generate',
           'Failed to generate a unique note with the format "{{format}}"', { format }));
         return null;
       }
-      let cursor = now.clone();
-      for (;;) {
-        const candidate = cursor.add(1, unit).format(format);
-        if (!exists(candidate)) { name = candidate; break; }
+      const cursor = now.clone();
+      const seen = new Set([name]);
+      while (seen.size <= files.length + 1) {
+        const candidate = withSuffix(cursor.add(1, unit).format(format));
+        if (seen.has(candidate)) break;
+        if (!exists(candidate)) return candidate;
+        seen.add(candidate);
       }
+      new Notice(tt('plugins.unique-note-creator.msg-failed-to-generate',
+        'Failed to generate a unique note with the format "{{format}}"', { format }));
+      return null;
     }
     return name;
   }
 
   /** 原版 onCreateNote：解析目标文件夹/模板，创建并打开笔记。 */
-  async onCreateNote() {
+  async onCreateNote(ev) {
+    const result = this._creation.then(() => this.createNote(ev));
+    this._creation = result.catch(() => null);
+    return result;
+  }
+
+  async createNote(ev) {
     const name = this.getUniquePath();
     if (!name) return null;
     let folder = null;
@@ -80,7 +94,8 @@ class ZkPrefixer {
     try {
       let file;
       if (this.options.template) {
-        const templateFile = this.app.metadataCache.getFirstLinkpathDest(this.options.template, '');
+        const dest = this.app.metadataCache.getFirstLinkpathDest(this.options.template, '');
+        const templateFile = dest ? this.app.vault.getFileByPath(dest) : null;
         if (!templateFile) {
           new Notice(tt('plugins.unique-note-creator.msg-template-file-not-found',
             'Failed to create unique note. Template file "{{template}}" not found.', { template: this.options.template }));
@@ -88,11 +103,11 @@ class ZkPrefixer {
         }
         const raw = await this.app.vault.cachedRead(templateFile);
         const content = applyTemplate(raw, { title: name }, {});
-        file = await this.app.fileManager.createNewMarkdownFile(folder, name, content);
+        file = await createMarkdownNote(this.app, folder, name, content);
       } else {
-        file = await this.app.fileManager.createNewMarkdownFile(folder, name);
+        file = await createMarkdownNote(this.app, folder, name);
       }
-      await this.app.workspace.openFile(file);
+      await this.app.workspace.openFile(file, { newLeaf: !!(ev?.metaKey || ev?.ctrlKey), eState: { mode: 'source' } });
       return file;
     } catch (e) {
       new Notice(String(e && e.message ? e.message : e));
@@ -102,21 +117,42 @@ class ZkPrefixer {
 
   onload() {
     this.options = this.app.settings.loadPluginData(DATA_FILE, DEFAULT_OPTIONS);
+    this._settingsRef = this.app.settings.on('change', () => {
+      Object.assign(this.options, this.app.settings.loadPluginData(DATA_FILE, DEFAULT_OPTIONS));
+    });
     this._ribbonEl = this.app.workspace.addRibbonItem(
       'sheets-in-box',
       tt('plugins.unique-note-creator.action-create-note', 'Create new unique note'),
-      () => this.onCreateNote(),
+      (ev) => this.onCreateNote(ev),
     );
     this.app.commands.addCommand({
       id: 'zk-prefixer',
       name: tt('plugins.unique-note-creator.action-create-note', 'Create new unique note'),
       icon: 'box-glyph',
-      callback: () => this.onCreateNote(),
+      callback: (ev) => this.onCreateNote(ev),
     });
     this._commandIds.push('zk-prefixer');
+    this.app.commands.addCommand({
+      id: 'insert-unique-link',
+      name: tt('plugins.unique-note-creator.action-add-link', 'Insert unique note link'),
+      icon: 'lucide-link',
+      editorCallback: (editor) => {
+        const from = editor.getCursor('from');
+        const to = editor.getCursor('to');
+        const name = this.getUniquePath(editor.getRange(from, to));
+        if (!name) return;
+        const start = editor.posToOffset(from) + 2;
+        const selected = editor.somethingSelected();
+        editor.replaceSelection('[[' + name + ']]');
+        editor.setSelection(editor.offsetToPos(selected ? start : start + name.length), editor.offsetToPos(start + name.length));
+      },
+    });
+    this._commandIds.push('insert-unique-link');
   }
 
   onunload() {
+    this._settingsRef?.unregister();
+    this._settingsRef = null;
     if (this._ribbonEl) { this._ribbonEl.detach(); this._ribbonEl = null; }
     this.deregisterCommands();
   }
@@ -175,7 +211,8 @@ export function settingTab(app, containerEl) {
         .setSampleEl(sampleEl)
         .setDefaultFormat(DEFAULT_FORMAT)
         .setValue(options.format)
-        .onChange((value) => { options.format = value.trim(); save(); });
+        .onChange((value) => { options.format = value.trim(); component.updateSample(); save(); });
+      component.updateSample();
     });
   });
   return group;
@@ -192,7 +229,7 @@ export function create(app) {
     deregisterCommands() { plugin.deregisterCommands(); },
     deregister() { plugin.onunload(); },
     // 公开 API
-    onCreateNote: () => plugin.onCreateNote(),
+    onCreateNote: (ev) => plugin.onCreateNote(ev),
     getUniquePath: (suffix) => plugin.getUniquePath(suffix),
     getFormat: () => plugin.getFormat(),
     getOptions: () => plugin.options,

@@ -1,7 +1,7 @@
 /**
- * [INPUT]: 依赖 ../core/i18n.js 的 t；依赖 ../core/notices.js 的 Notice；依赖 ../core/suggest.js 的 SuggestModal/fuzzyMatch/renderHighlightedText；依赖 ../core/setting.js 的 SettingGroup；依赖 ./daily-notes.js 的 applyTemplate/DEFAULT_DATE_FORMAT/DEFAULT_TIME_FORMAT
- * [OUTPUT]: 导出 nameKey、create(app)（命令 insert-template / insert-current-date / insert-current-time）、settingTab(app,containerEl)
- * [POS]: plugins-core/ 的模板插件。数据 .obsidian/templates.json（folder/dateFormat/timeFormat）。模板选择弹窗列出模板文件夹内全部 md；插入时经 applyTemplate 替换 {{date}}/{{time}}/{{title}}，光标在文档开头时写入含属性区的完整模板，否则只插入正文部分（原版经属性编辑器合并属性，此处简化）。
+ * [INPUT]: 依赖 core 的设置控件、建议弹窗、路径与属性解析；依赖 daily-notes 的变量替换及 js-yaml 的属性序列化。
+ * [OUTPUT]: 导出模板命令、settingTab、parseNote、mergeProperties、joinNote。属性函数供 note-composer 复用。
+ * [POS]: 模板使用当前编辑器插入正文并合并属性。配置保存后同步实例；属性语法错误阻止修改，日期插入使用宿主 setSelection 定位。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 /* Core plugin: templates — insert template file contents at the cursor. */
@@ -10,9 +10,11 @@ import { Notice } from '../core/notices.js';
 import { SuggestModal, fuzzyMatch, renderHighlightedText } from '../core/suggest.js';
 import { SettingGroup } from '../core/setting.js';
 import { normalizePath } from '../core/vault.js';
+import { parseFrontmatterText } from '../core/metadata.js';
 import { applyTemplate, DEFAULT_DATE_FORMAT, DEFAULT_TIME_FORMAT } from './daily-notes.js';
 
 const moment = require('moment');
+const yaml = require('js-yaml');
 
 export const nameKey = 'plugins.templates';
 
@@ -20,22 +22,43 @@ export const DEFAULT_OPTIONS = { folder: '', dateFormat: '', timeFormat: '' };
 
 const DATA_FILE = 'templates.json';
 
-/* 模板文件去掉 YAML 属性区后的正文（原版 gI() 的简化版）。 */
-function stripFrontmatter(text) {
-  const lines = text.split('\n');
-  if (lines[0] === undefined || lines[0].trim() !== '---') return text;
-  for (let i = 1; i < lines.length; i++) {
-    if (lines[i].trim() === '---' || lines[i].trim() === '...') {
-      return lines.slice(i + 1).join('\n').replace(/^\n+/, '');
-    }
+/** 复用宿主 YAML 解析，但禁止将非法属性静默丢弃。 */
+export function parseNote(text) {
+  const note = parseFrontmatterText(text);
+  if (note.error) throw note.error;
+  if (Array.isArray(note.frontmatter) || note.frontmatter instanceof Date) {
+    throw new Error('Note properties must be a mapping.');
   }
-  return text;
+  return note;
+}
+
+/** 属性按键合并；列表去重，已有非空值不被 null 覆盖。 */
+export function mergeProperties(target, source) {
+  for (const key of Object.keys(source)) {
+    const before = Object.hasOwn(target, key) ? target[key] : undefined;
+    const after = source[key];
+    let value = after;
+    if (before && after === null) continue;
+    if (Array.isArray(before) && Array.isArray(after)) value = [...new Set([...before, ...after])];
+    else if (before && after && before.constructor === Object && after.constructor === Object) {
+      value = mergeProperties({ ...before }, after);
+    }
+    Object.defineProperty(target, key, { value, enumerable: true, writable: true, configurable: true });
+  }
+  return target;
+}
+
+export function joinNote(properties, body) {
+  return Object.keys(properties).length
+    ? '---\n' + yaml.dump(properties, { lineWidth: -1, noRefs: true }).trimEnd() + '\n---\n' + body
+    : body;
 }
 
 /* --------------------------------------------------------------------------
  * 模板选择弹窗 — 对齐原版 bee 弹窗：列出模板文件夹内 md，按路径排序
  * ------------------------------------------------------------------------ */
 class TemplateSuggestModal extends SuggestModal {
+  getInstructions() { return this.instructions || super.getInstructions(); }
   constructor(app, plugin, folderPath) {
     super(app);
     this.plugin = plugin;
@@ -87,6 +110,9 @@ class Templates {
 
   onload() {
     this.options = this.app.settings.loadPluginData(DATA_FILE, DEFAULT_OPTIONS);
+    this._settingsRef = this.app.settings.on('change', () => {
+      Object.assign(this.options, this.app.settings.loadPluginData(DATA_FILE, DEFAULT_OPTIONS));
+    });
     const add = (command) => {
       this.app.commands.addCommand(command);
       this._commandIds.push(command.id);
@@ -95,7 +121,12 @@ class Templates {
       id: 'insert-template',
       name: t('plugins.templates.action-insert') || 'Insert template',
       icon: 'lucide-copy',
-      callback: () => this.onInsertTemplate(),
+      checkCallback: (checking) => {
+        const view = this.app.workspace.getActiveViewOfType('markdown');
+        if (!view?.editor || view.mode === 'preview') return false;
+        if (!checking) this.onInsertTemplate();
+        return true;
+      },
     });
     add({
       id: 'insert-current-date',
@@ -112,6 +143,8 @@ class Templates {
   }
 
   onunload() {
+    this._settingsRef?.unregister();
+    this._settingsRef = null;
     this.deregisterCommands();
   }
 
@@ -179,17 +212,36 @@ class Templates {
     const ed = editor || (view && view.editor);
     const sourceFile = file || (view && view.file);
     if (!ed) return '';
-    const raw = await this.app.vault.cachedRead(templateFile);
-    const text = applyTemplate(raw, { title: sourceFile ? sourceFile.basename : '' }, {
-      dateFormat: this.options.dateFormat || DEFAULT_DATE_FORMAT,
-      timeFormat: this.options.timeFormat || DEFAULT_TIME_FORMAT,
-    });
-    const cursor = ed.getCursor('from');
-    const atStart = cursor.line === 0 && cursor.ch === 0;
-    if (atStart) ed.replaceSelection(text);
-    else ed.replaceSelection(stripFrontmatter(text));
-    ed.focus();
-    return text;
+    try {
+      const raw = await this.app.vault.cachedRead(templateFile);
+      const text = applyTemplate(raw, { title: sourceFile ? sourceFile.basename : '' }, {
+        dateFormat: this.options.dateFormat || DEFAULT_DATE_FORMAT,
+        timeFormat: this.options.timeFormat || DEFAULT_TIME_FORMAT,
+      });
+      const cursor = ed.getCursor('from');
+      const atStart = cursor.line === 0 && cursor.ch === 0;
+      if (atStart) ed.replaceSelection(text);
+      else {
+        const template = parseNote(text);
+        if (!Object.keys(template.frontmatter).length) ed.replaceSelection(template.body);
+        else {
+          const current = ed.getValue();
+          const note = parseNote(current);
+          const headerLength = current.length - note.body.length;
+          const from = Math.max(0, ed.posToOffset(cursor) - headerLength);
+          const to = Math.max(from, ed.posToOffset(ed.getCursor('to')) - headerLength);
+          const body = note.body.slice(0, from) + template.body + note.body.slice(to);
+          const merged = joinNote(mergeProperties(note.frontmatter, template.frontmatter), body);
+          ed.replaceRange(merged, { line: 0, ch: 0 }, ed.offsetToPos(current.length));
+          ed.setSelection(ed.offsetToPos(merged.length - body.length + from + template.body.length));
+        }
+      }
+      ed.focus();
+      return text;
+    } catch (error) {
+      new Notice(String(error.message || error));
+      return '';
+    }
   }
 
   insertCurrentDate(editor) {
@@ -208,7 +260,7 @@ class Templates {
     const head = editor.getCursor('head');
     const offset = editor.posToOffset(head);
     editor.replaceRange(text, head);
-    editor.setCursor(editor.offsetToPos(offset + text.length));
+    editor.setSelection(editor.offsetToPos(offset + text.length));
   }
 }
 

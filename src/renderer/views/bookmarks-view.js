@@ -1,7 +1,7 @@
 /**
  * [INPUT]: 依赖 ../core/view.js 的 View；依赖 ../core/i18n.js 的 t；依赖 ../core/icons.js 的 setIcon；依赖 ../core/menu.js 的 Menu；依赖 ../core/notices.js 的 Notice
  * [OUTPUT]: 导出 BookmarksView 类
- * [POS]: views/ 的书签面板视图。由 plugins-core/bookmarks.js 注册为 'bookmarks' 视图类型并注入插件实例（setPlugin）。DOM 对齐原版：tree-item-self.bookmark 行 + tree-item-icon + tree-item-inner-text，分组可折叠，行尾 more-horizontal 菜单（重命名/删除/复制路径），点击文件打开、搜索执行搜索。
+ * [POS]: 空分组保持可见，活动项按文件路径匹配。views/ 的书签面板视图。由 plugins-core/bookmarks.js 注册为 'bookmarks' 视图类型并注入插件实例（setPlugin）。DOM 对齐原版：tree-item-self.bookmark 行 + tree-item-icon + tree-item-inner-text，分组可折叠，行尾 more-horizontal 菜单（重命名/删除/复制路径），点击文件打开、搜索执行搜索。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 /* Bookmarks view — tree of bookmarks grouped by item type. */
@@ -66,6 +66,8 @@ export class BookmarksView extends View {
 
   /* ------------------------------------------------------------------ 渲染 */
   _render() {
+    clearTimeout(this._queueTimer);
+    this._queueTimer = null;
     const plugin = this._plugin;
     if (!plugin) return;
     this.contentEl.empty();
@@ -110,6 +112,7 @@ export class BookmarksView extends View {
     itemEl.setAttr('data-path', this._itemPath(item));
     const self = itemEl.createDiv('tree-item-self is-clickable bookmark');
     if (isGroup) self.addClass('mod-collapsible');
+    if (item.type === 'file') self.setAttr('data-file', item.path);
 
     if (isGroup) {
       const iconEl = self.createDiv('tree-item-icon collapse-icon');
@@ -147,12 +150,8 @@ export class BookmarksView extends View {
 
     if (isGroup) {
       const children = itemEl.createDiv('tree-item-children');
-      let childVisible = false;
-      for (const child of item.items || []) {
-        if (this._renderItem(children, child, item)) childVisible = true;
-      }
-      if (!childVisible && visible) self.toggle(false);
-      return visible && (childVisible || !(item.items || []).length);
+      for (const child of item.items || []) this._renderItem(children, child, item);
+      return visible;
     }
     return visible;
   }
@@ -204,8 +203,7 @@ export class BookmarksView extends View {
     this._treeEl.findAll('.tree-item-self.is-active').forEach((el) => el.removeClass('is-active'));
     if (!active) return;
     const row = this._treeEl.findAll('.tree-item-self.bookmark').find((el) => {
-      const path = el.parentElement ? el.parentElement.getAttr('data-path') : null;
-      return path === this._plugin.getItemTitle({ type: 'file', path: active.path });
+      return el.getAttr('data-file') === active.path;
     });
     if (row) row.addClass('is-active');
   }
@@ -274,7 +272,7 @@ export class BookmarksView extends View {
     selection.removeAllRanges();
     selection.addRange(range);
     const commit = (save) => {
-      titleEl.removeAttr('contenteditable');
+      titleEl.removeAttribute('contenteditable');
       self.removeClass('is-being-renamed');
       titleEl.onkeydown = null;
       titleEl.onblur = null;

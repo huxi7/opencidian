@@ -1,7 +1,7 @@
 /**
  * [INPUT]: 依赖 node 内置 fs/path（探测 .obsidian/bookmarks.json 是否存在）；依赖 ../core/events.js 的 Events；依赖 ../core/i18n.js 的 t；依赖 ../core/icons.js 的 setIcon；依赖 ../core/notices.js 的 Notice；依赖 ../core/vault.js 的 TFolder；依赖 ../views/bookmarks-view.js 的 BookmarksView
  * [OUTPUT]: 导出 nameKey、create(app)（插件实例：items/hasValidData/getItemTitle/openItem/removeItem/renameItem/createGroup/addItem/bookmarkCurrentView/on('changed')），注册 'bookmarks' 视图与 5 条命令（open/bookmark-current-view/unbookmark-current-view/bookmark-current-search/bookmark-current-heading）
- * [POS]: plugins-core/ 的书签插件与数据层。数据 .obsidian/bookmarks.json（{items:[...]}，项形状对齐原版：file/folder/search/group），无数据时从 .obsidian/starred.json 迁移。视图只渲染，增删改与打开行为都在本文件；file 书签直接解析 vault 文件并带 subpath eState 打开（不走 openLinkText）。视图头部书签图标按原版 addAction 语义 prepend 注入，由 mod-bookmark/mod-bookmarked 类控制显隐（见 styles/bookmarks.css）。
+ * [POS]: 文件视图均可收藏，目录改名同步子路径书签。plugins-core/ 的书签插件与数据层。数据 .obsidian/bookmarks.json（{items:[...]}，项形状对齐原版：file/folder/search/group），无数据时从 .obsidian/starred.json 迁移。视图只渲染，增删改与打开行为都在本文件；file 书签直接解析 vault 文件并带 subpath eState 打开（不走 openLinkText）。视图头部书签图标按原版 addAction 语义 prepend 注入，由 mod-bookmark/mod-bookmarked 类控制显隐（见 styles/bookmarks.css）。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 /* Core plugin: bookmarks — bookmark files, folders, searches and groups. */
@@ -282,7 +282,7 @@ class BookmarksPlugin extends Events {
   _bookmarkableItemForView(view) {
     if (!view || !view.getViewType) return null;
     const type = view.getViewType();
-    if (type === 'markdown' && view.file) return { type: 'file', ctime: Date.now(), path: view.file.path };
+    if (view.file) return { type: 'file', ctime: Date.now(), path: view.file.path };
     if (type === 'search') {
       const query = this._getSearchQuery(view);
       return query ? { type: 'search', ctime: Date.now(), query } : null;
@@ -364,7 +364,7 @@ class BookmarksPlugin extends Events {
       icon: 'lucide-bookmark-minus',
       checkCallback: (checking) => {
         const view = this._activeView();
-        const existing = view && view.getViewType && view.getViewType() === 'markdown' && view.file
+        const existing = view && view.getViewType && view.file
           ? this.bookmarkLookup[view.file.path]
           : null;
         if (!existing) return false;
@@ -408,7 +408,7 @@ class BookmarksPlugin extends Events {
       const actions = leaf._viewActionsEl;
       if (!actions) return;
       const view = leaf.view;
-      const bookmarkable = view && view.getViewType && view.getViewType() === 'markdown' && view.file;
+      const bookmarkable = view && view.getViewType && view.file;
       let btn = actions.querySelector('.view-action.mod-bookmark');
       if (!bookmarkable) {
         if (btn) btn.detach();
@@ -442,8 +442,9 @@ class BookmarksPlugin extends Events {
   _onFileRename(file, oldPath) {
     let changed = false;
     this._walkItems((item) => {
-      if ((item.type === 'file' || item.type === 'folder') && item.path === oldPath) {
-        item.path = file.path;
+      if ((item.type === 'file' || item.type === 'folder') &&
+          (item.path === oldPath || (file instanceof TFolder && item.path.startsWith(oldPath + '/')))) {
+        item.path = file.path + item.path.slice(oldPath.length);
         changed = true;
       }
       return true;

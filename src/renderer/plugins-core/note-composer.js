@@ -1,7 +1,7 @@
 /**
- * [INPUT]: 依赖 ../core/i18n.js 的 t；依赖 ../core/notices.js 的 Notice；依赖 ../core/suggest.js 的 SuggestModal/fuzzyMatch/renderHighlightedText；依赖 ../core/modals.js 的 confirmDialog；依赖 ../core/setting.js 的 SettingGroup；依赖 ./daily-notes.js 的 applyTemplate
+ * [INPUT]: 依赖 core 的设置、建议弹窗、确认框及 Markdown 解析；复用 daily-notes 的创建入口与 templates 的属性合并。
  * [OUTPUT]: 导出 nameKey、create(app)（命令 note-composer:merge-file / note-composer:split-file / note-composer:extract-heading）、settingTab(app,containerEl)
- * [POS]: plugins-core/ 的笔记重组插件。数据 .obsidian/note-composer.json（askBeforeMerging/replacementText/template）。合并=把当前笔记追加/前插到目标笔记后删除当前文件；提取=把选中内容写入目标笔记并在原处替换为链接/嵌入/无。
+ * [POS]: 重组先读取打开的编辑器，目标落盘后再替换或删除来源。属性单独合并，反链用宿主快照重定向；配置实时同步，删除遵循 none/local/system。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 /* Core plugin: note-composer — merge files and extract selections. */
@@ -10,7 +10,9 @@ import { Notice } from '../core/notices.js';
 import { SuggestModal, fuzzyMatch, renderHighlightedText } from '../core/suggest.js';
 import { confirmDialog } from '../core/modals.js';
 import { SettingGroup } from '../core/setting.js';
-import { applyTemplate } from './daily-notes.js';
+import { applyTemplate, createMarkdownNote } from './daily-notes.js';
+import { parseNote, mergeProperties, joinNote } from './templates.js';
+import { parseMarkdown } from '../core/metadata.js';
 
 export const nameKey = 'plugins.note-composer';
 
@@ -23,6 +25,7 @@ const DATA_FILE = 'note-composer.json';
  *   ↵ 追加 / shift ↵ 前插 / mod ↵ 新建笔记后合并
  * ------------------------------------------------------------------------ */
 class FileSuggestModal extends SuggestModal {
+  getInstructions() { return this.instructions || super.getInstructions(); }
   constructor(app, plugin) {
     super(app);
     this.plugin = plugin;
@@ -60,7 +63,7 @@ class FileSuggestModal extends SuggestModal {
     else el.setText(file.path);
   }
   onInputKeyDown(ev) {
-    if (ev.key === 'Enter' && (ev.metaKey || ev.ctrlKey)) {
+    if (ev.key === 'Enter' && (ev.metaKey || ev.ctrlKey || !this.results.length)) {
       ev.preventDefault();
       this.createNewAndChoose(ev.shiftKey);
       return;
@@ -73,7 +76,7 @@ class FileSuggestModal extends SuggestModal {
     this.close();
     try {
       const folder = this.app.fileManager.getNewFileParent(this.currentFile.path);
-      const file = await this.app.fileManager.createNewMarkdownFile(folder, name);
+      const file = await createMarkdownNote(this.app, folder, name);
       await this.onChooseTarget(file, { shiftKey: !!prepend });
     } catch (e) {
       new Notice(String(e && e.message ? e.message : e));
@@ -97,6 +100,9 @@ class NoteComposer {
 
   onload() {
     this.options = this.app.settings.loadPluginData(DATA_FILE, DEFAULT_OPTIONS);
+    this._settingsRef = this.app.settings.on('change', () => {
+      Object.assign(this.options, this.app.settings.loadPluginData(DATA_FILE, DEFAULT_OPTIONS));
+    });
     const add = (command) => {
       this.app.commands.addCommand(command);
       this._commandIds.push(command.id);
@@ -119,7 +125,7 @@ class NoteComposer {
       checkCallback: (checking) => {
         const view = this.app.workspace.getActiveViewOfType('markdown');
         const editor = view && view.editor;
-        if (!editor || !view.file || !editor.somethingSelected()) return false;
+        if (!editor || !view.file || view.mode === 'preview' || !editor.somethingSelected()) return false;
         if (!checking) this.openSplitModal(editor, view.file);
         return true;
       },
@@ -131,7 +137,7 @@ class NoteComposer {
       checkCallback: (checking) => {
         const view = this.app.workspace.getActiveViewOfType('markdown');
         const editor = view && view.editor;
-        if (!editor || !view.file) return false;
+        if (!editor || !view.file || view.mode === 'preview') return false;
         if (checking) return this.getSelectionUnderHeading(view.file, editor) !== null;
         this.extractHeading(view.file, editor);
         return true;
@@ -140,6 +146,8 @@ class NoteComposer {
   }
 
   onunload() {
+    this._settingsRef?.unregister();
+    this._settingsRef = null;
     this.deregisterCommands();
   }
 
@@ -154,7 +162,7 @@ class NoteComposer {
     modal.setCurrentFile(currentFile);
     modal.onChooseTarget = (target, ev) => {
       const mode = ev && ev.shiftKey ? 'prepend' : 'append';
-      this.mergeFile(target, currentFile, mode);
+      return this.mergeFile(target, currentFile, mode);
     };
     modal.open();
   }
@@ -162,10 +170,11 @@ class NoteComposer {
   openSplitModal(editor, currentFile, defaultName) {
     const modal = new FileSuggestModal(this.app, this);
     modal.setCurrentFile(currentFile);
-    if (defaultName) modal.inputEl.value = defaultName;
+    modal.inputEl.value = defaultName || editor.getRange(editor.getCursor('from'), editor.getCursor('to'))
+      .split('\n')[0].replace(/[\\/:*?"<>|#\[\]]/g, '').trim();
     modal.onChooseTarget = (target, ev) => {
       const mode = ev && ev.shiftKey ? 'prepend' : 'append';
-      this.splitSelection(target, editor, currentFile, mode);
+      return this.splitSelection(target, editor, currentFile, mode);
     };
     modal.open();
   }
@@ -185,11 +194,15 @@ class NoteComposer {
       if (!ok) return;
     }
     try {
-      const content = await this.app.vault.read(current);
+      const content = await this.readCurrentText(current);
       const text = await this.applyComposerTemplate(content, current.basename, target.basename);
+      const affected = this.app.fileManager._countAffectedLinks(current.path);
       await this.insertIntoFile(target, text, mode);
-      await this.deleteFile(current);
+      if (affected.links) await this.app.fileManager.updateLinks(current.path, target, affected);
+      // 宿主删除活动文件会清空视图 DOM，先切换到目标再发送 delete。
       await this.app.workspace.openFile(target);
+      await this.deleteFile(current);
+      return target;
     } catch (e) {
       new Notice(String(e && e.message ? e.message : e));
     }
@@ -198,7 +211,7 @@ class NoteComposer {
   /* ---------------------------------------------------------------- 提取 */
   /** 把编辑器选中内容写入 target，原处替换为链接/嵌入/无。 */
   async splitSelection(target, editor, currentFile, mode = 'append') {
-    if (!target || !editor || !currentFile) return;
+    if (!target || !editor || !currentFile || target.path === currentFile.path) return;
     /* 本复刻 editor.getSelection() 返回 {anchor,head}；选中文本用 getRange 取。 */
     const from = editor.getCursor('from');
     const to = editor.getCursor('to');
@@ -210,7 +223,14 @@ class NoteComposer {
       const link = this.app.fileManager.generateMarkdownLink(target, currentFile.path);
       const replacementText = this.options.replacementText || 'link';
       const replacement = replacementText === 'embed' ? '!' + link : replacementText === 'none' ? '' : link;
-      editor.replaceRange(replacement, from, to);
+      if (editor.getRange(from, to) !== selection) {
+        new Notice('Selection changed. The extracted copy was saved; the source was kept.');
+        return target;
+      }
+      editor.setSelection(from, to);
+      editor.replaceSelection(replacement);
+      await this.saveEditor(currentFile, editor);
+      return target;
     } catch (e) {
       new Notice(String(e && e.message ? e.message : e));
     }
@@ -228,7 +248,7 @@ class NoteComposer {
 
   /** 光标所在小节的起止范围（原版 getSelectionUnderHeading）。 */
   getSelectionUnderHeading(file, editor) {
-    const cache = this.app.metadataCache.getFileCache(file);
+    const cache = parseMarkdown(editor.getValue(), file);
     const headings = cache && cache.headings;
     if (!headings || !headings.length) return null;
     const line = editor.getCursor().line;
@@ -264,35 +284,60 @@ class NoteComposer {
       return content;
     }
     let template = await this.app.vault.cachedRead(templateFile);
-    if (!template.includes('{{content}}')) template += '\n\n{{content}}';
+    if (!template) return content;
+    if (!/{{content}}/i.test(template)) template += '\n\n{{content}}';
     return applyTemplate(template, { fromTitle, newTitle, content }, {});
   }
 
-  /** 向文件追加/前插内容。前插跳过 YAML 属性区（原版 contentStart 语义）。 */
+  getFileView(file) {
+    return this.app.workspace.getLeavesOfType('markdown')
+      .map((leaf) => leaf.view).find((view) => view.file?.path === file.path && view.editor);
+  }
+
+  async readCurrentText(file) {
+    const view = this.getFileView(file);
+    if (!view) return this.app.vault.read(file);
+    await view.save();
+    return view.editor.getValue();
+  }
+
+  async saveEditor(file, editor) {
+    const view = this.getFileView(file);
+    if (view?.editor === editor) await view.save();
+    else await this.app.vault.modify(file, editor.getValue());
+  }
+
+  /** 属性合并后连接正文；打开的目标先写编辑器，避免防抖保存覆盖结果。 */
   async insertIntoFile(file, text, mode = 'append') {
-    const current = await this.app.vault.read(file);
-    let out;
-    if (mode === 'prepend') {
-      const lines = current.split('\n');
-      let insertAt = 0;
-      if (lines[0] !== undefined && lines[0].trim() === '---') {
-        for (let i = 1; i < lines.length; i++) {
-          if (lines[i].trim() === '---' || lines[i].trim() === '...') { insertAt = i + 1; break; }
-        }
-      }
-      const head = lines.slice(0, insertAt).join('\n');
-      const rest = lines.slice(insertAt).join('\n');
-      out = (head ? head + '\n\n' : '') + text + (rest ? '\n\n' + rest : '');
-    } else {
-      out = current.endsWith('\n') || !current ? current + '\n' + text : current + '\n\n' + text;
-    }
-    await this.app.vault.modify(file, out);
+    const current = await this.readCurrentText(file);
+    const before = parseNote(current);
+    const incoming = parseNote(text);
+    const first = mode === 'prepend' ? incoming.body : before.body;
+    const second = mode === 'prepend' ? before.body : incoming.body;
+    const gap = !first || !second || (first.slice(-2) + second.slice(0, 2)).includes('\n\n')
+      ? '' : first.endsWith('\n') || second.startsWith('\n') ? '\n' : '\n\n';
+    const out = joinNote(mergeProperties(before.frontmatter, incoming.frontmatter), first + gap + second);
+    const view = this.getFileView(file);
+    if (view) {
+      view.editor.replaceRange(out, { line: 0, ch: 0 }, view.editor.offsetToPos(view.editor.getValue().length));
+      await view.save();
+    } else await this.app.vault.modify(file, out);
+    if (await this.app.vault.read(file) !== out) throw new Error('Target note was not saved. The source was kept.');
+    return file;
   }
 
   /** 合并后删除源文件（走回收站策略，不再二次确认）。 */
   async deleteFile(file) {
     const trashOption = this.app.settings.appSettings.trashOption;
-    await this.app.vault.delete(file, trashOption === 'permanent');
+    if (trashOption === 'local') {
+      const adapter = this.app.vault.adapter;
+      let path = '.trash/' + file.name;
+      let suffix = 1;
+      while (await adapter.exists(path)) path = '.trash/' + file.basename + ' ' + suffix++ + '.md';
+      // 回收副本落盘后再删除；不改源文件身份，确保打开的视图收到 delete 事件。
+      await adapter.write(path, await this.readCurrentText(file));
+      await this.app.vault.delete(file, true);
+    } else await this.app.fileManager.deleteFile(file, true);
   }
 }
 

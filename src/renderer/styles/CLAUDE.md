@@ -6,7 +6,9 @@
 
 成员清单
 fonts.css: @font-face。Inter(界面) 与 Source Code Pro(等宽)，字体文件在 assets/fonts/。
-tokens.css: 901 个从原版提取的设计变量。body 级字体族变量在末尾。
+tokens.css: 设计变量入口。按序导入 foundation 与 interface，保持原版数值。
+tokens-foundation.css: 字重与前半全局变量。保留原版规则顺序。
+tokens-interface.css: 后半全局变量、明暗主题与字体族。
 base.css: 重置、滚动条(仅 body.styled-scrollbars 下生效，macOS 用系统 overlay 滚动条，逐字移植原版)、输入/按钮/开关/滑块基础样式、clickable-icon、.is-hidden。
 layout.css: 应用外壳。ribbon/workspace-split/tabs/leaf/view-header/status-bar。方向语义见 L1 规则 4。
 components.css: 菜单、弹窗、prompt/suggestion、notice、tooltip、空状态、设置外壳与 setting-item、collapse-indicator/text-icon-button。
@@ -17,5 +19,10 @@ markdown.css: 阅读视图排版、callout、代码块、表格、embed、proper
 search.css: 搜索面板、backlinks、outline、tag pane 的专属样式。树基础结构来自 tree.css。
 graph.css: 图谱视图(占位，随 graph 插件补全)。
 settings.css: 设置页签完整样式，逐字移植原版 app.css 设置段(vertical-tab 导航/内容、setting-item、mod-toggle、设置组头、hotkey 胶囊、CSS 片段列表)。
-canvas.css: 画布视图(占位)。
+canvas.css: 画布样式入口。按序导入节点规则与连接线规则。
+canvas-nodes.css: 原版画布布局、节点、分组与手柄规则。
+canvas-edges.css: 原版连接线与标签规则，补足本实现编辑控件。
+bookmarks.css: 书签树滚动、操作图标与视图头部收藏状态。
 slides.css: 幻灯片视图。.slides-container/.slides-close-btn/.collapse-indicator/.controls 段移植自原版 app.css slides 段；deck/section/progress 为视图内翻页新增；容器填满 leaf(原版为全屏覆盖层)，背景走 --background-primary。
+
+[PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md

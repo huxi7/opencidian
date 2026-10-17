@@ -1,3 +1,9 @@
+/**
+ * [INPUT]: Vault、Settings、MetadataCache、Workspace、命令、插件与桌面 IPC。
+ * [OUTPUT]: 导出 App，装配启动、外观、事件与布局保存。
+ * [POS]: 应用组合根。新建和修改文件均触发元数据解析。
+ * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
+ */
 /*
  * App — wires together vault, workspace, metadata cache, commands, plugins.
  * The public shape follows Obsidian's documented plugin API so community
@@ -86,7 +92,10 @@ export class App extends Events {
       this.metadataCache.onFileRename(file, oldPath);
       this.trigger('rename', file, oldPath);
     });
-    this.vault.on('create', (file) => { this.trigger('create', file); });
+    this.vault.on('create', (file) => {
+      this.metadataCache.onFileModify(file);
+      this.trigger('create', file);
+    });
 
     // workspace
     this.workspace = new Workspace(this);

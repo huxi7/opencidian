@@ -1,3 +1,9 @@
+/**
+ * [INPUT]: Modal、图标与 DOM 助手。
+ * [OUTPUT]: 模糊匹配、SuggestModal、GenericSuggester 与输入建议层。
+ * [POS]: 命令、模板、文件选择的公共入口。输入位于结果前，接受选择后关闭。
+ * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
+ */
 /* Suggestion framework: fuzzy matching + SuggestModal (quick switcher etc). */
 import { Modal } from './modals.js';
 import { setIcon } from './icons.js';
@@ -59,7 +65,14 @@ export class SuggestModal extends Modal {
     super(app);
     this.inputEl = this.modalEl.createEl('input', { type: 'text', cls: 'prompt-input' });
     this.inputEl.placeholder = this.getPlaceholder() || '';
-    this.contentEl.addClass('prompt');
+    this.modalEl.removeClass('modal');
+    this.modalEl.addClass('prompt');
+    this.headerEl.detach();
+    this.closeButtonEl.detach();
+    this.buttonContainerEl.detach();
+    const inputContainer = this.modalEl.createDiv('prompt-input-container');
+    inputContainer.appendChild(this.inputEl);
+    this.modalEl.insertBefore(inputContainer, this.contentEl);
     this.resultContainerEl = this.contentEl.createDiv('suggestion-container');
     this.resultContainerEl.addClass('prompt-results');
     this.limit = 50;
@@ -74,7 +87,7 @@ export class SuggestModal extends Modal {
   }
   getPlaceholder() { return ''; }
   getInstructions() {
-    return [
+    return this.instructions || [
       { command: '↑↓', purpose: 'to navigate' },
       { command: '↵', purpose: 'to select' },
       { command: 'esc', purpose: 'to dismiss' },
@@ -180,7 +193,7 @@ export function suggest(app, items, options = {}) {
       ...options,
       onChoose: (item) => resolve(item),
     });
-    s.onClose = () => resolve(null);
+    s.onClose = () => queueMicrotask(() => resolve(null));
     s.open();
   });
 }

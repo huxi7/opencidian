@@ -3,7 +3,7 @@
  * [OUTPUT]: 导出 CanvasViewport 类，供 canvas-interactions.js 继承。含视口状态机（x,y 为视口中心世界坐标，zoom=log2(scale)）、
  *           坐标换算（posFromDom/domFromPos 等）、requestFrame/renderFrame 动画帧、markViewportChanged/markMoved/markDirty 标记。
  * [POS]: views/ 画布类链的第二层：View → CanvasViewport → CanvasInteractions → CanvasView。所有画布子视图共享这一层视口语义；
- *        节点/边只通过 markMoved 请求重绘，不直接碰 DOM 变换。原版 cc 视口算法（n8 视图）逐字复刻于此。
+ *        节点/边通过 markMoved 请求重绘。缩放夹在边界内并刷新正文挂载，停止后释放动画帧。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 /* Canvas viewport engine — original viewport math + animation frame (class chain layer 2). */
@@ -37,7 +37,7 @@ export class CanvasViewport extends View {
   }
 
   zoomBy(delta, zoomCenter) {
-    this.tZoom += delta;
+    this.tZoom = clamp(this.tZoom + delta, ZOOM_MIN, ZOOM_MAX);
     this.zoomCenter = zoomCenter || { x: 0, y: 0 };
     this.markViewportChanged();
   }
@@ -143,7 +143,7 @@ export class CanvasViewport extends View {
     if (this.viewportChanged) {
       let x = this.x; let y = this.y; let zoom = this.zoom; let scale = this.scale;
       let tx = this.tx; let ty = this.ty;
-      let tZoom = clamp(this.tZoom, ZOOM_MIN, ZOOM_MAX);
+      let tZoom = this.tZoom = clamp(this.tZoom, ZOOM_MIN, ZOOM_MAX);
       const dZoom = tZoom - zoom;
       if (Math.abs(dZoom) < 0.01) ease = 1;
       if (!Number.isFinite(dZoom)) { zoom = tZoom = 0; scale = 1; }
@@ -179,12 +179,13 @@ export class CanvasViewport extends View {
       // 原版仅在动画结束设置 --zoom-multiplier；这里每帧设置，让字号随缩放连续变化
       this.wrapperEl.setCssProps({ '--zoom-multiplier': String(Math.sqrt(1 / scale)) });
       this.wrapperEl.toggleClass('mod-zoomed-out', zoom <= ZOOMED_OUT_AT);
+      for (const node of this.nodes.values()) node.updateBreakpoint(zoom > this.zoomBreakpoint || node.isEditing);
 
       if (this.x !== this.tx || this.y !== this.ty || this.zoom !== this.tZoom || Date.now() < this.pauseAnimation) {
         this.requestFrame(now);
         this.wasAnimating = true;
       } else {
-        this.wrapperEl.toggleClass('mod-animating', this.wasAnimating);
+        this.wrapperEl.removeClass('mod-animating');
         this.wasAnimating = false;
         this.viewportChanged = false;
       }

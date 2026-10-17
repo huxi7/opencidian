@@ -1,3 +1,9 @@
+/**
+ * [INPUT]: 依赖 Events 发布命令变化；依赖 Notice 显示执行失败。
+ * [OUTPUT]: 导出 Command 与 CommandManager，注册并分派命令。
+ * [POS]: 快捷键、菜单和插件共用入口。执行时传 checking=false 与活动视图。
+ * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
+ */
 /* Command manager — registry + execution, matching Obsidian's API. */
 import { Events } from './events.js';
 import { Notice } from './notices.js';
@@ -50,10 +56,11 @@ export class CommandManager extends Events {
     const cmd = this.commands[id];
     if (!cmd) return false;
     try {
-      if (cmd.checkCallback) { cmd.checkCallback(false); return true; }
+      if (cmd.checkCallback) return cmd.checkCallback(false) !== false;
       if (cmd.editorCheckCallback) {
-        const editor = this.app.workspace.activeLeaf && this.app.workspace.activeLeaf.view && this.app.workspace.activeLeaf.view.editor;
-        if (editor) { cmd.editorCheckCallback(true, editor); return true; }
+        const view = this.app.workspace.activeLeaf && this.app.workspace.activeLeaf.view;
+        const editor = view && view.editor;
+        if (editor) return cmd.editorCheckCallback(false, editor, view) !== false;
         return false;
       }
       if (cmd.editorCallback) {

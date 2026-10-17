@@ -1,3 +1,9 @@
+/**
+ * [INPUT]: 原版 app.css 的弹窗和建议布局；全局设计变量。
+ * [OUTPUT]: 菜单、弹窗、选择器与通知样式。
+ * [POS]: 公共控件基座。弹窗内容不强制纵向 flex，设置页保留双栏。
+ * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
+ */
 /* ==========================================================================
    components.css — menus, modals, prompts, notices, suggestions, tooltips
    ========================================================================== */
@@ -80,22 +86,20 @@
 .modal-container.is-open .modal-bg { opacity: 1; }
 .modal-bg.is-hidden { opacity: 0; }
 .modal {
+  --checkbox-size: var(--font-ui-medium);
+  background-color: var(--modal-background);
+  border-radius: var(--modal-radius);
+  border: var(--modal-border-width) solid var(--modal-border-color);
+  corner-shape: var(--corner-shape);
+  padding: var(--size-4-4);
   position: relative;
+  min-height: 100px;
+  width: var(--dialog-width);
+  max-width: var(--dialog-max-width);
+  max-height: var(--dialog-max-height);
   display: flex;
   flex-direction: column;
-  width: var(--modal-width);
-  max-width: var(--modal-max-width);
-  height: var(--modal-height);
-  max-height: var(--modal-max-height);
-  background-color: var(--modal-background);
-  border: var(--modal-border-width) solid var(--modal-border-color);
-  border-radius: var(--modal-radius);
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.35);
-  z-index: 1;
-  opacity: 0;
-  transform: scale(0.98);
-  transition: opacity var(--anim-duration-moderate) ease-in-out, transform var(--anim-duration-moderate) ease-in-out;
-  overflow: hidden;
+  overflow: auto;
 }
 .modal-container.is-open .modal { opacity: 1; transform: scale(1); }
 .modal.is-hidden { opacity: 0; transform: scale(0.98); }
@@ -123,14 +127,8 @@
 }
 .modal-title:empty { display: none; }
 .modal-content {
-  padding: var(--size-4-4) var(--size-4-6);
-  overflow-y: auto;
   flex: 1 1 auto;
-  display: flex;
-  flex-direction: column;
-  gap: var(--size-4-3);
-  -webkit-user-select: text;
-  user-select: text;
+  font-size: var(--font-ui-medium);
 }
 .modal-button-container {
   display: flex;
@@ -142,20 +140,7 @@
 
 /* prompt modal (also base for suggest modals) */
 .modal.mod-prompt, .modal:has(.prompt-input) { width: var(--prompt-width, 700px); max-width: var(--prompt-max-width, 1100px); }
-.prompt-input { font-size: var(--font-ui-medium); }
-.prompt-buttons { display: flex; justify-content: flex-end; gap: var(--size-4-2); }
 
-/* ------------------------------------------------------- suggestions/prompt */
-.modal .prompt { padding: 0; overflow: hidden; }
-.suggestion-container.prompt-results,
-.prompt-results {
-  display: flex;
-  flex-direction: column;
-  overflow-y: auto;
-  max-height: 60vh;
-  padding: var(--size-4-1);
-  gap: 1px;
-}
 .suggestion-item {
   display: flex;
   flex-direction: column;
@@ -397,3 +382,72 @@ h6:hover .collapse-indicator,
   }
   .text-icon-button.has-active-menu .text-button-icon,
   .text-icon-button:hover .text-button-icon {
+
+.prompt {
+  display: flex;
+  flex-direction: column;
+  border-radius: var(--radius-l);
+  background-color: var(--prompt-background);
+  box-shadow: var(--shadow-l);
+  backdrop-filter: var(--prompt-backdrop-filter);
+  border: var(--prompt-border-width) solid var(--prompt-border-color);
+  z-index: 1;
+  position: absolute;
+  top: 80px;
+  width: var(--prompt-width);
+  max-width: var(--prompt-max-width);
+  max-height: var(--prompt-max-height);
+  overflow: hidden;
+  corner-shape: var(--corner-shape);
+}
+.prompt-input-container {
+  --search-clear-button-size: 17px;
+  display: flex;
+  position: relative;
+}
+.prompt-input-container .search-input-clear-button {
+  inset-inline-end: var(--size-4-4);
+}
+input.prompt-input {
+  width: 100%;
+  padding: var(--size-4-6);
+  padding-inline-end: var(--size-4-12);
+  background-color: transparent;
+  font-size: var(--font-ui-medium);
+  border: none;
+  height: var(--prompt-input-height);
+  border-radius: 0;
+  border-bottom: var(--border-width) solid var(--background-secondary);
+}
+input.prompt-input:hover,
+input.prompt-input:focus,
+input.prompt-input:focus-visible {
+  border-bottom: var(--border-width) solid var(--background-secondary);
+  box-shadow: none;
+  background-color: transparent;
+}
+.prompt-results {
+  list-style: none;
+  margin: 0;
+  padding: var(--size-4-3);
+  overflow-y: auto;
+}
+.prompt-instructions {
+  border-top: var(--border-width) solid var(--background-secondary);
+  user-select: none;
+  font-size: var(--font-ui-smaller);
+  color: var(--text-muted);
+  padding: var(--size-4-2);
+  text-align: center;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: var(--size-4-3);
+}
+.prompt-instruction {
+  display: inline-block;
+}
+.prompt-instruction-command {
+  font-weight: var(--bold-weight);
+  margin-inline-end: var(--size-2-2);
+}

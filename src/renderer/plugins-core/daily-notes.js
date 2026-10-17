@@ -1,7 +1,7 @@
 /**
  * [INPUT]: 依赖 ../core/i18n.js 的 t；依赖 ../core/notices.js 的 Notice；依赖 ../core/setting.js 的 SettingGroup；依赖 ../core/vault.js 的 normalizePath；依赖 moment
- * [OUTPUT]: 导出 nameKey、create(app)（命令 daily-notes / daily-notes:goto-prev / daily-notes:goto-next + ribbon）、applyTemplate(text,vars,options)（模板变量替换，templates/note-composer 复用）、settingTab(app,containerEl)
- * [POS]: plugins-core/ 的日记插件。数据 .obsidian/daily-notes.json（folder/format/template），实例暴露 getDailyNote/getCurrentFileDateTimestamp 等 API 供其他插件调用。applyTemplate 逐字对齐原版 KD()：先替换 {{title}} 类变量，再替换 {{date[:FORMAT]}}/{{time[:FORMAT]}}。
+ * [OUTPUT]: 导出日记命令、settingTab、applyTemplate 与 createMarkdownNote。后两者供模板、重组及唯一笔记复用。
+ * [POS]: 日记按日期路径复用文件，并串行创建以阻止重复日记。配置保存后同步运行实例；嵌套日期路径进入 vault 文件树。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 /* Core plugin: daily-notes — open or create today's daily note. */
@@ -46,6 +46,22 @@ export function applyTemplate(text, vars, options = {}) {
   return out;
 }
 
+/** 补齐 Markdown 后缀和父文件夹。创建仍交给 fileManager 的唯一命名入口。 */
+export async function createMarkdownNote(app, folder, name, content = '') {
+  if (!name || /[\\:*?"<>|\r\n]/.test(name) || name.startsWith('/') ||
+      name.split('/').some((part) => !part.trim() || part.startsWith('.'))) {
+    throw new Error('Invalid note name: ' + name);
+  }
+  const parts = name.split('/');
+  let parent = folder;
+  for (const part of parts.slice(0, -1)) {
+    const path = normalizePath((parent.path === '/' ? '' : parent.path + '/') + part);
+    parent = app.vault.getFolderByPath(path) || await app.vault.createFolder(path);
+  }
+  const filename = parts[parts.length - 1];
+  return app.fileManager.createNewMarkdownFile(parent, /\.md$/i.test(filename) ? filename : filename + '.md', content);
+}
+
 /* --------------------------------------------------------------------------
  * DailyNotes — 插件实例
  * ------------------------------------------------------------------------ */
@@ -55,19 +71,25 @@ class DailyNotes {
     this.options = { ...DEFAULT_OPTIONS };
     this._ribbonEl = null;
     this._commandIds = [];
+    this._creation = Promise.resolve();
   }
 
   onload() {
     this.options = this.app.settings.loadPluginData(DATA_FILE, DEFAULT_OPTIONS);
+    this._settingsRef = this.app.settings.on('change', () => {
+      Object.assign(this.options, this.app.settings.loadPluginData(DATA_FILE, DEFAULT_OPTIONS));
+    });
     this._ribbonEl = this.app.workspace.addRibbonItem(
       'calendar',
       t('plugins.daily-notes.action-open') || "Open today's daily note",
-      () => this.onOpenDailyNote(),
+      (ev) => this.onOpenDailyNote(ev),
     );
     this._registerCommands();
   }
 
   onunload() {
+    this._settingsRef?.unregister();
+    this._settingsRef = null;
     this.deregisterCommands();
     if (this._ribbonEl) { this._ribbonEl.detach(); this._ribbonEl = null; }
   }
@@ -85,7 +107,7 @@ class DailyNotes {
       id: 'daily-notes',
       name: t('plugins.daily-notes.action-open') || "Open today's daily note",
       icon: 'lucide-calendar-days',
-      callback: () => this.onOpenDailyNote(),
+      callback: (ev) => this.onOpenDailyNote(ev),
     });
     add({
       id: 'daily-notes:goto-prev',
@@ -141,7 +163,7 @@ class DailyNotes {
       return null;
     }
     if (name) name = name.trim();
-    const folder = this.getFolder();
+    const folder = this.options.folder ? this.getFolder() : this.app.fileManager.getNewFileParent('');
     if (!folder) {
       new Notice(t('plugins.daily-notes.msg-fail-folder', { folderOption: this.options.folder }) || `Failed to create daily note. Folder "${this.options.folder}" not found.`);
       return null;
@@ -152,6 +174,12 @@ class DailyNotes {
 
   /** 打开（不存在则创建）指定日期的日记。其他插件/命令可调用。 */
   async getDailyNote(date) {
+    const result = this._creation.then(() => this.createDailyNote(date));
+    this._creation = result.catch(() => null);
+    return result;
+  }
+
+  async createDailyNote(date) {
     const m = date || moment();
     let name;
     try {
@@ -161,14 +189,14 @@ class DailyNotes {
       return null;
     }
     if (name) name = name.trim();
-    const folder = this.getFolder();
+    const folder = this.options.folder ? this.getFolder() : this.app.fileManager.getNewFileParent('');
     if (!folder) {
       new Notice(t('plugins.daily-notes.msg-fail-folder', { folderOption: this.options.folder }) || `Failed to create daily note. Folder "${this.options.folder}" not found.`);
       return null;
     }
     const prefix = folder.path === '/' ? '' : folder.path + '/';
     const path = normalizePath(prefix + name + '.md');
-    const existing = this.app.vault.getFileByPath(path);
+    const existing = this.app.vault.getFiles().find((file) => file.path.toLowerCase() === path.toLowerCase());
     if (existing) return existing;
     if (this.app.vault.getAbstractFileByPath(path)) return null;
     try {
@@ -182,18 +210,18 @@ class DailyNotes {
         }
         const raw = await this.app.vault.cachedRead(templateFile);
         const content = applyTemplate(raw, { title: name }, {});
-        return await this.app.fileManager.createNewMarkdownFile(folder, name, content);
+        return await createMarkdownNote(this.app, folder, name, content);
       }
-      return await this.app.fileManager.createNewMarkdownFile(folder, name);
+      return await createMarkdownNote(this.app, folder, name);
     } catch (e) {
       new Notice(String(e && e.message ? e.message : e));
       return null;
     }
   }
 
-  async onOpenDailyNote() {
+  async onOpenDailyNote(ev) {
     const file = await this.getDailyNote();
-    if (file) await this.app.workspace.openFile(file, { eState: { mode: 'source' } });
+    if (file) await this.app.workspace.openFile(file, { newLeaf: !!(ev?.metaKey || ev?.ctrlKey), eState: { mode: 'source' } });
   }
 
   /* ------------------------------------------------------ prev/next 导航 */
@@ -237,7 +265,7 @@ class DailyNotes {
     this.iterateDailyNotes((file, ts) => {
       if (ts < timestamp && ts > bestTs) { best = file; bestTs = ts; }
     });
-    if (best) this.app.workspace.openFile(best, { eState: { mode: 'source' } });
+    if (best) return this.app.workspace.openFile(best, { eState: { mode: 'source' } });
     else new Notice(t('plugins.daily-notes.msg-no-previous') || 'No older daily notes found.');
   }
 
@@ -247,7 +275,7 @@ class DailyNotes {
     this.iterateDailyNotes((file, ts) => {
       if (ts > timestamp && ts < bestTs) { best = file; bestTs = ts; }
     });
-    if (best) this.app.workspace.openFile(best, { eState: { mode: 'source' } });
+    if (best) return this.app.workspace.openFile(best, { eState: { mode: 'source' } });
     else new Notice(t('plugins.daily-notes.msg-no-next') || 'No newer daily notes found.');
   }
 }

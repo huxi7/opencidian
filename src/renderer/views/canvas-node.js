@@ -3,7 +3,7 @@
  * [OUTPUT]: 导出 CanvasNode（基类）、CanvasTextNode、CanvasFileNode、CanvasLinkNode、CanvasGroupNode
  * [POS]: views/ 画布三件套的节点层。DOM 对齐原版：nodeEl(.canvas-node) > containerEl(.canvas-node-container) > contentEl(.canvas-node-content)
  *        + contentBlockerEl + placeholderEl；resizer（data-resize）与连接点（data-side）挂在 nodeEl 上（原版在 interaction layer，本复刻就近放置，靠 CSS 控制显隐）。
- *        拖动/缩放/连线只负责几何与事件，数据写回由 canvas-view 统一调度。
+ *        可读缩放与编辑态挂载正文；输入逐次请求防抖保存。几何与事件写回由 canvas-view 统一调度。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 /* Canvas nodes — mirrors the original E5 / M5 / P5 / D5 / I5 / F5 classes. */
@@ -35,7 +35,7 @@ export class CanvasNode {
     this.aspectRatio = 0;
     this.isEditing = false;
     this.destroyed = false;
-    this.isSmall = false;
+    this.isSmall = null;
     this.isContentMounted = false;
     this.isGroup = false;
     this.nodeEl = createDiv('canvas-node');
@@ -104,11 +104,10 @@ export class CanvasNode {
     this.updateBreakpoint(this.canvas.zoom > this.canvas.zoomBreakpoint || this.isEditing);
   }
 
-  updateBreakpoint(isSmall) {
-    if (this.isSmall === isSmall) return;
-    this.isSmall = isSmall;
-    if (isSmall) this.unmountContent();
-    else this.mountContent();
+  updateBreakpoint(showContent) {
+    this.isSmall = !showContent;
+    if (showContent) this.mountContent();
+    else this.unmountContent();
   }
 
   mountContent() {
@@ -410,6 +409,7 @@ export class CanvasTextNode extends CanvasContentNode {
     this.contentEl.addClass('markdown-embed');
     this.embedContent = this.contentEl.createDiv('markdown-embed-content');
     this.previewEl = this.embedContent.createDiv('markdown-preview-view markdown-rendered');
+    this.previewSizerEl = this.previewEl.createDiv('markdown-preview-sizer');
     this.initializeEditing();
   }
 
@@ -432,7 +432,7 @@ export class CanvasTextNode extends CanvasContentNode {
     const token = ++this._renderToken;
     this._renderedText = this.text;
     this._renderedSource = sourcePath;
-    renderMarkdown(this.app, this.text || '', this.previewEl, sourcePath)
+    renderMarkdown(this.app, this.text || '', this.previewSizerEl, sourcePath)
       .then(() => { if (token !== this._renderToken) return; })
       .catch((e) => { this._renderedText = null; console.error('canvas text render failed', e); });
   }
@@ -447,8 +447,8 @@ export class CanvasTextNode extends CanvasContentNode {
     if (canvas.readonly || this.isEditing) return;
     canvas.selectOnly(this);
     if (canvas.zoom < canvas.zoomBreakpoint + 0.1) canvas.zoomToBbox(this.getBBox());
-    this.isEditing = true;
     this.setIsEditing(true);
+    this.updateBreakpoint(true);
     this.placeholderEl.detach();
     this.previewEl.hide();
     const editor = this.editorEl = this.embedContent.createEl('textarea', {
@@ -466,13 +466,13 @@ export class CanvasTextNode extends CanvasContentNode {
       this.text = editor.value;
       this.placeholderText = this.text;
       this.canvas.markDirty(this);
+      this.canvas.requestSave();
     });
   }
 
   stopEditing(cancelled) {
     if (!this.isEditing) return;
     const editor = this.editorEl;
-    this.isEditing = false;
     this.setIsEditing(false);
     this.canvas.markMoved(this);
     if (editor) {
@@ -488,8 +488,8 @@ export class CanvasTextNode extends CanvasContentNode {
   }
 
   blur() {
-    super.blur();
     this.stopEditing();
+    super.blur();
   }
 
   render() {
@@ -561,8 +561,9 @@ export class CanvasFileNode extends CanvasContentNode {
       this.contentEl.addClass('markdown-embed');
       this.embedContent = this.contentEl.createDiv('markdown-embed-content');
       this.previewEl = this.embedContent.createDiv('markdown-preview-view markdown-rendered');
+      this.previewSizerEl = this.previewEl.createDiv('markdown-preview-sizer');
       this.app.vault.cachedRead(file)
-        .then((text) => renderMarkdown(this.app, text, this.previewEl, file.path))
+        .then((text) => renderMarkdown(this.app, text, this.previewSizerEl, file.path))
         .then(() => { if (token !== this._renderToken) return; })
         .catch((e) => console.error('canvas file render failed', e));
       return;

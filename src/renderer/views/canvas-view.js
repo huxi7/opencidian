@@ -4,7 +4,7 @@
  *          依赖 ./canvas-node.js 的 CanvasNode/CanvasTextNode/CanvasFileNode/CanvasLinkNode/CanvasGroupNode/CanvasDummyNode；依赖 ./canvas-edge.js 的 CanvasEdge；依赖 ./canvas-menu.js 的 FileSuggestModal/LinkSuggestModal/JumpToGroupModal
  * [OUTPUT]: 导出 CanvasView 类
  * [POS]: views/ 画布类链的末端：View → CanvasViewport（视口）→ CanvasInteractions（交互）→ CanvasView（装配与调度）。持有 .canvas-wrapper DOM、节点/边集合、选择集合、JSON Canvas 读写。
- *        节点与边的几何在 canvas-node / canvas-edge，菜单与弹窗在 canvas-menu。数据经 app.vault.modify 防抖 500ms 写回，onClose 时 flush。
+ *        ResizeObserver 在挂载后更新视口。节点与边几何分层；数据防抖 500ms 写回，关闭时 flush。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 /* Canvas view — DOM assembly + scheduling on top of the viewport and interaction layers. */
@@ -100,6 +100,8 @@ export class CanvasView extends CanvasInteractions {
 
   async onOpen() {
     this.buildDom();
+    this._resizeObserver = new ResizeObserver(() => this.onResize());
+    this._resizeObserver.observe(this.wrapperEl);
     this.options = { snapToGrid: false, snapToObjects: false, ...this.loadOptions() };
     window.addEventListener('keydown', this.onGlobalKeydown);
     window.addEventListener('keyup', this.onGlobalKeyup);
@@ -111,8 +113,9 @@ export class CanvasView extends CanvasInteractions {
     if (this._saveTimer) { clearTimeout(this._saveTimer); this._saveTimer = null; }
     this.data = this.getData();
     await this.save();
-    this.cancelFrame();
+    this._resizeObserver?.disconnect();
     this.clear();
+    this.cancelFrame();
   }
 
   clear() {
@@ -540,9 +543,9 @@ export class CanvasView extends CanvasInteractions {
     if (!this.file) return;
     const text = JSON.stringify(this.data && this.data.nodes ? this.data : this.getData(), null, '\t');
     if (text === this._savedText) return;
-    this._savedText = text;
     try {
       await this.app.vault.modify(this.file, text);
+      this._savedText = text;
     } catch (e) {
       console.error('canvas save failed', e);
       new Notice(t('plugins.canvas.name') || 'Canvas');
@@ -564,6 +567,12 @@ export class CanvasView extends CanvasInteractions {
   }
 
   async loadFile(path) {
+    if (this.file) {
+      clearTimeout(this._saveTimer);
+      this._saveTimer = null;
+      this.data = this.getData();
+      await this.save();
+    }
     const file = this.app.vault.getFileByPath(path) || this.app.vault.getAbstractFileByPath(path);
     if (!file || file.extension !== 'canvas') {
       this.file = null;

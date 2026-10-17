@@ -4,7 +4,7 @@ Electron 33 + esbuild + CodeMirror 6 + markdown-it + 原生 CSS 变量主题
 
 <directory>
 src/ - 全部源码 (2 子目录)
-  main/ - Electron 主进程：窗口、app:// 协议、IPC、原生菜单
+  main/ - Electron 主进程：窗口、app:// 协议、IPC、原生菜单；dev-hooks 承接验收
   renderer/ - 渲染进程：应用主体 (6 子目录: core, editor, markdown, views, plugins-core, styles)
 scripts/ - 构建脚本 (esbuild 打包 + 资源复制)
 assets/ - 从原版提取的事实型资产 (图标表、字体)
@@ -16,7 +16,7 @@ dist/ - esbuild 输出 (renderer.js, starter.js, katex.css)
 package.json - 依赖与脚本 (build/watch/start/dev)
 scripts/build.mjs - 打包入口: src/renderer/main.js → dist/renderer.js
 scripts/dev.mjs - 开发模式 (watch + electron 热重启)
-src/renderer/index.html - 主窗口 HTML，链接 styles/*.css 与 dist/renderer.js
+src/renderer/index.html - 主窗口 HTML，链接 styles/*.css 与 dist/renderer.js；画布和变量样式按序导入分片
 src/renderer/starter.html - 仓库选择窗口 HTML
 </config>
 

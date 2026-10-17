@@ -18,16 +18,16 @@ settings.js: 读写 .obsidian/*.json (app/appearance/hotkeys/core-plugins/commun
 setting.js: 设置控件层。Setting/SettingGroup/SettingTab 基类与全部控件(Toggle/Dropdown/Slider/Button/ExtraButton/Text/Search/ColorPicker/TextArea)；DOM 结构对齐原版(fte 宿主消费)。SettingTab 必须放这里，放 views 会造成 tabs↔view 循环 import。
 keymap.js: Keymap/HotkeyManager/hotkeyToString/eventToHotkey/IS_MAC。按键归一化与作用域栈；全局 keydown 入口。
 default-hotkeys.js: 30 条原版默认快捷键(id → hotkeys)。
-commands.js: CommandManager。addCommand/removeCommand/findCommand/executeCommandById，支持 checkCallback/editorCallback。
+commands.js: CommandManager 注册与分派命令。执行检查回调传 false，编辑器回调带活动视图。
 notices.js: Notice 右下角 toast。
-modals.js: Modal 基类 + PromptModal/prompt()/confirmDialog()/closeAllModals()。
+modals.js: 可复开的 Modal 基座与确认、输入弹窗。确认先结算结果，关闭取消待处理输入。
 menu.js: Menu/MenuItem。上下文菜单、子菜单、键盘导航。
-suggest.js: SuggestModal/GenericSuggester/AbstractInputSuggest/fuzzyMatch/renderHighlightedText。
+suggest.js: 文件与命令建议。输入位于结果前，选择结果与取消关闭分开结算。
 view.js: View 基类(load/onOpen/onClose/getState/setState/_rootEl 契约) + ViewRegistry。
 workspace.js: 布局引擎。WorkspaceSplit(方向语义 mod-vertical=row/mod-horizontal=column)/WorkspaceTabs/WorkspaceLeaf/Workspace。含拖拽、分割、序列化、侧栏、把手、ribbon、状态栏、导航历史依赖的 _lastActiveLeaves。openFile 读取 defaultViewMode(source|preview)+livePreview 决定新标签模式；focusNewTab=false 时新标签后台打开。
 plugins.js: PluginManager(内部+社区插件)与 buildObsidianApi() shim。内部插件模块经 plugins-registry.js 汇总。restrictedMode(安全模式，默认 true)开启时不加载社区插件；插件设置页经 manifest.module.settingTab(app, containerEl) 由设置宿主打开。
 plugins-registry.js: corePluginModules 汇总表(id → 模块)。新增核心插件必须登记在此。
 app-commands.js: registerAppCommands(app)：导航历史、标签/窗格命令、设置/帮助、主题切换。
-app.js: App 装配。initialize 顺序：bootTime → language(须最先，界面模块构造前) → 非 macOS 加 body.styled-scrollbars → vault 身份 → settings → vault+watch → metadata/fileManager/hotkeyManager/plugins → workspace.mount → 插件加载 → _loadWorkspace → _applyTheme → settings 'change' 监听 → Ctrl+滚轮字号 → _runOpeningBehavior。_applyTheme 应用 theme/accent/字体/--indent-size/根字号并调 _applyCustomCss(注入 themes/<x>/theme.css 与启用的 snippets)。OBS_ACT 调试钩子支持 open/open-settings/exec(命令)。
+app.js: App 装配。新建与修改均进入元数据解析。initialize 顺序：bootTime → language(须最先，界面模块构造前) → 非 macOS 加 body.styled-scrollbars → vault 身份 → settings → vault+watch → metadata/fileManager/hotkeyManager/plugins → workspace.mount → 插件加载 → _loadWorkspace → _applyTheme → settings 'change' 监听 → Ctrl+滚轮字号 → _runOpeningBehavior。_applyTheme 应用 theme/accent/字体/--indent-size/根字号并调 _applyCustomCss(注入 themes/<x>/theme.css 与启用的 snippets)。OBS_ACT 调试钩子支持 open/open-settings/exec(命令)。
 
 [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
