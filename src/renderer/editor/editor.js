@@ -195,8 +195,32 @@ export class Editor {
       EditorView.domEventHandlers({
         blur: () => { this._focused = false; },
         focus: () => { this._focused = true; },
+        dragover: (event) => {
+          // 文件树拖拽带 text/plain JSON；允许放置以插入链接
+          const dt = event.dataTransfer;
+          if (dt && dt.types && Array.from(dt.types).includes('text/plain')) { event.preventDefault(); return true; }
+          return false;
+        },
+        drop: (event, view) => this._handleDrop(event, view),
       }),
     ];
+  }
+
+  /** 文件树拖入编辑器：在落点插入内部链接（原版 drop → 插入 wiki/markdown 链接）。 */
+  _handleDrop(event, view) {
+    const dt = event.dataTransfer;
+    if (!dt) return false;
+    let payload = null;
+    try { payload = JSON.parse(dt.getData('text/plain')); } catch (e) { payload = null; }
+    if (!payload || typeof payload.path !== 'string' || payload.type !== 'file') return false;
+    const file = this.app.vault.getFileByPath(payload.path);
+    if (!file) return false;
+    event.preventDefault();
+    const pos = view.posAtCoords({ x: event.clientX, y: event.clientY });
+    const from = pos == null ? view.state.selection.main.head : pos;
+    const link = this.app.fileManager.generateMarkdownLink(file, this.sourcePath || '', '', '', undefined);
+    view.dispatch({ changes: { from, insert: link }, selection: { anchor: from + link.length } });
+    return true;
   }
 
   // -------------------------------------------------------------------------

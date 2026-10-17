@@ -187,6 +187,19 @@
     await embedView.setState({ file: embedHost.path, mode: 'preview' });
     await delay(250);
     assert(!!embedView.readingEl.querySelector('.markdown-embed'), 'reading note embed renders');
+
+    // 文件树拖入编辑器 → 插入内部链接
+    const dropHost = await create('drop-host', '# Host\n\n');
+    const dropView = await openFresh(dropHost, 'live');
+    const dropData = new DataTransfer();
+    dropData.setData('text/plain', JSON.stringify({ path: embedTarget.path, type: 'file' }));
+    const dropRect = dropView.editor.cm.contentDOM.getBoundingClientRect();
+    dropView.editor.cm.contentDOM.dispatchEvent(new DragEvent('drop', {
+      bubbles: true, cancelable: true, dataTransfer: dropData,
+      clientX: dropRect.left + 40, clientY: dropRect.top + 30,
+    }));
+    await delay(80);
+    assert(/\[\[embed-target/.test(dropView.editor.getValue()), 'file drop inserts internal link');
     await applySettings({ livePreview: false });
     assert(!preview.sourceEl.classList.contains('is-live-preview') && !preview.editor.cm.dom.querySelector('.lp-codeblock'), 'global live preview switch removes widgets');
     await applySettings({ livePreview: true });
