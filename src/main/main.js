@@ -1,15 +1,15 @@
 /**
  * [INPUT]: 依赖 electron 的 app/BrowserWindow/ipcMain/protocol/shell/dialog；Node 内置 fs/path
  * [OUTPUT]: 主进程全部 IPC handler（vault 注册表、文件读写、窗口控制、回收站）、app:// 协议、devScreenshotHook（OBS_* 环境变量门控的调试钩子）
- * [POS]: 应用主进程入口。vault 注册表存于 userData/obsidian.json；渲染进程经 preload/ipc.js 调用此处 handler。原生菜单保留设置入口。dev-hooks 只在指定测试库窗口执行。
+ * [POS]: 应用主进程入口。vault 注册表存于 userData/opensidian.json（启动时从旧产品名 "Obsidian Copy" 的 userData 迁移一次）；渲染进程经 preload/ipc.js 调用此处 handler。原生菜单保留设置入口。dev-hooks 只在指定测试库窗口执行。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 /*
- * Obsidian Copy — Electron main process.
+ * OpenSidian — Electron main process.
  * Replicates the observable behavior of Obsidian 1.12.4's main process:
  *  - frameless window with hidden titlebar & traffic-light position
  *  - app:// protocol serving the renderer bundle and arbitrary vault files
- *  - vault registry stored in userData (obsidian.json)
+ *  - vault registry stored in userData (opensidian.json)
  *  - native menus wired back to renderer commands through app.commands.executeCommandById
  *  - window bounds persistence, custom context menus, spellcheck, trash, print-to-pdf
  */
@@ -30,7 +30,7 @@ const IS_DEV = !app.isPackaged;
 
 // app:// scheme (same pattern as the original app)
 const SCHEME = 'app';
-const APP_HOST = 'obsidian.md';
+const APP_HOST = 'opensidian.app';
 const APP_ORIGIN = `${SCHEME}://${APP_HOST}/`;
 const FILE_TOKEN = crypto.randomBytes(16).toString('hex');
 const FILE_ORIGIN = `${SCHEME}://${FILE_TOKEN}/`;
@@ -41,12 +41,25 @@ protocol.registerSchemesAsPrivileged([
 ]);
 
 // ---------------------------------------------------------------------------
-// Config store (obsidian.json) — same shape as the original
+// Config store (opensidian.json) — same shape as the original obsidian.json
 // ---------------------------------------------------------------------------
 const DATA_DIR = app.getPath('userData');
 
+// One-time migration from the previous product name ("Obsidian Copy").
+try {
+  const legacyDir = path.join(app.getPath('appData'), 'Obsidian Copy');
+  if (legacyDir !== DATA_DIR) {
+    const legacyFile = path.join(legacyDir, 'obsidian.json');
+    const nextFile = path.join(DATA_DIR, 'opensidian.json');
+    if (!fs.existsSync(nextFile) && fs.existsSync(legacyFile)) {
+      fs.mkdirSync(DATA_DIR, { recursive: true });
+      fs.copyFileSync(legacyFile, nextFile);
+    }
+  }
+} catch (e) { /* fresh install: nothing to migrate */ }
+
 function configFile() {
-  return path.join(DATA_DIR, 'obsidian.json');
+  return path.join(DATA_DIR, 'opensidian.json');
 }
 
 let config = {};
@@ -110,7 +123,7 @@ function saveVaultConfig(id, data) {
 
 /**
  * 窗口边框样式（appearance 高级设置，obsidian.json 的 frame 键）：
- * hidden=隐藏边框（默认）| custom=Obsidian 风格（内嵌红绿灯）| native=原生边框
+ * hidden=隐藏边框（默认）| custom=OpenSidian 风格（内嵌红绿灯）| native=原生边框
  */
 function frameWindowOptions() {
   const frame = config.frame || 'hidden';
@@ -217,14 +230,14 @@ function buildAppMenu(FocusedWindowGetter) {
   }
   const template = [
     ...(IS_MAC ? [{
-      label: 'Obsidian Copy',
+      label: 'OpenSidian',
       submenu: [
         {
-          label: 'About Obsidian Copy',
+          label: 'About OpenSidian',
           click: async (mi, win) => {
-            const detail = `Version 1.12.4 (replica)\nElectron ${process.versions.electron} · Node ${process.versions.node}`;
+            const detail = `Version ${app.getVersion()} — independent open-source replication of Obsidian 1.12.4\nElectron ${process.versions.electron} · Node ${process.versions.node}`;
             await dialog.showMessageBox(win instanceof BrowserWindow ? win : undefined, {
-              message: 'Obsidian Copy', detail,
+              message: 'OpenSidian', detail,
             });
           },
         },
@@ -236,11 +249,11 @@ function buildAppMenu(FocusedWindowGetter) {
         { type: 'separator' },
         { role: 'services' },
         { type: 'separator' },
-        { label: 'Hide Obsidian Copy', click: () => app.hide(), accelerator: 'Cmd+H' },
+        { label: 'Hide OpenSidian', click: () => app.hide(), accelerator: 'Cmd+H' },
         { role: 'hideOthers' },
         { role: 'unhide' },
         { type: 'separator' },
-        { label: 'Quit Obsidian Copy', click: () => app.quit(), accelerator: 'Cmd+Q' },
+        { label: 'Quit OpenSidian', click: () => app.quit(), accelerator: 'Cmd+Q' },
       ],
     }] : []),
     {
@@ -598,7 +611,7 @@ function setupIpc() {
   });
   ipcMain.on('get-documents-path', (e) => { e.returnValue = app.getPath('documents'); });
   ipcMain.on('get-sandbox-vault-path', (e) => { e.returnValue = path.join(DATA_DIR, 'Sanbox'); });
-  ipcMain.on('get-default-vault-path', (e) => { e.returnValue = path.join(app.getPath('documents'), 'Obsidian Vault'); });
+  ipcMain.on('get-default-vault-path', (e) => { e.returnValue = path.join(app.getPath('documents'), 'OpenSidian Vault'); });
 
   ipcMain.on('vault-open-default', (e, opts) => { /* create vault dialog path */ });
 

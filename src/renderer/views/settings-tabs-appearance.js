@@ -63,7 +63,7 @@ export class AppearanceTab extends SettingTab {
     const base = new SettingGroup(this.containerEl);
     base.addSetting((s) => s
       .setName(tt('setting.appearance.option-base-theme', '基础颜色'))
-      .setDesc(tt('setting.appearance.option-base-theme-description', '设置 Obsidian 的基础颜色。'))
+      .setDesc(tt('setting.appearance.option-base-theme-description', '设置 OpenSidian 的基础颜色。'))
       .addDropdown((d) => {
         d.addOption('obsidian', tt('setting.appearance.dark-theme', '深色'));
         d.addOption('moonstone', tt('setting.appearance.light-theme', '浅色'));
@@ -75,7 +75,7 @@ export class AppearanceTab extends SettingTab {
     base.addSetting((s) => {
       s.setClass('mod-toggle');
       s.setName(tt('setting.appearance.option-accent-color', '主题色'))
-        .setDesc(tt('setting.appearance.option-accent-color-description', '为 Obsidian 选择一个主题色。主题色将影响选中、链接等元素的颜色。'));
+        .setDesc(tt('setting.appearance.option-accent-color-description', '为 OpenSidian 选择一个主题色。主题色将影响选中、链接等元素的颜色。'));
       s.addExtraButton((b) => {
         b.setIcon('lucide-rotate-ccw')
           .setTooltip(tt('setting.hotkeys.tooltip-restore-default', '恢复默认'))
@@ -147,7 +147,7 @@ export class AppearanceTab extends SettingTab {
           .onClick(() => new FontManagerModal(app, key, current, () => this.display()).open()));
       });
     };
-    addFontRow(tt('setting.appearance.option-interface-font', '界面字体'), tt('setting.appearance.option-interface-font-description', '设置 Obsidian 界面字体。'), 'interfaceFontFamily');
+    addFontRow(tt('setting.appearance.option-interface-font', '界面字体'), tt('setting.appearance.option-interface-font-description', '设置 OpenSidian 界面字体。'), 'interfaceFontFamily');
     addFontRow(tt('setting.appearance.option-text-font', '正文字体'), tt('setting.appearance.option-text-font-description', '设置编辑视图和阅读视图中笔记正文的字体。'), 'textFontFamily');
     addFontRow(tt('setting.appearance.option-monospace-font', '代码字体'), tt('setting.appearance.option-monospace-font-description', '设置代码块、元数据源码等文本的字体。'), 'monospaceFontFamily');
 
@@ -200,7 +200,7 @@ export class AppearanceTab extends SettingTab {
     });
     adv.addSetting((s) => s
       .setName(tt('setting.appearance.option-native-menus', '原生菜单'))
-      .setDesc(tt('setting.appearance.option-native-menus-desc', 'Obsidian 中所有的菜单都会匹配操作系统，不会跟随主题样式'))
+      .setDesc(tt('setting.appearance.option-native-menus-desc', 'OpenSidian 中所有的菜单都会匹配操作系统，不会跟随主题样式'))
       .addToggle((tog) => tog.setValue(appearance.nativeMenus === true).onChange((v) => update({ nativeMenus: v }))));
     if (electron && electron.ipcRenderer) {
       let currentFrame = 'hidden';
@@ -208,7 +208,7 @@ export class AppearanceTab extends SettingTab {
       adv.addSetting((s) => {
         let relaunchBtn = null;
         s.setName(tt('setting.appearance.option-frame-style', '窗口边框样式'))
-          .setDesc(tt('setting.appearance.option-frame-description', '更改 Obsidian 窗口边框的样式。该设置重启应用后生效。'))
+          .setDesc(tt('setting.appearance.option-frame-description', '更改 OpenSidian 窗口边框的样式。该设置重启应用后生效。'))
           .addButton((b) => {
             relaunchBtn = b;
             b.setCta().setButtonText(tt('setting.about.button-relaunch', '重新启动应用'));
@@ -217,7 +217,7 @@ export class AppearanceTab extends SettingTab {
           })
           .addDropdown((d) => {
             d.addOption('hidden', tt('setting.appearance.option-frame-hidden', '隐藏（默认）'));
-            d.addOption('custom', tt('setting.appearance.option-frame-obsidian', 'Obsidian 风格'));
+            d.addOption('custom', tt('setting.appearance.option-frame-obsidian', 'OpenSidian 风格'));
             d.addOption('native', tt('setting.appearance.option-frame-native', '原生边框'));
             d.setValue(currentFrame);
             d.onChange((v) => {
@@ -232,8 +232,8 @@ export class AppearanceTab extends SettingTab {
         let relaunchBtn = null;
         s.setName(tt('setting.about.option-hw-acceleration', '硬件加速'));
         s.descEl.empty();
-        s.descEl.createDiv({ text: tt('setting.about.option-hw-acceleration-description', '开启硬件加速，即使用 GPU 让 Obsidian 运行更流畅。') });
-        s.descEl.createDiv({ cls: 'mod-warning', text: tt('setting.about.option-hw-acceleration-warning', '如果关闭此选项，Obsidian 的性能将严重下降。') });
+        s.descEl.createDiv({ text: tt('setting.about.option-hw-acceleration-description', '开启硬件加速，即使用 GPU 让 OpenSidian 运行更流畅。') });
+        s.descEl.createDiv({ cls: 'mod-warning', text: tt('setting.about.option-hw-acceleration-warning', '如果关闭此选项，OpenSidian 的性能将严重下降。') });
         s.addButton((b) => {
           relaunchBtn = b;
           b.setCta().setButtonText(tt('setting.about.button-relaunch', '重新启动应用'));

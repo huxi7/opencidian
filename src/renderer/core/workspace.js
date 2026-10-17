@@ -650,9 +650,9 @@ export class Workspace extends Events {
   updateTitle() {
     const file = this.getActiveFile();
     const vaultName = this.app.vault.getName();
-    let title = 'Obsidian Copy';
+    let title = 'OpenSidian';
     if (file) {
-      title = `${file.basename} - ${vaultName} - Obsidian Copy`;
+      title = `${file.basename} - ${vaultName} - OpenSidian`;
       if (this.titlebarTextEl) {
         this.titlebarTextEl.empty();
         const pathEl = this.titlebarTextEl.createDiv('titlebar-text');

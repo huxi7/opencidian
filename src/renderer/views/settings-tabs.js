@@ -11,7 +11,7 @@ import { Notice } from '../core/notices.js';
 import { Modal } from '../core/modals.js';
 import { Desktop } from '../core/ipc.js';
 
-const VERSION = '1.12.4';
+const VERSION = '1.0.0';
 
 /* ------------------------------------------------------------------- About */
 
@@ -31,7 +31,7 @@ export class AboutTab extends SettingTab {
     group.addSetting((s) => {
       s.setName(tt('setting.about.label-version', '版本 {{version}}', { version: VERSION }));
       s.descEl.empty();
-      s.descEl.appendText(tt('setting.about.label-install-version', '安装程序版本: {{version}}', { version: VERSION }));
+      s.descEl.appendText(tt('opensidian.about.replica-note', 'OpenSidian — 基于 Obsidian 1.12.4 的独立开源复刻。'));
       s.descEl.createEl('br');
       s.descEl.createEl('a', {
         text: tt('setting.about.label-read-changelog', '阅读更新日志'),
@@ -45,7 +45,7 @@ export class AboutTab extends SettingTab {
 
     group.addSetting((s) => s
       .setName(tt('setting.about.option-auto-update', '自动更新'))
-      .setDesc(tt('setting.about.option-auto-update-description', '关闭后 Obsidian 将不会自动更新。'))
+      .setDesc(tt('setting.about.option-auto-update-description', '关闭后 OpenSidian 将不会自动更新。'))
       .addToggle((tog) => tog.setValue(localStorage.getItem('disable-update') !== '1').onChange((v) => {
         try {
           if (v) localStorage.removeItem('disable-update');
@@ -58,7 +58,7 @@ export class AboutTab extends SettingTab {
       s.descEl.appendText(tt('setting.about.option-language-description', '更改界面语言。'));
       s.descEl.createEl('br');
       s.descEl.createEl('a', {
-        text: tt('setting.about.label-add-own-language', '显示如何给 Obsidian 添加你的母语'),
+        text: tt('setting.about.label-add-own-language', '显示如何给 OpenSidian 添加你的母语'),
         attr: { href: 'https://help.obsidian.md/Translations', target: '_blank', rel: 'noopener' },
       });
       const current = getLanguage() === 'zh' ? 'zh' : 'en';
@@ -85,7 +85,7 @@ export class AboutTab extends SettingTab {
 
     group.addSetting((s) => s
       .setName(tt('setting.about.option-get-help', '获取帮助'))
-      .setDesc(tt('setting.about.option-get-help-description', '获取关于使用 Obsidian 的帮助。'))
+      .setDesc(tt('setting.about.option-get-help-description', '获取关于使用 OpenSidian 的帮助。'))
       .addButton((b) => b.setButtonText(tt('setting.about.button-open', '打开')).onClick(() => {
         this.setting.close();
         Desktop.openExternal('https://help.obsidian.md/');
@@ -215,7 +215,7 @@ export class EditorTab extends SettingTab {
       .addToggle((tog) => tog.setValue(settings.autoPairMarkdown !== false).onChange((v) => update({ autoPairMarkdown: v }))));
     behavior.addSetting((s) => s
       .setName(tt('setting.editor.option-smart-indent-lists', '智能列表'))
-      .setDesc(tt('setting.editor.option-smart-indent-lists-description', '开启后 Obsidian 将根据换行和缩进情况自动调整列表符号。'))
+      .setDesc(tt('setting.editor.option-smart-indent-lists-description', '开启后 OpenSidian 将根据换行和缩进情况自动调整列表符号。'))
       .addToggle((tog) => tog.setValue(settings.smartIndentList !== false).onChange((v) => update({ smartIndentList: v }))));
     behavior.addSetting((s) => s
       .setName(tt('setting.editor.option-use-tabs', '使用制表符'))
@@ -268,7 +268,7 @@ class VimTestModal extends Modal {
     super(app);
     this.onConfirm = onConfirm;
     this.setTitle(tt('setting.editor.label-confirm-enable-vim', '确认进入 Vim 模式'));
-    this.contentEl.createEl('p', { text: tt('setting.editor.label-vim-warning', 'Vim 模式可以实现高效的文本编辑操作，但其使用方法十分复杂。如果你对 Vim 不了解，开启该模式可能会让 Obsidian 难以使用。') });
+    this.contentEl.createEl('p', { text: tt('setting.editor.label-vim-warning', 'Vim 模式可以实现高效的文本编辑操作，但其使用方法十分复杂。如果你对 Vim 不了解，开启该模式可能会让 OpenSidian 难以使用。') });
     this.contentEl.createEl('p', { text: tt('setting.editor.label-vim-test', '为了确保你知道如何使用 Vim，请输入 Vim 中“退出而不保存”对应的命令：') });
     this.contentEl.createEl('label', { text: tt('setting.editor.label-vim-your-answer', '你的答案') });
     const input = this.contentEl.createEl('input', {
@@ -437,7 +437,7 @@ export class FileTab extends SettingTab {
       }));
     links.addSetting((s) => s
       .setName(tt('setting.file.option-always-update-links', '始终更新内部链接'))
-      .setDesc(tt('setting.file.option-always-update-links-description', '开启后重命名文件时 Obsidian 会自动为你更新内部链接，关闭后则需要你手动确认是否更新。'))
+      .setDesc(tt('setting.file.option-always-update-links-description', '开启后重命名文件时 OpenSidian 会自动为你更新内部链接，关闭后则需要你手动确认是否更新。'))
       .addToggle((tog) => tog.setValue(settings.alwaysUpdateLinks !== false).onChange((v) => update({ alwaysUpdateLinks: v }))));
     links.addSetting((s) => s
       .setName(tt('setting.file.option-use-wiki-links', '使用 Wiki 链接'))
@@ -445,7 +445,7 @@ export class FileTab extends SettingTab {
       .addToggle((tog) => tog.setValue(settings.useMarkdownLinks !== true).onChange((v) => update({ useMarkdownLinks: !v }))));
     links.addSetting((s) => s
       .setName(tt('setting.file.option-show-unsupported-files', '检测所有类型文件'))
-      .setDesc(tt('setting.file.option-show-unsupported-files-description', '在文件列表和快速切换中显示所有类型的文件，即使是那些目前 Obsidian 不支持的类型。开启此选项后可以对不支持的文件进行链接。'))
+      .setDesc(tt('setting.file.option-show-unsupported-files-description', '在文件列表和快速切换中显示所有类型的文件，即使是那些目前 OpenSidian 不支持的类型。开启此选项后可以对不支持的文件进行链接。'))
       .addToggle((tog) => tog.setValue(settings.showUnsupportedFiles === true).onChange((v) => update({ showUnsupportedFiles: v }))));
 
     /* 回收站 */
@@ -469,7 +469,7 @@ export class FileTab extends SettingTab {
       .setDesc(tt('setting.file.option-delete-destination-description', '要如何处理已删除的文件？'))
       .addDropdown((d) => {
         d.addOption('system', tt('setting.file.option-choice-system-trash', '移至系统回收站'));
-        d.addOption('local', tt('setting.file.option-choice-vault-trash', '移至 Obsidian 回收站（.trash 文件夹）'));
+        d.addOption('local', tt('setting.file.option-choice-vault-trash', '移至 OpenSidian 回收站（.trash 文件夹）'));
         d.addOption('none', tt('setting.file.option-choice-permanent-delete', '永久删除'));
         const value = settings.trashOption === 'permanent' ? 'none' : (settings.trashOption || 'system');
         d.setValue(value);

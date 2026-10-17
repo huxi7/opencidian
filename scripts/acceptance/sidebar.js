@@ -5,7 +5,7 @@
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 /**
- * 在 Obsidian Copy 的 OBS_ACT eval 中执行。只允许临时 vault。
+ * 在 OpenSidian 的 OBS_ACT eval 中执行。只允许临时 vault。
  * OBS_SCREENSHOT 指定截图路径；OBS_SIDEBAR_VIEW=backlink 让最终截图显示反链。
  * 默认最终显示大纲。报告写到 /tmp/obs-copy-acceptance/sidebar-report.json。
  * 不构建、不退出进程、不加载源码补丁；主代理先集成，再使用现有截图钩子。

@@ -23,7 +23,7 @@ const body = document.body;
 
 const header = body.createDiv('starter-header');
 const titleEl = header.createDiv('starter-title');
-titleEl.createDiv('starter-app-name').setText('Obsidian');
+titleEl.createDiv('starter-app-name').setText('OpenSidian');
 titleEl.createDiv('starter-app-subtitle').setText(t('interface.start-screen.label-create-local-vault') || 'Create local vault');
 
 // draggable region for the frameless window

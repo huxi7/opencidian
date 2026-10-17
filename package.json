@@ -1,8 +1,8 @@
 {
-  "name": "obsidian-copy",
-  "productName": "Obsidian Copy",
+  "name": "opensidian",
+  "productName": "OpenSidian",
   "version": "1.0.0",
-  "description": "A from-scratch replica of the Obsidian desktop app (study/personal use)",
+  "description": "OpenSidian — an independent, open-source replication of the Obsidian desktop app",
   "main": "src/main/main.js",
   "private": true,
   "scripts": {

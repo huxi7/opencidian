@@ -1,4 +1,6 @@
-# Obsidian Copy - Obsidian 桌面版 1.12.4 的 1:1 复刻
+# OpenSidian - 开源 Obsidian 桌面复刻
+
+OpenSidian 是 Obsidian 桌面版 1.12.4 的独立开源复刻（1:1 目标），兼容 `.obsidian` 库格式。
 
 Electron 33 + esbuild + CodeMirror 6 + markdown-it + MathJax 3.2.2 CHTML + 原生 CSS 变量主题
 
@@ -14,7 +16,7 @@ dist/ - esbuild 输出 (renderer.js, starter.js)
 
 <config>
 AGENT-STATE.md - 项目事实、阶段记录与当前交接安排
-HANDOFF.md - 原主 agent 的接续指令、剩余范围与无截图验收方式
+README.md - 项目介绍、构建运行方式与兼容性说明
 package.json - 依赖与脚本 (build/watch/start/dev)
 scripts/build.mjs - 打包入口: src/renderer/main.js → dist/renderer.js
 scripts/dev.mjs - 开发模式 (watch + electron 热重启)
