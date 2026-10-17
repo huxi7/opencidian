@@ -22,7 +22,7 @@ graph-persist-write.js: 写入图谱偏好。
 math.js: 离线 CHTML、字体、错误隔离与两种视图。
 notes.js: 五个笔记插件的创建、编辑与重启。
 notes-settings.js: 笔记插件设置控件截图。
-recovery.js: 快照、恢复、工作区与幻灯片的分阶段验收。
+recovery.js: 快照、恢复、工作区与幻灯片的分阶段验收。覆盖旧 intervalSeconds→分钟迁移、设置页签文本输入即时生效、弹窗复制/差异开关、Canvas 快照与打开视图重载。
 settings-restart.js: 重启核对四类设置。
 settings-write.js: 写入四类用户设置。
 sidebar.js: 反链、大纲、精确跳转与监听释放。

@@ -271,6 +271,7 @@
   flex-direction: column;
 }
 .modal.mod-sidebar-layout .modal-content { display: flex; }
+.modal.mod-sync-history .modal-content { height: 100%; }
 .modal.mod-settings { background-color: var(--settings-background, var(--modal-background)); }
 .modal.mod-settings .modal-content { margin-top: 0; overflow: hidden; padding: 0; }
 .modal-sidebar { width: var(--modal-community-sidebar-width, 280px); flex: 0 0 auto; background-color: var(--background-secondary); overflow-y: auto; }
@@ -524,6 +525,45 @@ input.prompt-input:focus-visible {
 .file-recovery-text[data-ext="md"] {
   font-family: var(--font-text);
   font-size: var(--font-text-size);
+}
+
+/* In file recovery, sync version history, and publish diff */
+.diff-view {
+  user-select: text;
+}
+.diff-line {
+  padding: 0 var(--size-4-2);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.diff-line.mod-left {
+  background-color: rgba(var(--background-modifier-error-rgb), 0.2);
+}
+.diff-line.mod-left .diff-changed {
+  background-color: rgba(var(--background-modifier-error-rgb), 0.4);
+}
+.diff-line.mod-right {
+  background-color: rgba(var(--background-modifier-success-rgb), 0.2);
+}
+.diff-line.mod-right .diff-changed {
+  background-color: rgba(var(--background-modifier-success-rgb), 0.4);
+}
+.diff-collapsed {
+  text-align: center;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: var(--font-ui-small);
+  margin: var(--size-4-2) 0;
+}
+.diff-collapsed:hover {
+  color: var(--text-accent);
+}
+.file-recovery-diff {
+  flex: 1 0 0;
+  padding: var(--size-4-6);
+  font-size: var(--font-ui-medium);
+  background-color: var(--background-primary);
+  overflow: auto;
 }
 
 .modal-setting-titlebar {

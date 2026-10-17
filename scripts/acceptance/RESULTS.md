@@ -49,3 +49,11 @@ MathJax 独立适配器子代理的41项基础/故障测试见 assets/mathjax/SO
 - 日志：`core-ribbon-run-result-dYoVlv/run.log`、`core-ribbon-restart-result-XDp9li/run.log`，均位于 `/tmp/obs-copy-acceptance/`，无截图。
 - 工作区内存回归现为19组，包含固定侧栏不可关闭和底部库栏的稳定节点。
 - `run.mjs` 新增 `--no-screenshot`，仅收集日志并按异常与场景断言判定。
+
+## 文件恢复对齐（2026-10-17，原主 agent 接续）
+
+- recovery：exercise 82 项、restart 43 项通过。新增断言：旧 `intervalSeconds`→分钟迁移、设置页签文本输入即时生效并写盘、弹窗复制按钮写入剪贴板、显示差异开关渲染成对/行内/折叠上下文、Canvas 创建与修改快照、恢复后打开的画布视图重载、重启后 Canvas 快照与迁移选项保留。
+- canvas：回归通过（外部修改重载 + watcher 回声过滤 + 视口保留）。
+- 日志：两场景 0 未捕获异常；开发版 CSP 提示仍存在。
+- 证据：`/tmp/obs-copy-acceptance/recovery-exercise-result-VbjGga`、`recovery-restart-result-zTxmps`、`canvas-run-result-n4hJop`（均无截图）。
+- 存储仍为按天 JSON（未迁移 IndexedDB）；快照范围含 canvas/base；间隔单位为分钟。行为差异与未覆盖项见 AGENT-STATE.md §11。

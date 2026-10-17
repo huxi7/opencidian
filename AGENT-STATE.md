@@ -247,3 +247,24 @@ node --experimental-vm-modules src/renderer/core/workspace-regression.js
 - 用户停止视觉验收的要求持续生效。所有 Electron 验收命令加 `--no-screenshot`；§2/§8 截图命令仅作历史记录。
 - 所有子代理已停止，无需重复启动旧任务。后续继承当前模型、medium，不使用 sol。
 - 交接文档新增入口已登记在 L1。最新验收计数以 §9 与 RESULTS.md 末节为准。
+
+## 11. 文件恢复对齐（2026-10-17，原主 agent 接续）
+
+- 原版事实（`_analysis/obsidian-asar/app.js` 定位，idx≈3242300）：
+  - 选项 `A8={intervalMinutes:5, keepDays:7}`；设置页文本输入：间隔 `parseFloat>=0`、天数 `parseFloat>=1`；间隔 0 表示每次变更即存。
+  - 采集范围：TFile 且扩展名 `md|canvas|base`；vault modify / file-open 触发，create 在 onLayoutReady 后注册；resave 每 60 秒，cleanup 每 3600 秒，启动后 60 秒首轮 cleanup；cleanup 按 ts 索引删除早于 keepDays 秒级的记录。
+  - 存储：IndexedDB（`appId+"-backup"`，store `backups`，path/ts 索引，autoIncrement）。
+  - 弹窗（原版 F8）：左栏搜索建议（显示去 .md 的路径）+ 版本列表（`llll` 时间 + 大小）；右栏标题栏 = 显示差异开关 + 复制 + 恢复此版本；`textarea[data-ext]` 预览；差异为行/词两级（FX，jsdiff 语义清理）。
+  - 恢复：建父目录 → `adapter.write` → forceAdd → Notice → switchToPath。
+- 本实现决策（遵循 HANDOFF：不立即迁移存储）：
+  - 保留按天 JSON（旧快照继续可读，新快照同格式写入）。行为差异：cleanup 按日文件粒度删除，快照最多多存活不足 1 天；快照随仓库目录同步（原版 IndexedDB 在 userData 内）。
+  - 间隔改分钟语义，读取时迁移旧 `intervalSeconds`（60 秒=1 分钟，0→0）；迁移不重写文件，写入新键时旧键保留（loadOptions 优先 intervalMinutes）。
+  - 设置页签改文本输入，直接改运行实例 `options`（改动即时生效）；实例新增 `saveOptions()`，包装层暴露 `options` getter。
+  - 弹窗补齐：复制按钮（Electron clipboard + `interface.copied_generic` Notice）、显示差异开关（`views/diff-view.js`：行级 LCS + 行内 diff-changed + 折叠阈值对齐）、`data-ext` 属性、标题/建议去 .md（仅 md）。
+  - 恢复路径保持 `vault.modify`（触发 modify → canvas 视图重载；markdown 视图 `_onExternalModify`）。
+- Canvas 视图外部同步（`views/canvas-view.js`）：
+  - onOpen 注册 vault modify；磁盘内容与 `_savedText` 不同才重载（过滤自身写入的 watcher 回声，与 markdown-view 同构）；重载保留视口（`clear()` 会重置，需显式恢复）；save 期间 `_writing` 防自触发。
+  - `loadFile` 拆出 `_applyFileFromDisk(path, {keepViewport})`。
+- 验收：recovery exercise 82 项、restart 43 项通过（新增迁移/设置页/复制/差异/Canvas 断言）；canvas 场景通过；日志 0 未捕获异常。
+  - 证据：`/tmp/obs-copy-acceptance/recovery-exercise-result-VbjGga`、`recovery-restart-result-zTxmps`、`canvas-run-result-n4hJop`（均为 `--no-screenshot`）。
+- 未覆盖（不声称 1:1）：IndexedDB 存储、CLI `history:*` 命令、`onExternalSettingsChange`、supportsIndexedDb 回退文案、diff 的 jsdiff 语义清理（本实现为 LCS+前后缀裁剪）。

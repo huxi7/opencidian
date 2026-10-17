@@ -1,33 +1,69 @@
 /**
- * [INPUT]: 依赖 i18n/Notice/SettingGroup/Modal 的界面能力；依赖 Vault 的文件与索引写入；Node fs/path；moment
- * [OUTPUT]: 导出 nameKey、DATA_FILE、SNAPSHOT_DIR、DEFAULT_OPTIONS、formatBytes、create、settingTab；实例暴露快照查询、restoreSnapshot 与弹窗入口
- * [POS]: plugins-core/ 的文件恢复插件。按路径串行采集与恢复，按天原子替换 .obsidian/.file-recovery/*.json。恢复先保存编辑器，再经 Vault 写入并同步视图。清空或卸载使在途读取失效。间隔仍用秒，沿用现有选项格式。
+ * [INPUT]: 依赖 i18n/Notice/SettingGroup/Setting 控件/Modal 的界面能力；依赖 ../views/diff-view.js 的 renderDiffView；依赖 Vault 的文件与索引写入；Node fs/path；moment；Electron clipboard
+ * [OUTPUT]: 导出 nameKey、DATA_FILE、SNAPSHOT_DIR、DEFAULT_OPTIONS、SNAPSHOT_EXTENSIONS、loadOptions、formatBytes、create、settingTab；实例暴露快照查询、restoreSnapshot、saveOptions 与弹窗入口
+ * [POS]: plugins-core/ 的文件恢复插件。快照范围为 md/canvas/base；间隔单位分钟（默认 5，0 表示每次变更即存），旧 intervalSeconds 配置按 60 秒=1 分钟在读取时迁移。快照仍按天原子替换 .obsidian/.file-recovery/*.json，旧快照保持可读。恢复先保存编辑器，再经 Vault 写入并同步视图；canvas 视图经 vault modify 事件自行重载。清空或卸载使在途读取失效。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
-/* Core plugin: file-recovery — snapshot markdown files and restore them. */
+/* Core plugin: file-recovery — snapshot md/canvas/base files and restore them. */
 import { tt } from '../core/i18n.js';
 import { Notice } from '../core/notices.js';
-import { SettingGroup } from '../core/setting.js';
+import { SettingGroup, ToggleComponent, ButtonComponent } from '../core/setting.js';
 import { Modal, confirmDialog } from '../core/modals.js';
+import { renderDiffView } from '../views/diff-view.js';
 
 const fs = require('fs');
 const nodePath = require('path');
 const moment = require('moment');
+const { clipboard } = require('electron');
 
 export const nameKey = 'plugins.file-recovery';
 export const DATA_FILE = 'file-recovery.json';
 export const SNAPSHOT_DIR = '.file-recovery';
-export const DEFAULT_OPTIONS = { intervalSeconds: 60, keepDays: 7 };
+export const DEFAULT_OPTIONS = { intervalMinutes: 5, keepDays: 7 };
+export const SNAPSHOT_EXTENSIONS = ['md', 'canvas', 'base'];
 
-/** 人类可读的文件大小（B/KB/MB/GB）。 */
+/** 读取插件选项；旧版 intervalSeconds（秒）按 60 秒=1 分钟迁移为 intervalMinutes。 */
+export function loadOptions(app) {
+  const raw = app.settings.loadPluginData(DATA_FILE, {});
+  const options = { ...DEFAULT_OPTIONS };
+  if (!raw || typeof raw !== 'object') return options;
+  if (raw.intervalMinutes !== undefined) options.intervalMinutes = raw.intervalMinutes;
+  else if (raw.intervalSeconds !== undefined) {
+    const seconds = parseFloat(raw.intervalSeconds);
+    options.intervalMinutes = Number.isFinite(seconds) && seconds >= 0 ? seconds / 60 : DEFAULT_OPTIONS.intervalMinutes;
+  }
+  if (raw.keepDays !== undefined) options.keepDays = raw.keepDays;
+  return options;
+}
+
+/** 人类可读的文件大小（对齐原版 Df：B 为整数，其余两位小数并带千分位）。 */
 export function formatBytes(size) {
-  if (!size) return '0 B';
-  const units = ['B', 'KB', 'MB', 'GB'];
-  let n = size;
-  let i = 0;
-  while (n >= 1024 && i < units.length - 1) { n /= 1024; i += 1; }
-  const text = i === 0 ? String(Math.round(n)) : n.toFixed(n >= 10 ? 0 : 1);
-  return text + ' ' + units[i];
+  if (!size || size <= 0) return '0 B';
+  const units = ['B', 'KB', 'MB', 'GB', 'TB', 'PB'];
+  let index = units.length - 1;
+  for (let i = 0; i < units.length; i += 1) {
+    if (size < Math.pow(1024, i + 1)) { index = i; break; }
+  }
+  const value = size / Math.pow(1024, index);
+  const decimals = index === 0 ? 0 : 2;
+  const [intPart, fracPart] = value.toFixed(decimals).split('.');
+  const grouped = intPart.replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+  return (fracPart ? grouped + '.' + fracPart : grouped) + ' ' + units[index];
+}
+
+/** 显示用路径：仅 Markdown 去掉扩展名（对齐原版 uu）。 */
+function displayPath(path) {
+  const base = path.slice(path.lastIndexOf('/') + 1);
+  if (extensionOf(base) !== 'md') return path;
+  const index = path.lastIndexOf('.');
+  return index > 0 ? path.slice(0, index) : path;
+}
+
+/** 小写扩展名（对齐原版 ou）。 */
+function extensionOf(path) {
+  const index = path.lastIndexOf('.');
+  if (index < 0 || index === path.length - 1 || index === 0) return '';
+  return path.slice(index + 1).toLowerCase();
 }
 
 /* --------------------------------------------------------------------------
@@ -143,7 +179,7 @@ class FileRecovery {
 
   /* ------------------------------------------------------------ 采集层 */
   onFileChanged(file) {
-    if (!file || file.extension !== 'md') return; // 任务约定：仅 md（原版含 canvas/base）
+    if (!file || !SNAPSHOT_EXTENSIONS.includes(file.extension)) return;
     const path = file.path;
     const generation = this._generation;
     return this.enqueue(path, () => this.capture(file, path, generation));
@@ -158,9 +194,9 @@ class FileRecovery {
       this.tsCache[path] = last;
     }
     const now = Date.now();
-    const interval = Number(this.options.intervalSeconds);
-    const seconds = !Number.isFinite(interval) || interval < 0 ? 60 : interval;
-    if (now - last < seconds * 1000) { this.pendingFiles.add(path); return; }
+    const minutes = parseFloat(this.options.intervalMinutes);
+    const intervalMinutes = Number.isFinite(minutes) && minutes >= 0 ? minutes : 5;
+    if (now - last < 60 * intervalMinutes * 1000) { this.pendingFiles.add(path); return; }
     let data;
     try { data = await this.app.vault.cachedRead(file); } catch (e) { return; }
     if (generation !== this._generation || file.path !== path) return;
@@ -249,7 +285,7 @@ class FileRecovery {
 
   /* ------------------------------------------------------------ 生命周期 */
   onload() {
-    this.options = this.app.settings.loadPluginData(DATA_FILE, DEFAULT_OPTIONS);
+    this.options = loadOptions(this.app);
     this.ensureDir();
     this.registerCommand();
     const vault = this.app.vault;
@@ -263,8 +299,13 @@ class FileRecovery {
     this._intervals.push(window.setInterval(() => this.resave()
       .catch((error) => console.error('file-recovery: resave failed', error)), 60 * 1000));
     this._intervals.push(window.setInterval(() => this.cleanup(), 60 * 60 * 1000));
-    // 启动时清理过期快照（等 vault 就绪后再扫盘）
-    this._cleanupTimer = window.setTimeout(() => this.cleanup(), 1000);
+    // 启动后 60 秒清理过期快照（对齐原版 setTimeout(cleanup, 6e4)）
+    this._cleanupTimer = window.setTimeout(() => this.cleanup(), 60 * 1000);
+  }
+
+  /** 持久化选项（设置页与实例共享同一对象，改动即时生效）。 */
+  saveOptions() {
+    this.app.settings.savePluginData(DATA_FILE, this.options);
   }
 
   onunload() {
@@ -338,15 +379,31 @@ class FileRecoveryModal extends Modal {
     this.contentPaneEl.style.display = 'none';
     const titlebar = this.contentPaneEl.createDiv('modal-setting-titlebar');
     this.paneTitleEl = titlebar.createDiv('modal-setting-title');
-    this.restoreBtn = titlebar.createEl('button', {
-      cls: 'mod-cta',
-      text: tt('plugins.sync.label-restore-this-version', 'Restore'),
+    const actions = titlebar.createDiv('modal-setting-titlebar-actions');
+    const diffLabel = actions.createSpan({
+      cls: 'modal-setting-titlebar-toggle',
+      text: tt('plugins.sync.label-show-diff', 'Show changes'),
     });
-    this.restoreBtn.onclick = () => this.restore();
+    this.diffToggle = new ToggleComponent(diffLabel).setSmall().setValue(false);
+    this.diffToggle.onChange((value) => this.updateDiffVisibility(value));
+    this.copyBtn = new ButtonComponent(actions)
+      .setButtonText(tt('interface.label-copy-short', 'Copy'))
+      .onClick(() => {
+        if (!this.currentVersion) return;
+        clipboard.writeText(this.currentVersion.data);
+        new Notice(tt('interface.copied_generic', 'Copied to clipboard'));
+      });
+    this.restoreBtn = new ButtonComponent(actions)
+      .setButtonText(tt('plugins.sync.label-restore-this-version', 'Restore'))
+      .onClick(() => this.restore());
     this.textareaEl = this.contentPaneEl.createEl('textarea', {
       cls: 'file-recovery-text',
-      attr: { spellcheck: 'false', readonly: 'true' },
+      attr: { spellcheck: 'false' },
     });
+    this.diffEl = this.contentPaneEl.createDiv('file-recovery-diff');
+    this.diffEl.style.display = 'none';
+    this._prevVersion = null;
+    this._diffRendered = false;
   }
 
   onOpen() {
@@ -356,7 +413,7 @@ class FileRecoveryModal extends Modal {
     }, 10);
   }
 
-  /** 输入即过滤有快照的文件；空查询列出全部。 */
+  /** 输入即过滤有快照的文件；空查询列出全部。条目显示与原版一致：Markdown 去掉 .md。 */
   updateSuggestions() {
     const query = this.searchInputEl.value.trim().toLowerCase();
     const paths = this.plugin.getPaths();
@@ -366,7 +423,7 @@ class FileRecoveryModal extends Modal {
     for (const p of this._suggestions) {
       const item = this.suggestionsEl.createDiv('suggestion-item');
       item.style.cssText = 'cursor:pointer;padding:var(--size-4-1) var(--size-4-3);';
-      item.setText(p);
+      item.setText(displayPath(p));
       item.onclick = () => this.switchToPath(p);
     }
     this.suggestionsEl.style.display = 'block';
@@ -375,7 +432,10 @@ class FileRecoveryModal extends Modal {
   /** 切换到某个文件并列出其快照（原版 switchToPath）。 */
   switchToPath(path) {
     this.path = path;
-    this.searchInputEl.value = path;
+    const display = displayPath(path);
+    this.searchInputEl.value = display;
+    this.searchInputEl.blur();
+    this.paneTitleEl.setText(display);
     this.suggestionsEl.style.display = 'none';
     this.suggestionsEl.empty();
     this._suggestions = [];
@@ -408,8 +468,28 @@ class FileRecoveryModal extends Modal {
     this.contentPaneEl.parentElement.removeClass('mod-empty');
     this.emptyEl.style.display = 'none';
     this.contentPaneEl.style.display = 'flex';
-    this.paneTitleEl.setText(this.path);
+    this.paneTitleEl.setText(displayPath(this.path));
     this.textareaEl.value = snap.data;
+    this.textareaEl.setAttr('data-ext', extensionOf(this.path));
+    // 差异基准：列表中下一条（更旧）快照（原版 openHistory 的第二个参数）
+    const snapshots = this.plugin.getSnapshots(this.path);
+    const index = snapshots.findIndex((s) => s.ts === snap.ts);
+    this._prevVersion = index >= 0 && index + 1 < snapshots.length ? snapshots[index + 1] : null;
+    this._diffRendered = false;
+    this.diffEl.empty();
+    this.updateDiffVisibility(this.diffToggle.getValue());
+  }
+
+  /** 对齐原版 openHistory：切换 textarea/diff 显隐；首次显示差异时按需渲染。 */
+  updateDiffVisibility(show) {
+    this.textareaEl.toggle(!show);
+    this.diffEl.toggle(show);
+    if (show && !this._diffRendered && this.currentVersion) {
+      this._diffRendered = true;
+      const prev = this._prevVersion ? this._prevVersion.data : '';
+      this.diffEl.empty();
+      this.diffEl.appendChild(renderDiffView(prev, this.currentVersion.data));
+    }
   }
 
   _showEmpty() {
@@ -444,32 +524,42 @@ class FileRecoveryModal extends Modal {
  * 设置页（设置宿主经 module.settingTab(app, containerEl) 调用）
  * ------------------------------------------------------------------------ */
 export function settingTab(app, containerEl) {
-  const options = app.settings.loadPluginData(DATA_FILE, DEFAULT_OPTIONS);
-  const save = () => app.settings.savePluginData(DATA_FILE, options);
   const instance = () => {
     const entry = app.plugins && app.plugins.getInternalPlugin('file-recovery');
     return entry && entry.instance ? entry.instance : null;
+  };
+  // 与运行中的插件共享同一 options 对象：改动即时生效（对齐原版设置页直接改 instance.options）
+  const options = instance() ? instance().options : loadOptions(app);
+  const save = () => {
+    const inst = instance();
+    if (inst) inst.saveOptions();
+    else app.settings.savePluginData(DATA_FILE, options);
   };
   const group = new SettingGroup(containerEl);
   group.setHeading(tt('plugins.file-recovery.name', 'File recovery'));
   group.addSetting((setting) => {
     setting
       .setName(tt('plugins.file-recovery.option-interval', 'Snapshot interval'))
-      // 本实现的间隔单位为秒（原版为分钟），描述不使用 locale 的 minutes 文案
-      .setDesc('Minimal interval in seconds between two snapshots.')
-      .addSlider((slider) => {
-        slider.setLimits(5, 300, 5).setValue(options.intervalSeconds).setDynamicTooltip()
-          .onChange((value) => { options.intervalSeconds = value; save(); });
-      });
+      .setDesc(tt('plugins.file-recovery.option-interval-description', 'Minimal interval in minutes between two snapshots.'))
+      .addText((txt) => txt.setValue(String(options.intervalMinutes)).onChange((value) => {
+        const minutes = parseFloat(value);
+        if (!Number.isNaN(minutes) && minutes >= 0) {
+          options.intervalMinutes = minutes;
+          save();
+        }
+      }));
   });
   group.addSetting((setting) => {
     setting
       .setName(tt('plugins.file-recovery.option-keep', 'History length'))
       .setDesc(tt('plugins.file-recovery.option-keep-description', 'Number of days the snapshots are kept for.'))
-      .addSlider((slider) => {
-        slider.setLimits(1, 30, 1).setValue(options.keepDays).setDynamicTooltip()
-          .onChange((value) => { options.keepDays = value; save(); });
-      });
+      .addText((txt) => txt.setValue(String(options.keepDays)).onChange((value) => {
+        const days = parseFloat(value);
+        if (!Number.isNaN(days) && days >= 1) {
+          options.keepDays = days;
+          save();
+        }
+      }));
   });
   group.addSetting((setting) => {
     setting
@@ -517,6 +607,9 @@ export function create(app) {
     onunload() { plugin.onunload(); },
     deregisterCommands() { plugin.deregisterCommands(); },
     deregister() { plugin.onunload(); },
+    // 运行中的选项对象（设置页签与验收直接读写）
+    get options() { return plugin.options; },
+    saveOptions: () => plugin.saveOptions(),
     // 供设置页签/其他插件调用
     openModal: (path) => plugin.openModal(path),
     getSnapshots: (path) => plugin.getSnapshots(path),

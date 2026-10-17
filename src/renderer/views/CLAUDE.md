@@ -15,7 +15,8 @@ settings-tabs-appearance.js: AppearanceTab + FontManagerModal。对齐原版 Jee
 settings-tabs-plugins.js: HotkeysTab + HotkeyRecorderModal(按键录制)、CorePluginsTab(搜索+齿轮→openPluginOptions)、CommunityPluginsTab(安全模式语义+已安装插件列表；市场不接入)。
 graph-view.js: 全局/局部图视图生命周期。跟随文件变化，关闭时清理引擎和渲染器。
 graph-renderer.js: 画布绘制、命中、拖拽和平移。设备像素统一换算，销毁释放监听与帧。
-canvas-view.js: 画布装配。观察挂载尺寸，防抖保存，切换文件前落盘，关闭后释放帧与节点。
+canvas-view.js: 画布装配。观察挂载尺寸，防抖保存，切换文件前落盘，关闭后释放帧与节点。vault modify 的外部修改按磁盘内容重载并保留视口，自身写入按 _savedText 过滤 watcher 回声。
+diff-view.js: renderDiffView(prev,next)。行级 LCS 对齐，删除/插入按块配对，行内差异标 diff-changed；相等行按原版阈值折叠(N lines folded 可点击展开)。供文件恢复弹窗"显示差异"。
 canvas-viewport.js: 画布坐标与缩放。限制缩放目标，按缩放挂载正文，收敛后停止帧。
 canvas-interactions.js: 指针、滚轮、框选、键盘与拖拽原语。几何结果交给视图保存。
 canvas-node.js: 文本、文件、链接与分组节点。输入请求保存，正文可读时挂载。

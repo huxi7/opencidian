@@ -138,7 +138,25 @@
   let prior = fs.existsSync(manifestPath) ? JSON.parse(fs.readFileSync(manifestPath, 'utf8')) : null;
   if (phase === 'exercise') {
     check('fresh independent fixture', prior === null && !vault.getFileByPath(snapshotFile));
-    check('automatic snapshot fixture interval is zero', app.settings.loadPluginData('file-recovery.json', {}).intervalSeconds === 0);
+    // 旧格式 fixture：intervalSeconds 保留在文件中，读取时迁移为分钟
+    check('legacy intervalSeconds fixture preserved', app.settings.loadPluginData('file-recovery.json', {}).intervalSeconds === 0);
+    check('legacy interval migrates to minutes', recovery.options.intervalMinutes === 0);
+    // 设置页签：两个文本输入（分钟/天），改值即时生效并写盘
+    const settingsHost = document.createElement('div');
+    document.body.appendChild(settingsHost);
+    app.plugins.getInternalPlugin('file-recovery').manifest.module.settingTab(app, settingsHost);
+    const optionInputs = settingsHost.querySelectorAll('input[type="text"]');
+    check('settings tab renders two text inputs', optionInputs.length === 2);
+    check('interval input shows migrated minutes', optionInputs[0].value === '0');
+    check('keep-days input shows days', optionInputs[1].value === '7');
+    optionInputs[0].value = '10';
+    optionInputs[0].dispatchEvent(new Event('input', { bubbles: true }));
+    check('interval change applies to live instance', recovery.options.intervalMinutes === 10);
+    check('interval change persists to data file', app.settings.loadPluginData('file-recovery.json', {}).intervalMinutes === 10);
+    optionInputs[0].value = '0';
+    optionInputs[0].dispatchEvent(new Event('input', { bubbles: true }));
+    check('interval restored to zero for capture assertions', recovery.options.intervalMinutes === 0);
+    settingsHost.remove();
     const file = await write(snapshotFile, dataA);
     await wait('create automatically snapshots A', () => recovery.getSnapshots(snapshotFile).some((s) => s.data === dataA));
     await vault.modify(file, dataB);
@@ -149,11 +167,63 @@
     const versionIndex = recovery.getSnapshots(snapshotFile).findIndex((s) => s.data === dataA);
     modal.versionListEl.children[versionIndex].click();
     check('history preview matches selected A', modal.textareaEl.value === dataA);
+    check('preview carries md extension marker', modal.textareaEl.getAttribute('data-ext') === 'md');
+    check('title hides md extension', modal.paneTitleEl.textContent === snapshotFile.slice(0, -3));
+    check('size label formats small file as bytes',
+      modal.versionListEl.children[versionIndex].querySelector('.u-small').textContent === dataA.length + ' B');
+    modal.copyBtn.buttonEl.click();
+    check('copy button writes snapshot to clipboard', require('electron').clipboard.readText() === dataA);
+    modal.diffToggle.setValue(true);
+    check('diff toggle hides preview', getComputedStyle(modal.textareaEl).display === 'none' &&
+      getComputedStyle(modal.diffEl).display !== 'none');
+    check('oldest version renders all lines as changes', modal.diffEl.querySelectorAll('.diff-line.mod-left').length >= 2 &&
+      modal.diffEl.querySelectorAll('.diff-line.mod-right').length >= 2);
+    modal.diffToggle.setValue(false);
+    check('diff toggle restores preview', getComputedStyle(modal.textareaEl).display !== 'none' &&
+      getComputedStyle(modal.diffEl).display === 'none');
+    // 选中 B（其更旧版本是 A），验证成对差异与行内标记
+    const bIndex = recovery.getSnapshots(snapshotFile).findIndex((s) => s.data === dataB);
+    modal.versionListEl.children[bIndex].click();
+    modal.diffToggle.setValue(true);
+    check('diff renders paired changed lines', modal.diffEl.querySelectorAll('.diff-line.mod-left').length >= 2 &&
+      modal.diffEl.querySelectorAll('.diff-line.mod-right').length >= 2);
+    check('diff marks inline changes', modal.diffEl.querySelectorAll('.diff-changed').length >= 2);
+    check('diff keeps equal context line', !!modal.diffEl.querySelector('.diff-line:not(.mod-left):not(.mod-right)'));
+    modal.diffToggle.setValue(false);
+    modal.versionListEl.children[versionIndex].click();
+    check('preview restored after diff experiment', modal.textareaEl.value === dataA);
     await modal.restore();
     check('restore button writes A to disk', await vault.read(file) === dataA);
     check('restore synchronizes open editor', editLeaf.view.editor.getValue() === dataA);
     check('restored version sorted newest', recovery.getSnapshots(snapshotFile)[0].data === dataA);
     modal.close(); await sleep(200);
+    // Canvas 快照范围（原版含 canvas/base 扩展名）
+    await plugin('canvas');
+    const canvasFile = 'Board.canvas';
+    const canvasData = (text) => JSON.stringify({ nodes: [{ id: 'n1', type: 'text', text, x: 0, y: 0, width: 200, height: 80 }], edges: [] }, null, '\t');
+    const canvasA = canvasData('版本 A');
+    const canvasB = canvasData('版本 B');
+    const board = await write(canvasFile, canvasA);
+    await wait('canvas create snapshots A', () => recovery.getSnapshots(canvasFile).some((s) => s.data === canvasA));
+    await vault.modify(board, canvasB);
+    await wait('canvas modify snapshots B', () => recovery.getSnapshots(canvasFile)[0]?.data === canvasB);
+    const canvasLeaf = ws.createLeafBySplit(editLeaf, 'vertical');
+    await canvasLeaf.setViewState({ type: 'canvas', state: { file: canvasFile } });
+    await wait('canvas view shows file', () => canvasLeaf.view.getViewType() === 'canvas' &&
+      canvasLeaf.view.file && canvasLeaf.view.file.path === canvasFile);
+    const canvasSnapA = recovery.getSnapshots(canvasFile).find((s) => s.data === canvasA);
+    await recovery.restoreSnapshot(canvasFile, canvasSnapA);
+    check('canvas restore writes A to disk', await vault.read(board) === canvasA);
+    await wait('open canvas view reloads restored content', () => {
+      const nodes = canvasLeaf.view.getData().nodes;
+      return nodes[0] && nodes[0].text === '版本 A';
+    });
+    const canvasModal = recovery.openModal(canvasFile);
+    check('canvas history lists versions', canvasModal.versionListEl.children.length >= 2);
+    canvasModal.versionListEl.children[0].click();
+    check('canvas preview keeps extension marker', canvasModal.textareaEl.getAttribute('data-ext') === 'canvas');
+    check('canvas title keeps extension', canvasModal.paneTitleEl.textContent === canvasFile);
+    canvasModal.close(); await sleep(200);
     const gone = await write(deletedFile, '# deleted version\n');
     await wait('deleted fixture has snapshot', () => recovery.getSnapshots(deletedFile).length > 0);
     const deletedSnapshot = recovery.getSnapshots(deletedFile)[0];
@@ -200,6 +270,7 @@
     await spaces.loadWorkspace('Recovery A');
     assertLayout('final saved layout');
     prior = { done: true, file: snapshotFile, data: await vault.read(file), deletedData: deletedSnapshot.data,
+      canvasData: canvasA,
       activeId: ws.activeLeaf.id, leafIds: loaded.map((leaf) => leaf.id).sort(), savedHistory,
       snapshotCount: recovery.getSnapshots(snapshotFile).length, exercised: new Date().toISOString() };
     fs.writeFileSync(manifestPath, JSON.stringify(prior, null, 2));
@@ -214,6 +285,8 @@
       check('snapshots survive process restart', recovery.getSnapshots(snapshotFile).length >= prior.snapshotCount &&
         recovery.getSnapshots(snapshotFile).some((s) => s.data === dataA) && recovery.getSnapshots(snapshotFile).some((s) => s.data === dataB));
       check('deleted-file recovery survives restart', await vault.read(vault.getFileByPath(deletedFile)) === prior.deletedData);
+      check('canvas snapshots survive process restart', recovery.getSnapshots('Board.canvas').some((s) => s.data === prior.canvasData));
+      check('migrated minutes option survives restart', recovery.options.intervalMinutes === 0);
       check('workspace names survive restart', !!spaces.getWorkspaces()['Recovery A'] && !!spaces.getWorkspaces()['Recovery B']);
       check('active workspace name survives restart', app.settings.loadPluginData('workspaces.json').active === 'Recovery A');
       check('saved lastOpenFiles survives restart unchanged', JSON.stringify(spaces.getWorkspaces()['Recovery A'].lastOpenFiles) === prior.savedHistory);

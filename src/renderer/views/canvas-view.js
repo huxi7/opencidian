@@ -5,6 +5,7 @@
  * [OUTPUT]: 导出 CanvasView 类
  * [POS]: views/ 画布类链的末端：View → CanvasViewport（视口）→ CanvasInteractions（交互）→ CanvasView（装配与调度）。持有 .canvas-wrapper DOM、节点/边集合、选择集合、JSON Canvas 读写。
  *        ResizeObserver 在挂载后更新视口。节点与边几何分层；数据防抖 500ms 写回，关闭时 flush。
+ *        vault modify 的外部修改重载磁盘内容并保留视口；自身写入用 _writing 标记排除，避免覆盖在途编辑。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 /* Canvas view — DOM assembly + scheduling on top of the viewport and interaction layers. */
@@ -63,6 +64,8 @@ export class CanvasView extends CanvasInteractions {
     this.pauseAnimation = 0;
     this._saveTimer = null;
     this._savedText = null;
+    this._writing = false;
+    this._modifyRef = null;
     this.onGlobalKeydown = (e) => this._globalKeydown(e);
     this.onGlobalKeyup = (e) => this._globalKeyup(e);
   }
@@ -105,11 +108,14 @@ export class CanvasView extends CanvasInteractions {
     this.options = { snapToGrid: false, snapToObjects: false, ...this.loadOptions() };
     window.addEventListener('keydown', this.onGlobalKeydown);
     window.addEventListener('keyup', this.onGlobalKeyup);
+    // 原版文本文件视图基类行为：外部修改（同步、文件恢复）重载磁盘内容
+    this._modifyRef = this.app.vault.on('modify', (file) => this.onExternalModify(file));
   }
 
   async onClose() {
     window.removeEventListener('keydown', this.onGlobalKeydown);
     window.removeEventListener('keyup', this.onGlobalKeyup);
+    if (this._modifyRef) { this._modifyRef.unregister(); this._modifyRef = null; }
     if (this._saveTimer) { clearTimeout(this._saveTimer); this._saveTimer = null; }
     this.data = this.getData();
     await this.save();
@@ -544,11 +550,14 @@ export class CanvasView extends CanvasInteractions {
     const text = JSON.stringify(this.data && this.data.nodes ? this.data : this.getData(), null, '\t');
     if (text === this._savedText) return;
     try {
+      this._writing = true;
       await this.app.vault.modify(this.file, text);
       this._savedText = text;
     } catch (e) {
       console.error('canvas save failed', e);
       new Notice(t('plugins.canvas.name') || 'Canvas');
+    } finally {
+      this._writing = false;
     }
   }
 
@@ -573,6 +582,25 @@ export class CanvasView extends CanvasInteractions {
       this.data = this.getData();
       await this.save();
     }
+    await this._applyFileFromDisk(path);
+  }
+
+  /** 外部修改：磁盘内容与已保存内容一致时视为自身写入的 watcher 回声，跳过重载。 */
+  onExternalModify(file) {
+    if (!file || !this.file || this._writing || file.path !== this.file.path || file.extension !== 'canvas') return;
+    const path = this.file.path;
+    const fileRef = this.file;
+    this.app.vault.cachedRead(fileRef).then((text) => {
+      if (!this.file || this.file.path !== path) return;
+      if (text === this._savedText) return;
+      if (this._saveTimer) { clearTimeout(this._saveTimer); this._saveTimer = null; }
+      return this._applyFileFromDisk(path, { keepViewport: true });
+    }).catch((e) => console.error('canvas external reload failed', e));
+  }
+
+  /** 读取磁盘内容并重建节点/边；keepViewport 为真时保留当前缩放与位移。 */
+  async _applyFileFromDisk(path, opts) {
+    const keepViewport = !!(opts && opts.keepViewport);
     const file = this.app.vault.getFileByPath(path) || this.app.vault.getAbstractFileByPath(path);
     if (!file || file.extension !== 'canvas') {
       this.file = null;
@@ -586,11 +614,13 @@ export class CanvasView extends CanvasInteractions {
     if (text && text.trim()) {
       try { data = JSON.parse(text); } catch (e) { new Notice(t('plugins.canvas.msg-export-failed-empty-canvas') || 'Invalid canvas file'); }
     }
+    const viewport = { x: this.x, y: this.y, zoom: this.zoom };
     this.clear();
     if (data) this.setData(data);
     else this.createPlaceholder();
+    if (keepViewport) this.setViewport(viewport.x, viewport.y, viewport.zoom);
     this._savedText = JSON.stringify(this.getData(), null, '\t');
-    this.zoomToFitQueued = true;
+    if (!keepViewport) this.zoomToFitQueued = true;
     this.onResize();
     if (this.wrapperEl) this.wrapperEl.focus({ preventScroll: true });
     this.app.workspace.trigger('canvas:file-loaded', this.file, this);
