@@ -390,9 +390,11 @@ node --experimental-vm-modules src/renderer/core/workspace-regression.js
 - Chromium `document.fonts.check` 对未知字体返回 true → 字体检测改宽度测量法。
 - `navigator.clipboard.writeText` 在窗口未聚焦时异步 reject → 全部调用点吞掉 rejection（否则验收日志判失败）。
 
+已完成补充（组件批，`0c8dbe9`）：
+- 全局 tooltip（`core/tooltip.js`，1000ms 延迟/100ms 宽限/上下左右/翻转/抑制原生 title）、Notice 右上角+4000ms+hover 暂停+收拢动画、Suggest clear 按钮/PageUp/PageDown/Ctrl+p/n/auxclick；dialogs 场景扩到 7 项。同时把 file-explorer 移动失败的英文硬编码改成 locale 键（zh/en 同步）。
+
 未完成/已知缺口（后续）：
-- 通用组件批（tooltip/notice/suggest）由子代理处理中（限流反复失败，当前 1 个子代理在跑）；若失败需主 agent 续做：`core/tooltip.js` 新建 + components.css 移植 + notices 右上角/4000ms/hover 暂停 + suggest clear 按钮/PageUp/PageDown。
-- 菜单 `.menu-scroll` 结构与边缘滚动未做；菜单快捷键右对齐无原版证据。
+- 菜单 `.menu-scroll` 结构与边缘滚动未做（滚动本身已可用）；菜单快捷键右对齐无原版证据。
 - 功能区配置弹窗（Zee）未做（需 ribbon item registry；依赖 workspace-renderer）；自定义图标已完成。
 - 画布：CM6 卡片编辑、图片导出、对齐参考线、空间索引未做。
 - 图谱：颜色组拖拽、悬停高亮细节未做。
