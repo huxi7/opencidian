@@ -11,6 +11,7 @@ import { Notice } from '../core/notices.js';
 import { Modal } from '../core/modals.js';
 import { Desktop } from '../core/ipc.js';
 import { AbstractInputSuggest } from '../core/suggest.js';
+import { TFile, TFolder } from '../core/vault.js';
 import { setIcon } from '../core/icons.js';
 
 const VERSION = '1.0.0';
@@ -256,7 +257,46 @@ export class EditorTab extends SettingTab {
     behavior.addSetting((s) => s
       .setName(tt('setting.editor.option-spellcheck', '拼写检查'))
       .setDesc(tt('setting.editor.option-spellcheck-description', '打开拼写检查器。'))
+      .addExtraButton((b) => b
+        .setIcon('lucide-book-open')
+        .setTooltip(tt('setting.editor.spellcheck-dict', '拼写检查词典'))
+        .onClick(() => new SpellcheckDictModal(app).open()))
       .addToggle((tog) => tog.setValue(settings.spellcheck === true).onChange((v) => update({ spellcheck: v }))));
+    behavior.addSetting((s) => {
+      s.setName(tt('setting.editor.spellcheck-languages', '拼写检查语言'))
+        .setDesc(IS_MAC
+          ? tt('setting.editor.spellcheck-languages-mac-description', '本地的拼写检查器将自动检测你当前所使用的语言。')
+          : tt('setting.editor.spellcheck-languages-description', '选择需要检查拼写的语言。'));
+      const info = (() => { try { return Desktop.spellcheckLanguages() || {}; } catch (e) { return {}; } })();
+      const available = Array.isArray(info.available) ? info.available : [];
+      const active = Array.isArray(info.active) ? info.active : [];
+      const custom = Array.isArray(info.current) ? [...info.current] : null;
+      const apply = (languages) => { try { Desktop.spellcheckLanguagesSet(languages); } catch (e) {} this.display(); };
+      const pillValues = custom || active;
+      const pills = s.controlEl.createDiv('multi-select-container');
+      for (const lang of pillValues) {
+        pills.createDiv('multi-select-pill', (pill) => {
+          pill.createDiv('multi-select-pill-content', (c) => c.setText(lang));
+          const del = pill.createDiv('multi-select-pill-remove-button clickable-icon');
+          setIcon(del, 'lucide-x');
+          del.onclick = () => apply(pillValues.filter((x) => x !== lang));
+        });
+      }
+      if (custom) {
+        s.addExtraButton((b) => b
+          .setIcon('lucide-rotate-ccw')
+          .setTooltip(tt('setting.hotkeys.tooltip-restore-default', '恢复默认'))
+          .onClick(() => apply(null)));
+      }
+      if (available.length) {
+        s.addDropdown((d) => {
+          d.addOption('', '');
+          for (const lang of available) if (!pillValues.includes(lang)) d.addOption(lang, lang);
+          d.setValue('');
+          d.onChange((v) => { if (v) apply([...pillValues, v]); });
+        });
+      }
+    });
     behavior.addSetting((s) => s
       .setName(tt('setting.editor.option-auto-pair-brackets', '自动补全英文标点符号'))
       .setDesc(tt('setting.editor.option-auto-pair-brackets-description', '自动补全英文括号和引号。'))
@@ -301,12 +341,13 @@ export class EditorTab extends SettingTab {
       .setDesc(tt('setting.editor.option-vim-key-bindings-description', '允许在编辑器中使用 Vim 模式。'))
       .addToggle((tog) => tog.setValue(settings.vimMode === true).onChange((v) => {
         if (!v) { update({ vimMode: false }); return; }
+        tog.setValue(false); // 原版：弹窗期间开关回弹为关闭，验证通过后再开启
         new VimTestModal(app, (ok) => {
           if (ok) {
+            tog.setValue(true);
             update({ vimMode: true });
             new Notice(tt('setting.editor.msg-vim-mode-enabled', '命令正确。开启 Vim 模式。'));
           } else {
-            tog.setValue(false);
             new Notice(tt('setting.editor.msg-vim-mode-not-enabled', '命令错误。为保证你的使用体验，暂不开启 Vim 模式。'));
           }
         }).open();
@@ -320,10 +361,11 @@ class VimTestModal extends Modal {
     super(app);
     this.onConfirm = onConfirm;
     this.setTitle(tt('setting.editor.label-confirm-enable-vim', '确认进入 Vim 模式'));
-    this.contentEl.createEl('p', { text: tt('setting.editor.label-vim-warning', 'Vim 模式可以实现高效的文本编辑操作，但其使用方法十分复杂。如果你对 Vim 不了解，开启该模式可能会让 OpenSidian 难以使用。') });
+    this.contentEl.createEl('p', { cls: 'mod-warning', text: tt('setting.editor.label-vim-warning', 'Vim 模式可以实现高效的文本编辑操作，但其使用方法十分复杂。如果你对 Vim 不了解，开启该模式可能会让 OpenSidian 难以使用。') });
     this.contentEl.createEl('p', { text: tt('setting.editor.label-vim-test', '为了确保你知道如何使用 Vim，请输入 Vim 中“退出而不保存”对应的命令：') });
-    this.contentEl.createEl('label', { text: tt('setting.editor.label-vim-your-answer', '你的答案') });
-    const input = this.contentEl.createEl('input', {
+    const field = this.contentEl.createEl('p', { cls: 'form-field' });
+    field.createEl('label', { cls: 'input-label', text: tt('setting.editor.label-vim-your-answer', '你的答案') });
+    const input = field.createEl('input', {
       type: 'text',
       attr: { placeholder: tt('setting.editor.placeholder-enter-command', '请输入命令…') },
     });
@@ -339,6 +381,8 @@ class VimTestModal extends Modal {
       if (ev.key === 'Enter') { ev.preventDefault(); confirm(); }
     });
     const row = this.contentEl.createDiv('modal-button-container');
+    row.createEl('button', { text: tt('dialogue.button-cancel', '取消') })
+      .addEventListener('click', () => { this.close(); this.onConfirm(false); });
     row.createEl('button', { cls: 'mod-cta', text: tt('setting.editor.button-confirm-enable-vim', '让我开启 Vim 模式') })
       .addEventListener('click', confirm);
   }
@@ -386,13 +430,15 @@ export class FileTab extends SettingTab {
       openFileRow = s;
       s.setName(tt('setting.file.option-default-open-file-path', '要打开的文件'))
         .setDesc(tt('setting.file.option-default-open-file-path-description', '选择默认打开的特定文件。'))
-        .addText((txt) => txt
-          .setPlaceholder(tt('setting.file-path-example-placeholder', '例: 文件夹/笔记'))
-          .setValue(currentOpenPath)
-          .onChange((v) => {
-            currentOpenPath = v;
-            update({ openBehavior: 'file:' + v });
-          }));
+        .addText((txt) => {
+          txt.setPlaceholder(tt('setting.file-path-example-placeholder', '例: 文件夹/笔记'))
+            .setValue(currentOpenPath)
+            .onChange((v) => {
+              currentOpenPath = v;
+              update({ openBehavior: 'file:' + v });
+            });
+          new FilePathSuggest(app, txt.inputEl);
+        });
       s.settingEl.toggle(isFileBehavior);
     });
 
@@ -415,10 +461,12 @@ export class FileTab extends SettingTab {
       newFolderRow = s;
       s.setName(tt('setting.file.option-new-file-folder-path', '存放新建笔记的文件夹'))
         .setDesc(tt('setting.file.option-new-file-folder-path-description', '指定存放新笔记的文件夹，插件可能会修改此设置。'))
-        .addText((txt) => txt
-          .setPlaceholder(tt('setting.folder-path-example-placeholder', '例: 文件夹 1/文件夹 2'))
-          .setValue(settings.newFileFolderPath || '')
-          .onChange((v) => update({ newFileFolderPath: v })));
+        .addText((txt) => {
+          txt.setPlaceholder(tt('setting.folder-path-example-placeholder', '例: 文件夹 1/文件夹 2'))
+            .setValue(settings.newFileFolderPath || '')
+            .onChange((v) => update({ newFileFolderPath: v }));
+          new FolderPathSuggest(app, txt.inputEl);
+        });
       s.settingEl.toggle(settings.newFileLocation === 'folder');
     });
 
@@ -458,10 +506,12 @@ export class FileTab extends SettingTab {
       attachFolderRow = s;
       s.setName(tt('setting.file.option-attachment-folder-path', '附件文件夹路径'))
         .setDesc(tt('setting.file.option-attachment-folder-path-description', '指定用于存放附件的文件夹。新建的附件会存放于此，如音频记录或通过拖放或粘贴创建的图像等。'))
-        .addText((txt) => txt
-          .setPlaceholder(tt('setting.file.option-new-attachment-location-default', '附件'))
-          .setValue(attachFolder)
-          .onChange((v) => { attachFolder = v; writeAttach('folder', v, attachSub); }));
+        .addText((txt) => {
+          txt.setPlaceholder(tt('setting.file.option-new-attachment-location-default', '附件'))
+            .setValue(attachFolder)
+            .onChange((v) => { attachFolder = v; writeAttach('folder', v, attachSub); });
+          new FolderPathSuggest(app, txt.inputEl);
+        });
       s.settingEl.toggle(attachMode === 'folder');
     });
     group.addSetting((s) => {
@@ -530,19 +580,40 @@ export class FileTab extends SettingTab {
 
     /* 高级 */
     const adv = new SettingGroup(this.containerEl).setHeading(tt('setting.about.option-advanced', '高级'));
-    adv.addSetting((s) => s
-      .setName(tt('setting.file.option-excluded-files', '忽略文件'))
-      .setDesc(tt('setting.file.option-excluded-files-desc', '符合以下条件的文件将被忽略。'))
-      .addButton((b) => b.setButtonText(tt('setting.appearance.option-theme-button-manage', '管理')).onClick(() => {
+    adv.addSetting((s) => {
+      s.setName(tt('setting.file.option-excluded-files', '忽略文件'));
+      s.descEl.empty();
+      s.descEl.appendText(tt('setting.file.option-excluded-files-desc', '符合以下条件的文件将被忽略。'));
+      const filters = app.settings.appSettings.userIgnoreFilters || [];
+      if (filters.length) {
+        const list = s.descEl.createEl('ul');
+        for (const value of filters) {
+          const item = list.createEl('li');
+          item.createSpan({ text: String(value) });
+          if (isRegexFilterValue(value)) item.createSpan({ cls: 'flair mod-flat', text: tt('setting.file.label-regex', '正则') });
+        }
+      }
+      s.addButton((b) => b.setButtonText(tt('setting.appearance.option-theme-button-manage', '管理')).onClick(() => {
         new ExcludedFilesModal(app, () => this.display()).open();
-      })));
-    adv.addSetting((s) => s
-      .setName(tt('setting.editor.option-reindex-vault', '重建仓库缓存'))
-      .setDesc(tt('setting.editor.option-reindex-vault-description', '重建缓存可能需要几秒钟到几分钟的时间，具体取决于您的仓库大小。'))
-      .addButton((b) => b.setCta().setButtonText(tt('setting.editor.label-reindex', '重建')).onClick(async () => {
-        await app.metadataCache.rebuildIndices();
-        new Notice(tt('setting.editor.option-reindex-vault', '重建仓库缓存') + ' ✓');
-      })));
+      }));
+    });
+    adv.addSetting((s) => {
+      s.setName(tt('setting.editor.option-reindex-vault', '重建仓库缓存'));
+      s.descEl.empty();
+      s.descEl.appendText(tt('setting.editor.option-reindex-vault-description', '重建缓存可能需要几秒钟到几分钟的时间，具体取决于您的仓库大小。'));
+      s.descEl.createDiv({ cls: 'mod-warning', text: tt('setting.editor.label-reindex-warning', '重建缓存后应用将重新加载。') });
+      s.descEl.createEl('a', {
+        text: tt('setting.editor.label-reindex-learn-more', '了解它是如何工作的'),
+        attr: { href: 'https://help.obsidian.md/troubleshooting', target: '_blank', rel: 'noopener' },
+      });
+      s.addButton((b) => b
+        .setClass('mod-destructive')
+        .setButtonText(tt('setting.editor.label-reindex', '重建'))
+        .onClick(async () => {
+          try { await app.metadataCache.rebuildIndices(); } catch (e) { console.error(e); }
+          window.location.reload();
+        }));
+    });
   }
 }
 
@@ -567,26 +638,36 @@ class ExcludedFilesModal extends Modal {
     for (const value of this.values) {
       listEl.createDiv('mobile-option-setting-item', (row) => {
         row.createSpan({ cls: 'mobile-option-setting-item-name', text: value });
-        row.createDiv('clickable-icon mobile-option-setting-item-option-icon', (btn) => {
-          btn.addEventListener('click', () => {
-            this.values = this.values.filter((x) => x !== value);
-            this.display();
-          });
+        if (isRegexFilterValue(value)) row.createSpan({ cls: 'flair mod-flat', text: tt('setting.file.label-regex', '正则') });
+        const btn = row.createDiv('clickable-icon mobile-option-setting-item-option-icon');
+        setIcon(btn, 'lucide-x');
+        btn.addEventListener('click', () => {
+          this.values = this.values.filter((x) => x !== value);
+          this.display();
         });
       });
     }
     if (!this.values.length) {
       container.createEl('p', { text: tt('setting.file.label-no-excluded-filters-applied', '目前没有需要忽略的文件。') });
     }
-    const addRow = container.createDiv('modal-button-container');
+    container.createDiv('setting-item-name', (t2) => t2.setText(tt('setting.file.label-filter-conditions', '条件')));
+    const addRow = container.createDiv('excluded-files-add-row');
     const input = addRow.createEl('input', {
       type: 'text',
       attr: { placeholder: tt('setting.file.placeholder-excluded-filter', '请输入文件路径或正则表达式') },
     });
     input.style.flex = '1';
+    const errorEl = container.createDiv('mod-warning');
+    errorEl.hide();
+    const suggest = new ExcludedPathSuggest(this.app, input);
     const add = () => {
       const value = input.value.trim();
-      if (!value) return;
+      if (!value) {
+        errorEl.setText(tt('setting.file.message-empty-filter', '条件不能为空。'));
+        errorEl.show();
+        return;
+      }
+      errorEl.hide();
       this.values.push(value);
       input.value = '';
       this.display();
@@ -594,6 +675,7 @@ class ExcludedFilesModal extends Modal {
     input.addEventListener('keydown', (ev) => {
       if (ev.key === 'Enter') { ev.preventDefault(); add(); }
     });
+    suggest.onSelect = () => add();
     addRow.createEl('button', { text: tt('interface.button-add', '添加') }).addEventListener('click', add);
     const buttons = container.createDiv('modal-button-container');
     buttons.createEl('button', { text: tt('dialogue.button-cancel', '取消') }).addEventListener('click', () => this.close());
@@ -602,5 +684,92 @@ class ExcludedFilesModal extends Modal {
       this.close();
       this.onDone && this.onDone();
     });
+  }
+}
+
+/* -------------------------------------------------------- helpers & modals */
+
+/** 原版正则条件检测：/pattern/ 形式。 */
+function isRegexFilterValue(value) {
+  return /^\/.+\/$/.test(String(value || '').trim());
+}
+
+/** 递归收集仓库内文件夹相对路径（建议列表用）。 */
+function collectFolderPaths(app) {
+  const out = [];
+  const walk = (folder) => {
+    for (const child of folder.children || []) {
+      if (child instanceof TFolder) {
+        if (child.path) out.push(child.path);
+        walk(child);
+      }
+    }
+  };
+  walk(app.vault.getRoot());
+  return out;
+}
+
+/** 文件路径建议（设置页文本框用，只读复用 suggest 基类）。 */
+class FilePathSuggest extends AbstractInputSuggest {
+  getSuggestions(query) {
+    const q = String(query || '').toLowerCase();
+    return this.app.vault.getFiles()
+      .map((f) => f.path)
+      .filter((p) => !q || p.toLowerCase().includes(q))
+      .slice(0, 30);
+  }
+  renderSuggestion(path, el) { el.setText(path); }
+  selectSuggestion(path) {
+    this.inputEl.value = path;
+    this.inputEl.dispatchEvent(new Event('input', { bubbles: true }));
+    this.close();
+  }
+}
+
+/** 文件夹路径建议。 */
+class FolderPathSuggest extends FilePathSuggest {
+  getSuggestions(query) {
+    const q = String(query || '').toLowerCase();
+    return collectFolderPaths(this.app)
+      .filter((p) => !q || p.toLowerCase().includes(q))
+      .slice(0, 30);
+  }
+}
+
+/** 忽略文件条件的路径建议：选择即触发 onSelect（弹窗内自动添加）。 */
+class ExcludedPathSuggest extends FilePathSuggest {
+  selectSuggestion(path) {
+    super.selectSuggestion(path);
+    if (typeof this.onSelect === 'function') this.onSelect(path);
+  }
+}
+
+/** 拼写检查词典弹窗（原版 ite）：自加词列表 + 移除。 */
+class SpellcheckDictModal extends Modal {
+  constructor(app) {
+    super(app);
+    this.setTitle(tt('setting.editor.spellcheck-dict', '拼写检查词典'));
+  }
+  onOpen() { this.render(); }
+  render() {
+    this.contentEl.empty();
+    let words = [];
+    try { words = Desktop.spellcheckDict() || []; } catch (e) { words = []; }
+    if (!words.length) {
+      this.contentEl.createEl('p', { text: tt('setting.editor.spellcheck-dict-empty', '拼写检查词典是空的。') });
+      return;
+    }
+    const wrap = this.contentEl.createDiv('spellchecker-dictionary-container');
+    for (const word of words) {
+      wrap.createDiv('spellchecker-dictionary-item', (row) => {
+        row.createDiv('spellchecker-dictionary-word', (w) => w.setText(word));
+        const remove = row.createDiv('spellchecker-dictionary-remove-button clickable-icon');
+        setIcon(remove, 'lucide-x');
+        remove.onclick = () => {
+          try { Desktop.spellcheckDictRemove(word); } catch (e) {}
+          this.render();
+        };
+      });
+    }
   }
 }

@@ -758,3 +758,69 @@ select.mod-hidden {
 .modal.mod-trust-folder {
   max-width: 700px;
 }
+
+/* ------------------------------------------- spellcheck dict & language pills */
+/* 原版 app.css：拼写检查词典弹窗与多选 pill（设置页语言行） */
+.spellchecker-dictionary-container {
+  max-height: 60vh;
+  overflow: auto;
+}
+.spellchecker-dictionary-item {
+  display: flex;
+  margin-bottom: 10px;
+}
+.spellchecker-dictionary-word {
+  flex-grow: 1;
+}
+.spellchecker-dictionary-remove-button {
+  cursor: var(--cursor);
+  color: var(--text-muted);
+  margin-inline-end: 10px;
+}
+.spellchecker-dictionary-remove-button:hover { color: var(--text-normal); }
+
+.multi-select-container {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--size-2-2);
+  align-items: center;
+}
+.multi-select-pill {
+  --icon-size: var(--icon-xs);
+  --icon-stroke: var(--icon-xs-stroke-width);
+  display: flex;
+  align-items: center;
+  background-color: var(--pill-background);
+  border: var(--pill-border-width, 1px) solid var(--pill-border-color, var(--background-modifier-border));
+  border-radius: var(--pill-radius);
+  color: var(--pill-color, var(--text-normal));
+  cursor: var(--cursor);
+  font-weight: var(--pill-weight, var(--font-normal));
+  padding: var(--pill-padding-y) 0;
+  line-height: 1;
+  max-width: calc(100% - var(--size-2-3) - 1ch);
+  gap: var(--size-2-1);
+}
+.multi-select-pill:hover { background-color: var(--pill-background-hover, var(--background-modifier-hover)); }
+.multi-select-pill-content {
+  word-break: break-word;
+  margin-inline-start: var(--pill-padding-x, var(--size-4-2));
+  overflow: hidden;
+}
+.multi-select-pill-remove-button {
+  margin-inline-end: var(--size-2-3);
+  cursor: var(--cursor);
+  color: var(--pill-color-remove, var(--text-muted));
+  border-radius: var(--radius-s);
+  display: flex;
+  align-items: center;
+  --icon-size: var(--icon-xs);
+  --icon-stroke: var(--icon-xs-stroke-width);
+}
+.multi-select-pill-remove-button:hover { color: var(--pill-color-remove-hover, var(--text-normal)); }
+.excluded-files-add-row {
+  display: flex;
+  gap: var(--size-4-2);
+  margin-top: var(--size-4-2);
+  align-items: center;
+}
