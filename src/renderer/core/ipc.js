@@ -1,3 +1,9 @@
+/**
+ * [INPUT]: Electron 的 ipcRenderer；主进程 main.js 注册的同名通道
+ * [OUTPUT]: ipcSync/ipcSend/ipcInvoke/ipcOn 与 Desktop 门面（含拼写检查词典/语言通道）
+ * [POS]: core/ 的渲染进程 IPC 叶子层。只做通道转发，不持有业务状态；窗口标题、拼写检查等全部经此抵达主进程。
+ * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
+ */
 /* Synchronous IPC helpers (mirrors the original app's channel names). */
 const { ipcRenderer } = require('electron');
 
@@ -52,6 +58,16 @@ export const Desktop = {
   saveDialog: (opts) => ipcSync('dialog-save', opts),
   messageDialog: (opts) => ipcSync('dialog-message', opts),
   setTitle: (t) => ipcSend('window-title', t),
+  windowState: () => ipcSync('window-state'),
+  minimizeWindow: () => ipcSend('window-minimize'),
+  maximizeWindow: () => ipcSend('window-maximize'),
+  closeWindow: () => ipcSend('window-close'),
+  isWindowMaximized: () => ipcSync('window-is-maximized'),
+  setTrafficLightPosition: (x, y) => ipcSend('set-traffic-light-position', x, y),
   setCustomContextMenu: () => ipcSend('context-menu'),
   selectFolder: () => ipcInvoke('plugin-select-folder'),
+  spellcheckDict: () => ipcSync('spellcheck-dict-list'),
+  spellcheckDictRemove: (word) => ipcSync('spellcheck-dict-remove', word),
+  spellcheckLanguages: () => ipcSync('spellcheck-languages'),
+  spellcheckLanguagesSet: (languages) => ipcSync('spellcheck-languages-set', languages),
 };

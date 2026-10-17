@@ -1,7 +1,7 @@
 /**
- * [INPUT]: 依赖 electron 的 app/BrowserWindow/ipcMain/protocol/shell/dialog；Node 内置 fs/path
- * [OUTPUT]: 主进程全部 IPC handler（vault 注册表、文件读写、窗口控制、回收站）、app:// 协议、devScreenshotHook（OBS_* 环境变量门控的调试钩子）
- * [POS]: 应用主进程入口。vault 注册表存于 userData/opensidian.json（启动时从旧产品名 "Obsidian Copy" 的 userData 迁移一次）；渲染进程经 preload/ipc.js 调用此处 handler。原生菜单保留设置入口。dev-hooks 只在指定测试库窗口执行。
+ * [INPUT]: 依赖 electron 的 app/BrowserWindow/ipcMain/protocol/shell/dialog/session；Node 内置 fs/path
+ * [OUTPUT]: 主进程全部 IPC handler（vault 注册表、文件读写、窗口控制、回收站、拼写检查词典/语言）、app:// 协议、devScreenshotHook（OBS_* 环境变量门控的调试钩子）
+ * [POS]: 应用主进程入口。vault 注册表存于 userData/opensidian.json（启动时从旧产品名 "Obsidian Copy" 的 userData 迁移一次）；拼写检查自加词存 userData/spellcheck-words.json，语言选择存 opensidian.json 的 spellcheckLanguages。渲染进程经 preload/ipc.js 调用此处 handler。原生菜单保留设置入口。dev-hooks 只在指定测试库窗口执行。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 /*
@@ -85,6 +85,40 @@ loadConfig();
 
 // 硬件加速开关（appearance 高级设置，重启生效）
 if (config.disableGpu) app.disableHardwareAcceleration();
+
+// 拼写检查自加词（编辑器设置“拼写检查词典”弹窗的数据源）。
+// 主进程独占写入 userData/spellcheck-words.json；context menu 的 Add to Dictionary 登记于此。
+const SPELLCHECK_DICT_FILE = path.join(DATA_DIR, 'spellcheck-words.json');
+
+function readSpellcheckWords() {
+  try {
+    const data = JSON.parse(fs.readFileSync(SPELLCHECK_DICT_FILE, 'utf8'));
+    if (Array.isArray(data)) return data.filter((w) => typeof w === 'string' && w.length > 0);
+  } catch (e) { /* 尚无词典文件：视为空 */ }
+  return [];
+}
+
+function writeSpellcheckWords(words) {
+  try {
+    fs.mkdirSync(DATA_DIR, { recursive: true });
+    fs.writeFileSync(SPELLCHECK_DICT_FILE, JSON.stringify(words, null, 2));
+  } catch (e) {
+    console.error('Failed to save spellcheck dictionary', e);
+  }
+}
+
+function addSpellcheckWord(word) {
+  if (typeof word !== 'string' || !word) return;
+  const words = readSpellcheckWords();
+  if (words.includes(word)) return;
+  words.push(word);
+  words.sort((a, b) => a.localeCompare(b));
+  writeSpellcheckWords(words);
+}
+
+function removeSpellcheckWord(word) {
+  writeSpellcheckWords(readSpellcheckWords().filter((w) => w !== word));
+}
 
 const VAULTS = config.vaults;
 
@@ -200,6 +234,7 @@ function showNativeContextMenu(win, wc, params) {
     }
     suggestions.push({ label: 'Add to Dictionary', click: () => {
       wc.session.addWordToSpellCheckerDictionary(misspelledWord);
+      addSpellcheckWord(misspelledWord);
       wc.replaceMisspelling(misspelledWord);
     } });
     template.unshift(...suggestions, { type: 'separator' });
@@ -435,6 +470,9 @@ function openVaultWindow(id, focus = true) {
   win.on('resize', debouncedSave);
   win.on('move', debouncedSave);
   win.on('close', () => saveBounds());
+  // 窗口状态推送给渲染进程（is-maximized / is-fullscreen / 红绿灯位置同步）
+  const pushWindowState = () => { try { win.webContents.send('window-state-changed'); } catch (e) {} };
+  for (const evt of ['maximize', 'unmaximize', 'enter-full-screen', 'leave-full-screen', 'restore']) win.on(evt, pushWindowState);
 
   secCtxWin(win);
   win.webContents.on('did-finish-load', () => { win.loaded = true; });
@@ -605,6 +643,43 @@ function setupIpc() {
 
   ipcMain.on('context-menu', (e) => { customContextWindows.add(e.sender.id); });
 
+  // 拼写检查词典：列表/移除（Electron 33 的 session.removeWordFromSpellCheckerDictionary 可用，同步清理注册词）
+  ipcMain.on('spellcheck-dict-list', (e) => { e.returnValue = readSpellcheckWords(); });
+  ipcMain.on('spellcheck-dict-remove', (e, word) => {
+    removeSpellcheckWord(word);
+    try {
+      const ses = e.sender.session;
+      if (typeof ses.removeWordFromSpellCheckerDictionary === 'function') ses.removeWordFromSpellCheckerDictionary(word);
+    } catch (err) { /* 词典文件已移除即可 */ }
+    e.returnValue = readSpellcheckWords();
+  });
+
+  // 拼写检查语言：读取 current(null=未自定义，用系统语言)/available/locale；写入并持久化到 opensidian.json
+  ipcMain.on('spellcheck-languages', (e) => {
+    try {
+      const ses = e.sender.session;
+      e.returnValue = {
+        current: Array.isArray(config.spellcheckLanguages) ? config.spellcheckLanguages : null,
+        active: ses.getSpellCheckerLanguages(),
+        available: ses.availableSpellCheckerLanguages || [],
+        locale: app.getLocale(),
+      };
+    } catch (err) {
+      e.returnValue = { current: null, active: [], available: [], locale: app.getLocale() };
+    }
+  });
+  ipcMain.on('spellcheck-languages-set', (e, languages) => {
+    const custom = Array.isArray(languages) && languages.length
+      ? [...new Set(languages.filter((l) => typeof l === 'string' && l))]
+      : null;
+    if (custom) config.spellcheckLanguages = custom;
+    else delete config.spellcheckLanguages;
+    saveConfig();
+    const applied = custom || [app.getLocale()];
+    try { e.sender.session.setSpellCheckerLanguages(applied); } catch (err) { /* 会话拒绝时保持原语言 */ }
+    e.returnValue = applied;
+  });
+
   ipcMain.on('trash', async (e, p) => {
     try { await shell.trashItem(p); e.returnValue = true; }
     catch (err) { console.log(err); e.returnValue = false; }
@@ -691,6 +766,18 @@ function setupIpc() {
   ipcMain.on('window-close', (e) => { const w = BrowserWindow.fromWebContents(e.sender); if (w) w.close(); });
   ipcMain.on('window-is-maximized', (e) => { const w = BrowserWindow.fromWebContents(e.sender); e.returnValue = w ? w.isMaximized() : false; });
   ipcMain.on('window-title', (e, title) => { const w = BrowserWindow.fromWebContents(e.sender); if (w) w.setTitle(title); });
+  ipcMain.on('window-state', (e) => {
+    const w = BrowserWindow.fromWebContents(e.sender);
+    e.returnValue = w ? { maximized: w.isMaximized(), fullscreen: w.isFullScreen() } : { maximized: false, fullscreen: false };
+  });
+  // 原版 updateStatus：按缩放补偿 macOS 红绿灯位置
+  ipcMain.on('set-traffic-light-position', (e, x, y) => {
+    if (!IS_MAC) return;
+    const w = BrowserWindow.fromWebContents(e.sender);
+    if (w && typeof w.setTrafficLightPosition === 'function') {
+      try { w.setTrafficLightPosition({ x: Math.round(x), y: Math.round(y) }); } catch (err) { /* 窗口样式不支持时忽略 */ }
+    }
+  });
   ipcMain.handle('plugin-select-folder', async (e) => {
     const win = BrowserWindow.fromWebContents(e.sender);
     const result = await dialog.showOpenDialog(win, { properties: ['openDirectory'] });
@@ -737,6 +824,12 @@ if (!gotLock) {
       if (url.startsWith(APP_ORIGIN)) return callback(true);
       callback(false);
     });
+
+    // 恢复持久化的拼写检查状态：自定义语言（opensidian.json）与自加词（spellcheck-words.json）
+    try { session0.setSpellCheckerLanguages(config.spellcheckLanguages || [app.getLocale()]); } catch (e) {}
+    for (const word of readSpellcheckWords()) {
+      try { session0.addWordToSpellCheckerDictionary(word); } catch (e) {}
+    }
 
     // open windows for vaults flagged as open（OBS_VAULT_PATH 直开模式下跳过，避免双窗口互踩）
     let anyOpen = false;

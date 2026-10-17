@@ -1,17 +1,20 @@
 /**
- * [INPUT]: 依赖 ../core/i18n.js 的 tt/getLanguage/setLanguage；依赖 ../core/setting.js 的 Setting/SettingGroup/SettingTab；依赖 ../core/notices.js 的 Notice；依赖 ../core/modals.js 的 Modal；依赖 ../core/ipc.js 的 Desktop
+ * [INPUT]: 依赖 ../core/i18n.js 的 tt/getLanguage/setLanguage；依赖 ../core/setting.js 的 Setting/SettingGroup/SettingTab；依赖 ../core/notices.js 的 Notice；依赖 ../core/modals.js 的 Modal；依赖 ../core/ipc.js 的 Desktop；依赖 ../core/suggest.js 的 AbstractInputSuggest；依赖 ../core/icons.js 的 setIcon
  * [OUTPUT]: 导出 AboutTab、EditorTab、FileTab 三个内置页签类
- * [POS]: views/ 的内置设置页签（选项组）。逐字对齐原版 O7/nte/lte 的 display()：关于（版本/语言/高级）、编辑器（行为/显示/高级+Vim 验证）、文件与链接（打开行为/新建位置/附件/链接/回收站/高级）。文案走 tt() 兜底，配置写 app.settings.updateAppSettings（app.json）。
+ * [POS]: views/ 的内置设置页签（选项组）。逐字对齐原版 O7/nte/lte 的 display()：关于（版本/语言/高级+启动耗时弹窗）、编辑器（行为+拼写检查词典/语言+Vim 验证）、文件与链接（打开行为/新建位置/附件/链接/回收站/忽略文件/重建缓存）。文案走 tt() 兜底，配置写 app.settings.updateAppSettings（app.json）；拼写检查词典/语言经 Desktop IPC 读写主进程。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 /* Built-in settings tabs: About / Editor / File & Links. */
 import { tt, getLanguage, setLanguage } from '../core/i18n.js';
-import { SettingGroup, SettingTab } from '../core/setting.js';
+import { Setting, SettingGroup, SettingTab } from '../core/setting.js';
 import { Notice } from '../core/notices.js';
 import { Modal } from '../core/modals.js';
 import { Desktop } from '../core/ipc.js';
+import { AbstractInputSuggest } from '../core/suggest.js';
+import { setIcon } from '../core/icons.js';
 
 const VERSION = '1.0.0';
+const IS_MAC = navigator.platform.startsWith('Mac') || navigator.userAgent.includes('Macintosh');
 
 /* ------------------------------------------------------------------- About */
 
@@ -98,16 +101,54 @@ export class AboutTab extends SettingTab {
       .addExtraButton((b) => b
         .setIcon('lucide-timer')
         .setTooltip(tt('setting.about.button-check-startup', '立即检查'))
-        .onClick(() => {
-          const ms = Math.round(app.bootTime || 0);
-          new Notice(ms ? `启动耗时 ${ms} ms` : '启动耗时记录不可用');
-        }))
+        .onClick(() => new StartupTimeModal(app).open()))
       .addToggle((tog) => tog.setValue(localStorage.getItem('slow-startup-check') === '1').onChange((v) => {
         try {
           if (v) localStorage.setItem('slow-startup-check', '1');
           else localStorage.removeItem('slow-startup-check');
         } catch (e) {}
       })));
+  }
+}
+
+/**
+ * 原版 P7 的简化版：标题与统计标签保留原版英文（原版未走 i18n）。
+ * 桌面统计系统与版本；计时段只有总耗时——初始化/仓库等分段未埋点。
+ * 类名 mod-plugin-debug 触发原版启动统计弹窗样式。
+ */
+class StartupTimeModal extends Modal {
+  constructor(app) {
+    super(app);
+    this.setTitle('Startup time');
+    this.modalEl.addClass('mod-lg', 'mod-scrollable-content', 'mod-plugin-debug');
+    const totalMs = Math.max(0, performance.now() - (app.bootTime || performance.now()));
+    const total = Math.round(totalMs) + 'ms';
+    const statsEl = this.contentEl.createDiv('startup-stat-list');
+    const addStat = (label, value, desc) => {
+      const row = statsEl.createDiv('startup-stat');
+      const info = row.createDiv('startup-info');
+      info.createSpan({ cls: 'startup-label', text: label });
+      if (desc) info.createSpan({ cls: 'startup-desc', text: desc });
+      row.createDiv({ cls: 'startup-value', text: value });
+    };
+    addStat('Operating system', navigator.platform || 'Unknown');
+    addStat('OpenSidian', VERSION);
+    const timingEl = this.contentEl.createDiv('startup-timing-list');
+    const heading = timingEl.createDiv('startup-stat mod-heading');
+    heading.createDiv('startup-info').createSpan({ cls: 'startup-label', text: 'Total app startup' });
+    heading.createDiv({ cls: 'startup-value', text: total });
+    this.buttonContainerEl.createEl('button', { cls: 'mod-secondary', text: tt('interface.label-copy', '复制到剪贴板') })
+      .addEventListener('click', async () => {
+        const lines = [
+          'OpenSidian start-up time breakdown', '',
+          'OpenSidian version: ' + VERSION,
+          'Operating system: ' + (navigator.platform || 'Unknown'), '',
+          '- Total startup time: ' + total,
+        ];
+        try { await navigator.clipboard.writeText(lines.join('\n')); new Notice(tt('interface.copied_generic', '已复制到剪贴板')); } catch (e) {}
+      });
+    this.buttonContainerEl.createEl('button', { cls: 'mod-cancel', text: tt('dialogue.button-done', '完成') })
+      .addEventListener('click', () => this.close());
   }
 }
 
@@ -119,6 +160,7 @@ export class EditorTab extends SettingTab {
     this.name = tt('setting.editor.name', '编辑器');
     this.id = 'editor';
     this.icon = 'pen-line';
+    this.passedVimTest = false;
   }
 
   display() {
@@ -148,7 +190,17 @@ export class EditorTab extends SettingTab {
         d.addOption('live-preview', tt('setting.editor.option-default-editing-mode-live-preview', '实时预览'));
         d.addOption('source', tt('setting.editor.option-default-editing-mode-source', '源码模式'));
         d.setValue(settings.livePreview === false ? 'source' : 'live-preview');
-        d.onChange((v) => update({ livePreview: v === 'live-preview' }));
+        d.onChange((v) => {
+          update({ livePreview: v === 'live-preview' });
+          // 原版语义：已打开的编辑态 markdown 叶子一并同步（阅读态叶子保持阅读态）
+          const mode = v === 'live-preview' ? 'live' : 'source';
+          for (const leaf of app.workspace.getLeavesOfType('markdown')) {
+            const state = leaf.view && leaf.view.getState ? leaf.view.getState() : null;
+            if (!state || (state.mode !== 'source' && state.mode !== 'live') || state.mode === mode) continue;
+            state.mode = mode;
+            leaf.setViewState({ type: 'markdown', state });
+          }
+        });
       }));
     group.addSetting((s) => {
       const entry = app.plugins.getInternalPlugin('editor-status');
