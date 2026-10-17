@@ -11,6 +11,7 @@ import { Notice } from '../core/notices.js';
 import { Modal } from '../core/modals.js';
 import { Desktop } from '../core/ipc.js';
 import { hotkeyToString, eventToHotkey } from '../core/keymap.js';
+import { setIcon } from '../core/icons.js';
 
 /* ----------------------------------------------------------------- Hotkeys */
 
@@ -218,66 +219,157 @@ export class CommunityPluginsTab extends SettingTab {
     this.icon = 'puzzle';
   }
 
-  display() {
-    const app = this.app;
-    const plugins = app.plugins;
-    const restricted = plugins.restrictedMode !== false;
+  display() { this.render(); }
+
+  /** 原版 tte.render：isEnabled() 为真走"已启用"布局，否则受限布局。 */
+  render() {
+    const plugins = this.app.plugins;
     this.containerEl.empty();
     const group = new SettingGroup(this.containerEl);
+    if (plugins.isEnabled()) this.renderEnabled(group, plugins);
+    else this.renderRestricted(group, plugins);
+  }
 
+  /** 安全模式开（受限布局）：不出示已装插件与开关。 */
+  renderRestricted(group, plugins) {
+    group.listEl.createEl('p', { text: tt('setting.third-party-plugin.label-exit-restricted-mode-description-1', 'Community plugins, like any other software you install, could potentially cause data integrity and security issues.') });
+    group.listEl.createEl('p', { text: tt('setting.third-party-plugin.label-exit-restricted-mode-description-2', "Plugin security is important to us. Here's what we do:") });
+    group.addClass('community-plugins-disclaimer');
+    const disclaimers = [
+      ['label-code-review', 'label-code-review-desc', 'lucide-inspect'],
+      ['label-open-source', 'label-open-source-desc', 'lucide-github'],
+      ['label-peer-audit', 'label-peer-audit-desc', 'lucide-users'],
+      ['label-report-mechanism', 'label-report-mechanism-desc', 'lucide-bug'],
+    ];
+    for (const [nameKey, descKey, icon] of disclaimers) {
+      group.addSetting((s) => s
+        .setName(tt('setting.third-party-plugin.' + nameKey, ''))
+        .setDesc(tt('setting.third-party-plugin.' + descKey, ''))
+        .settingEl.prepend(createDiv('setting-icon', (el) => setIcon(el, icon))));
+    }
+    group.listEl.createEl('p', { text: tt('setting.third-party-plugin.label-exit-restricted-mode-disable-confirmation', 'Would you like to exit Restricted Mode to enable community plugins?') });
+    const turnOn = this.containerEl.createDiv('community-modal-button-container')
+      .createEl('button', { cls: 'mod-cta', text: tt('setting.third-party-plugin.button-turn-on-community-plugins', 'Turn on community plugins') });
+    turnOn.addEventListener('click', async () => {
+      await plugins.setEnable(true);
+      this.render(); // 原版：启用后直接重渲染，不 reload
+    });
+    this.containerEl.createEl('p', {}, (el) => {
+      el.createEl('a', {
+        text: tt('setting.third-party-plugin.label-learn-more', 'Learn more about plugin security'),
+        href: 'https://help.obsidian.md/plugin-security',
+        attr: { target: '_blank', rel: 'noopener' },
+      });
+    });
+  }
+
+  /** 安全模式关（已启用布局）：安全模式开关 + 市场入口 + 已装插件列表。 */
+  renderEnabled(group, plugins) {
     group.addSetting((s) => s
       .setName(tt('setting.third-party-plugin.option-restricted-mode', '安全模式'))
-      .setDesc(restricted
-        ? tt('setting.third-party-plugin.label-restricted-mode-on', '安全模式已开启。第三方插件已被限制运行。')
-        : tt('setting.third-party-plugin.option-restricted-mode-description', '安全模式已关闭。开启以限制第三方插件运行。'))
+      .setDesc(tt('setting.third-party-plugin.option-restricted-mode-description', '安全模式已关闭。开启以限制第三方插件运行。'))
       .addButton((b) => b
-        .setButtonText(restricted
-          ? tt('setting.third-party-plugin.button-turn-on-community-plugins', '关闭安全模式')
-          : tt('setting.third-party-plugin.button-turn-on', '开启'))
-        .onClick(() => {
-          plugins.restrictedMode = !restricted;
-          location.reload();
+        .setButtonText(tt('setting.third-party-plugin.button-turn-on', 'Turn on and reload'))
+        .onClick(async () => {
+          await plugins.setEnable(false);
+          window.location.reload();
         })));
 
     group.addSetting((s) => s
       .setName(tt('setting.third-party-plugin.option-browse-community-plugins', '社区插件市场'))
       .setDesc(tt('setting.third-party-plugin.option-browse-community-plugins-description', '浏览、安装社区成员制作的第三方插件。'))
       .addButton((b) => b.setCta().setButtonText(tt('setting.third-party-plugin.button-browse', '浏览')).onClick(() => {
+        // 原版打开市场弹窗（C0）；复刻版未接入市场，退化为提示
         new Notice(tt('setting.third-party-plugin.msg-market-unavailable', '复刻版未接入社区插件市场。'));
       })));
 
-    const installed = plugins.listInstalledManifests();
-    const listGroup = new SettingGroup(this.containerEl).setHeading(tt('setting.third-party-plugin.label-installed-plugins', '已安装插件'));
-    if (!installed.length) {
-      listGroup.addSetting((s) => s
-        .setName(tt('setting.third-party-plugin.label-installed-plugins', '已安装插件'))
-        .setDesc(tt('setting.third-party-plugin.msg-no-installed', '尚未安装任何第三方插件。')));
-    }
-    for (const manifest of installed) {
-      const id = manifest.id;
-      listGroup.addSetting((s) => s
-        .setName(manifest.name || id)
-        .setDesc(manifest.description || '')
-        .addToggle((tog) => tog.setValue(!!plugins.plugins[id]).onChange(async (v) => {
-          if (v) {
-            const ok = await plugins.enableCommunityPlugin(id).catch((e) => { console.error(e); return false; });
-            if (!ok) new Notice(tt('setting.third-party-plugin.msg-failed-load-plugins', '无法加载社区插件'));
-          } else {
-            const ok = await plugins.disableCommunityPlugin(id).catch((e) => { console.error(e); return false; });
-            if (!ok) new Notice(tt('setting.third-party-plugin.msg-failed-to-disable-plugin', '无法禁用插件 “{{id}}”', { id }));
-          }
-          this.display();
-        })));
-    }
+    const manifests = plugins.listInstalledManifests()
+      .sort((a, b) => String(a.name || a.id).localeCompare(String(b.name || b.id), 'zh'));
+
+    group.addSetting((s) => s
+      .setName(tt('setting.third-party-plugin.label-current-plugins', '插件安装情况'))
+      .setDesc(tt('setting.third-party-plugin.label-currently-installed', '你目前已经安装了 {{count}} 个插件。', { count: manifests.length })));
+
+    group.addSetting((s) => s
+      .setName(tt('setting.third-party-plugin.option-automatic-update-check', '自动检查插件更新'))
+      .setDesc(tt('setting.third-party-plugin.option-automatic-update-check-desc', '定期检查第三方插件的更新。'))
+      .addToggle((tog) => tog
+        .setValue(!!plugins.autoCheckForUpdates)
+        .onChange((v) => plugins.setAutomaticUpdateCheck(v))));
+
+    const listGroup = new SettingGroup(this.containerEl)
+      .setHeading(tt('setting.third-party-plugin.label-installed-plugins', '已安装插件'))
+      .addClass('installed-plugins-container');
+    listGroup.addExtraButton((b) => b
+      .setIcon('lucide-refresh-cw')
+      .setTooltip(tt('setting.third-party-plugin.button-reload-plugins', '重新加载插件'))
+      .onClick(() => {
+        // 原版 await loadManifests() 后提示；本实现每次渲染都从磁盘重读清单，故渲染即重载
+        new Notice(tt('setting.third-party-plugin.msg-reloaded-third-party-plugins', '已重新加载第三方插件。'));
+        this.render();
+      }));
     listGroup.addExtraButton((b) => b
       .setIcon('lucide-folder-open')
       .setTooltip(tt('setting.third-party-plugin.button-open-plugins-folder', '打开插件文件夹'))
       .onClick(() => {
         try { Desktop.openPath(plugins.pluginDir()); } catch (e) { console.error(e); }
       }));
-    listGroup.addExtraButton((b) => b
-      .setIcon('lucide-refresh-cw')
-      .setTooltip(tt('setting.third-party-plugin.button-reload-plugins', '重新加载插件'))
-      .onClick(() => location.reload()));
+
+    const renderList = (query) => {
+      listGroup.listEl.empty();
+      const needle = String(query || '').trim().toLowerCase();
+      for (const manifest of manifests) {
+        const fields = [manifest.name, manifest.author, manifest.description].map((x) => String(x || '').toLowerCase());
+        if (needle && !fields.some((text) => text.includes(needle))) continue;
+        this.renderInstalledPlugin(listGroup, manifest);
+      }
+      // 已加载但不在磁盘清单里的插件也列出（原版 h 循环）：关闭即禁用
+      for (const id of Object.keys(plugins.plugins)) {
+        if (manifests.some((m) => m.id === id)) continue;
+        this.renderRunningPlugin(listGroup, id);
+      }
+    };
+    if (manifests.length > 0) {
+      listGroup.addSearch((s) => s.addSearch((search) => search
+        .setPlaceholder(tt('setting.third-party-plugin.placeholder-search-installed-plugin', '搜索已安装的插件…'))
+        .onChange((v) => renderList(v))));
+    }
+    renderList('');
+  }
+
+  /** 已安装插件行：名称、版本/作者/描述 fragment、启用开关（开着=写入配置）。 */
+  renderInstalledPlugin(listGroup, manifest) {
+    const plugins = this.app.plugins;
+    const id = manifest.id;
+    listGroup.addSetting((s) => {
+      s.setName(manifest.name || id);
+      s.descEl.empty();
+      if (manifest.version) s.descEl.createDiv({ text: tt('setting.third-party-plugin.label-version', '版本: {{version}}', { version: manifest.version }) });
+      if (manifest.author) s.descEl.createDiv({ text: tt('setting.third-party-plugin.label-by-author', '作者：') + manifest.author });
+      if (manifest.description) s.descEl.createDiv({ text: manifest.description });
+      s.addToggle((tog) => tog.setValue(!!plugins.plugins[id]).onChange(async (v) => {
+        if (v) {
+          const ok = await plugins.enableCommunityPlugin(id).catch((e) => { console.error(e); return false; });
+          if (!ok) new Notice(tt('setting.third-party-plugin.msg-failed-load-plugins', '无法加载社区插件'));
+        } else {
+          const ok = await plugins.disableCommunityPlugin(id).catch((e) => { console.error(e); return false; });
+          if (!ok) new Notice(tt('setting.third-party-plugin.msg-failed-to-disable-plugin', '无法禁用插件 “{{id}}”', { id }));
+        }
+        this.render();
+      }));
+    });
+  }
+
+  /** 已加载但无磁盘清单的插件：开关只提供关闭（卸载并按配置移除）。 */
+  renderRunningPlugin(listGroup, id) {
+    const plugins = this.app.plugins;
+    const manifest = (plugins.plugins[id] && plugins.plugins[id].manifest) || plugins.manifests[id] || { id };
+    listGroup.addSetting((s) => s
+      .setName(manifest.name || id)
+      .setDesc(manifest.description || '')
+      .addToggle((tog) => tog.setValue(true).onChange(async () => {
+        await plugins.disableCommunityPlugin(id).catch((e) => console.error(e));
+        this.render();
+      })));
   }
 }

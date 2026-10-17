@@ -1,7 +1,7 @@
 /**
- * [INPUT]: 核心插件注册表、设置与工作区；兼容插件宿主接口。
- * [OUTPUT]: 插件启停与命令、视图注册。
- * [POS]: 插件启停后同步固定侧栏入口。首次启动由布局恢复统一装配。
+ * [INPUT]: 依赖 ./events.js 的 Events/debounce；依赖 ./i18n.js 的 t/tt；依赖 ./notices.js、./modals.js、./menu.js、./suggest.js、./icons.js、./vault.js、./ipc.js、./plugins-registry.js 与 Node fs/path。
+ * [OUTPUT]: 导出 Plugin 基类、PluginManager(app.plugins)、buildObsidianApi() 的 obsidian shim。
+ * [POS]: core/ 的插件宿主。内部插件由 plugins-registry.js 汇总；社区插件对齐原版 Q0：安全模式由 localStorage 键 enable-plugin-<appId> 决定(null=未表态)，未表态且库内已有插件时弹信任模态(X0)；setEnable(false) 只卸载不改 community-plugins.json，设置页手动关(disableCommunityPlugin)才从配置移除。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 /*
@@ -10,7 +10,7 @@
  * simple community plugins can run.
  */
 import { Events } from './events.js';
-import { t } from './i18n.js';
+import { t, tt } from './i18n.js';
 import { Notice } from './notices.js';
 import { Modal, PromptModal, confirmDialog } from './modals.js';
 import { Menu } from './menu.js';
@@ -19,6 +19,7 @@ import { setIcon, createIcon, resolveIcon, addIcon, removeIcon, getIconIds } fro
 import { debounce } from './events.js';
 import { TFile, TFolder, normalizePath } from './vault.js';
 import { Desktop } from './ipc.js';
+import { Keymap } from './keymap.js';
 import { corePluginModules } from './plugins-registry.js';
 
 const fs = require('fs');
@@ -41,9 +42,14 @@ export class Plugin extends Events {
     await this.onload();
   }
   async unload() {
-    this.onunload();
+    if (this._loaded) {
+      try { this.onunload(); } catch (e) { console.error('Plugin onunload failed', e); }
+    }
     for (const child of this._children) { try { child.unload && child.unload(); } catch (e) {} }
     this._children = [];
+    // 原版 Component.unload：注销 addCommand/addRibbonIcon/addSettingTab 等登记的回调，
+    // 否则禁用后命令/侧栏图标仍留在宿主里。
+    for (const cb of this._registered.splice(0)) { try { cb(); } catch (e) { console.error(e); } }
     this._loaded = false;
   }
   addChild(child) { this._children.push(child); return child; }
@@ -111,19 +117,73 @@ export class Plugin extends Events {
 }
 
 // ---------------------------------------------------------------------------
+// 原版保存自动更新检查偏好的 localStorage 键（Q0.setAutomaticUpdateCheck）。
+const AUTO_UPDATE_KEY = 'plugin-automatically-check-for-updates';
+
+/** 库路径短哈希：每库稳定的 appId（原版 appId 由启动登记表生成）。 */
+function shortHash(value) {
+  let hash = 5381;
+  const text = String(value || '');
+  for (let i = 0; i < text.length; i++) hash = ((hash << 5) + hash + text.charCodeAt(i)) >>> 0;
+  return hash.toString(36);
+}
+
 export class PluginManager {
   constructor(app) {
     this.app = app;
-    this.plugins = {};           // id -> Plugin instance
-    this.manifests = {};         // id -> manifest
+    this.plugins = {};           // id -> Plugin instance（已加载的社区插件）
+    this.manifests = {};         // id -> manifest（曾加载的社区插件清单）
     this.internalPlugins = {};   // id -> {manifest, instance, enabled}
-    this.enabledCommunity = new Set();
-    this.restrictedMode = true;
+    this.enabledCommunity = new Set();  // community-plugins.json 的启用列表
+    this.appId = 'opensidian-' + shortHash(app && app.vaultPath);
+    this.autoCheckForUpdates = false;
+    try {
+      const raw = localStorage.getItem(AUTO_UPDATE_KEY);
+      if (raw !== null) { try { this.autoCheckForUpdates = JSON.parse(raw); } catch (e) { this.autoCheckForUpdates = !!raw; } }
+    } catch (e) {}
   }
 
   async initialize() {
     await this.loadInternalPlugins();
     await this.loadCommunityPlugins();
+  }
+
+  // -------------------------------------------------------------------------
+  // 安全模式状态（原版 Q0.isEnabled / setEnable）
+  // -------------------------------------------------------------------------
+  /** localStorage 键：enable-plugin-<appId>；null=从未表态，'true'/'false'=用户选择。 */
+  enabledKey() { return 'enable-plugin-' + this.appId; }
+
+  isEnabled() { return localStorage.getItem(this.enabledKey()) === 'true'; }
+
+  /** 兼容访问器：restrictedMode === !isEnabled()；赋值等价于 setEnable(!value)。 */
+  get restrictedMode() { return !this.isEnabled(); }
+  set restrictedMode(value) { this.setEnable(!value).catch((e) => console.error(e)); }
+
+  setAutomaticUpdateCheck(value) {
+    this.autoCheckForUpdates = !!value;
+    try {
+      if (value) localStorage.setItem(AUTO_UPDATE_KEY, JSON.stringify(true));
+      else localStorage.removeItem(AUTO_UPDATE_KEY);
+    } catch (e) {}
+  }
+
+  /**
+   * 原版 setEnable：先写 localStorage 再批量装卸。
+   * false → 逐个卸载但保留 community-plugins.json；true → 加载配置列表中的全部插件。
+   */
+  async setEnable(enabled) {
+    try { localStorage.setItem(this.enabledKey(), enabled ? 'true' : 'false'); } catch (e) {}
+    if (!enabled) {
+      for (const id of Object.keys(this.plugins)) await this.unloadCommunityPlugin(id);
+      return;
+    }
+    const ids = this.app.settings.communityPlugins || [];
+    this.enabledCommunity = new Set(ids);
+    for (const id of ids) {
+      if (this.plugins[id]) continue;
+      await this.enableCommunityPlugin(id, false).catch((e) => console.error(e));
+    }
   }
 
   // -------------------------------------------------------------------------
@@ -212,17 +272,76 @@ export class PluginManager {
   }
 
   async loadCommunityPlugins() {
-    if (this.restrictedMode) return; // 安全模式开启时不加载第三方插件
     const enabled = this.app.settings.communityPlugins || [];
     this.enabledCommunity = new Set(enabled);
-    for (const manifest of this.listInstalledManifests()) {
-      if (this.enabledCommunity.has(manifest.id)) {
-        await this.enableCommunityPlugin(manifest.id).catch((e) => console.error(e));
-      }
+    const manifests = this.listInstalledManifests();
+    if (!manifests.length) return; // 原版：库内没有插件目录直接结束
+    if (!this.isEnabled()) {
+      // 原版：只有从未表态（键不存在）才弹信任模态；选过"不信任"后不再打扰
+      if (localStorage.getItem(this.enabledKey()) === null) this._openTrustModalWhenReady();
+      return; // 安全模式开启时不加载任何第三方插件
+    }
+    for (const id of this.enabledCommunity) {
+      await this.enableCommunityPlugin(id, false).catch((e) => console.error(e));
     }
   }
 
-  async enableCommunityPlugin(id) {
+  /** 原版 X0：信任模态。工作区渲染完成后打开，不阻塞启动；无 layout 事件时 3s 兜底。 */
+  _openTrustModalWhenReady() {
+    let opened = false;
+    const open = () => {
+      if (opened) return;
+      opened = true;
+      try { this.openTrustModal(); } catch (e) { console.error(e); }
+    };
+    if (typeof document === 'undefined' || !document.body) { setTimeout(open, 0); return; }
+    const ws = this.app.workspace;
+    const root = document.querySelector('.workspace-root');
+    if (root && root.children.length) { open(); return; } // 工作区已渲染（如运行期再次 loadCommunityPlugins）
+    if (ws && typeof ws.once === 'function') {
+      const timer = setTimeout(open, 3000);
+      ws.once('layout-change', () => { clearTimeout(timer); open(); });
+      return;
+    }
+    setTimeout(open, 0);
+  }
+
+  openTrustModal() {
+    const modal = new Modal(this.app);
+    modal.modalEl.addClass('mod-lg', 'mod-trust-folder');
+    modal.setTitle(tt('setting.third-party-plugin.label-trust-author', 'Do you trust the author of this vault?'));
+    for (const suffix of ['1', '2', '3']) {
+      modal.contentEl.createEl('p', {
+        text: tt('setting.third-party-plugin.label-trust-author-description-' + suffix, 'This vault comes with plugins. Only continue if you trust its author.'),
+      });
+    }
+    const decide = async (consent) => {
+      modal.close();
+      await this.setEnable(consent);
+      if (this.app.setting) {
+        this.app.setting.open();
+        this.app.setting.openTabById('community-plugins');
+      }
+    };
+    const trust = modal.buttonContainerEl.createEl('button', {
+      text: tt('setting.third-party-plugin.button-enable-plugins', 'Trust author and enable plugins'),
+    });
+    trust.onclick = () => { decide(true).catch((e) => console.error(e)); };
+    const restricted = modal.buttonContainerEl.createEl('button', {
+      text: tt('setting.third-party-plugin.button-dont-trust-author', 'Browse vault in Restricted Mode'),
+    });
+    restricted.onclick = () => { decide(false).catch((e) => console.error(e)); };
+    modal.open();
+  }
+
+  /**
+   * 原版 enablePlugin(id, save)：
+   * - 安全模式开启时返回 false（守卫，设置页的开关不会绕过安全模式）；
+   * - save=true（默认，原版 enablePluginAndSave 语义）把 id 写入 community-plugins.json；
+   *   setEnable(true) 与启动加载走 save=false，配置列表保持不变。
+   */
+  async enableCommunityPlugin(id, save = true) {
+    if (!this.isEnabled()) return false;
     if (this.plugins[id]) return true;
     const manifest = this.listInstalledManifests().find((m) => m.id === id);
     if (!manifest) return false;
@@ -232,7 +351,13 @@ export class PluginManager {
     const instance = loadPluginCode(this.app, manifest, code);
     this.plugins[id] = instance;
     this.manifests[id] = manifest;
-    await instance.load();
+    try {
+      await instance.load();
+    } catch (e) {
+      console.error('Plugin failure: ' + id, e);
+      await this.unloadCommunityPlugin(id);
+      return false;
+    }
     // plugin styles
     const cssPath = nodePath.join(manifest.dir, 'styles.css');
     if (fs.existsSync(cssPath)) {
@@ -241,18 +366,30 @@ export class PluginManager {
       document.head.appendChild(style);
       instance._styleEl = style;
     }
-    const list = new Set(this.app.settings.communityPlugins || []);
-    list.add(id);
-    this.app.settings.setCommunityPlugins([...list]);
+    this.enabledCommunity.add(id);
+    if (save) {
+      const list = new Set(this.app.settings.communityPlugins || []);
+      list.add(id);
+      this.app.settings.setCommunityPlugins([...list]);
+    }
     return true;
   }
 
-  async disableCommunityPlugin(id) {
+  /** 原版 disablePlugin：仅卸载实例，不改 community-plugins.json（setEnable(false) 走这里）。 */
+  async unloadCommunityPlugin(id) {
     const instance = this.plugins[id];
     if (!instance) return false;
-    await instance.unload();
+    try { await instance.unload(); } catch (e) { console.error('Plugin failure: ' + id, e); }
     if (instance._styleEl) instance._styleEl.detach();
     delete this.plugins[id];
+    return true;
+  }
+
+  /** 原版 disablePluginAndSave：设置页手动关，卸载并从 community-plugins.json 移除。 */
+  async disableCommunityPlugin(id) {
+    const unloaded = await this.unloadCommunityPlugin(id);
+    if (!unloaded) return false;
+    this.enabledCommunity.delete(id);
     const list = new Set(this.app.settings.communityPlugins || []);
     list.delete(id);
     this.app.settings.setCommunityPlugins([...list]);

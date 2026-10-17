@@ -12,7 +12,7 @@ media-view.js: MediaView 及 ImageView/VideoView/AudioView/PdfView。经 adapter
 settings-view.js: SettingsHost(app.setting 的实现) + installSettingsHost(app)。克隆原版 fte 宿主：三组导航(options/core/community)、navEl、openTab/closeActiveTab/openTabById/openPluginOptions/updateModalTitle、PluginSettingTab 兼容层(addSettingTab/removePluginTabs 挂载点)。侧栏布局设置弹窗。
 settings-tabs.js: AboutTab/EditorTab/FileTab 三个内置页签 + VimTestModal(输入 :q 验证)/ExcludedFilesModal(忽略文件管理)。对齐原版 O7/nte/lte 行结构与顺序；配置写 app.settings.updateAppSettings。
 settings-tabs-appearance.js: AppearanceTab + FontManagerModal。对齐原版 Jee：基础颜色/主题色/主题/界面/字体/高级(缩放·原生菜单·窗口边框·硬件加速)/CSS 代码片段；CSS 注入由 app._applyCustomCss 执行。
-settings-tabs-plugins.js: HotkeysTab + HotkeyRecorderModal(按键录制)、CorePluginsTab(搜索+齿轮→openPluginOptions)、CommunityPluginsTab(安全模式语义+已安装插件列表；市场不接入)。
+settings-tabs-plugins.js: HotkeysTab + HotkeyRecorderModal(按键录制)、CorePluginsTab(搜索+齿轮→openPluginOptions)、CommunityPluginsTab(原版 tte 双布局：受限=免责四行+CTA，启用=安全模式开关+市场入口+已装插件列表/搜索/自动更新检查；市场不接入)。
 graph-view.js: 全局/局部图视图生命周期。跟随文件变化，关闭时清理引擎和渲染器。
 graph-renderer.js: 画布绘制、命中、拖拽和平移。设备像素统一换算，销毁释放监听与帧。
 canvas-view.js: 画布装配。观察挂载尺寸，防抖保存，切换文件前落盘，关闭后释放帧与节点。vault modify 的外部修改按磁盘内容重载并保留视口，自身写入按 _savedText 过滤 watcher 回声。撤销/重做：requestSave 防抖推进全量快照历史（上限 100），applyHistory 经 importData 差量重建且不产生新条目；控件组含快速设置（对齐网格/对齐物体/只读）与撤销/重做按钮。只读标记按原版 localDataManager 存 localStorage('canvas-<路径>')，重命名迁移、删除清理，初次装载恢复。
