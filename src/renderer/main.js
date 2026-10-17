@@ -1,3 +1,9 @@
+/**
+ * [INPUT]: core/dom.js 与 core/tooltip.js(DOM 助手与全局提示层，均靠副作用安装)；App 与各注册模块。
+ * [OUTPUT]: 无导出。构造 window.app、注册视图与命令、启动 App.initialize 并安装全局错误上报。
+ * [POS]: 渲染进程入口。语言在模块作用域即确定，必须先于任何界面模块构造。
+ * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
+ */
 /*
  * Renderer entry point — boots the app the same way the original does:
  * DOM helpers first, then view/command registration, then App.initialize()
