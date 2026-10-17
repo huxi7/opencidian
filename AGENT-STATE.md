@@ -375,6 +375,9 @@ node --experimental-vm-modules src/renderer/core/workspace-regression.js
 
 本次会话已完成并提交的批次（每批都有可复跑验收）：
 - `9cc2635` 修复新标签激活竞态（先激活后加载）+ graph 场景稳定化；`1967d6b` 文件树拖入编辑器插入链接（editor 113 项）。
+- `c14d621` 插件设置页批：快捷键筛选菜单/chip/按键捕获、冲突 chip、核心插件行快捷键入口与齿轮显隐、社区插件卸载/设置（settings-plugins 52 项）。
+- `bfef76c` 社区插件命令按 Obsidian API 自动加 `<pluginId>:` 前缀（裸 id 夹具验证）。
+- `a63e3ec` 外观页功能区配置弹窗（原版 Zee）：隐藏/恢复/拖拽排序，localStorage 持久化（appearance 32 项）。
 - `4c4fcc2` 社区插件安全模式：双布局/信任模态/setEnable 语义 + community 场景（run 19 + restart 3）。
 - `ab44cba` shell 手感批：drag-ghost、drop overlay、侧栏 140ms 补间、标签列表按钮/Close all/Close after、pin、关闭钮容器查询、窗口状态与红绿灯、非 mac 三按钮、状态栏双段、空标签、titlebar 镜像；sidebar-shell 61 项。
 - `8cf232a` 设置与窗口 IPC：拼写词典/语言 IPC + 启动恢复、启动耗时弹窗、窗口状态通道。
@@ -396,11 +399,9 @@ node --experimental-vm-modules src/renderer/core/workspace-regression.js
 
 未完成/已知缺口（后续）：
 - 菜单 `.menu-scroll` 结构与边缘滚动未做（滚动本身已可用）；菜单快捷键右对齐无原版证据。
-- 功能区配置弹窗（Zee）未做（需 ribbon item registry；依赖 workspace-renderer）；自定义图标已完成。
-- 画布：CM6 卡片编辑、图片导出、对齐参考线、空间索引未做。
+- 画布：图片导出与对齐参考线由子代理处理中；CM6 卡片编辑、空间索引未做。
+- 画布：CM6 卡片编辑、空间索引未做（导出/参考线见上）。
 - 图谱：颜色组拖拽、悬停高亮细节未做。
 - 编辑器：属性行编辑已存在；表格/嵌入右键菜单、链接 tooltip 细节未逐项核对；系统外部文件拖入（复制为附件）未做（文件树内部拖入已支持）。
-- 快捷键设置页：状态筛选仍为常驻下拉（原版是菜单按钮 + 可移除 chip + 按键筛选）、冲突 chip 点击筛选、搜索行 label/自动聚焦未补。
-- 核心插件页：每行"快捷键"按钮（跳转 hotkeys 并 setQuery）未做；齿轮显示条件仍为"有 settingTab 即显示"。
-- 第三方插件页：已装插件行的卸载/捐赠/设置齿轮/快捷键按钮未做（版本/作者/搜索/开关已有）。
+- 第三方插件页：捐赠按钮未做（市场未接入）；其余（卸载/设置齿轮/版本/作者/搜索/开关）已完成。
 - 无 macOS 分发包；README 许可证待定（LICENSE 未加）。
