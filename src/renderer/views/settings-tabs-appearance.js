@@ -136,7 +136,18 @@ export class AppearanceTab extends SettingTab {
     iface.addSetting((s) => s
       .setName(tt('setting.appearance.option-show-ribbon', '显示功能区'))
       .setDesc(tt('setting.appearance.option-show-ribbon-desc', '显示窗口最左侧的功能区，以便快速执行命令。'))
-      .addToggle((tog) => tog.setValue(app.settings.appearance.showRibbon !== false).onChange((v) => app.settings.updateAppearance({ showRibbon: v }))));
+      .addToggle((tog) => tog.setValue(app.settings.appearance.showRibbon !== false).onChange((v) => {
+        app.settings.updateAppearance({ showRibbon: v });
+        this.display(); // 配置行随开关显隐（原版行为）
+      })));
+    if (app.settings.appearance.showRibbon !== false) {
+      iface.addSetting((s) => s
+        .setName(tt('setting.appearance.option-configure-ribbon', '功能区'))
+        .setDesc(tt('setting.appearance.option-configure-ribbon-desc', '设置哪些命令需要显示在功能区上。'))
+        .addButton((b) => b
+          .setButtonText(tt('setting.appearance.option-theme-button-manage', '管理'))
+          .onClick(() => new RibbonConfigModal(app).open())));
+    }
 
     /* ---------------------------------------------------------- 字体 */
     const fonts = new SettingGroup(this.containerEl).setHeading(tt('setting.appearance.option-font', '字体'));
@@ -355,6 +366,78 @@ export class AppearanceTab extends SettingTab {
     } catch (e) {
       console.error('Failed to open folder', dir, e);
     }
+  }
+}
+
+/** 功能区配置弹窗（原版 Zee）：当前按钮可隐藏/拖拽排序，未显示按钮可恢复。 */
+class RibbonConfigModal extends Modal {
+  constructor(app) {
+    super(app);
+    this.modalEl.addClass('mod-lg');
+    this.setTitle(tt('setting.appearance.label-modal-configuration', '功能区设置'));
+  }
+  onOpen() { this.render(); }
+  render() {
+    const container = this.contentEl;
+    container.empty();
+    const ws = this.app.workspace;
+    const items = ws.getRibbonItems();
+    container.createEl('p', { text: tt('setting.appearance.option-configure-ribbon-desc', '设置哪些命令需要显示在功能区上。') });
+    const active = items.filter((item) => !ws.isRibbonItemHidden(item.key));
+    const listEl = container.createDiv('ribbon-config-list');
+    for (const item of active) {
+      const row = listEl.createDiv('mobile-option-setting-item ribbon-config-item');
+      row.setAttr('draggable', 'true');
+      const remove = row.createSpan('mobile-option-setting-item-remove-icon clickable-icon');
+      setIcon(remove, 'lucide-minus-circle');
+      remove.onclick = () => { ws.setRibbonItemHidden(item.key, true); this.render(); };
+      const iconEl = row.createSpan('mobile-option-setting-item-option-icon');
+      setIcon(iconEl, item.icon);
+      row.createSpan({ cls: 'mobile-option-setting-item-name', text: item.title });
+      const handle = row.createDiv('clickable-icon mobile-option-setting-item-option-icon ribbon-config-drag');
+      setIcon(handle, 'lucide-menu');
+      row.ondragstart = (ev) => {
+        this._dragKey = item.key;
+        row.addClass('is-being-dragged');
+        try { ev.dataTransfer.setData('text/plain', item.key); } catch (e) {}
+      };
+      row.ondragend = () => { row.removeClass('is-being-dragged'); };
+      row.ondragover = (ev) => { if (this._dragKey) { ev.preventDefault(); row.addClass('is-drop-target'); } };
+      row.ondragleave = () => row.removeClass('is-drop-target');
+      row.ondrop = (ev) => {
+        ev.preventDefault();
+        row.removeClass('is-drop-target');
+        const from = this._dragKey;
+        this._dragKey = null;
+        if (!from || from === item.key) return;
+        const keys = active.map((i) => i.key);
+        const fromIndex = keys.indexOf(from);
+        if (fromIndex < 0) return;
+        keys.splice(fromIndex, 1);
+        const toIndex = keys.indexOf(item.key);
+        keys.splice(toIndex < 0 ? keys.length : toIndex, 0, from);
+        ws.setRibbonOrder(keys);
+        this.render();
+      };
+    }
+    const hidden = items.filter((item) => ws.isRibbonItemHidden(item.key));
+    if (hidden.length) {
+      const group = container.createDiv('ribbon-config-hidden');
+      const heading = group.createDiv('setting-item-heading');
+      heading.createDiv('setting-item-name').setText(tt('setting.appearance.label-additional-ribbon-items', '未显示的按钮'));
+      for (const item of hidden) {
+        const row = group.createDiv('mobile-option-setting-item ribbon-config-item');
+        const add = row.createSpan('mobile-option-setting-item-add-icon clickable-icon');
+        setIcon(add, 'lucide-plus-circle');
+        add.onclick = () => { ws.setRibbonItemHidden(item.key, false); this.render(); };
+        const iconEl = row.createSpan('mobile-option-setting-item-option-icon');
+        setIcon(iconEl, item.icon);
+        row.createSpan({ cls: 'mobile-option-setting-item-name', text: item.title });
+      }
+    }
+    const buttons = container.createDiv('modal-button-container');
+    buttons.createEl('button', { cls: 'mod-cta', text: tt('dialogue.button-done', '完成') })
+      .addEventListener('click', () => this.close());
   }
 }
 

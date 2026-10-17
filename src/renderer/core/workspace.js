@@ -490,6 +490,14 @@ export class Workspace extends Events {
 
   addRibbonItem(icon, title, callback, target) { return workspaceRenderer.addRibbonItem(this, icon, title, callback, target); }
 
+  getRibbonItems() { return workspaceRenderer.getRibbonItems(this); }
+
+  isRibbonItemHidden(key) { return workspaceRenderer.isRibbonItemHidden(this, key); }
+
+  setRibbonItemHidden(key, hidden) { return workspaceRenderer.setRibbonItemHidden(this, key, hidden); }
+
+  setRibbonOrder(keys) { return workspaceRenderer.setRibbonOrder(this, keys); }
+
   // -------------------------------------------------------------------------
   // 标签交互
   // -------------------------------------------------------------------------

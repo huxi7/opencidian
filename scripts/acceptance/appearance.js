@@ -71,6 +71,39 @@ check([...iconRow.querySelectorAll('button')].some((b)=>/选择|Choose/.test(b.t
 check(!!iconRow.querySelector('.extra-setting-button'),'自定义图标有恢复默认按钮');
 check(require('electron').ipcRenderer.sendSync('get-icon')===null,'初始状态无自定义图标');
 
+/* 功能区配置（Zee）：隐藏/恢复/拖拽排序 */
+const ribbonRow=rowByName(tab,/^功能区$|^Ribbon$/);
+check(!!ribbonRow,'功能区配置行存在（showRibbon 开）');
+const ribbonManage=[...ribbonRow.querySelectorAll('button')].find((b)=>/管理|Manage/.test(b.textContent||''));
+check(!!ribbonManage,'功能区行有管理按钮');
+ribbonManage.click();await wait(220);
+const rcModal=[...document.querySelectorAll('.modal:not(.is-hidden)')].find((m)=>/功能区设置|Ribbon settings/.test((m.querySelector('.modal-title')||{}).textContent||''));
+check(!!rcModal,'功能区配置弹窗打开');
+const activeRows=[...rcModal.querySelectorAll('.ribbon-config-list .ribbon-config-item')];
+check(activeRows.length>0,'功能区配置列出当前按钮');
+const firstName=activeRows[0].querySelector('.mobile-option-setting-item-name').textContent;
+const firstItem=app.workspace.getRibbonItems().find((i)=>i.title===firstName);
+check(!!firstItem,'找到对应功能区按钮');
+activeRows[0].querySelector('.mobile-option-setting-item-remove-icon').click();await wait(150);
+check(!!rcModal.querySelector('.ribbon-config-hidden'),'隐藏后出现未显示按钮分区');
+check(firstItem.el.style.display==='none','移除后功能区按钮隐藏');
+const hiddenRow=[...rcModal.querySelectorAll('.ribbon-config-hidden .ribbon-config-item')].find((r)=>r.textContent.includes(firstName));
+check(!!hiddenRow,'未显示分区包含该按钮');
+hiddenRow.querySelector('.mobile-option-setting-item-add-icon').click();await wait(150);
+check(firstItem.el.style.display!=='none','恢复后功能区按钮重新显示');
+const rows2=[...rcModal.querySelectorAll('.ribbon-config-list .ribbon-config-item')];
+if(rows2.length>=2){
+  const secondKey=app.workspace.getRibbonItems()[1].key;
+  const dt2=new DataTransfer();
+  rows2[1].dispatchEvent(new DragEvent('dragstart',{bubbles:true,cancelable:true,dataTransfer:dt2}));
+  rows2[0].dispatchEvent(new DragEvent('dragover',{bubbles:true,cancelable:true,dataTransfer:dt2}));
+  rows2[0].dispatchEvent(new DragEvent('drop',{bubbles:true,cancelable:true,dataTransfer:dt2}));
+  await wait(180);
+  const order=JSON.parse(localStorage.getItem('opensidian-ribbon-order')||'[]');
+  check(order.length>0&&order[0]===secondKey,'拖拽后顺序持久化');
+}
+rcModal.querySelector('.modal-close-button').click();await wait(100);
+
 /* 主题色恢复默认 */
 const accentRow=rowByName(tab,/主题色|Accent color/);
 check(!!accentRow,'主题色行存在');

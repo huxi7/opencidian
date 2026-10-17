@@ -510,7 +510,53 @@ export function _createRibbon(workspace) {
   workspace.ribbonActionsEl = actions;
   const bottom = ribbon.createDiv('side-dock-settings');
   workspace.ribbonSettingsEl = bottom;
+  workspace.ribbonItems = [];
   return ribbon;
+}
+
+// 功能区配置（原版 Zee）：隐藏项与顺序持久化在 localStorage
+const RIBBON_HIDDEN_KEY = 'opensidian-ribbon-hidden';
+const RIBBON_ORDER_KEY = 'opensidian-ribbon-order';
+function ribbonState(workspace) {
+  if (!workspace._ribbonState) {
+    let hidden = [], order = [];
+    try { hidden = JSON.parse(localStorage.getItem(RIBBON_HIDDEN_KEY) || '[]'); } catch (e) {}
+    try { order = JSON.parse(localStorage.getItem(RIBBON_ORDER_KEY) || '[]'); } catch (e) {}
+    workspace._ribbonState = {
+      hidden: new Set(Array.isArray(hidden) ? hidden : []),
+      order: Array.isArray(order) ? order : [],
+    };
+  }
+  return workspace._ribbonState;
+}
+function applyRibbonOrder(workspace) {
+  if (!workspace.ribbonActionsEl) return;
+  const state = ribbonState(workspace);
+  const items = (workspace.ribbonItems || []).filter((i) => i.target === 'actions' && i.el.isConnected);
+  const ordered = [];
+  for (const key of state.order) {
+    const item = items.find((i) => i.key === key);
+    if (item && !ordered.includes(item)) ordered.push(item);
+  }
+  for (const item of items) if (!ordered.includes(item)) ordered.push(item);
+  for (const item of ordered) workspace.ribbonActionsEl.appendChild(item.el);
+}
+export function getRibbonItems(workspace) {
+  return (workspace.ribbonItems || []).filter((i) => i.target === 'actions' && i.el.isConnected);
+}
+export function isRibbonItemHidden(workspace, key) { return ribbonState(workspace).hidden.has(key); }
+export function setRibbonItemHidden(workspace, key, hidden) {
+  const state = ribbonState(workspace);
+  if (hidden) state.hidden.add(key); else state.hidden.delete(key);
+  try { localStorage.setItem(RIBBON_HIDDEN_KEY, JSON.stringify([...state.hidden])); } catch (e) {}
+  const item = (workspace.ribbonItems || []).find((i) => i.key === key);
+  if (item) item.el.toggle(!hidden);
+}
+export function setRibbonOrder(workspace, keys) {
+  const state = ribbonState(workspace);
+  state.order = Array.isArray(keys) ? keys.slice() : [];
+  try { localStorage.setItem(RIBBON_ORDER_KEY, JSON.stringify(state.order)); } catch (e) {}
+  applyRibbonOrder(workspace);
 }
 
 export function addRibbonItem(workspace, icon, title, callback, target) {
@@ -529,6 +575,13 @@ export function addRibbonItem(workspace, icon, title, callback, target) {
   };
   const container = target === 'bottom' ? workspace.ribbonSettingsEl : workspace.ribbonActionsEl;
   container.appendChild(el);
+  // 登记到功能区配置：key 用 icon|title（title 为本地化文案，语言切换后隐藏状态可能重置）
+  const key = icon + '|' + title;
+  const entry = { key, icon, title, target: target === 'bottom' ? 'bottom' : 'actions', el };
+  workspace.ribbonItems = workspace.ribbonItems || [];
+  workspace.ribbonItems.push(entry);
+  if (ribbonState(workspace).hidden.has(key)) el.toggle(false);
+  if (entry.target === 'actions') applyRibbonOrder(workspace);
   return el;
 }
 
