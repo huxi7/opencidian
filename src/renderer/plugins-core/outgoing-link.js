@@ -36,6 +36,7 @@ export class OutgoingLinkView extends View {
     this._pending = null;
     this._pane = null;
     this._linksCollapsed = false;
+    this._unlinkedCollapsed = true;
   }
   getViewType() { return OUTGOING_LINK_VIEW_TYPE; }
   getIcon() { return 'links-going-out'; }
@@ -44,10 +45,11 @@ export class OutgoingLinkView extends View {
     if (!file) return t('plugins.outgoing-links.name') || 'Outgoing links';
     return t('plugins.outgoing-links.tab-title', { displayText: file.basename });
   }
-  getState() { return { linksCollapsed: this._linksCollapsed }; }
+  getState() { return { linksCollapsed: this._linksCollapsed, unlinkedCollapsed: this._unlinkedCollapsed }; }
 
   async setState(state) {
     if (state && typeof state.linksCollapsed === 'boolean') this._linksCollapsed = state.linksCollapsed;
+    if (state && typeof state.unlinkedCollapsed === 'boolean') this._unlinkedCollapsed = state.unlinkedCollapsed;
     this._render();
   }
 
@@ -164,9 +166,60 @@ export class OutgoingLinkView extends View {
     if (this._linksCollapsed) list.hide();
     if (!entries.length) {
       list.createDiv({ cls: 'pane-empty', text: t('plugins.outgoing-links.label-no-links') || 'No links found.' });
+    } else {
+      for (const entry of entries) this._renderItem(list, file.path, entry);
+    }
+    if (file) this._renderUnlinked(pane, file);
+  }
+
+  /** 原版出链面板同样包含 Unlinked mentions 分节（与反链面板共用组件）：上下文 + Link 按钮。 */
+  _renderUnlinked(pane, file) {
+    const unlinked = (this.app.metadataCache.getUnlinkedMentions(file) || []).slice(0, 50);
+    const header = pane.createDiv({ cls: 'tree-item-self is-clickable outgoing-links-header' });
+    const collapseIcon = header.createSpan('tree-item-icon collapse-icon');
+    setIcon(collapseIcon, 'right-triangle');
+    collapseIcon.toggleClass('is-collapsed', this._unlinkedCollapsed);
+    header.createDiv({ cls: 'tree-item-inner', text: t('plugins.backlinks.label-unlinked-mentions') || 'Unlinked mentions' });
+    header.createDiv('tree-item-flair-outer').createSpan({ cls: 'tree-item-flair', text: String(unlinked.length) });
+    header.toggleClass('is-collapsed', this._unlinkedCollapsed);
+    header.onclick = () => {
+      this._unlinkedCollapsed = !this._unlinkedCollapsed;
+      this._render();
+    };
+    const list = pane.createDiv('search-result-container');
+    if (this._unlinkedCollapsed) list.hide();
+    if (!unlinked.length) {
+      list.createDiv({ cls: 'pane-empty', text: t('plugins.backlinks.label-no-unlinked-mentions') || 'No unlinked mentions found.' });
       return;
     }
-    for (const entry of entries) this._renderItem(list, file.path, entry);
+    for (const entry of unlinked) {
+      const source = entry.file;
+      if (!source) continue;
+      const contexts = findUnlinkedContexts(this.app, source, entry.name);
+      const item = list.createDiv('tree-item search-result');
+      const selfEl = item.createDiv('tree-item-self search-result-file-title is-clickable');
+      selfEl.createDiv({ cls: 'tree-item-inner', text: source.basename });
+      selfEl.createDiv('tree-item-flair-outer').createSpan({ cls: 'tree-item-flair', text: String(contexts.length) });
+      const matchList = item.createDiv('search-result-file-matches');
+      for (const ctx of contexts.slice(0, 5)) {
+        const match = matchList.createDiv('search-result-file-match');
+        match.setText(ctx.text.slice(0, 300));
+        const linkBtn = match.createEl('button', {
+          cls: 'backlink-unlinked-link-button',
+          text: t('plugins.backlinks.label-link-button-text') || 'Link',
+        });
+        linkBtn.onclick = async (ev) => {
+          ev.stopPropagation();
+          const text = await this.app.vault.read(source);
+          const lines = text.split('\n');
+          lines[ctx.line] = lines[ctx.line].slice(0, ctx.start) + '[[' + file.basename + ']]' + lines[ctx.line].slice(ctx.end);
+          await this.app.vault.modify(source, lines.join('\n'));
+          this._render();
+        };
+        match.onclick = () => this.app.workspace.openFile(source, { eState: { line: ctx.line } });
+      }
+      selfEl.onclick = () => this.app.workspace.openFile(source, { eState: { line: contexts[0] ? contexts[0].line : 0 } });
+    }
   }
 
   // --- 原版 a7()：图标按 标题/块/文件/未解析 变化，副文本显示链接路径或目标文件夹 ---
@@ -200,6 +253,23 @@ export class OutgoingLinkView extends View {
       this.app.workspace.openLinkText(entry.linktext, sourcePath, isModEvent(ev));
     };
   }
+}
+
+/** 在源文件中查找 name 的未链接提及上下文（原版 findContextsByName 同构）。 */
+function findUnlinkedContexts(app, source, name) {
+  const cache = app.metadataCache.getFileCache(source);
+  const text = (cache && cache._rawText) || '';
+  const lines = text.split('\n');
+  const out = [];
+  for (let i = 0; i < lines.length && out.length <= 50; i++) {
+    let idx = lines[i].indexOf(name);
+    while (idx >= 0) {
+      out.push({ line: i, text: lines[i], start: idx, end: idx + name.length });
+      idx = lines[i].indexOf(name, idx + name.length);
+      if (out.length > 50) break;
+    }
+  }
+  return out;
 }
 
 export function create(app) {
