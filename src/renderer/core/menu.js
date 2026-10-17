@@ -67,10 +67,23 @@ export class Menu {
 
   showAtPosition(pos) {
     this.close();
+    // 原版 qg：.menu > .menu-grabber + .menu-scroll + .suggestion-bg（滚动在 menu-scroll 上）
     const dom = createDiv('menu');
+    dom.createDiv('menu-grabber');
+    const scrollEl = dom.createDiv('menu-scroll');
+    dom.createDiv('suggestion-bg');
     this.dom = dom;
+    this._scrollEl = scrollEl;
     this.renderDom();
     document.body.appendChild(dom);
+    // 原版 Uv：指针位置驱动滚动（无原生滚动条）
+    scrollEl.addEventListener('mousemove', (ev) => {
+      const h = scrollEl.clientHeight;
+      const sh = scrollEl.scrollHeight;
+      if (sh <= h) return;
+      const ratio = (ev.clientY - scrollEl.getBoundingClientRect().y - 30) / (h - 60);
+      scrollEl.scrollTop = (sh - h) * Math.min(1, Math.max(0, ratio));
+    });
     // measure & clamp
     const rect = dom.getBoundingClientRect();
     let x = pos.x, y = pos.y;
@@ -96,7 +109,7 @@ export class Menu {
   }
 
   renderDom() {
-    const dom = this.dom;
+    const dom = this._scrollEl || this.dom;
     if (!dom) return;
     dom.empty();
     for (const item of this.items) {
@@ -219,6 +232,7 @@ export class Menu {
     if (this.dom) {
       this.dom.detach();
       this.dom = null;
+      this._scrollEl = null;
     }
     if (this.parentMenu && this.parentMenu._openSubmenuRef === this) this.parentMenu._openSubmenuRef = null;
     if (this._docMouseDown) {

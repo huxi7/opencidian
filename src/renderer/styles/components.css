@@ -16,17 +16,26 @@
   border: var(--menu-border-width) solid var(--menu-border-color);
   border-radius: var(--menu-radius);
   box-shadow: var(--menu-shadow);
-  padding: var(--menu-padding);
+  padding: 0;
   min-width: 180px;
   max-width: 360px;
-  max-height: 80vh;
-  overflow-y: auto;
-  overscroll-behavior: contain;
+  max-height: 100%;
+  overflow: hidden;
+  flex-direction: column;
   font-size: var(--font-ui-small);
   color: var(--text-normal);
   backdrop-filter: var(--menu-backdrop-filter);
   -webkit-user-select: none;
   user-select: none;
+}
+.menu-grabber { display: none; }
+.suggestion-bg { display: none; }
+.menu-scroll {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  padding: var(--menu-padding);
+  overscroll-behavior: contain;
 }
 .menu-item {
   display: flex;

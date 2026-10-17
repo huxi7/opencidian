@@ -423,3 +423,10 @@ body.workspace .workspace-tab-header-container > .sidebar-toggle-button {
   flex-direction: column;
   align-items: center;
 }
+
+/* 原版：功能区按钮区在超出时由指针位置驱动滚动（无滚动条） */
+.workspace-ribbon .side-dock-actions {
+  min-height: 0;
+  overflow: hidden;
+  flex: 1 1 auto;
+}

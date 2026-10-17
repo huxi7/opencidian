@@ -511,6 +511,14 @@ export function _createRibbon(workspace) {
   const bottom = ribbon.createDiv('side-dock-settings');
   workspace.ribbonSettingsEl = bottom;
   workspace.ribbonItems = [];
+  // 原版 Uv：功能区按钮过多时，指针位置驱动滚动
+  actions.addEventListener('mousemove', (ev) => {
+    const h = actions.clientHeight;
+    const sh = actions.scrollHeight;
+    if (sh <= h) return;
+    const ratio = (ev.clientY - actions.getBoundingClientRect().y - 30) / (h - 60);
+    actions.scrollTop = (sh - h) * Math.min(1, Math.max(0, ratio));
+  });
   return ribbon;
 }
 
