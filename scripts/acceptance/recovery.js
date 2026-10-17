@@ -80,6 +80,10 @@
     }
     return leaves.map(leafState);
   };
+  const currentPresentation = () => {
+    const entry = app.plugins.getInternalPlugin('slides');
+    return entry && entry.instance && entry.instance.getPresentation ? entry.instance.getPresentation() : null;
+  };
   const startSlides = async () => {
     const file = vault.getFileByPath(slidesFile);
     check('slides fixture exists', !!file);
@@ -94,46 +98,49 @@
     ws.setActiveLeaf(leaf, { focus: true });
     check('slides command available', app.commands.findCommand('slides:start').checkCallback(true));
     app.commands.executeCommandById('slides:start');
-    await wait('slides fully rendered', () => leaf.view.getViewType() === 'slides' && leaf.view.pages.length === 3 &&
-      leaf.view.progressEl.textContent === '1 / 3');
-    check('slides captures original selection', JSON.stringify(leaf.view.selection) === JSON.stringify(expectedSelection));
+    let pres = null;
+    await wait('slides overlay fully rendered', () => {
+      pres = currentPresentation();
+      return !!pres && pres.containerEl && pres.pages.length === 3 && pres.progressEl.textContent === '1 / 3';
+    });
+    check('slides overlay is body-level full-window', pres.containerEl.parentElement === document.body &&
+      Math.abs(pres.containerEl.getBoundingClientRect().width - window.innerWidth) <= 1 &&
+      Math.abs(pres.containerEl.getBoundingClientRect().height - window.innerHeight) <= 1);
+    check('markdown view stays mounted under overlay', leaf.view.getViewType() === 'markdown');
     leaf._acceptanceSelection = expectedSelection;
-    leaf.view.onFocus();
+    pres.containerEl.focus({ preventScroll: true });
     await sleep(100);
-    return leaf;
+    return { leaf, pres };
   };
   const exerciseSlides = async () => {
-    const leaf = await startSlides();
-    const view = leaf.view;
-    const key = (name, extra = {}) => view.slidesEl.dispatchEvent(new KeyboardEvent('keydown', {
+    const { leaf, pres } = await startSlides();
+    const key = (name, extra = {}) => document.dispatchEvent(new KeyboardEvent('keydown', {
       key: name, bubbles: true, cancelable: true, ...extra,
     }));
-    check('fences and blockquote retained on first page', view.pages[0].querySelector('pre code').textContent.includes('---') &&
-      !!view.pages[0].querySelector('blockquote hr'));
-    check('exactly one page visible initially', view.pages.filter(visible).length === 1 && visible(view.pages[0]));
+    check('fences and blockquote retained on first page', pres.pages[0].querySelector('pre code').textContent.includes('---') &&
+      !!pres.pages[0].querySelector('blockquote hr'));
+    check('exactly one page visible initially', pres.pages.filter(visible).length === 1 && visible(pres.pages[0]));
     key('ArrowRight');
-    check('right key changes actual visible page', view.current === 1 && visible(view.pages[1]) && !visible(view.pages[0]));
-    key('End'); check('End reaches last page', view.current === 2 && visible(view.pages[2]));
-    key('ArrowRight'); check('last page clamps', view.current === 2);
-    key('Home'); check('Home returns first page', view.current === 0);
-    key('ArrowRight', { ctrlKey: true }); check('modified arrow does not page', view.current === 0);
-    const box = view.deckEl.getBoundingClientRect();
-    view.deckEl.dispatchEvent(new MouseEvent('click', { bubbles: true, clientX: box.left + box.width * 0.8 }));
-    check('right half click advances', view.current === 1 && visible(view.pages[1]));
-    view.deckEl.dispatchEvent(new MouseEvent('click', { bubbles: true, clientX: box.left + box.width * 0.2 }));
-    check('left half click reverses', view.current === 0);
+    check('right key changes actual visible page', pres.current === 1 && visible(pres.pages[1]) && !visible(pres.pages[0]));
+    key('End'); check('End reaches last page', pres.current === 2 && visible(pres.pages[2]));
+    key('ArrowRight'); check('last page clamps', pres.current === 2);
+    key('Home'); check('Home returns first page', pres.current === 0);
+    key('ArrowRight', { ctrlKey: true }); check('modified arrow does not page', pres.current === 0);
+    const box = pres.deckEl.getBoundingClientRect();
+    pres.deckEl.dispatchEvent(new MouseEvent('click', { bubbles: true, clientX: box.left + box.width * 0.8 }));
+    check('right half click advances', pres.current === 1 && visible(pres.pages[1]));
+    pres.deckEl.dispatchEvent(new MouseEvent('click', { bubbles: true, clientX: box.left + box.width * 0.2 }));
+    check('left half click reverses', pres.current === 0);
     const modal = recovery.openModal(snapshotFile);
-    key('ArrowRight'); check('open modal blocks slide navigation', view.current === 0);
-    modal.close(); await sleep(200); view.onFocus();
+    check('modal renders above the slides layer', visible(modal.modalEl));
+    key('ArrowRight'); check('open modal blocks slide navigation', pres.current === 0);
+    modal.close(); await sleep(200);
     key('Escape');
-    await wait('Escape exits slides', () => leaf.view.getViewType() === 'markdown');
-    await view._exiting;
-    check('Escape restores source mode DOM', leaf.view.mode === 'source' &&
-      leaf.view.editor.cm.dom.getAttribute('data-editor-mode') === 'source' && !visible(leaf.view.readingEl));
+    await wait('Escape exits slides', () => pres.containerEl === null && pres._destroyed === true && pres._onKeyDown === null);
+    check('Escape removes overlay from DOM', !document.querySelector('.slides-container'));
+    check('markdown view untouched after exit', leaf.view.getViewType() === 'markdown' && leaf.view.mode === 'source');
     const actualSelection = { anchor: leaf.view.editor.getCursor('anchor'), head: leaf.view.editor.getCursor('head') };
-    check('Escape restores selection: ' + JSON.stringify({ expected: leaf._acceptanceSelection, actual: actualSelection }),
-      JSON.stringify(actualSelection) === JSON.stringify(leaf._acceptanceSelection));
-    check('Escape removes old keyboard handler', view._onKeyDown === null);
+    check('Escape keeps editor selection', JSON.stringify(actualSelection) === JSON.stringify(leaf._acceptanceSelection));
   };
   let prior = fs.existsSync(manifestPath) ? JSON.parse(fs.readFileSync(manifestPath, 'utf8')) : null;
   if (phase === 'exercise') {
@@ -302,9 +309,10 @@
       check('layout screenshot has source and preview', ws.getLeavesOfType('markdown').some((leaf) => leaf.view.mode === 'source') &&
         ws.getLeavesOfType('markdown').some((leaf) => leaf.view.mode === 'preview'));
     } else if (phase === 'slides') {
-      const leaf = await startSlides(); leaf.view.next();
-      check('slides screenshot second page ready', leaf.view.current === 1 && visible(leaf.view.pages[1]) && leaf.view.pages.filter(visible).length === 1);
-      check('close button visibly positioned', visible(leaf.view.slidesEl.querySelector('.slides-close-btn')));
+      const { pres } = await startSlides();
+      pres.next();
+      check('slides screenshot second page ready', pres.current === 1 && visible(pres.pages[1]) && pres.pages.filter(visible).length === 1);
+      check('close button visibly positioned', visible(pres.slidesEl.querySelector('.slides-close-btn')));
     } else throw new Error('Unknown OBS_RECOVERY_PHASE: ' + phase);
   }
   const report = { ok: true, role: 'recovery', phase, count: checks.length, checks, fixture: root };

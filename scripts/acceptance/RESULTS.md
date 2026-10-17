@@ -87,3 +87,10 @@ MathJax 独立适配器子代理的41项基础/故障测试见 assets/mathjax/SO
 - 所有规模关闭释放与关闭后可响应通过；graph 交互 40 项断言在优化后全过。
 - 复跑：`node scripts/acceptance/run.mjs graph-perf --nodes <N> --no-screenshot`。
 - 未覆盖：worker 化（原版力学在 worker）见 AGENT-STATE.md §13。
+
+## 幻灯片全窗口演示宿主（2026-10-17，主 agent 接续）
+
+- recovery：exercise 84 项、restart 45 项通过。幻灯片改为 body 级全窗口覆盖层（对齐原版 M9），不再注册 'slides' 视图。
+- 新增断言：覆盖层挂 document.body 且铺满窗口、演示期间 markdown 视图原样、弹窗层级在覆盖层之上、Esc 摘除覆盖层并保持模式/选区、容器与监听释放。
+- 依赖审计：katex 移出 package.json 直接依赖（JS 无引用；lock 保留为 mermaid 传递依赖）。
+- 回归：core-ribbon 47 项、工作区 19 组通过；日志 0 未捕获异常。证据 `/tmp/obs-copy-acceptance/recovery-exercise-result-dHzVQf`、`recovery-restart-result-kRfoNr`。

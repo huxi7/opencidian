@@ -1,23 +1,22 @@
 /*
- * [INPUT]: 依赖 tokens.css 的颜色、间距与层级；依赖 SlidesView 的分页 DOM。
- * [OUTPUT]: 提供 leaf 内的演示布局、活动页显隐、关闭按钮与页码样式。
- * [POS]: styles/ 的幻灯片样式。hidden 与 is-active 一起约束页面显隐；保持关闭按钮可见且可键盘操作。
+ * [INPUT]: 依赖 tokens.css 的颜色、间距与层级；依赖 slides-presentation.js 的覆盖层 DOM。
+ * [OUTPUT]: 提供全窗口覆盖布局、活动页显隐、关闭按钮与页码样式。
+ * [POS]: styles/ 的幻灯片样式（对齐原版 app.css 的 slides 段）。hidden 与 is-active 一起约束页面显隐。
+ *        原版 .slides-container 为 position:fixed 全窗口层；背景用 --background-primary（原版硬编码 #191919 由 reveal 主题覆盖，此处取应用主题色）。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 /* ==========================================================================
-   slides.css — slides view (plugins-core/slides.js + views/slides-view.js)
+   slides.css — full-window slides presentation (plugins-core/slides.js + views/slides-presentation.js)
    .slides-container / .slides-close-btn / .slides-container .controls button /
    .slides-container li .collapse-indicator 移植自原版 app.css 的 slides 段。
-   原版是 reveal.js 全屏覆盖层（position:fixed + 100vw/100vh）；本复刻把幻灯片
-   做成工作区视图，故 .slides-container 改为填满所在 leaf 的 .view-content。
-   背景用 --background-primary（原版硬编码 #191919，项目规则禁止硬编码色值）。
    ========================================================================== */
 
-.workspace-leaf-content[data-type="slides"] .view-content { padding: 0; }
-
 .slides-container {
-  position: absolute;
-  inset: 0;
+  position: fixed;
+  top: 0;
+  inset-inline-start: 0;
+  height: 100vh;
+  width: 100vw;
   background-color: var(--background-primary);
   z-index: var(--layer-slides);
   border: none;

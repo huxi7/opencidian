@@ -26,6 +26,6 @@ canvas-edge.js: 连线与标签几何。拖动连接点吸附节点并保存端�
 canvas-menu.js: 文件、链接、分组选择与画布上下文菜单。
 canvas-utils.js: 无状态几何、颜色与多值索引。供节点、边与视口共用。
 bookmarks-view.js: 书签树与行内重命名。空分组可见，活动项按文件路径匹配。
-slides-view.js: SlidesView(type slides)，由 plugins-core/slides.js 注册。按顶层 hr 分页，保留代码围栏和引用内分隔线，每页 renderMarkdown；←/→/点击左右半屏翻页、Esc/关闭按钮恢复 markdown 模式、滚动与选区；导出 splitSlides。
+slides-presentation.js: SlidesPresentation。全窗口演示宿主（对齐原版 M9：document.body 上的 .slides-container + Escape 关闭；无 reveal.js，分页自有）。按顶层 hr 分页，保留代码围栏和引用内分隔线，每页 renderMarkdown；←/→/点击左右半屏翻页、Esc/关闭按钮销毁覆盖层。演示期间不动底层 markdown 视图，退出后模式、滚动与选区天然保持；导出 splitSlides。
 
 [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md

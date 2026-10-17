@@ -28,6 +28,6 @@ canvas.css: 画布样式入口。按序导入节点规则与连接线规则。
 canvas-nodes.css: 原版画布布局、节点、分组与手柄规则。
 canvas-edges.css: 原版连接线与标签规则，补足本实现编辑控件。
 bookmarks.css: 书签树滚动、操作图标与视图头部收藏状态。
-slides.css: 幻灯片视图。.slides-container/.slides-close-btn/.collapse-indicator/.controls 段移植自原版 app.css slides 段；deck/section/progress 为视图内翻页新增；容器填满 leaf(原版为全屏覆盖层)，背景走 --background-primary。
+slides.css: 全窗口演示覆盖层。.slides-container/.slides-close-btn/.collapse-indicator/.controls 段移植自原版 app.css slides 段；deck/section/progress 为翻页渲染新增；容器 position:fixed 覆盖全窗口(对齐原版)，背景走 --background-primary（原版硬编码 #191919 由 reveal 主题覆盖，此处取应用主题色）。
 
 [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md

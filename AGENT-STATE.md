@@ -298,3 +298,16 @@ node --experimental-vm-modules src/renderer/core/workspace-regression.js
   - 关闭释放与关闭后可响应在所有规模通过（destroyed / canvas 摘除 / timer 清空 / DOM 清空）。
 - 复跑：`node scripts/acceptance/run.mjs graph-perf --nodes 100|1000|5000 --no-screenshot`；结果写 `<vault>/.obs-copy-graph-perf.json`。
 - 未覆盖：worker 化（原版力学在 worker，本实现仍在渲染线程，5000 节点沉降期约 77fps）；颜色组拖拽、悬停预览、完整查询语法仍未做（历史记录）。
+
+## 14. 幻灯片全窗口演示宿主（2026-10-17，主 agent 接续）
+
+- 原版事实（`app.js` 定位）：幻灯片不是视图。`M9.openFile(file)` 在 `activeDocument.body` 建 `.slides-container`（app.css：`position:fixed`、100vw/100vh、background #191919、`z-index: var(--layer-slides)`），reveal.js（`/lib/reveal/reveal.js` + reveal.css + black/white 主题）负责分页；关闭按钮为 `div.slides-close-btn`（lucide-x-square）；Escape 经 scope 关闭；命令 `slides:start`（仅 md）+ file-menu 菜单项。
+- 本实现：
+  - 新增 `views/slides-presentation.js`（SlidesPresentation + splitSlides）；删除 `views/slides-view.js` 与 'slides' 视图注册。
+  - 宿主挂 `document.body`，`.slides-container` 改 `position:fixed` 全窗口（styles/slides.css）；关闭按钮 div + lucide-x-square；Escape/方向键/空格/PageUp/Down/Home/End 在 document 捕获（有弹窗或焦点在输入控件时不响应）。
+  - 演示期间底层 markdown 视图不动 → 退出后模式、滚动与选区天然保持；退出时把焦点还给演示前的叶子（setActiveLeaf + editor.cm.focus）。
+  - 无 reveal.js（不搬第三方运行时）：分页与翻页为自有实现；背景用 `--background-primary`（原版 #191919 由 reveal 主题 CSS 覆盖，实际主题相关）。
+  - file-menu 菜单项省略（本项目无 file-menu 来源，与 graph-engine 相同处理）。
+  - 依赖审计：katex 移出 package.json 直接依赖（JS 无引用；CSS 仅存 `.katex-error` 规则；lock 保留为 mermaid 传递依赖）。MathJax 资源不受影响。
+- 验收：recovery exercise 84 项、restart 45 项通过（新增：body 级全窗口覆盖、底层视图保持、Esc 后选区保持、弹窗层在覆盖层之上、覆盖层摘除与监听释放）；core-ribbon 47 项、工作区 19 组回归通过；日志 0 未捕获异常。
+- 未覆盖：reveal.js 的过渡动画与主题 CSS；旧布局中的 'slides' 叶子降级为空视图（workspace 对未知类型的既有回退）。
