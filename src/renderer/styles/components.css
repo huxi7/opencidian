@@ -41,8 +41,18 @@
 .menu-item:hover, .menu-item.is-selected { background-color: var(--background-modifier-hover); }
 .menu-item.is-disabled { color: var(--text-faint); cursor: default; }
 .menu-item.is-disabled:hover { background-color: transparent; }
-.menu-item.is-warning { color: var(--text-error); }
-.menu-item.is-checked .menu-item-title { font-weight: var(--font-medium); }
+.menu-item.is-warning:not(.is-disabled) { color: var(--text-error); }
+.menu-item.is-warning .menu-item-icon { color: var(--text-error); }
+.menu-item.mod-checked .menu-item-title { font-weight: var(--font-medium); }
+.menu-item.is-label {
+  cursor: default;
+  font-size: var(--font-ui-medium);
+  color: var(--text-muted);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+.menu-separator + .menu-item.is-label { padding-bottom: var(--size-4-1); }
 .menu-item-icon {
   display: flex;
   align-items: center;
@@ -62,10 +72,13 @@
 .menu-item-chevron { display: flex; color: var(--text-faint); }
 .menu-item-chevron .svg-icon { width: var(--icon-s); height: var(--icon-s); }
 .menu-separator {
-  height: 1px;
-  margin: var(--size-2-2) calc(-1 * var(--menu-padding));
-  background-color: var(--background-modifier-border);
+  height: 0;
+  margin: var(--size-2-3) calc(var(--size-2-3) * -1);
+  border-bottom: var(--border-width) solid var(--background-modifier-border);
 }
+.menu-separator:last-child,
+.menu-separator:first-child { display: none; }
+.menu-separator + .menu-separator { display: none; }
 
 /* ------------------------------------------------------------------ modal */
 .modal-container {
@@ -101,8 +114,8 @@
   flex-direction: column;
   overflow: auto;
 }
-.modal-container.is-open .modal { opacity: 1; transform: scale(1); }
-.modal.is-hidden { opacity: 0; transform: scale(0.98); }
+.modal-container.is-open .modal { opacity: 1; }
+.modal.is-hidden { opacity: 0; }
 .modal-close-button {
   position: absolute;
   top: var(--size-4-2);
@@ -117,12 +130,15 @@
   z-index: 2;
 }
 .modal-close-button:hover { background-color: var(--background-modifier-hover); color: var(--text-normal); }
-.modal-header { margin-bottom: 0; }
+.modal-header { margin-bottom: 0.75em; height: var(--modal-header-height, auto); }
 .mod-sidebar-layout .modal-header { display: none; }
 .modal-title {
   font-size: var(--font-ui-large);
+  margin-left: auto;
+  margin-right: auto;
   font-weight: var(--font-semibold);
-  padding: var(--size-4-4) var(--size-4-6) var(--size-4-2);
+  text-align: start;
+  line-height: var(--line-height-tight);
   flex: 0 0 auto;
 }
 .modal-title:empty { display: none; }

@@ -9,7 +9,7 @@
 import { WorkspaceSplit, WorkspaceTabs, WorkspaceLeaf } from './workspace-model.js';
 import { t, tt } from './i18n.js';
 import { createVaultProfile } from './workspace-profile.js';
-import { Desktop } from './ipc.js';
+import { Desktop, ipcOn } from './ipc.js';
 import { setIcon } from './icons.js';
 
 export function mount(workspace, container) {
@@ -41,12 +41,65 @@ export function mount(workspace, container) {
   const titlebar = container.createDiv('titlebar');
   const inner = titlebar.createDiv('titlebar-inner');
   workspace.titlebarTextEl = inner.createDiv('titlebar-text');
-  inner.createDiv('titlebar-button-container');
+  const buttonContainer = inner.createDiv('titlebar-button-container');
+  if (!navigator.platform.startsWith('Mac')) {
+    const makeButton = (cls, icon, label, action) => {
+      const btn = buttonContainer.createDiv('titlebar-button clickable-icon ' + cls);
+      setIcon(btn, icon);
+      btn.setAttr('aria-label', label);
+      btn.onclick = (ev) => { ev.stopPropagation(); action(); };
+      return btn;
+    };
+    makeButton('mod-minimize', 'lucide-minus', tt('interface.window.minimize', '最小化'), () => Desktop.minimizeWindow());
+    const maxBtn = makeButton('mod-maximize', 'lucide-square', tt('interface.window.maximize', '最大化'), () => Desktop.maximizeWindow());
+    makeButton('mod-close', 'lucide-x', tt('interface.window.close', '关闭'), () => Desktop.closeWindow());
+    const refreshMaxIcon = () => { try { setIcon(maxBtn, Desktop.isWindowMaximized() ? 'lucide-copy' : 'lucide-square'); } catch (e) {} };
+    window.addEventListener('resize', refreshMaxIcon);
+    refreshMaxIcon();
+  } else {
+    // 原版 macOS：双击标题栏空白切换缩放（排除可点击元素）
+    const dbl = (ev) => {
+      if (ev.target.closest('.clickable-icon, .workspace-tab-header, button, a, input, .titlebar-button')) return;
+      Desktop.maximizeWindow();
+    };
+    titlebar.addEventListener('dblclick', dbl);
+  }
 
   workspace.leftSplit.containerEl = null;
   window.addEventListener('focus', () => container.addClass('is-focused'));
   window.addEventListener('blur', () => container.removeClass('is-focused'));
   if (document.hasFocus()) container.addClass('is-focused');
+  installWindowState();
+}
+
+/** 原版 updateStatus：同步 is-maximized / is-fullscreen / --zoom-factor，并补偿 macOS 红绿灯位置。 */
+function installWindowState() {
+  let timer = null;
+  const sync = () => {
+    clearTimeout(timer);
+    timer = setTimeout(() => {
+      let state = { maximized: false, fullscreen: false };
+      try { state = Desktop.windowState() || state; } catch (e) {}
+      document.body.toggleClass('is-maximized', !!state.maximized);
+      document.body.toggleClass('is-fullscreen', !!state.fullscreen);
+      let zoom = 1;
+      try { zoom = require('electron').webFrame.getZoomFactor() || 1; } catch (e) {}
+      document.body.style.setProperty('--zoom-factor', String(zoom));
+      if (navigator.platform.startsWith('Mac')) {
+        const styles = getComputedStyle(document.body);
+        const reduce = (value) => { const t = Math.floor(value * zoom / 2 - 8); return t < -5 ? 0 : t; };
+        let ox = parseFloat(styles.getPropertyValue('--traffic-lights-offset-x')) || 40;
+        let oy = parseFloat(styles.getPropertyValue('--traffic-lights-offset-y')) || 40;
+        if (!oy) oy = 40;
+        try { Desktop.setTrafficLightPosition(reduce(ox) + 2, reduce(oy)); } catch (e) {}
+      }
+    }, 50);
+  };
+  window.addEventListener('resize', sync);
+  document.addEventListener('fullscreenchange', sync);
+  window.addEventListener('focus', sync);
+  if (typeof ipcOn === 'function') ipcOn('window-state-changed', sync);
+  sync();
 }
 
 export function render(workspace) {
@@ -129,18 +182,34 @@ export function _renderTabs(workspace, tabs) {
   tabs._headersOuter = headersOuter;
   const headersInner = headersOuter.createDiv('workspace-tab-header-container-inner');
   tabs._headersInner = headersInner;
+  // 原版 BD：滚轮横向滚动标签栏
+  headersInner.addEventListener('wheel', (ev) => {
+    if (headersInner.scrollWidth <= headersInner.clientWidth) return;
+    ev.preventDefault();
+    headersInner.scrollLeft += (ev.deltaY || 0) + (ev.deltaX || 0);
+  }, { passive: false });
+  if (navigator.platform.startsWith('Mac')) {
+    headersOuter.addEventListener('dblclick', (ev) => {
+      if (ev.target.closest('.clickable-icon, .workspace-tab-header, .titlebar-button, button, a, input')) return;
+      Desktop.maximizeWindow();
+    });
+  }
 
   if (isRoot) {
     const newTabBtn = headersOuter.createDiv('workspace-tab-header-new-tab clickable-icon');
     newTabBtn.setAttr('aria-label', tt('menu-items.new-tab', '新标签页'));
     setIcon(newTabBtn, 'plus');
     newTabBtn.onclick = () => workspace._onNewTab(tabs);
-    const tabListBtn = headersOuter.createDiv('workspace-tab-header-tab-list clickable-icon');
-    tabListBtn.setAttr('aria-label', '标签页列表');
-    setIcon(tabListBtn, 'chevrons-up-down');
-    tabListBtn.onclick = (ev) => { ev.stopPropagation(); workspace._showTabListMenu(ev, tabs); };
   }
   headersOuter.createDiv('workspace-tab-header-spacer');
+  if (isRoot) {
+    // 原版：标签列表按钮在 spacer 之后（最右），图标 lucide-chevron-down
+    const tabListBtn = headersOuter.createDiv('workspace-tab-header-tab-list clickable-icon');
+    tabListBtn.setAttr('aria-label', tt('interface.menu.tab-list', '标签页列表'));
+    setIcon(tabListBtn, 'lucide-chevron-down');
+    tabListBtn.onclick = (ev) => { ev.stopPropagation(); workspace._showTabListMenu(ev, tabs); };
+    tabListBtn.oncontextmenu = (ev) => { ev.preventDefault(); ev.stopPropagation(); workspace._showTabListMenu(ev, tabs); };
+  }
 
   for (const leaf of tabs.children) {
     const header = workspace._createTabHeader(leaf);
@@ -320,7 +389,35 @@ export function _syncTabsVisibility(workspace, tabs) {
       leaf._tabHeaderEl.toggleClass('is-active', isActive);
       leaf._tabHeaderEl.setAttr('aria-selected', String(isActive));
       leaf._tabHeaderEl.toggleClass('is-pinned', !!leaf.pinned);
+      syncPinnedStatus(workspace, leaf, leaf._tabHeaderEl);
     }
+  }
+}
+
+/** 原版：pinned 标签显示 workspace-tab-header-status-icon.mod-pinned（lucide-pin，点击取消固定）且隐藏关闭钮。 */
+function syncPinnedStatus(workspace, leaf, header) {
+  const inner = header.querySelector('.workspace-tab-header-inner');
+  if (!inner) return;
+  let container = header.querySelector('.workspace-tab-header-status-container');
+  const closeEl = inner.querySelector('.workspace-tab-header-inner-close-button');
+  if (leaf.pinned) {
+    if (!container) {
+      container = createDiv('workspace-tab-header-status-container');
+      const pin = container.createDiv('workspace-tab-header-status-icon mod-pinned clickable-icon');
+      setIcon(pin, 'pin');
+      pin.setAttr('aria-label', tt('interface.menu.unpin', '取消锁定'));
+      pin.onclick = (ev) => {
+        ev.stopPropagation();
+        leaf.pinned = false;
+        workspace._syncAllTabs();
+      };
+      inner.appendChild(container);
+    }
+    container.toggle(true);
+    if (closeEl) closeEl.toggle(false);
+  } else {
+    if (container) container.detach();
+    if (closeEl) closeEl.toggle(true);
   }
 }
 
@@ -349,9 +446,13 @@ export function _createResizeHandle(workspace, split, childIndex, direction) {
     } else {
       const delta = direction === 'vertical' ? ev.clientX - startPos : ev.clientY - startPos;
       const total = sizes[0] + sizes[1];
-      const s0 = Math.max(80, Math.min(total - 80, sizes[0] + delta));
+      // 原版 resizeItemsByDiff：单项最小 200
+      const min = Math.min(200, Math.floor(total / 2));
+      const s0 = Math.max(min, Math.min(total - min, sizes[0] + delta));
       const s1 = total - s0;
       const c0 = split.children[childIndex], c1 = split.children[childIndex + 1];
+      if (c0) c0.size = s0;
+      if (c1) c1.size = s1;
       const el0 = c0 && (c0.containerEl || c0._leafEl);
       const el1 = c1 && (c1.containerEl || c1._leafEl);
       if (el0) { el0.style.flex = `0 0 ${s0}px`; }
@@ -363,6 +464,10 @@ export function _createResizeHandle(workspace, split, childIndex, direction) {
     window.removeEventListener('mousemove', onMove);
     window.removeEventListener('mouseup', onUp);
     document.body.removeClass('is-resizing');
+    document.body.removeClass('is-grabbing');
+    if (!isSidebar && workspace.app && workspace.app.saveLayout) {
+      Promise.resolve(workspace.app.saveLayout()).catch(() => {}); // 中心分栏尺寸落库
+    }
     workspace.trigger('layout-change');
   };
   handle.onmousedown = (ev) => {
@@ -376,6 +481,7 @@ export function _createResizeHandle(workspace, split, childIndex, direction) {
       el1 ? (direction === 'vertical' ? el1.offsetWidth : el1.offsetHeight) : 300,
     ];
     document.body.addClass('is-resizing');
+    document.body.addClass('is-grabbing');
     window.addEventListener('mousemove', onMove);
     window.addEventListener('mouseup', onUp);
   };
@@ -451,8 +557,7 @@ function updateSidebarChrome(workspace) {
     }
     const toggle = workspace[key];
     const target = side === 'left' ? left : right;
-    const name = side === 'left' ? '左侧边栏' : '右侧边栏';
-    const title = (split.collapsed ? '展开' : '收起') + name;
+    const title = split.collapsed ? tt('interface.sidebar-expand', '展开') : tt('interface.sidebar-collapse', '收起');
     toggle.setAttr('aria-label', title); toggle.setAttr('title', title);
     toggle.setAttr('aria-expanded', String(!split.collapsed));
     if (target?._headersOuter) {

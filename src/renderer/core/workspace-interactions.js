@@ -8,6 +8,7 @@
 import { t } from './i18n.js';
 import { Menu } from './menu.js';
 import { Notice } from './notices.js';
+import { setIcon } from './icons.js';
 
 export function _onNewTab(workspace, tabs) {
   if (workspace._sideOf(tabs) !== 'center') return null;
@@ -26,12 +27,14 @@ export function _showTabContextMenu(workspace, ev, leaf) {
   menu.addItem((item) => item.setTitle(t('menu-items.close-tab') || 'Close').setIcon('x').onClick(() => leaf.detach()));
   menu.addItem((item) => item.setTitle(t('interface.menu.close-others') || 'Close others').onClick(() => {
     const tabs = leaf.parent;
-    if (tabs) for (const l of [...tabs.children]) if (l !== leaf) l.detach();
+    if (tabs) for (const l of [...tabs.children]) if (l !== leaf && !l.pinned) l.detach();
   }));
-  menu.addItem((item) => item.setTitle(t('commands.close-tab-group') || 'Close tab group').onClick(() => {
-    const tabs = leaf.parent;
-    if (tabs) for (const l of [...tabs.children]) l.detach();
-  }));
+  const after = leaf.parent ? leaf.parent.children.slice(leaf.parent.children.indexOf(leaf) + 1).filter((l) => !l.pinned) : [];
+  if (after.length) {
+    menu.addItem((item) => item.setTitle(t('interface.menu.close-after') || 'Close tabs after').onClick(() => {
+      for (const l of after) l.detach();
+    }));
+  }
   menu.addSeparator();
   menu.addItem((item) => item.setTitle(t('menu-items.new-tab') || 'New tab').setIcon('plus').onClick(() => {
     const newLeaf = workspace.getLeaf('tab', leaf.parent);
@@ -65,6 +68,13 @@ export function _showTabListMenu(workspace, ev, tabs) {
     const active = tabs.activeLeaf === leaf;
     menu.addItem((item) => item.setTitle(leaf.view ? leaf.view.getDisplayText() : 'Tab').setChecked(active).onClick(() => workspace.setActiveLeaf(leaf, { focus: true })));
   }
+  const closable = tabs.children.filter((l) => !l.pinned);
+  if (closable.length) {
+    menu.addSeparator();
+    menu.addItem((item) => item.setTitle(t('interface.menu.close-all') || 'Close all').onClick(() => {
+      for (const l of [...closable]) l.detach();
+    }));
+  }
   menu.addSeparator();
   menu.addItem((item) => item.setTitle(t('menu-items.new-tab') || 'New tab').setIcon('plus').onClick(() => workspace._onNewTab(tabs)));
   menu.showAtMouseEvent(ev);
@@ -78,10 +88,12 @@ export function _setupTabDrag(workspace, header, leaf) {
     try { ev.dataTransfer.setData('text/plain', leaf.view ? leaf.view.getDisplayText() : 'tab'); } catch (e) {}
     ev.dataTransfer.effectAllowed = 'move';
     header.addClass('is-being-dragged');
+    document.body.addClass('is-grabbing');
     workspace._dragGhost(ev);
   });
   header.addEventListener('dragend', () => {
     header.removeClass('is-being-dragged');
+    document.body.removeClass('is-grabbing');
     workspace._dragData = null;
     workspace._clearDropIndicators();
   });
@@ -142,10 +154,50 @@ export function _setupTabDrag(workspace, header, leaf) {
   }
 }
 
-export function _dragGhost(workspace, ev) {}
+/**
+ * 原版 drag-ghost：setDragImage 用带图标与标题的幽灵元素；
+ * Chromium 需要元素在 DOM 中渲染过，截图后即可摘除。
+ */
+export function _dragGhost(workspace, ev) {
+  const leaf = workspace._dragData && workspace._dragData.leaf;
+  if (!leaf) return;
+  const ghost = createDiv('drag-ghost mod-leaf');
+  const iconEl = ghost.createDiv('drag-ghost-icon');
+  try { setIcon(iconEl, (leaf.view && leaf.view.getIcon && leaf.view.getIcon()) || 'file-text'); } catch (e) {}
+  ghost.createDiv('drag-ghost-title').setText(((leaf.view && leaf.view.getDisplayText && leaf.view.getDisplayText()) || 'Tab').slice(0, 60));
+  document.body.appendChild(ghost);
+  try {
+    if (ev.dataTransfer && ev.dataTransfer.setDragImage) {
+      ev.dataTransfer.setDragImage(ghost, 12 + ghost.offsetWidth / 2, 12 + ghost.offsetHeight / 2);
+    }
+  } catch (e) { /* setDragImage 不受支持时保持元素跟随（拖拽期间由浏览器接管） */ }
+  requestAnimationFrame(() => ghost.detach());
+}
+
+/** 叶内落点覆盖层：fixed 定位 + 100ms 过渡（原版 workspace-drop-overlay）。 */
+function layoutDropOverlay(el, node, zone) {
+  const rect = el.getBoundingClientRect();
+  let x = rect.left, y = rect.top, w = rect.width, h = rect.height;
+  if (zone === 'left') w = Math.round(rect.width / 2);
+  else if (zone === 'right') { x = rect.left + Math.round(rect.width / 2); w = Math.round(rect.width / 2); }
+  else if (zone === 'top') h = Math.round(rect.height / 2);
+  else if (zone === 'bottom') { y = rect.top + Math.round(rect.height / 2); h = Math.round(rect.height / 2); }
+  node.style.left = x + 'px';
+  node.style.top = y + 'px';
+  node.style.width = w + 'px';
+  node.style.height = h + 'px';
+  node.addClass('mod-active');
+}
 
 export function _setupLeafDrop(workspace, el, leaf) {
   if (!workspace.canCloseLeaf(leaf)) return;
+  let overlayEl = null;
+  const overlay = () => {
+    if (!overlayEl || !overlayEl.isConnected) {
+      overlayEl = el.querySelector(':scope > .workspace-drop-overlay') || el.createDiv('workspace-drop-overlay');
+    }
+    return overlayEl;
+  };
   el.addEventListener('dragover', (ev) => {
     if (!workspace._dragData) return;
     if (workspace._dragData.leaf === leaf) return;
@@ -156,6 +208,7 @@ export function _setupLeafDrop(workspace, el, leaf) {
     const zone = workspace._dropZone(x, y);
     leaf._dropZone = zone;
     workspace._clearLeafDropIndicators();
+    layoutDropOverlay(el, overlay(), zone);
     el.toggleClass('is-drop-target', zone === 'center');
     el.toggleClass('mod-drop-left', zone === 'left');
     el.toggleClass('mod-drop-right', zone === 'right');
@@ -206,6 +259,11 @@ export function _dropZone(workspace, x, y) {
 export function _clearLeafDropIndicators(workspace) {
   workspace.containerEl.findAll('.workspace-leaf.is-drop-target, .workspace-leaf.mod-drop-left, .workspace-leaf.mod-drop-right, .workspace-leaf.mod-drop-top, .workspace-leaf.mod-drop-bottom')
     .forEach((el) => el.removeClass('is-drop-target', 'mod-drop-left', 'mod-drop-right', 'mod-drop-top', 'mod-drop-bottom'));
+  workspace.containerEl.findAll('.workspace-drop-overlay.mod-active').forEach((el) => {
+    el.removeClass('mod-active');
+    el.style.width = '0';
+    el.style.height = '0';
+  });
 }
 
 export function _clearDropIndicators(workspace) {

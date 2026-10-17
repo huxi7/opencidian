@@ -95,6 +95,8 @@ export class MarkdownView extends View {
     this.editor = new Editor(editorHost, this.app, { doc: '' });
     this.editor.cm.dom.setAttr('data-editor-mode', 'source');
     this.editor.onChange(() => this._onEditorChange());
+    // 原版 editor-selection-change：状态栏（字数/视图状态）据此刷新选区统计
+    this.editor.onSelectionChange(() => this.app.workspace.trigger('editor-selection-change', this));
     this._bindEditorKeys();
     this._bindInlineTitle();
 

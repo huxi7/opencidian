@@ -20,13 +20,21 @@ export class Modal extends Events {
     this.modalEl = this.containerEl.createDiv('modal');
     this.closeButtonEl = this.modalEl.createDiv('modal-close-button mod-raised clickable-icon');
     setIcon(this.closeButtonEl, 'x');
-    this.closeButtonEl.setAttr('aria-label', 'Close');
+    this.closeButtonEl.setAttr('aria-label', tt('interface.menu.close', '关闭'));
     this.headerEl = this.modalEl.createDiv('modal-header');
     this.titleEl = this.headerEl.createDiv('modal-title');
     this.contentEl = this.modalEl.createDiv('modal-content');
     this.buttonContainerEl = this.modalEl.createDiv('modal-button-container');
     this.closeButtonEl.onclick = () => this.close();
-    this.bgEl.onclick = () => { if (this.shouldCloseOnBgClick() !== false) this.close(); };
+    // 原版 macOS 保护：按下与松开位移 <5px 才视为背景点击（防拖选误关）
+    this.bgEl.onmousedown = (ev) => { this._bgDown = { x: ev.screenX, y: ev.screenY }; };
+    this.bgEl.onclick = (ev) => {
+      const down = this._bgDown;
+      this._bgDown = null;
+      if (this.shouldCloseOnBgClick() === false) return;
+      if (down && Math.hypot(ev.screenX - down.x, ev.screenY - down.y) >= 5) return;
+      this.close();
+    };
     this.scope = app.keymap ? app.keymap.createScope() : null;
   }
   shouldCloseOnBgClick() { return true; }
@@ -45,6 +53,7 @@ export class Modal extends Events {
     this.modalEl.removeClass('is-hidden');
     document.body.appendChild(this.containerEl);
     openModals.push(this);
+    this._prevFocusEl = document.activeElement;
     this.onOpen && this.onOpen();
     this.containerEl.addClass('is-open');
     if (this.scope && this.app.keymap) this.app.keymap.pushScope(this.scope);
@@ -53,10 +62,35 @@ export class Modal extends Events {
         ev.preventDefault();
         ev.stopPropagation();
         this.close();
+      } else if (ev.key === 'Tab') {
+        this._trapTab(ev);
       }
     };
     document.addEventListener('keydown', this._onKeyDown, true);
+    setTimeout(() => {
+      if (!this.containerEl.isConnected) return;
+      try {
+        this.modalEl.setAttr('tabindex', '-1');
+        this.modalEl.focus({ preventScroll: true });
+      } catch (e) {}
+    }, 0);
     return this;
+  }
+
+  /** 原版 Jy：Tab 焦点锁在弹窗内。 */
+  _trapTab(ev) {
+    const focusables = [...this.modalEl.querySelectorAll('button, a[href], input, select, textarea, [tabindex]:not([tabindex="-1"])')]
+      .filter((el) => !el.disabled && el.offsetParent !== null);
+    if (!focusables.length) { ev.preventDefault(); return; }
+    const first = focusables[0];
+    const last = focusables[focusables.length - 1];
+    const active = document.activeElement;
+    if (ev.shiftKey) {
+      if (active === first || !this.modalEl.contains(active)) { ev.preventDefault(); last.focus(); }
+    } else if (active === last || !this.modalEl.contains(active)) {
+      ev.preventDefault();
+      first.focus();
+    }
   }
   close() {
     const i = openModals.indexOf(this);
@@ -67,6 +101,15 @@ export class Modal extends Events {
     this.bgEl.addClass('is-hidden');
     this.modalEl.addClass('is-hidden');
     this._closeTimer = setTimeout(() => this.containerEl.detach(), 150);
+    // 原版：关闭后把焦点还给打开前的元素（焦点已被其它弹窗接管时不抢）
+    const prev = this._prevFocusEl;
+    this._prevFocusEl = null;
+    if (prev && prev.isConnected) {
+      const active = document.activeElement;
+      if (!active || active === document.body || this.containerEl.contains(active)) {
+        setTimeout(() => { try { prev.focus({ preventScroll: true }); } catch (e) {} }, 0);
+      }
+    }
     this.onClose && this.onClose();
     this.trigger('closed');
   }
@@ -94,9 +137,9 @@ export class PromptModal extends Modal {
     this.contentEl.appendChild(this.inputEl);
     const buttons = this.contentEl.createDiv('prompt-buttons');
     const submit = () => this.submit();
-    const cancelBtn = buttons.createEl('button', { text: options.cancelText || 'Cancel' });
+    const cancelBtn = buttons.createEl('button', { text: options.cancelText || tt('dialogue.button-cancel', '取消') });
     cancelBtn.onclick = () => { this.close(); options.onCancel && options.onCancel(); };
-    const ok = buttons.createEl('button', { text: options.okText || 'Submit', cls: 'mod-cta' });
+    const ok = buttons.createEl('button', { text: options.okText || tt('dialogue.button-confirm', '确认'), cls: 'mod-cta' });
     ok.onclick = submit;
     this.okBtn = ok;
     this.onOpen = () => {
@@ -196,9 +239,9 @@ export function confirmDialog(app, title, body, options = {}) {
     modal.setTitle(title);
     modal.contentEl.createEl('p', { text: body });
     const buttons = modal.contentEl.createDiv('modal-button-container');
-    const cancel = buttons.createEl('button', { text: options.cancelText || 'Cancel' });
+    const cancel = buttons.createEl('button', { text: options.cancelText || tt('dialogue.button-cancel', '取消') });
     cancel.onclick = () => { modal.close(); resolve(false); };
-    const cta = buttons.createEl('button', { text: options.cta || 'Continue', cls: options.warning ? 'mod-warning' : 'mod-cta' });
+    const cta = buttons.createEl('button', { text: options.cta || tt('dialogue.button-continue', '继续'), cls: options.warning ? 'mod-warning' : 'mod-cta' });
     cta.onclick = () => { resolve(true); modal.close(); };
     modal.onClose = () => resolve(false);
     modal.onOpen = () => setTimeout(() => cta.focus(), 10);

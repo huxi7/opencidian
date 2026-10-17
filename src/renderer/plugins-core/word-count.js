@@ -1,6 +1,12 @@
-/* Core plugin: word-count — shows word/character counts in the status bar. */
-import { t, getNouns } from '../core/i18n.js';
-import { Modal } from '../core/modals.js';
+/**
+ * [INPUT]: 依赖 ../core/i18n.js 的 getNouns；依赖 workspace 的 editor-change / editor-selection-change / active-leaf-change / file-open 事件。
+ * [OUTPUT]: 导出 create(app)（word-count 核心插件实例）。
+ * [POS]: plugins-core/ 的字数统计。对齐原版：状态栏一个条目内两个 segment（词数 + 字符数），
+ *        字符数取文本长度（含空白）；有选区时只统计选区；无点击行为（原版无弹窗）。
+ * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
+ */
+/* Core plugin: word-count — word & character counts in the status bar. */
+import { getNouns } from '../core/i18n.js';
 
 export const nameKey = 'plugins.word-count';
 
@@ -17,14 +23,10 @@ function countWords(text) {
   return words;
 }
 
-function countChars(text) {
-  if (!text) return 0;
-  return [...text.replace(/\s/g, '')].length;
-}
-
 export function create(app) {
   let itemEl = null;
-  let last = { words: 0, chars: 0 };
+  let wordEl = null;
+  let charEl = null;
 
   function activeView() {
     const view = app.workspace.getActiveViewOfType('markdown');
@@ -32,51 +34,36 @@ export function create(app) {
     return null;
   }
 
-  function currentText(view) {
-    if (view && view.editor) return view.editor.getValue();
-    const file = app.workspace.getActiveFile();
-    if (!file) return null;
-    try { return app.vault.read(file); } catch (e) { return null; }
+  /** 原版 onSelection：有选区时只统计选区文本。 */
+  function selectionText(view) {
+    const cm = view && view.editor && view.editor.cm;
+    if (!cm || !cm.state) return null;
+    const main = cm.state.selection && cm.state.selection.main;
+    if (!main || main.empty) return null;
+    return cm.state.sliceDoc(main.from, main.to);
   }
 
   function update() {
     if (!itemEl) return;
-    const view = app.workspace.getActiveViewOfType('markdown');
+    const view = activeView();
     if (!view) { itemEl.toggle(false); return; }
-    const text = view.editor ? view.editor.getValue() : null;
+    const selection = selectionText(view);
+    const text = selection != null ? selection : (view.editor ? view.editor.getValue() : '');
     if (text == null) { itemEl.toggle(false); return; }
     const words = countWords(text);
-    const chars = countChars(text);
-    last = { words, chars };
+    const chars = text.length; // 原版 charCount = e.length（含空白）
     itemEl.toggle(true);
-    itemEl.setText(getNouns().word(words));
-  }
-
-  function showDetails() {
-    const modal = new Modal(app);
-    modal.setTitle(t('plugins.word-count.name') || 'Word count');
-    const view = app.workspace.getActiveViewOfType('markdown');
-    const text = view && view.editor ? view.editor.getValue()
-      : (view && view.file ? app.vault.read(view.file) : '');
-    const words = countWords(text || '');
-    const chars = countChars(text || '');
-    last = { words, chars };
-    const grid = modal.contentEl.createDiv('word-count-details');
-    const make = (label, value) => {
-      const row = grid.createDiv('word-count-detail');
-      row.createDiv('word-count-detail-label').setText(label);
-      row.createDiv('word-count-detail-value').setText(String(value));
-    };
-    make(getNouns().word(words), words);
-    make(getNouns().character(chars), chars);
-    modal.open();
+    wordEl.setText(getNouns().word(words));
+    charEl.setText(getNouns().character(chars));
   }
 
   return {
     onload() {
       itemEl = app.workspace.statusBar.createDiv('status-bar-item plugin-word-count');
-      itemEl.onclick = () => showDetails();
+      wordEl = itemEl.createSpan('status-bar-item-segment');
+      charEl = itemEl.createSpan('status-bar-item-segment');
       app.workspace.on('editor-change', update);
+      app.workspace.on('editor-selection-change', update);
       app.workspace.on('active-leaf-change', update);
       app.workspace.on('file-open', update);
       app.workspace.on('markdown-view-file-loaded', update);

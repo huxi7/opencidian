@@ -422,13 +422,48 @@ export class Workspace extends Events {
     if (!split.collapsed) return;
     split.collapsed = false;
     this.render();
+    const target = Math.max(180, split.size || 300);
+    this._animateSidebar(split, 0, target, () => {
+      if (split.containerEl) {
+        split.containerEl.style.flex = `0 0 ${target}px`;
+        split.containerEl.style.width = target + 'px';
+      }
+      this._updateLeafSizes();
+      this.trigger('layout-change');
+    });
   }
 
   hideSidebar(side) {
     const split = side === 'left' ? this.leftSplit : this.rightSplit;
     if (split.collapsed) return;
+    const from = split.containerEl ? split.containerEl.offsetWidth : (split.size || 300);
     split.collapsed = true;
-    this.render();
+    this._animateSidebar(split, from, 0, () => {
+      if (split.collapsed) this.render();
+      this._updateLeafSizes();
+      this.trigger('layout-change');
+    });
+  }
+
+  /** 原版侧栏收展 140ms 宽度补间（--anim-motion-swing），结束后再落最终布局。 */
+  _animateSidebar(split, from, to, after) {
+    const el = split.containerEl;
+    if (this._sidebarAnim) {
+      try { this._sidebarAnim.cancel(); } catch (e) {}
+      this._sidebarAnim = null;
+    }
+    if (!el || typeof el.animate !== 'function') { after && after(); return; }
+    const anim = el.animate(
+      [{ flexBasis: from + 'px', width: from + 'px' }, { flexBasis: to + 'px', width: to + 'px' }],
+      { duration: 140, easing: 'cubic-bezier(0.25, 1, 0.5, 1)', fill: 'both' }
+    );
+    this._sidebarAnim = anim;
+    anim.onfinish = () => {
+      if (this._sidebarAnim !== anim) return;
+      this._sidebarAnim = null;
+      try { anim.cancel(); } catch (e) {}
+      after && after();
+    };
   }
 
   toggleSidebar(side) {
@@ -650,18 +685,13 @@ export class Workspace extends Events {
   updateTitle() {
     const file = this.getActiveFile();
     const vaultName = this.app.vault.getName();
-    let title = 'OpenSidian';
-    if (file) {
-      title = `${file.basename} - ${vaultName} - OpenSidian`;
-      if (this.titlebarTextEl) {
-        this.titlebarTextEl.empty();
-        const pathEl = this.titlebarTextEl.createDiv('titlebar-text');
-        pathEl.setText(`${vaultName}/${file.path}`);
-      }
-    } else {
-      if (this.titlebarTextEl) this.titlebarTextEl.setText(vaultName);
-    }
+    const version = (Desktop.version && Desktop.version()) || '';
+    const appTitle = 'OpenSidian' + (version ? ' ' + version : '');
+    // 原版：有文件 = "<basename> - <vault> - <app>"，无文件 = "<vault> - <app>"
+    const title = file ? `${file.basename} - ${vaultName} - ${appTitle}` : `${vaultName} - ${appTitle}`;
     Desktop.setTitle(title);
+    // titlebar-text 镜像 document.title（原版 MutationObserver 语义，单层节点）
+    if (this.titlebarTextEl) this.titlebarTextEl.setText(title);
   }
 
   getLastOpenFiles() { return this.lastOpenFiles; }

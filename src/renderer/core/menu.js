@@ -19,11 +19,12 @@ export class MenuItem {
     this.submenu = null;
     this.callback = null;
     this.warning = false;
+    this.isLabel = false;
     this.dom = null;
   }
   setTitle(title) { this.title = title; this.update(); return this; }
   setIcon(icon) { this.icon = icon; this.update(); return this; }
-  setIsLabel(isLabel) { this.isLabel = isLabel; return this; }
+  setIsLabel(isLabel) { this.isLabel = isLabel; this.update(); return this; }
   setChecked(checked) { this.checked = checked; this.update(); return this; }
   setDisabled(disabled) { this.disabled = disabled; this.update(); return this; }
   setSection(section) { this.section = section; return this; }
@@ -114,28 +115,58 @@ export class Menu {
         };
         itemEl.onmouseenter = () => {
           this._setSelectedDom(itemEl);
-          if (item.submenu) this._openSubmenu(item, itemEl);
+          if (item.submenu) this._scheduleSubmenu(item, itemEl);
           else this._closeSubmenu();
         };
-      } else {
-        itemEl.addClass('is-disabled');
+        itemEl.onmouseleave = () => {
+          if (this._submenuTimer) { clearTimeout(this._submenuTimer); this._submenuTimer = null; }
+        };
       }
     }
   }
 
-  _openSubmenu(item, itemEl) {
+  /** 原版 qg.openSubmenuSoon：悬停 250ms 后才展开，移开即取消。 */
+  _scheduleSubmenu(item, itemEl) {
+    if (this._openSubmenuRef && this._openSubmenuRef._ownerItem === item) return;
+    this._closeSubmenu();
+    this._submenuTimer = setTimeout(() => {
+      this._submenuTimer = null;
+      this._openSubmenu(item, itemEl);
+    }, 250);
+  }
+
+  _openSubmenu(item, itemEl, selectFirst) {
     this._closeSubmenu();
     const sub = item.submenu;
     sub.parentMenu = this;
+    sub._ownerItem = item;
     const rect = itemEl.getBoundingClientRect();
     const dom = sub.showAtPosition({ x: rect.right - 4, y: rect.top - 4 });
     this._openSubmenuRef = sub;
+    if (selectFirst) sub.select(0);
+    return dom;
   }
 
   _closeSubmenu() {
+    if (this._submenuTimer) { clearTimeout(this._submenuTimer); this._submenuTimer = null; }
     if (this._openSubmenuRef) {
       this._openSubmenuRef.close();
       this._openSubmenuRef = null;
+    }
+  }
+
+  /** 可导航项（跳过分隔线、禁用与 label）。 */
+  _selectableItems() {
+    return this.items.filter((i) => !i.isSeparator && !i.disabled && !i.isLabel);
+  }
+
+  /** 选中第 index 个可导航项（键盘进入子菜单时选第一项）。 */
+  select(index) {
+    const list = this._selectableItems();
+    const item = list[index];
+    if (item && item.dom) {
+      this._setSelectedDom(item.dom);
+      item.dom.scrollIntoView({ block: 'nearest' });
     }
   }
 
@@ -147,7 +178,9 @@ export class Menu {
 
   onKeyDown(ev) {
     if (!this.dom) return;
-    const selectable = this.items.filter((i) => !i.isSeparator && !i.disabled);
+    // 子菜单打开时按键归子菜单处理（原版 keymap scope 分层语义）
+    if (this._openSubmenuRef && this._openSubmenuRef.dom) return;
+    const selectable = this._selectableItems();
     if (!selectable.length) return;
     const currentEl = this._selectedEl;
     let idx = selectable.findIndex((i) => i.dom === currentEl);
@@ -165,7 +198,7 @@ export class Menu {
       if (idx >= 0) {
         ev.preventDefault();
         const item = selectable[idx];
-        if (item.submenu) { this._openSubmenu(item, item.dom); return; }
+        if (item.submenu) { this._openSubmenu(item, item.dom, true); return; }
         if (item.callback) item.callback(ev);
         this.close();
       }
@@ -174,16 +207,20 @@ export class Menu {
       ev.stopPropagation();
       this.close();
     } else if (ev.key === 'ArrowRight') {
-      if (idx >= 0 && selectable[idx].submenu) this._openSubmenu(selectable[idx], selectable[idx].dom);
+      if (idx >= 0 && selectable[idx].submenu) this._openSubmenu(selectable[idx], selectable[idx].dom, true);
+    } else if (ev.key === 'ArrowLeft') {
+      // 原版 onArrowLeft：子菜单收起回到父菜单
+      if (this.parentMenu) { ev.preventDefault(); this.close(); }
     }
   }
 
   close() {
+    this._closeSubmenu();
     if (this.dom) {
       this.dom.detach();
       this.dom = null;
     }
-    this._closeSubmenu();
+    if (this.parentMenu && this.parentMenu._openSubmenuRef === this) this.parentMenu._openSubmenuRef = null;
     if (this._docMouseDown) {
       document.removeEventListener('mousedown', this._docMouseDown, true);
       document.removeEventListener('contextmenu', this._docContext, true);
@@ -197,20 +234,25 @@ export class Menu {
 
 function renderMenuItem(item, el) {
   el.empty();
-  el.toggleClass('is-checked', !!item.checked);
+  // 原版 Bg：勾选项保留原图标，右侧追加 .menu-item-icon.mod-checked + lucide-check
+  el.toggleClass('mod-checked', !!item.checked);
   el.toggleClass('is-warning', !!item.warning);
-  if (item.checked) {
-    const check = el.createDiv('menu-item-icon');
-    setIcon(check, 'check');
-  } else if (item.icon) {
-    const iconEl = el.createDiv('menu-item-icon');
+  el.toggleClass('is-label', !!item.isLabel);
+  el.toggleClass('is-disabled', !!item.disabled && !item.isLabel);
+  el.toggleClass('tappable', !item.disabled && !item.isLabel);
+  el.toggleClass('has-submenu', !!item.submenu);
+  const iconEl = el.createDiv('menu-item-icon');
+  if (item.icon) {
     const icon = item.icon.startsWith('lucide-') ? item.icon.slice(7) : item.icon;
     setIcon(iconEl, icon);
-  } else {
-    el.createDiv('menu-item-icon');
   }
   const titleEl = el.createDiv('menu-item-title');
   titleEl.setText(typeof item.title === 'string' ? item.title : '');
+  item.checkIconEl = null;
+  if (item.checked) {
+    item.checkIconEl = el.createDiv('menu-item-icon mod-checked');
+    setIcon(item.checkIconEl, 'check');
+  }
   if (item.submenu) {
     const chevron = el.createDiv('menu-item-chevron');
     setIcon(chevron, 'chevron-right');

@@ -209,18 +209,23 @@ input[type="checkbox"]:not(.task-list-item-checkbox):checked::after {
 /* selection */
 ::selection { background-color: var(--text-selection); }
 
-/* drag ghost */
+/* 原版 3385-3417：拖拽幽灵 */
 .drag-ghost {
   position: fixed;
-  z-index: var(--layer-dragged-item, 80);
-  pointer-events: none;
-  background-color: var(--drag-ghost-background);
-  color: var(--drag-ghost-text-color);
-  border-radius: var(--radius-s);
-  padding: var(--size-2-2) var(--size-4-2);
   font-size: var(--font-ui-small);
-  box-shadow: var(--shadow-s);
+  color: var(--drag-ghost-text-color);
+  padding: var(--size-2-3) var(--size-4-2);
+  border-radius: var(--radius-s);
+  background-color: var(--drag-ghost-background);
+  box-shadow: 0 2px 8px var(--background-modifier-box-shadow);
+  z-index: var(--layer-dragged-item, 80);
+  max-width: 300px;
+  font-weight: var(--font-medium);
+  pointer-events: none;
 }
+.drag-ghost.mod-leaf { display: flex; z-index: var(--layer-tooltip); }
+.drag-ghost-icon { margin-right: var(--size-2-3); position: relative; }
+.drag-ghost-icon .svg-icon { width: var(--icon-s); height: var(--icon-s); }
 
 /* misc primitives */
 hr { border: none; border-top: 1px solid var(--divider-color); height: 0; margin: var(--size-4-3) 0; }

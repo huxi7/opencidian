@@ -57,6 +57,43 @@
   app.commands.executeCommandById('workspace:new-tab');
   await pause(40);
   check(workspace._sideOf(workspace.activeLeaf) === 'center', '侧栏焦点新建标签仍在中心');
+
+  // 空标签页（原版 JT）：显示文本与空状态容器
+  const emptyLeaf = workspace.activeLeaf;
+  check(emptyLeaf.view.getViewType() === 'empty', '新建标签是空视图');
+  check(/^(新标签页|New tab)$/.test(emptyLeaf.view.getDisplayText()), '空标签显示"新标签页"');
+  check(!!emptyLeaf.view.contentEl.querySelector('.empty-state-container'), '空状态使用 empty-state-container');
+  check(!emptyLeaf.view.contentEl.querySelector('.empty-state-action-icon'), '空状态无图标按钮（原版无）');
+
+  // 标签列表按钮与"全部关闭"
+  const listBtn = document.querySelector('.mod-root .workspace-tab-header-tab-list');
+  check(visible(listBtn), '标签列表按钮可见');
+  listBtn.click(); await pause(30);
+  const listMenu = document.querySelector('.menu');
+  check(!!listMenu && /全部关闭|Close all/.test(listMenu.textContent), '标签列表菜单含全部关闭');
+  await closeMenu();
+
+  // 固定标签：pin 图标出现/移除
+  const mdLeaf = workspace.getLeavesOfType('markdown')[0];
+  mdLeaf.pinned = true; workspace._syncAllTabs(); await pause(20);
+  check(!!document.querySelector('.mod-root .workspace-tab-header-status-icon.mod-pinned'), '固定标签显示 pin 图标');
+  mdLeaf.pinned = false; workspace._syncAllTabs(); await pause(20);
+  check(!document.querySelector('.mod-root .workspace-tab-header-status-icon.mod-pinned'), '取消固定后 pin 图标移除');
+
+  // 状态栏：词数 + 字符数两段
+  const wcItem = document.querySelector('.status-bar-item.plugin-word-count');
+  check(!!wcItem && wcItem.querySelectorAll('.status-bar-item-segment').length === 2, '状态栏含词数与字符数两段');
+  check(/\d/.test(wcItem ? wcItem.textContent : ''), '状态栏计数含数字');
+
+  // 拖拽幽灵（原版 drag-ghost）
+  const dragHeader = document.querySelector('.mod-root .workspace-tab-header[data-type="markdown"]');
+  const dataTransfer = new DataTransfer();
+  dragHeader.dispatchEvent(new DragEvent('dragstart', { bubbles: true, cancelable: true, dataTransfer }));
+  check(!!document.querySelector('body > .drag-ghost'), '拖拽时出现 drag-ghost');
+  dragHeader.dispatchEvent(new DragEvent('dragend', { bubbles: true, cancelable: true, dataTransfer }));
+  await pause(40);
+  check(!document.querySelector('body > .drag-ghost'), '拖拽结束无残留 drag-ghost');
+
   check(app.commands.executeCommandById('workspace:close'), '中心文档仍可关闭');
 
   settingButton().click(); await pause(100);
@@ -66,7 +103,7 @@
   switcher.click(); await pause(30);
   let menu = document.querySelector('.menu');
   check(visible(menu) && menu.textContent.includes(app.vault.getName()), '库名点击打开真实仓库列表');
-  check(menu.querySelector('.is-checked'), '库菜单标记当前库');
+  check(menu.querySelector('.mod-checked'), '库菜单标记当前库');
   check(menu.textContent.includes('管理仓库'), '库菜单包含管理仓库');
   check(menu.getBoundingClientRect().bottom <= switcher.getBoundingClientRect().top, '菜单向上展开不遮住齿轮');
   await closeMenu();
@@ -74,17 +111,17 @@
   switcher.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
   await pause(30); check(visible(document.querySelector('.menu')), '键盘也可展开库菜单'); await closeMenu();
 
-  workspace.leftSidebarToggleEl.click(); await pause(50);
+  workspace.leftSidebarToggleEl.click(); await pause(320);
   check(workspace.leftSplit.collapsed && visible(workspace.leftSidebarToggleEl), '收起左栏后保留展开开关');
   const fallback = document.querySelector('.sidebar-profile-fallback [aria-label="设置"]');
   check(visible(fallback), '左栏收起时设置仍有可见入口');
   fallback.click(); await pause(40); check(visible(app.setting.modalEl), '收起状态仍能打开设置');
   app.setting.close(); await pause(180);
-  workspace.leftSidebarToggleEl.click(); await pause(50);
+  workspace.leftSidebarToggleEl.click(); await pause(320);
   check(!workspace.leftSplit.collapsed && visible(profile()), '重新展开恢复库信息栏');
-  workspace.rightSidebarToggleEl.click(); await pause(40);
+  workspace.rightSidebarToggleEl.click(); await pause(320);
   check(workspace.rightSplit.collapsed && visible(workspace.rightSidebarToggleEl), '右栏收起后保留开关');
-  workspace.rightSidebarToggleEl.click(); await pause(40);
+  workspace.rightSidebarToggleEl.click(); await pause(320);
 
   const stale = JSON.parse(JSON.stringify(workspace.getLayout()));
   stale.left.children = []; stale.right.children = [];

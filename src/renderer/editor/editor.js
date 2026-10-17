@@ -118,6 +118,7 @@ export class Editor {
     this.options = options;
     this.sourcePath = '';
     this.changeListeners = [];
+    this.selectionListeners = [];
     this._themeCompartment = new Compartment();
     this._livePreviewCompartment = new Compartment();
     this._readonlyCompartment = new Compartment();
@@ -184,6 +185,9 @@ export class Editor {
         if (update.docChanged) {
           this._emitChange(update);
         }
+        if (update.selectionSet) {
+          this._emitSelection();
+        }
         if (update.focusChanged && update.view.hasFocus) {
           this._focused = true;
         }
@@ -199,6 +203,12 @@ export class Editor {
   // Change events
   // -------------------------------------------------------------------------
   onChange(cb) { this.changeListeners.push(cb); }
+  onSelectionChange(cb) { this.selectionListeners.push(cb); }
+  _emitSelection() {
+    for (const cb of this.selectionListeners) {
+      try { cb(); } catch (e) { console.error(e); }
+    }
+  }
   _emitChange(update) {
     const text = this.getValue();
     for (const cb of this.changeListeners) {
