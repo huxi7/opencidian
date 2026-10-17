@@ -328,3 +328,37 @@ node --experimental-vm-modules src/renderer/core/workspace-regression.js
   - `core/menu.js`：新增 `setParentElement`（打开期间 has-active-menu）；补 L3 头部。
 - 验收：canvas 场景通过（新增：边跟随节点移动且往返路径一致、ArrowRight 步长、Shift 5 倍、吸附网格线、快速设置三项菜单、has-active-menu 标记、对齐网格切换写入 canvas.json、只读切换 class/图标/localStorage、重开后只读恢复、按钮退出只读并清理标记）。日志 0 未捕获异常。
 - 未覆盖：图片导出（`canvas:export-as-image`）、CM6 卡片编辑、画布大图的空间索引与可视区域渲染（原版 nodeIndex/edgeIndex + virtualize）。
+
+## 16. OpenSidian 品牌化 + UI 1:1 保真（2026-10-17，进行中）
+
+### 已提交
+- `bfc2d9d` 品牌化改名（产品名 OpenSidian/opensidian；userData 迁移；locale 产品自称替换；HANDOFF.md 删除；README 新建）。
+- `5d2aa1b` 启动日志品牌串。仓库文件夹由用户改名为 `/Users/link/Desktop/opencidian`（品牌仍是 OpenSidian）。
+- 迁移验证：旧 `~/Library/Application Support/Obsidian Copy/obsidian.json`（18 库）→ 新 `OpenSidian/opensidian.json` 拷贝成功；标题冒烟 `OpenSidian`；core-ribbon 47 项过。
+- 新增 `scripts/with-lock.sh`：并行子代理构建/验收互斥锁（$TMPDIR/opensidian-build.lock，超时 30 分钟退出码 75）。**所有子代理必须用锁跑 build 与 acceptance。**
+
+### 进行中（子代理，均要求不 commit、用锁、--no-screenshot）
+- 审计：编辑器保真、核心插件保真（重跑中；shell 与设置/组件两份审计已回，结论见下）。
+- 实现：社区插件安全模式对齐（plugins.js + settings-tabs-plugins.js + settings.css + 新场景 community.js）。
+- 实现：通用组件批 tooltip/notice/suggest（新 tooltip.js + notices.js + suggest.js + components.css + file-explorer.js i18n）。
+- 实现：设置页行级补齐（settings-tabs.js 编辑器/文件/关于 + 拼写字典/语言 IPC + settings-ui.js）。
+
+### shell 审计结论（待实现，文件无人占用）
+1. 拖拽视觉反馈全缺：`_dragGhost` 空函数（workspace-interactions.js:145）、`is-tab-drop-before/after` 与 `mod-drop-*` 无 CSS、无 drop overlay。原版：drag-ghost mod-leaf、workspace-drop-overlay（app.css 3385-3417/6014-6036，transition all 100ms）、文档 body is-grabbing。
+2. 侧栏折叠无动画（display:none 瞬切）：原版 140ms width 补间 + swing 缓动，完成后 hide。
+3. 标签列表按钮被 layout.css:298-299 display:none 永隐、位置错（应在 spacer 之后）；菜单缺 Close all；图标应为 lucide-chevron-down。
+4. 标签宽度：原版 `.mod-root .workspace-tab-header{flex:1 1 0;width:var(--tab-width);container-type:inline-size}`；tab 容器 wheel→scrollLeft；锁定宽度 mouseleave 解锁。
+5. 标签右键菜单缺 "Close tabs after"、Close others 应跳过 pinned；侧栏 tab 也应开菜单（仅 Close+pane 项）。
+6. pin 无视觉：原版 status-container + lucide-pin（点击取消固定）且 pinned 隐藏关闭钮（app.css 6245-6280/6366-6373）。
+7. 关闭钮：active 标签应常显；`@container tab-header (width<3rem)` 隐藏（app.css 6492-6505）。
+8. 窗口：document.title 规则 `${displayText} - ${vault} - Obsidian`→我们用 OpenSidian；titlebar-text 应镜像 document.title 并去掉 display:none 与双层嵌套（根据用户品牌裁定保留 OpenSidian）；is-fullscreen/is-maximized/--zoom-factor 同步缺失；mac 双击标题栏缩放缺失；非 mac 窗口三按钮未建（IPC 已有）。
+9. 分栏 resize：中心分栏尺寸未落库；body 应加 is-grabbing；最小 200（原版）vs 我们 80。
+10. 空叶子空状态：displayText 应为 "New tab"；补 .empty-state-container 与 Close；去图标。
+11. 侧栏开关按钮文案硬编码"展开/收起左侧边栏"→locale（sidebarExpand/sidebarCollapse）。
+12. 状态栏：word-count 应 word+char 两段（char=含空白长度）、监听选区变化；editor-status 用图标+tooltip（lucide-book-open/code-2/edit-3）、去文本段、补 contextmenu；CSS gap 变量错（--status-bar-font-size→--size-4-1）、min-height 18px、tabular-nums。word-count 点击弹窗为"多出的功能"（原版无），保留需记录。
+13. CSS 微差：resize-handle 过渡 200ms；.modal 我们去掉自加 scale/is-open 动画；.clickable-icon 过渡应在 svg opacity 140ms；.menu 结构（menu-scroll/padding）与 separator 首尾隐藏（与设置审计一致）。
+
+### 设置/组件审计结论（待实现；组件批与设置批已在跑，剩余见下）
+- 已派：tooltip 全套、notice 位置/交互、suggest 细节、i18n 小修（通用组件批）；编辑器/文件/关于页签行级（设置批）。
+- 仍待派（等 settings.css/settings-tabs-appearance.js 占用释放）：外观页 ribbon 配置弹窗、自定义应用图标行、字体管理弹窗细节（存在性指示/拖拽/建议）、主题 Legacy 项、重设主题色 #7f6df2/getAccentColor；核心插件页齿轮显示条件（enabled&&settingTab）、快捷键页筛选菜单/chip/按键筛选、启动时间弹窗（已并入设置批 C8）；菜单/模态（键盘分层、勾选右侧 mod-checked、is-label、separator、焦点管理）→ 等 components.css 释放后派"菜单+模态"批。
+- 明确不做：设置全局搜索框、设置滚动记忆（原版无证据）。
