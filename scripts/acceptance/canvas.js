@@ -1,13 +1,23 @@
 /**
  * [INPUT]: 独立临时 vault 与 OBS_ACT eval 注入的应用实例。
  * [OUTPUT]: 返回验收断言结果；失败抛出异常，供运行器判定。
- * [POS]: canvas 场景。仅由 run.mjs 在带标记的临时库执行。
+ * [POS]: canvas 场景。仅由 run.mjs 在带标记的临时库执行。覆盖新建/编辑落盘/连线/缩放/重开/边跟随/撤销重做/微移/快速设置/转换/只读恢复，
+ *        并覆盖图片导出（命令可用性、面板菜单文案、renderCanvasImage 的 dataURL 与 maxSize 上限、非背景像素）与拖动对齐参考线
+ *        （吸附到对齐值、出现 svg.canvas-snaps 参考线、松手清除、snapToObjects 关闭时不吸附）。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 (async()=>{
 const wait=ms=>new Promise(r=>setTimeout(r,ms));const ok=(b,m)=>{if(!b)throw Error(m)};
+// 指针事件助手：p 为相对画布中心的 DOM 坐标
+const evt=(target,type,p)=>target.dispatchEvent(new PointerEvent(type,{bubbles:true,isPrimary:true,pointerType:'mouse',pointerId:9,button:0,buttons:type==='pointerup'?0:1,clientX:p.x+reopened.canvasRect.cx,clientY:p.y+reopened.canvasRect.cy}));
+// 统计与左上角背景像素不同的像素数（导出图必须画出内容）
+const countNonBackgroundPixels=async(image)=>{const pic=new Image();pic.src=image.dataURL;await new Promise((r,j)=>{pic.onload=r;pic.onerror=j});const c=document.createElement('canvas');c.width=pic.width;c.height=pic.height;const x=c.getContext('2d');x.drawImage(pic,0,0);const d=x.getImageData(0,0,c.width,c.height).data;const bg=[d[0],d[1],d[2]];let n=0;for(let i=0;i<d.length;i+=4){if(Math.abs(d[i]-bg[0])+Math.abs(d[i+1]-bg[1])+Math.abs(d[i+2]-bg[2])>12)n++}return n};
 await app.commands.findCommand('canvas:new-file').callback();await wait(250);
 const v=app.workspace.activeLeaf.view;ok(v.canvasRect.width>0,'canvas measured');
+// ---- 空画布不导出：命令入口在无节点时只提示，不弹保存对话框 ----
+ok(v.renderCanvasImage()===null,'empty canvas renders no image');
+ok(await v.generateHDImage()===null,'empty canvas export refused');
+ok(/empty|空白/i.test(document.querySelector('.notice-message')?.textContent||''),'empty canvas export shows notice');
 v.cardMenuEl.children[0].click();await wait(100);
 const a=[...v.nodes.values()][0];ok(a.editorEl?.isConnected,'editor mounted');
 a.editorEl.value='# Canvas acceptance\nEdited and persisted';a.editorEl.dispatchEvent(new Event('input',{bubbles:true}));await wait(650);
@@ -122,6 +132,54 @@ ok(reopened.readonly===true,'readonly restored on reopen');
 reopened.quickSettingsButton.dispatchEvent(new MouseEvent('click',{bubbles:true,cancelable:true}));await wait(80);
 ok(reopened.readonly===false&&!reopened.wrapperEl.classList.contains('mod-readonly'),'readonly button click exits readonly');
 ok(localStorage.getItem('canvas-'+f.path)===null,'readonly cleared from local data');
+// ---- 清空画布：为导出与对齐参考线准备确定性内容 ----
+reopened.selectAll();reopened.deleteSelection();await wait(60);
+const gA=reopened.createTextNode({pos:{x:100,y:100},size:{width:100,height:100},text:'Guide A',focus:false,save:false});
+const gB=reopened.createTextNode({pos:{x:400,y:300},size:{width:100,height:100},text:'Guide B',focus:false,save:false});
+reopened.createGroupNode({pos:{x:2000,y:1600},size:{width:400,height:300},label:'Guide Group',focus:false,save:false});
+reopened.createLinkNode({pos:{x:2600,y:2000},size:{width:200,height:100},url:'https://example.com',focus:false,save:false});
+reopened.createEdge({side:'right',node:gA,end:'none'},{side:'left',node:gB,end:'arrow'},false);
+ok(reopened.nodes.size===4&&reopened.edges.size===1,'guide fixtures replace canvas content');
+reopened.deselectAll();
+// ---- 导出图片：命令、面板菜单与可测试渲染 ----
+const exportCmd=app.commands.findCommand('canvas:export-as-image');
+ok(!!exportCmd&&exportCmd.icon==='lucide-image','export-as-image command registered');
+ok(exportCmd.checkCallback(true)===true,'export command available with canvas open');
+const moreBtn=document.querySelector('.workspace-leaf-content[data-type="canvas"] .view-actions .mod-more-options');
+ok(!!moreBtn,'canvas view actions expose more-options button');
+moreBtn.dispatchEvent(new MouseEvent('click',{bubbles:true,cancelable:true}));await wait(80);
+ok(findMenuItems().some(el=>/导出|Export/.test(el.textContent)),'pane menu offers export as image');
+document.body.dispatchEvent(new MouseEvent('mousedown',{bubbles:true}));await wait(60);
+ok(findMenuItems().length===0,'pane menu closed after outside click');
+const fullImage=reopened.renderCanvasImage();
+ok(!!fullImage&&fullImage.dataURL.startsWith('data:image/png;base64,'),'render returns PNG data URL');
+ok(fullImage.dataURL.length>1000,'export PNG carries payload');
+ok(atob(fullImage.dataURL.split(',')[1].slice(0,16)).startsWith('\u0089PNG'),'export payload is a PNG file');
+ok(fullImage.width>1024&&fullImage.height>1024,'full export larger than the cap used below');
+const cappedImage=reopened.renderCanvasImage({maxSize:1024});
+ok(cappedImage.width<=1024&&cappedImage.height<=1024&&cappedImage.width>0,'export size capped by maxSize');
+const drawn=await countNonBackgroundPixels(cappedImage);
+ok(drawn>0,'export image contains drawn pixels');
+// ---- 拖动对齐参考线 ----
+reopened.options.snapToGrid=false;reopened.options.snapToObjects=true;
+const dragB=(dx,dy)=>{const p={x:gB.x+gB.width/2,y:gB.y+gB.height/2};const a=reopened.domFromPos(p),b=reopened.domFromPos({x:p.x+dx,y:p.y+dy});evt(gB.containerEl,'pointerdown',a);evt(window,'pointermove',b);return b};
+gB.moveTo({x:400,y:300});
+let drop=dragB(-297,0);
+ok(gB.x===100,'drag snaps left edge to other node');
+ok(!!reopened.snapContainerEl&&reopened.snapContainerEl.querySelectorAll('line').length>0,'alignment guide drawn while dragging');
+ok(reopened.snapContainerEl.querySelectorAll('circle').length>0,'alignment guide marks matched points');
+evt(window,'pointerup',drop);await wait(80);
+ok(reopened.snapContainerEl===null,'alignment guide cleared after drag');
+ok(gB.x===100,'snap kept after drop');
+gB.moveTo({x:400,y:300});
+reopened.options.snapToObjects=false;
+drop=dragB(-297,0);
+ok(gB.x===103&&reopened.snapContainerEl===null,'snapToObjects off disables snapping and guides');
+evt(window,'pointerup',drop);await wait(80);
+reopened.options.snapToObjects=true;reopened.options.snapToGrid=true;
+// ---- 无画布时导出命令不可用 ----
+await app.workspace.activeLeaf.setViewState({type:'empty',state:{}});await wait(120);
+ok(app.commands.findCommand('canvas:export-as-image').checkCallback(true)===false,'export command unavailable without canvas');
 await app.saveLayout();
-return {pass:true,file:f.path,nodes:restored.nodes.size,edges:restored.edges.size,rect:restored.canvasRect,converted:created.path};
+return {pass:true,file:f.path,nodes:4,edges:1,rect:restored.canvasRect,converted:created.path,export:{full:fullImage.width+'x'+fullImage.height,capped:cappedImage.width+'x'+cappedImage.height,pixels:drawn},snapping:{aligned:gA.x,guides:'cleared'}};
 })()

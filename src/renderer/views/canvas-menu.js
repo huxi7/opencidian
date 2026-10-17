@@ -1,8 +1,10 @@
 /**
- * [INPUT]: 依赖 ../core/i18n.js 的 t；依赖 ../core/suggest.js 的 SuggestModal/fuzzyMatch；依赖 ../core/modals.js 的 PromptModal；依赖 ../core/notices.js 的 Notice
- * [OUTPUT]: 导出 showCreationMenu、showQuickSettingsMenu、FileSuggestModal、LinkSuggestModal、JumpToGroupModal
- * [POS]: canvas-view 的菜单与弹窗层。把「新建卡片/笔记/媒体/网页/分组」右键菜单、快速设置菜单、文件选择、网址输入、「跳跃至组」弹窗从主视图拆出；
- *        主视图只调用这些函数，菜单项文案全部走 plugins.canvas.* 词条。
+ * [INPUT]: 依赖 ../core/i18n.js 的 t；依赖 ../core/suggest.js 的 SuggestModal/fuzzyMatch；依赖 ../core/modals.js 的 PromptModal；依赖 ../core/notices.js 的 Notice；
+ *          依赖 ../core/icons.js 的 setIcon；依赖 ../core/menu.js 的 Menu
+ * [OUTPUT]: 导出 showCreationMenu、showQuickSettingsMenu、showCanvasPaneMenu、installCanvasViewActions、FileSuggestModal、LinkSuggestModal、JumpToGroupModal
+ * [POS]: canvas-view 的菜单与弹窗层。把「新建卡片/笔记/媒体/网页/分组」右键菜单、快速设置菜单、视图面板（更多选项）菜单与其按钮、
+ *        文件选择、网址输入、「跳跃至组」弹窗从主视图拆出；主视图只调用这些函数，菜单项文案全部走 plugins.canvas.* 词条。
+ *        面板菜单对齐原版 CanvasView.onPaneMenu：桌面端在 action 段追加「导出图片」（图标 lucide-image）。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 /* Canvas menus and pickers — split out of canvas-view to keep it under 800 lines. */
@@ -10,6 +12,8 @@ import { t } from '../core/i18n.js';
 import { SuggestModal, fuzzyMatch } from '../core/suggest.js';
 import { PromptModal } from '../core/modals.js';
 import { Notice } from '../core/notices.js';
+import { Menu } from '../core/menu.js';
+import { setIcon } from '../core/icons.js';
 
 const NOTE_EXTENSIONS = ['md', 'canvas'];
 const MEDIA_EXTENSIONS = ['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'bmp', 'avif', 'mp4', 'webm', 'ogv', 'mov', 'mkv', 'mp3', 'wav', 'm4a', 'ogg', 'flac', 'pdf'];
@@ -39,6 +43,24 @@ export function showQuickSettingsMenu(canvas, menu) {
   menu.addItem((item) => item.setSection('canvas').setTitle(t('plugins.canvas.label-readonly')).setIcon('lucide-lock')
     .setChecked(canvas.readonly)
     .onClick(() => { canvas.setReadonly(!canvas.readonly); canvas.saveLocalData(); }));
+}
+
+/** 视图面板菜单（原版 CanvasView.onPaneMenu）：桌面端追加「导出图片」。 */
+export function showCanvasPaneMenu(canvas, menu) {
+  menu.addItem((item) => item.setSection('action').setTitle(t('plugins.canvas.action-export-png')).setIcon('lucide-image')
+    .onClick(() => canvas.generateHDImage()));
+}
+
+/** 视图头部「更多选项」按钮 → 面板菜单（原版标签页三点菜单）。 */
+export function installCanvasViewActions(canvas, actions) {
+  const more = actions.createDiv('clickable-icon view-action mod-more-options');
+  more.setAttr('aria-label', t('interface.menu.more-options') || 'More options');
+  setIcon(more, 'more-horizontal');
+  more.onclick = (ev) => {
+    const menu = new Menu(canvas.app);
+    showCanvasPaneMenu(canvas, menu);
+    menu.showAtMouseEvent(ev);
+  };
 }
 
 /** 文件选择弹窗：showAttachments=false 只列笔记，media=true 只列媒体。 */

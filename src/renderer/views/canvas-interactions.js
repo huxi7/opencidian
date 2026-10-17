@@ -1,15 +1,16 @@
 /**
- * [INPUT]: 依赖 ./canvas-viewport.js 的 CanvasViewport（类链基类）；依赖 ./canvas-node.js 的 CanvasNode（instanceof 判定）；依赖 ./canvas-utils.js 的 clamp、containsBox、unionBBox、expandBBox；依赖 ../core/menu.js 的 Menu；依赖 ../core/i18n.js 的 t；依赖 ./canvas-menu.js 的 showCreationMenu、showQuickSettingsMenu
+ * [INPUT]: 依赖 ./canvas-viewport.js 的 CanvasViewport（类链基类）；依赖 ./canvas-node.js 的 CanvasNode（instanceof 判定）；依赖 ./canvas-utils.js 的 clamp、containsBox、unionBBox、expandBBox、bboxOf；依赖 ../core/menu.js 的 Menu；依赖 ../core/i18n.js 的 t；依赖 ./canvas-menu.js 的 showCreationMenu、showQuickSettingsMenu
  * [OUTPUT]: 导出 CanvasInteractions 类（指针/键盘/拖拽/框选/滚轮/右键菜单）与 startDrag、suppressClick 两个拖拽原语。
  * [POS]: views/ 画布类链的第三层：View → CanvasViewport → CanvasInteractions → CanvasView。所有画布指针语义（阈值 5px 才成拖拽、拖到视口边缘 30px 自动平移、拖拽后吞掉一次 click）集中于此；
  *        CanvasView 只负责装配 DOM 与调度，节点/边自身不注册窗口级监听。startDrag 是原版 wg 的等价物：超过 threshold 后调用一次 factory，cleanup 先于 end/cancel。
+ *        拖动选中集合时逐帧调用 viewport 的 getSnapping：吸附位移与参考线都由该层产出，drag 结束由 handleDragWithPan 的 cleanup 摘除参考线。
  *        键盘含 Esc/Delete、Mod+A、Mod+Z/Mod+Shift+Z/Mod+Y、Shift+1/2，以及方向键微移选中节点（Shift 为 5 倍、对齐网格时吸附网格线）。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 /* Canvas pointer + keyboard interactions (class chain layer 3). */
 import { CanvasViewport } from './canvas-viewport.js';
 import { CanvasNode } from './canvas-node.js';
-import { clamp, containsBox, unionBBox, expandBBox } from './canvas-utils.js';
+import { clamp, containsBox, unionBBox, expandBBox, bboxOf } from './canvas-utils.js';
 import { Menu } from '../core/menu.js';
 import { t } from '../core/i18n.js';
 import { showCreationMenu, showQuickSettingsMenu } from './canvas-menu.js';
@@ -317,6 +318,7 @@ export class CanvasInteractions extends CanvasViewport {
       },
       cleanup: () => {
         if (timer) { window.clearInterval(timer); timer = 0; }
+        this.endSnapPointRendering();
         this.setDragging(false);
         if (handlers.cleanup) handlers.cleanup();
       },
@@ -341,18 +343,27 @@ export class CanvasInteractions extends CanvasViewport {
       item.nodeEl.addClass('is-dragging');
       item.updateZIndex();
     }
+    // 对齐候选：剔除被拖节点；拖动分组时只与其它分组对齐（原版 getSnapping 的候选筛选）
+    const draggedGroups = list.filter((item) => item.isGroup).length > 0;
+    const candidates = [];
+    for (const other of this.nodes.values()) {
+      if (items.has(other) || !!other.isGroup !== draggedGroups) continue;
+      candidates.push(other.getBBox());
+    }
+    const boxAt = (item, dx, dy) => {
+      const from = origin.get(item);
+      return bboxOf({ x: from.x + dx, y: from.y + dy, width: item.width, height: item.height });
+    };
     this.handleDragWithPan(e, {
       move: (ev) => {
         const pos = this.posFromEvt(ev);
         let dx = pos.x - start.x;
         let dy = pos.y - start.y;
         if (ev.shiftKey) { if (Math.abs(dx) > Math.abs(dy)) dy = 0; else dx = 0; }
-        if (this.options.snapToGrid && list.length) {
-          const g = this.gridSpacing;
-          const first = origin.get(list[0]);
-          dx = Math.round((first.x + dx) / g) * g - first.x;
-          dy = Math.round((first.y + dy) / g) * g - first.y;
-        }
+        this.clearSnapPoints();
+        const snap = this.getSnapping(list.map((item) => boxAt(item, dx, dy)), candidates, dx !== 0, dy !== 0);
+        dx += snap.x;
+        dy += snap.y;
         for (const item of list) {
           const from = origin.get(item);
           item.moveTo({ x: from.x + dx, y: from.y + dy });

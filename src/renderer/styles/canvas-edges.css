@@ -1,9 +1,26 @@
 /**
  * [INPUT]: 依赖 tokens.css 与原版 app.css 的画布规则。
  * [OUTPUT]: 画布布局、节点、边与编辑控件样式。
- * [POS]: canvas.css 后段。连接线、标签与编辑态规则。
+ * [POS]: canvas.css 后段。连接线、标签、拖动对齐参考线（.canvas-snaps）与编辑态规则。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
+.canvas-snaps {
+  position: absolute;
+  width: 100%;
+  height: 100%;
+  left: 0;
+  top: 0;
+  overflow: visible;
+  pointer-events: none;
+  opacity: 0.6;
+}
+.canvas-snaps line {
+  stroke-width: 1px;
+  stroke: var(--color-accent);
+}
+.canvas-snaps circle {
+  fill: var(--color-accent);
+}
 .canvas-edges {
   position: absolute;
   width: 100%;

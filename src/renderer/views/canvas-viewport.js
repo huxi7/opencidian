@@ -1,9 +1,12 @@
 /**
  * [INPUT]: 依赖 ../core/view.js 的 View（类链基类）；依赖 ./canvas-utils.js 的 clamp、unionBBox、expandBBox、rectOf
  * [OUTPUT]: 导出 CanvasViewport 类，供 canvas-interactions.js 继承。含视口状态机（x,y 为视口中心世界坐标，zoom=log2(scale)）、
- *           坐标换算（posFromDom/domFromPos 等）、requestFrame/renderFrame 动画帧、markViewportChanged/markMoved/markDirty 标记。
+ *           坐标换算（posFromDom/domFromPos 等）、requestFrame/renderFrame 动画帧、markViewportChanged/markMoved/markDirty 标记，
+ *           以及物体对齐（getSnapping/renderSnapPoints/clearSnapPoints/endSnapPointRendering，参考线画在 svg.canvas-snaps）。
  * [POS]: views/ 画布类链的第二层：View → CanvasViewport → CanvasInteractions → CanvasView。所有画布子视图共享这一层视口语义；
  *        节点/边通过 markMoved 请求重绘；帧内先把移动节点的关联边一并加入重绘集合（边坐标由节点推导），再统一 render。缩放夹在边界内并刷新正文挂载，停止后释放动画帧。
+ *        吸附取「4 角 + 中心」共 5 点（原版 D3），逐轴找最近对齐值（原版 L3）；snapToObjects=false 时不吸附、不画参考线。
+ *        候选节点取全部节点而非原版的视口内节点（本复刻不做视口虚拟化），分组只与分组对齐。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 /* Canvas viewport engine — original viewport math + animation frame (class chain layer 2). */
@@ -98,6 +101,75 @@ export class CanvasViewport extends View {
     const a = this.posFromDom({ x: rect.minX, y: rect.minY });
     const b = this.posFromDom({ x: rect.maxX, y: rect.maxY });
     return { minX: a.x, minY: a.y, maxX: b.x, maxY: b.y };
+  }
+
+  /* ------------------------------------------------------- 物体对齐与参考线 */
+
+  /**
+   * 原版 getSnapping：返回把 boxes 吸附到 others 与网格所需的位移，并按需画参考线。
+   * useX/useY 为假表示该轴没有位移，只认同轴完全对齐（原版传 0 作为阈值）。
+   */
+  getSnapping(boxes, others, useX, useY) {
+    if (!boxes.length) return { x: 0, y: 0 };
+    let xMatch = null;
+    let yMatch = null;
+    let dx = 0;
+    let dy = 0;
+    if (this.options.snapToObjects) {
+      const src = uniqueSnapPoints(boxes);
+      const dest = uniqueSnapPoints(others);
+      const dist = this.snapDistance;
+      xMatch = findSnapMatches(src, dest, useX ? dist : 0, 'x');
+      if (xMatch) dx += xMatch.delta;
+      yMatch = findSnapMatches(src, dest, useY ? dist : 0, 'y');
+      if (yMatch) dy += yMatch.delta;
+    }
+    if (this.options.snapToGrid && (!xMatch || !yMatch)) {
+      const box = unionBBox(boxes);
+      const g = this.gridSpacing;
+      if (!xMatch && useX) dx += Math.round(box.minX / g) * g - box.minX;
+      if (!yMatch && useY) dy += Math.round(box.minY / g) * g - box.minY;
+    }
+    if (xMatch || yMatch) this.renderSnapPoints(xMatch, yMatch, dx, dy);
+    return { x: dx, y: dy };
+  }
+
+  /** 画参考线：每个匹配点画圆点，并按匹配范围画一条直线（原版 renderSnapPoints）。 */
+  renderSnapPoints(xMatch, yMatch, dx, dy) {
+    let el = this.snapContainerEl;
+    if (!el) el = this.snapContainerEl = this.canvasEl.createSvg('svg', { cls: 'canvas-snaps' });
+    el.style.zIndex = String(this.zIndexCounter + 2);
+    const offset = (p) => ({ x: p.x + dx, y: p.y + dy });
+    const matches = [];
+    if (xMatch) matches.push(...xMatch.matches);
+    if (yMatch) matches.push(...yMatch.matches);
+    for (const match of matches) {
+      const points = match.src.map(offset).concat(match.dest);
+      let minX = Infinity;
+      let minY = Infinity;
+      let maxX = -Infinity;
+      let maxY = -Infinity;
+      for (const p of points) {
+        el.createSvg('circle', { attr: { cx: p.x, cy: p.y, r: 4 } });
+        minX = Math.min(minX, p.x);
+        minY = Math.min(minY, p.y);
+        maxX = Math.max(maxX, p.x);
+        maxY = Math.max(maxY, p.y);
+      }
+      el.createSvg('line', { attr: { x1: minX, y1: minY, x2: maxX, y2: maxY } });
+    }
+  }
+
+  /** 清空参考线元素，保留容器（拖动中每次 move 先清后画）。 */
+  clearSnapPoints() {
+    if (this.snapContainerEl) this.snapContainerEl.empty();
+  }
+
+  /** 摘除参考线容器（drag 结束或取消时调用）。 */
+  endSnapPointRendering() {
+    if (!this.snapContainerEl) return;
+    this.snapContainerEl.detach();
+    this.snapContainerEl = null;
   }
 
   /* ------------------------------------------------------------ 坐标换算 */
@@ -221,4 +293,87 @@ export class CanvasViewport extends View {
       this.zoomToFit();
     }
   }
+}
+
+/* --------------------------------------------------------------------------
+ * 对齐点计算 — 原版 D3 / A3 / L3 的对应实现（纯函数，不依赖画布状态）
+ * ------------------------------------------------------------------------ */
+
+/** 原版 D3：矩形取 4 角 + 中心，共 5 个对齐点。 */
+function boxSnapPoints(box) {
+  const { minX, minY, maxX, maxY } = box;
+  return [
+    { x: minX, y: minY },
+    { x: minX, y: maxY },
+    { x: maxX, y: minY },
+    { x: maxX, y: maxY },
+    { x: (minX + maxX) / 2, y: (minY + maxY) / 2 },
+  ];
+}
+
+/** 原版 A3：合并全部点，按 x/y 排序后按坐标去重。 */
+function uniqueSnapPoints(boxes) {
+  const all = [];
+  for (const box of boxes) all.push(...boxSnapPoints(box));
+  all.sort((a, b) => (a.x !== b.x ? a.x - b.x : a.y - b.y));
+  const out = [];
+  let last = null;
+  for (const point of all) {
+    if (last && last.x === point.x && last.y === point.y) continue;
+    last = point;
+    out.push(point);
+  }
+  return out;
+}
+
+/**
+ * 原版 L3：在单轴上为 src 的每个坐标找 dest 中最近的坐标，取绝对差最小且在 dist 内的位移，
+ * 返回该位移下的全部点对（src 是移动前的点，dest 是对齐目标点）。
+ */
+function findSnapMatches(src, dest, dist, axis) {
+  if (!src.length || !dest.length) return null;
+  const valueOf = (p) => (axis === 'x' ? p.x : p.y);
+  const sortedSrc = src.slice().sort((a, b) => valueOf(a) - valueOf(b));
+  const sortedDest = dest.slice().sort((a, b) => valueOf(a) - valueOf(b));
+  let delta = dist;
+  let matches = [];
+  let index = 0;
+  while (index < sortedSrc.length) {
+    const value = valueOf(sortedSrc[index]);
+    const srcGroup = [];
+    while (index < sortedSrc.length && valueOf(sortedSrc[index]) === value) srcGroup.push(sortedSrc[index++]);
+    const { point: nearest, at } = nearestByAxis(sortedDest, value, valueOf);
+    const candidate = valueOf(nearest) - value;
+    if (candidate === delta) {
+      matches.push({ src: srcGroup, dest: destGroupAt(sortedDest, at, valueOf) });
+    } else if (Math.abs(candidate) < Math.abs(delta)) {
+      delta = candidate;
+      matches = [{ src: srcGroup, dest: destGroupAt(sortedDest, at, valueOf) }];
+    }
+  }
+  return matches.length ? { matches, delta } : null;
+}
+
+/** 二分找 dest 中与 value 最接近的点（有序数组）。 */
+function nearestByAxis(sorted, value, valueOf) {
+  let lo = 0;
+  let hi = sorted.length - 1;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    if (valueOf(sorted[mid]) < value) lo = mid + 1;
+    else hi = mid;
+  }
+  let at = lo;
+  if (at > 0 && Math.abs(valueOf(sorted[at - 1]) - value) <= Math.abs(valueOf(sorted[at]) - value)) at -= 1;
+  return { point: sorted[at], at };
+}
+
+/** 取 dest 中与 sorted[at] 同坐标的全部点（原版向前后扩展同值区间）。 */
+function destGroupAt(sorted, at, valueOf) {
+  const value = valueOf(sorted[at]);
+  let start = at;
+  let end = at;
+  while (start > 0 && valueOf(sorted[start - 1]) === value) start -= 1;
+  while (end < sorted.length - 1 && valueOf(sorted[end + 1]) === value) end += 1;
+  return sorted.slice(start, end + 1);
 }

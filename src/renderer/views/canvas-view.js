@@ -1,13 +1,16 @@
 /**
  * [INPUT]: 依赖 ./canvas-interactions.js 的 CanvasInteractions（类链基类）；依赖 ../core/i18n.js 的 t；依赖 ../core/icons.js 的 setIcon；依赖 ../core/notices.js 的 Notice；
  *          依赖 ./canvas-utils.js 的 genId、boxesIntersect、expandBBox、nearestSide、rectFromPos、distanceToBox、rectOf、MultiMap；
- *          依赖 ./canvas-node.js 的 CanvasNode/CanvasTextNode/CanvasFileNode/CanvasLinkNode/CanvasGroupNode/CanvasDummyNode；依赖 ./canvas-edge.js 的 CanvasEdge；依赖 ./canvas-menu.js 的 FileSuggestModal/LinkSuggestModal/JumpToGroupModal
- * [OUTPUT]: 导出 CanvasView 类
+ *          依赖 ./canvas-node.js 的 CanvasNode/CanvasTextNode/CanvasFileNode/CanvasLinkNode/CanvasGroupNode/CanvasDummyNode；依赖 ./canvas-edge.js 的 CanvasEdge；
+ *          依赖 ./canvas-menu.js 的 FileSuggestModal/LinkSuggestModal/JumpToGroupModal/showQuickSettingsMenu/installCanvasViewActions；
+ *          依赖 ./canvas-export.js 的 renderCanvasImage/exportCanvasImage
+ * [OUTPUT]: 导出 CanvasView 类（含 renderCanvasImage 渲染入口与 generateHDImage 导出入口）
  * [POS]: views/ 画布类链的末端：View → CanvasViewport（视口）→ CanvasInteractions（交互）→ CanvasView（装配与调度）。持有 .canvas-wrapper DOM、节点/边集合、选择集合、JSON Canvas 读写。
  *        ResizeObserver 在挂载后更新视口。节点与边几何分层；数据防抖 500ms 写回，关闭时 flush。
  *        vault modify 的外部修改重载磁盘内容并保留视口；自身写入用 _writing 标记排除，避免覆盖在途编辑。
  *        撤销/重做历史（上限 100）与写盘共用一个 requestSave；控件组含快速设置（对齐网格/对齐物体/只读）与撤销/重做。
  *        只读标记按原版 localDataManager 存 localStorage('canvas-<路径>')，重命名迁移、删除清理。
+ *        导出图片的绘制在 canvas-export.js；本类只提供 renderCanvasImage（可测试）与 generateHDImage（命令/面板菜单入口）。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 /* Canvas view — DOM assembly + scheduling on top of the viewport and interaction layers. */
@@ -27,7 +30,8 @@ import {
 import { CanvasFileNode } from './canvas-file-node.js';
 import { loadCanvasLocalData, saveCanvasLocalData, migrateCanvasLocalData, dropCanvasLocalData } from './canvas-local-data.js';
 import { CanvasEdge } from './canvas-edge.js';
-import { FileSuggestModal, LinkSuggestModal, JumpToGroupModal, showQuickSettingsMenu } from './canvas-menu.js';
+import { FileSuggestModal, LinkSuggestModal, JumpToGroupModal, showQuickSettingsMenu, installCanvasViewActions } from './canvas-menu.js';
+import { renderCanvasImage, exportCanvasImage } from './canvas-export.js';
 
 const SAVE_DELAY = 500;
 
@@ -778,4 +782,15 @@ export class CanvasView extends CanvasInteractions {
     });
     modal.open();
   }
+
+  /* ------------------------------------------------------------ 导出图片 */
+
+  /** 视图头部「更多选项」按钮（原版 pane menu：导出图片）。 */
+  _fillViewActions(actions) { installCanvasViewActions(this, actions); }
+
+  /** 可测试的渲染入口：返回 { dataURL, width, height, scale }，空画布返回 null。 */
+  renderCanvasImage(opts) { return renderCanvasImage(this, opts); }
+
+  /** 命令 canvas:export-as-image 与面板菜单入口：渲染 → 保存对话框 → 写 PNG（原版 generateHDImage）。 */
+  generateHDImage(opts) { return exportCanvasImage(this, opts); }
 }

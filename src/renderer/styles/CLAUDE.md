@@ -27,7 +27,7 @@ popover.css: page-preview 的 .popover/.hover-popover 尺寸与内容规则（�
 settings.css: 设置页签完整样式，逐字移植原版 app.css 设置段(vertical-tab 导航/内容、setting-item、mod-toggle、设置组头、hotkey 胶囊、.hotkey-filter 筛选芯片、.input-right-decorator 装饰图标与清除按钮让位、CSS 片段列表、installed-plugins-container、community 免责行 .setting-icon 与 .community-modal-button-container、.mod-trust-folder 宽度)。
 canvas.css: 画布样式入口。按序导入节点规则与连接线规则。
 canvas-nodes.css: 原版画布布局、节点、分组与手柄规则。
-canvas-edges.css: 原版连接线与标签规则，补足本实现编辑控件。
+canvas-edges.css: 原版连接线与标签规则、拖动对齐参考线（.canvas-snaps 的 line/circle 取强调色，位于 .canvas-edges 之前），补足本实现编辑控件。
 bookmarks.css: 书签树滚动、操作图标与视图头部收藏状态。
 slides.css: 全窗口演示覆盖层。.slides-container/.slides-close-btn/.collapse-indicator/.controls 段移植自原版 app.css slides 段；deck/section/progress 为翻页渲染新增；容器 position:fixed 覆盖全窗口(对齐原版)，背景走 --background-primary（原版硬编码 #191919 由 reveal 主题覆盖，此处取应用主题色）。
 
