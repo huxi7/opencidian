@@ -64,3 +64,26 @@ MathJax 独立适配器子代理的41项基础/故障测试见 assets/mathjax/SO
 - 修复：文件卡片在正常缩放下创建即崩溃（`contentEl` 未初始化时无保护访问）；拆出 `views/canvas-file-node.js`。
 - 日志 0 未捕获异常；证据 `/tmp/obs-copy-acceptance/canvas-run-result-lpAd6p`。
 - 未覆盖：图片导出、方向键微移、快速设置菜单。见 AGENT-STATE.md §12。
+
+## 图谱性能基线（2026-10-17，主 agent 接续）
+
+优化前（Electron 实测，`graph-perf` 场景，`--no-screenshot`）：
+
+| 节点 | 边 | 打开 ms | tick ms | fps |
+| --- | --- | --- | --- | --- |
+| 100 | 200 | 16 | 0.78 | 121.3 |
+| 1000 | 2000 | 26 | 4.92 | 119.3 |
+| 5000 | 10000 | 81 | 101.5 | 11.3 |
+
+优化后（Barnes-Hut 四叉树 + 四叉树碰撞裁剪 + 内联遍历）：
+
+| 节点 | 边 | 打开 ms | tick ms | fps |
+| --- | --- | --- | --- | --- |
+| 100 | 200 | 8 | 1.55 | 120.7 |
+| 1000 | 2000 | 25 | 3.65 | 120.0 |
+| 5000 | 10000 | 83 | 16.2 | 77.3 |
+
+- 5000 节点：tick 6.3× 加速、fps 11.3→77.3；100 节点 tick 略升为建树固定开销，帧率无差别。
+- 所有规模关闭释放与关闭后可响应通过；graph 交互 40 项断言在优化后全过。
+- 复跑：`node scripts/acceptance/run.mjs graph-perf --nodes <N> --no-screenshot`。
+- 未覆盖：worker 化（原版力学在 worker）见 AGENT-STATE.md §13。

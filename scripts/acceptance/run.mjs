@@ -36,6 +36,18 @@ if (scenario === 'recovery' && !selected) {
   fs.writeFileSync(path.join(vault, '.obs-copy-recovery-fixture'), 'recovery\n');
   fs.writeFileSync(path.join(vault, '.obsidian/file-recovery.json'), '{"intervalSeconds":0,"keepDays":7}');
 }
+if (scenario === 'graph-perf' && !selected) {
+  const nodeCount = parseInt(option('--nodes', '1000'), 10);
+  if (!Number.isFinite(nodeCount) || nodeCount < 1 || nodeCount > 20000) throw new Error('--nodes 需为 1..20000');
+  const dir = path.join(vault, 'Nodes');
+  fs.mkdirSync(dir, { recursive: true });
+  // 环形 + 跳跃出链：每节点 2 条 wiki 链接，保证图规模可复算
+  for (let i = 0; i < nodeCount; i++) {
+    const next = (i + 1) % nodeCount;
+    const skip = (i + 7) % nodeCount;
+    fs.writeFileSync(path.join(dir, 'n' + i + '.md'), '# Node ' + i + '\n\n[[n' + next + ']] [[n' + skip + ']]\n');
+  }
+}
 const output = fs.mkdtempSync(path.join(base, scenario + '-' + phase + '-result-'));
 const screenshot = arguments_.includes('--no-screenshot') ? null : path.join(output, 'screen.png');
 const logfile = path.join(output, 'run.log');
@@ -52,6 +64,7 @@ Object.assign(env, {
   OBS_NOTES_SETTINGS: option('--tab', 'templates'),
   OBS_GRAPH_SCREEN: option('--screen', 'global'),
   OBS_SIDEBAR_VIEW: option('--screen', 'outline'),
+  OBS_GRAPH_PERF_NODES: option('--nodes', ''),
 });
 const require = createRequire(import.meta.url);
 const electron = require(path.join(repository, 'node_modules/electron'));

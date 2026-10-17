@@ -24,7 +24,8 @@ graph-engine.js: 协调查询、元数据变化、图谱选项与节点操作。
 graph-controls.js: 筛选、颜色、显示与力学控件。变更交给引擎。
 graph-data.js: 根据 Vault 清单构图。计算局部邻域和孤立节点。
 graph-query.js: 文件、正文、路径与标签查询。供筛选及颜色组复用。
-graph-simulation.js: 节点力学模拟。拓扑变化时缓存节点度数。
+graph-simulation.js: 节点力学模拟（对齐原版 d3-force 参数）。斥力为 Barnes-Hut 四叉树近似（theta²=0.81），碰撞按包围盒裁剪半径 120 的候选对；受力遍历内联为复用栈。拓扑变化时缓存节点度数。
+graph-quadtree.js: 力学空间索引。buildQuadtree/visitAfter；重合点存 next 链；供 Barnes-Hut 斥力与半径碰撞共用同一棵树。
 graph-options.js: 默认选项和 graph.json 读写，供视图与引擎共用。
 graph-utils.js: 无状态颜色、插值、矩形与键盘常量。
 file-recovery.js: 文件恢复插件(原版默认启用)。快照范围为 md/canvas/base；间隔单位分钟(默认 5，0 表示每次变更即存)，旧 intervalSeconds 配置读取时按 60 秒=1 分钟迁移。快照落盘 .obsidian/.file-recovery/ 按天原子替换 JSON({路径:[{ts,data}]})；命令 file-recovery:open 打开快照弹窗(文件搜索+时间/大小列表+预览+恢复+复制+显示差异)；settingTab(间隔分钟/保留天数/查看/清空)。

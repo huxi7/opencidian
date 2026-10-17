@@ -17,6 +17,7 @@ editor-switch.js: 切换文件先保存，已删除视图再次打开文件可�
 editor.js: 模式、折叠、高亮和滚动。
 folding-disabled.js: 禁止语法回退绕过折叠开关。
 graph.js: 40 项图谱交互与销毁。
+graph-perf.js: 生成库性能基线（100/1000/5000 节点）：打开耗时、单 tick 耗时、沉降帧率、关闭释放、关闭后可响应。
 graph-persist-read.js: 重启核对图谱偏好。
 graph-persist-write.js: 写入图谱偏好。
 math.js: 离线 CHTML、字体、错误隔离与两种视图。

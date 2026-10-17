@@ -285,3 +285,16 @@ node --experimental-vm-modules src/renderer/core/workspace-regression.js
   - 修复历史遗留：`CanvasFileNode.mountContent/render` 未判空 `contentEl`，正常缩放下新建文件节点即崩溃（「库添加笔记」路径此前未覆盖）；拆出 `views/canvas-file-node.js` 守住 800 行（canvas-node.js 811→702）。
 - 验收：canvas 场景通过（新增断言：历史初始 is-disabled、动作后 undo 可用、Mod+Z 撤销节点、撤销落盘、Mod+Shift+Z 重做、按钮撤销/重做、转换命令可用性、弹窗默认 Untitled、非法名拦截、建文件/内容/几何/边改指、撤销恢复文本卡、重做再应用）；日志 0 未捕获异常。证据 `/tmp/obs-copy-acceptance/canvas-run-result-lpAd6p`。
 - 未覆盖：图片导出（`canvas:export-as-image`）、方向键微移（nudgeSelection）、快速设置菜单（对齐网格/对齐物体入口）、CM6 卡片编辑（仍 textarea）。
+
+## 13. 图谱性能基线（2026-10-17，主 agent 接续）
+
+- 事实源：`_analysis/obsidian-asar/sim.js` 是 d3-force + d3-quadtree 打包产物（在 worker 运行）；参数：manyBody `.strength(() => -1000).distanceMin(30)`（theta 默认 0.9）、forceX/Y `.strength(.1)`、collide `.radius(60).strength(.5)`、速度衰减 0.6、alpha 衰减 1-pow(0.001,1/300)。原版把力学放在 worker，主线程零阻塞。
+- 基线（优化前，Electron 实测，`graph-perf` 场景）：100 节点 open 16ms / tick 0.78ms / 121fps；1000 节点 26ms / 4.92ms / 119fps；5000 节点 81ms / 101.5ms / 11.3fps（不可用）。
+- 优化（本阶段）：
+  - 新增 `plugins-core/graph-quadtree.js`：建树 + 聚合遍历；重合点 next 链；40 层保护。
+  - `graph-simulation.js`：斥力改 Barnes-Hut（theta²=0.81，与 d3 默认一致）；碰撞改四叉树包围盒裁剪（半径 120、配对权重 0.5，与 d3 相同）；两者共用同一棵树；受力遍历内联为复用栈（去逐点闭包/数组分配）。参数与 d3 对齐。
+- 优化后（Electron 实测）：100 节点 open 8ms / tick 1.55ms / 120.7fps；1000 节点 25ms / 3.65ms / 120fps；5000 节点 83ms / 16.2ms / 77.3fps。
+  - 对比：1000 节点 tick 4.92→3.65ms；5000 节点 tick 101.5→16.2ms（6.3×）、fps 11.3→77.3（6.8×）。100 节点 tick 略升（0.78→1.55ms，建树固定开销），帧率无差别。
+  - 关闭释放与关闭后可响应在所有规模通过（destroyed / canvas 摘除 / timer 清空 / DOM 清空）。
+- 复跑：`node scripts/acceptance/run.mjs graph-perf --nodes 100|1000|5000 --no-screenshot`；结果写 `<vault>/.obs-copy-graph-perf.json`。
+- 未覆盖：worker 化（原版力学在 worker，本实现仍在渲染线程，5000 节点沉降期约 77fps）；颜色组拖拽、悬停预览、完整查询语法仍未做（历史记录）。
