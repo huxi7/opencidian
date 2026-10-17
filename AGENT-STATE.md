@@ -398,5 +398,8 @@ node --experimental-vm-modules src/renderer/core/workspace-regression.js
 - 功能区配置弹窗（Zee）未做（需 ribbon item registry；依赖 workspace-renderer）；自定义图标已完成。
 - 画布：CM6 卡片编辑、图片导出、对齐参考线、空间索引未做。
 - 图谱：颜色组拖拽、悬停高亮细节未做。
-- 编辑器：属性行编辑已存在；表格/嵌入右键菜单、链接 tooltip 细节未逐项核对。
-- 无 macOS 分发包。
+- 编辑器：属性行编辑已存在；表格/嵌入右键菜单、链接 tooltip 细节未逐项核对；从系统拖文件进编辑器插入链接未做。
+- 快捷键设置页：状态筛选仍为常驻下拉（原版是菜单按钮 + 可移除 chip + 按键筛选）、冲突 chip 点击筛选、搜索行 label/自动聚焦未补。
+- 核心插件页：每行"快捷键"按钮（跳转 hotkeys 并 setQuery）未做；齿轮显示条件仍为"有 settingTab 即显示"。
+- 第三方插件页：已装插件行的卸载/捐赠/设置齿轮/快捷键按钮未做（版本/作者/搜索/开关已有）。
+- 无 macOS 分发包；README 许可证待定（LICENSE 未加）。
