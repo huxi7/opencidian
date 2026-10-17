@@ -258,7 +258,6 @@ function onPointerOut(ev) {
 document.body.addEventListener('pointerover', onPointerOver);
 document.body.addEventListener('pointerout', onPointerOut);
 window.addEventListener('pointerdown', hideTooltip, true);
-window.addEventListener('wheel', hideTooltip, { capture: true, passive: true });
 window.addEventListener('scroll', hideTooltip, true);
 window.addEventListener('blur', hideTooltip);
 window.addEventListener('keydown', (ev) => { if (ev.key === 'Escape') hideTooltip(); });

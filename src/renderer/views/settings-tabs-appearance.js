@@ -271,6 +271,48 @@ export class AppearanceTab extends SettingTab {
           relaunchBtn.buttonEl.toggle(disabled !== gpuDisabled);
         }));
       });
+      adv.addSetting((s) => {
+        let relaunchBtn = null;
+        const renderDesc = () => {
+          s.descEl.empty();
+          const icon = (() => { try { return Desktop.getIcon(); } catch (e) { return null; } })();
+          if (icon && icon.dataUrl) s.descEl.createEl('img', { attr: { width: '64', height: '64', src: icon.dataUrl } });
+          else s.descEl.appendText(tt('setting.appearance.option-custom-icon-desc', '给应用设置一个自定义的图标'));
+        };
+        s.setName(tt('setting.appearance.option-custom-icon', '自定义应用图标'));
+        renderDesc();
+        s.addExtraButton((b) => b
+          .setIcon('lucide-rotate-ccw')
+          .setTooltip(tt('setting.hotkeys.tooltip-restore-default', '恢复默认'))
+          .onClick(() => {
+            try { Desktop.setIcon(null); } catch (e) {}
+            renderDesc();
+            if (relaunchBtn) relaunchBtn.buttonEl.show();
+          }));
+        s.addButton((b) => b
+          .setButtonText(tt('dialogue.button-choose', '选择'))
+          .onClick(() => {
+            const res = Desktop.openDialog({
+              title: tt('setting.appearance.option-custom-icon', '自定义应用图标'),
+              properties: ['openFile', 'dontAddToRecent'],
+              filters: [{ name: 'PNG/ICO/ICNS', extensions: ['png', 'ico', 'icns'] }],
+            });
+            const filePath = res && !res.canceled && res.filePaths && res.filePaths[0];
+            if (!filePath) return;
+            const ext = String(filePath).split('.').pop().toLowerCase();
+            if (!['png', 'ico', 'icns'].includes(ext)) { new Notice('Supported file types are: png, ico, icns'); return; }
+            const ok = (() => { try { return Desktop.setIcon(filePath); } catch (e) { return false; } })();
+            if (!ok) { new Notice(tt('setting.appearance.msg-set-icon-failed', '设置图标失败')); return; }
+            renderDesc();
+            if (relaunchBtn) relaunchBtn.buttonEl.show();
+          }));
+        s.addButton((b) => {
+          relaunchBtn = b;
+          b.setCta().setButtonText(tt('setting.about.button-relaunch', '重新启动应用'));
+          b.buttonEl.hide();
+          b.onClick(() => location.reload());
+        });
+      });
     }
 
     /* ---------------------------------------------------------- CSS 代码片段 */

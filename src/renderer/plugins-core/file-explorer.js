@@ -251,6 +251,15 @@ export class FileExplorerView extends View {
       ev.dataTransfer.effectAllowed = 'move';
       el.addClass('is-being-dragged');
       this._draggingItem = item;
+      // 原版 drag-ghost：图标 + 名称，随指针显示
+      try {
+        const ghost = createDiv('drag-ghost');
+        setIcon(ghost.createDiv('drag-ghost-icon'), item instanceof TFolder ? 'folder' : 'file-text');
+        ghost.createDiv('drag-ghost-title').setText(item.name);
+        document.body.appendChild(ghost);
+        if (ev.dataTransfer.setDragImage) ev.dataTransfer.setDragImage(ghost, 12, 12);
+        requestAnimationFrame(() => ghost.detach());
+      } catch (e) { /* 某些环境不支持 drag image */ }
     });
     el.addEventListener('dragend', () => {
       el.removeClass('is-being-dragged');

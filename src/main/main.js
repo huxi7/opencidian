@@ -120,6 +120,21 @@ function removeSpellcheckWord(word) {
   writeSpellcheckWords(readSpellcheckWords().filter((w) => w !== word));
 }
 
+// 自定义应用图标（appearance 高级设置）：文件复制到 userData 并持久化
+const CUSTOM_ICON_EXTS = ['png', 'ico', 'icns'];
+function customIconPath() {
+  const p = config.customIcon;
+  return (typeof p === 'string' && fs.existsSync(p)) ? p : null;
+}
+function applyAppIcon() {
+  const p = customIconPath();
+  if (!p) return;
+  try {
+    if (IS_MAC && app.dock) app.dock.setIcon(p);
+    else for (const w of Object.values(windows)) { try { w.setIcon(p); } catch (e) {} }
+  } catch (e) { /* 平台不支持时忽略 */ }
+}
+
 const VAULTS = config.vaults;
 
 function randomId() {
@@ -442,6 +457,7 @@ function openVaultWindow(id, focus = true) {
   }
   const opts = defaultWindowOptions(id);
   const win = new BrowserWindow(opts);
+  if (!IS_MAC) { const icon = customIconPath(); if (icon) { try { win.setIcon(icon); } catch (e) {} } }
   windows[id] = win;
   win.vaultId = id;
 
@@ -766,6 +782,36 @@ function setupIpc() {
   ipcMain.on('window-close', (e) => { const w = BrowserWindow.fromWebContents(e.sender); if (w) w.close(); });
   ipcMain.on('window-is-maximized', (e) => { const w = BrowserWindow.fromWebContents(e.sender); e.returnValue = w ? w.isMaximized() : false; });
   ipcMain.on('window-title', (e, title) => { const w = BrowserWindow.fromWebContents(e.sender); if (w) w.setTitle(title); });
+  ipcMain.on('get-icon', (e) => {
+    const p = customIconPath();
+    if (!p) { e.returnValue = null; return; }
+    const ext = path.extname(p).slice(1).toLowerCase();
+    let dataUrl = null;
+    if (ext === 'png' || ext === 'ico') {
+      try { dataUrl = 'data:image/' + (ext === 'ico' ? 'x-icon' : 'png') + ';base64,' + fs.readFileSync(p).toString('base64'); } catch (err) {}
+    }
+    e.returnValue = { path: p, ext, dataUrl };
+  });
+  ipcMain.on('set-icon', (e, iconPath) => {
+    if (!iconPath) {
+      delete config.customIcon;
+      saveConfig();
+      try { if (IS_MAC && app.dock) app.dock.setIcon(null); } catch (err) {}
+      e.returnValue = true;
+      return;
+    }
+    try {
+      const ext = path.extname(String(iconPath)).slice(1).toLowerCase();
+      if (!CUSTOM_ICON_EXTS.includes(ext)) { e.returnValue = false; return; }
+      const target = path.join(DATA_DIR, 'custom-icon.' + ext);
+      fs.mkdirSync(DATA_DIR, { recursive: true });
+      fs.copyFileSync(iconPath, target);
+      config.customIcon = target;
+      saveConfig();
+      applyAppIcon();
+      e.returnValue = true;
+    } catch (err) { console.error('set-icon failed', err); e.returnValue = false; }
+  });
   ipcMain.on('window-state', (e) => {
     const w = BrowserWindow.fromWebContents(e.sender);
     e.returnValue = w ? { maximized: w.isMaximized(), fullscreen: w.isFullScreen() } : { maximized: false, fullscreen: false };
@@ -817,6 +863,7 @@ if (!gotLock) {
     registerAppProtocol();
     setupIpc();
     installMenu();
+    applyAppIcon();
 
     const session0 = session.defaultSession;
     session0.setPermissionRequestHandler((wc, permission, callback) => {

@@ -64,6 +64,13 @@ await wait(150);
 check(/AcceptanceFontXYZ/.test(String(app.settings.appearance.interfaceFontFamily||'')),'字体写入 appearance.json');
 app.settings.updateAppearance({ interfaceFontFamily: '' });
 
+/* 自定义应用图标行（桌面） */
+const iconRow=rowByName(tab,/自定义应用图标|Custom app icon/);
+check(!!iconRow,'自定义图标行存在');
+check([...iconRow.querySelectorAll('button')].some((b)=>/选择|Choose/.test(b.textContent||'')),'自定义图标有选择按钮');
+check(!!iconRow.querySelector('.extra-setting-button'),'自定义图标有恢复默认按钮');
+check(require('electron').ipcRenderer.sendSync('get-icon')===null,'初始状态无自定义图标');
+
 /* 主题色恢复默认 */
 const accentRow=rowByName(tab,/主题色|Accent color/);
 check(!!accentRow,'主题色行存在');
