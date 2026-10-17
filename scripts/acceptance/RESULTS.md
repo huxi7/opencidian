@@ -101,3 +101,12 @@ MathJax 独立适配器子代理的41项基础/故障测试见 assets/mathjax/SO
 - 修复：拖动/微移节点时边不跟随（帧渲染缺少 moved→edges 传播）；画布选项默认改为原版的 snapToGrid/snapToObjects 均为 true。
 - 日志 0 未捕获异常；证据 `/tmp/obs-copy-acceptance/canvas-run-result-kOY03b`。
 - 未覆盖：图片导出、CM6 卡片编辑、画布空间索引/可视区域渲染。见 AGENT-STATE.md §15。
+
+## OpenSidian 品牌化与 UI 保真批次（2026-10-17，主 agent 接续）
+
+- 品牌化改名、社区插件安全模式、shell 手感批、设置页行级、外观页、编辑器（代码块复制/LP 嵌入）、page-preview、自定义应用图标均已完成并提交；提交序列见 AGENT-STATE.md §16。
+- 全量回归（20 场景，`--no-screenshot`，20/20 通过；graph 首跑为时序抖动，复跑 40 项通过）：
+  basic-plugins 6、bookmarks、canvas、community 19、core-ribbon 47、dialogs 7、editor 107、editor-switch 2、folding-disabled、graph 40、math、notes 72、notes-settings、settings-ui 22、settings-write、sidebar 93、sidebar-shell 61、vault-hidden、appearance 22、page-preview 13。
+- 汇总日志：`/tmp/opencidian-full-regression.log`（含各场景 logfile 路径）。新增场景：community、settings-ui、appearance、page-preview。
+- 本批修复的关键缺陷：reading.js wiki 链接切片（`[[A]]` 目标丢前 2 字符）、插件 shim 未导入 Keymap、math 场景旧协议域名、字体检测（document.fonts.check 不可靠）、clipboard 未聚焦 rejection。
+- 已知缺口：菜单 `.menu-scroll` 结构、功能区配置弹窗、画布 CM6 卡片编辑/图片导出/对齐参考线、图谱颜色组拖拽、macOS 分发包。详见 AGENT-STATE.md §16。
