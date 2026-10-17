@@ -2,8 +2,9 @@
    settings.css — 设置模态样式。逐字移植自原版 app.css：
    .vertical-tabs-container / .vertical-tab-header / .vertical-tab-nav-item
    .setting-group / .setting-item / .checkbox-container / .setting-hotkey
+   .hotkey-filter / .setting-filter-container / .input-right-decorator
    （app.css 行号：9088-9195 标签页、4743-5120 设置项、9199-9305 开关、
-   7051-7112 下拉、7769-7835 滑块与色块）
+   7051-7112 下拉、7769-7835 滑块与色块、155059-156100 快捷键筛选与装饰图标）
    ========================================================================== */
 
 /* ---------------------------------------------------------- tabs (app.css 9141) */
@@ -466,6 +467,19 @@ body:not(.is-phone) .vertical-tab-nav-item.is-active {
   transform: translateY(-50%);
   top: 50%;
   inset-inline-end: var(--input-icon-inset);
+}
+/* 原版 app.css：装饰图标内边距，搜索框有文本时让位给清除按钮 */
+.input-right-decorator.clickable-icon {
+  padding: var(--size-2-1) var(--size-2-2);
+}
+.input-right-decorator.clickable-icon.is-active {
+  background-color: transparent;
+}
+.search-input-container input:not(:placeholder-shown) {
+  padding-inline-end: 28px;
+}
+.search-input-container input:not(:placeholder-shown) ~ .input-right-decorator {
+  inset-inline-end: calc(var(--input-icon-inset) + 28px);
 }
 .search-input-container.mod-hotkey .clickable-icon {
   padding: var(--size-2-1);
