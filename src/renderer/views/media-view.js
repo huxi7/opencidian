@@ -1,0 +1,70 @@
+/* Media views — image / audio / video / pdf. */
+import { View } from '../core/view.js';
+import { setIcon } from '../core/icons.js';
+
+class MediaView extends View {
+  constructor(leaf, type) {
+    super(leaf);
+    this.type = type;
+    this.file = null;
+    this.icon = type === 'image' ? 'image' : type === 'video' ? 'video' : type === 'audio' ? 'audio-lines' : 'file';
+  }
+  getViewType() { return this.type; }
+  getDisplayText() { return this.file ? this.file.name : this.type; }
+  getIcon() { return this.icon; }
+  getState() { return { file: this.file ? this.file.path : undefined }; }
+  getResourcePath() { return this.app.vault.adapter.getResourcePath(this.file.path); }
+
+  async setState(state) {
+    if (state && state.file) {
+      this.file = this.app.vault.getFileByPath(state.file) || this.app.vault.getAbstractFileByPath(state.file);
+      this.render();
+    }
+  }
+  async onOpen() { this.render(); }
+  onLoadFile(file) { this.file = file; this.render(); }
+  render() {
+    this.contentEl.empty();
+    if (!this.file) {
+      this.contentEl.createDiv({ cls: 'empty-state-title', text: 'File not found' });
+      return;
+    }
+    const url = this.getResourcePath();
+    const container = this.contentEl.createDiv('media-view mod-' + this.type);
+    if (this.type === 'image') {
+      const img = container.createEl('img', { cls: 'image-view' });
+      img.src = url;
+      img.onerror = () => this._showError(container, 'Unable to load image');
+    } else if (this.type === 'video') {
+      const video = container.createEl('video', { cls: 'video-view', attr: { controls: 'controls' } });
+      video.src = url;
+    } else if (this.type === 'audio') {
+      const audio = container.createEl('audio', { cls: 'audio-view', attr: { controls: 'controls' } });
+      audio.src = url;
+      container.createDiv({ cls: 'audio-file-name', text: this.file.name });
+    } else if (this.type === 'pdf') {
+      const frame = container.createEl('iframe', { cls: 'pdf-view' });
+      frame.src = url;
+    }
+  }
+  _showError(container, msg) {
+    container.empty();
+    const err = container.createDiv('media-error');
+    setIcon(err.createDiv('media-error-icon'), 'file-x');
+    err.createDiv('media-error-message', (el) => el.setText(msg));
+  }
+  _fillViewActions(actions) {}
+}
+
+export class ImageView extends MediaView {
+  constructor(leaf) { super(leaf, 'image'); }
+}
+export class VideoView extends MediaView {
+  constructor(leaf) { super(leaf, 'video'); }
+}
+export class AudioView extends MediaView {
+  constructor(leaf) { super(leaf, 'audio'); }
+}
+export class PdfView extends MediaView {
+  constructor(leaf) { super(leaf, 'pdf'); }
+}

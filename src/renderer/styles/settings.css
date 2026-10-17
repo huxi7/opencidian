@@ -1,0 +1,743 @@
+/* ==========================================================================
+   settings.css — 设置模态样式。逐字移植自原版 app.css：
+   .vertical-tabs-container / .vertical-tab-header / .vertical-tab-nav-item
+   .setting-group / .setting-item / .checkbox-container / .setting-hotkey
+   （app.css 行号：9088-9195 标签页、4743-5120 设置项、9199-9305 开关、
+   7051-7112 下拉、7769-7835 滑块与色块）
+   ========================================================================== */
+
+/* ---------------------------------------------------------- tabs (app.css 9141) */
+.vertical-tabs-container {
+  display: flex;
+  flex-grow: 1;
+  min-width: 0;
+}
+.vertical-tab-header {
+  padding: var(--size-4-3);
+  background-color: var(--modal-sidebar-background);
+}
+.modal.mod-settings .vertical-tab-header {
+  flex: 0 0 25%;
+  min-width: 180px;
+  max-width: 250px;
+  overflow: auto;
+  border-inline-end: var(--border-width) solid var(--divider-color);
+}
+.vertical-tab-header-group-items {
+  display: flex;
+  flex-direction: column;
+  --icon-size: var(--icon-s);
+  --icon-stroke: var(--icon-s-stroke-width);
+}
+.vertical-tab-header-group-items[data-section="community-plugins"] .vertical-tab-nav-item-icon {
+  display: none;
+}
+body:not(.is-phone) .vertical-tab-header-group-items {
+  gap: var(--size-2-1);
+}
+.vertical-tab-header-group-title {
+  font-size: var(--font-ui-smaller);
+  color: var(--text-faint);
+  font-weight: var(--font-semibold);
+  padding: var(--size-4-2);
+  user-select: none;
+}
+.vertical-tab-header-group {
+  padding: var(--size-4-3) 0;
+}
+.horizontal-tab-nav-item,
+.vertical-tab-nav-item {
+  padding: var(--size-4-1) var(--size-4-2);
+  margin-bottom: 0;
+  user-select: none;
+  cursor: var(--cursor);
+  font-size: calc(var(--font-ui-small) + 1px);
+  border-radius: var(--radius-s);
+  corner-shape: var(--corner-shape);
+}
+body:not(.is-phone) .horizontal-tab-nav-item.is-active,
+body:not(.is-phone) .vertical-tab-nav-item.is-active {
+  background-color: var(--background-modifier-hover);
+}
+.horizontal-tab-nav-item:hover .vertical-tab-nav-item-icon,
+.vertical-tab-nav-item:hover .vertical-tab-nav-item-icon,
+.horizontal-tab-nav-item.is-active .vertical-tab-nav-item-icon,
+.vertical-tab-nav-item.is-active .vertical-tab-nav-item-icon {
+  color: var(--text-normal);
+}
+@media (hover: hover) {
+  .horizontal-tab-nav-item:hover,
+  .vertical-tab-nav-item:hover {
+    background-color: var(--background-modifier-hover);
+  }
+}
+.vertical-tab-nav-item {
+  display: flex;
+}
+.vertical-tab-nav-item-chevron {
+  display: none;
+}
+.vertical-tab-nav-item-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-s);
+  margin-inline-end: var(--size-4-2);
+  flex-shrink: 0;
+  color: var(--text-muted);
+}
+.vertical-tab-nav-item-title {
+  flex-grow: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.horizontal-tab-content,
+.vertical-tab-content {
+  background-color: var(--background-primary);
+  padding-inline-start: var(--size-4-12);
+  padding-inline-end: var(--size-4-12);
+  container-type: inline-size;
+}
+.vertical-tab-content-container {
+  overflow: hidden;
+  flex-grow: 1;
+  min-width: 0;
+}
+.vertical-tab-content {
+  overflow-y: auto;
+  height: 100%;
+  padding-top: var(--size-4-8);
+  padding-bottom: var(--size-4-16);
+}
+.vertical-tab-content h1 {
+  display: none;
+}
+.vertical-tab-content h2 {
+  font-size: var(--font-ui-medium);
+  font-weight: var(--font-semibold);
+}
+
+/* --------------------------------------------------- setting groups (app.css 4761) */
+.setting-group + .setting-group {
+  margin-top: var(--size-4-6);
+}
+.setting-group .setting-group-search {
+  background-color: var(--setting-items-background);
+  padding: var(--setting-items-padding);
+  border-top-left-radius: var(--setting-items-radius);
+  border-top-right-radius: var(--setting-items-radius);
+  border: var(--setting-items-border-width) solid var(--setting-items-border-color);
+  border-bottom: none;
+}
+.setting-group .setting-group-search + .setting-items {
+  border-top-left-radius: 0;
+  border-top-right-radius: 0;
+  padding-top: 0;
+  border-top: none;
+}
+.setting-group .setting-items {
+  background-color: var(--setting-items-background);
+  padding: var(--setting-items-padding);
+  border-radius: var(--setting-items-radius);
+  corner-shape: var(--corner-shape);
+  border: var(--setting-items-border-width) solid var(--setting-items-border-color);
+}
+.setting-group .setting-items:empty {
+  display: none;
+}
+.setting-group .setting-item {
+  border: none;
+  border-top: var(--border-width) solid var(--background-modifier-border);
+  background-color: transparent;
+  border-radius: 0;
+  padding: var(--size-4-4) 0;
+  margin-bottom: 0;
+}
+.setting-group .setting-item:first-child {
+  padding-top: 0;
+  border-top: none;
+}
+.setting-group .setting-item:last-child {
+  padding-bottom: 0;
+}
+.setting-group .setting-item-heading {
+  padding: 0 var(--size-4-4);
+  flex-wrap: wrap;
+  background-color: transparent;
+  margin-bottom: var(--size-4-4);
+}
+
+/* ---------------------------------------------------- setting items (app.css 4803) */
+.setting-item {
+  display: flex;
+  align-items: center;
+  row-gap: var(--size-4-3);
+  border-radius: var(--setting-items-radius);
+  background-color: var(--setting-items-background);
+  padding: var(--size-4-4);
+  margin-bottom: var(--size-4-2);
+  border: var(--setting-items-border-width) solid var(--setting-items-border-color);
+}
+.setting-item + div > .setting-item-heading,
+.setting-item + .setting-item-heading {
+  margin-top: 0.75em;
+}
+.setting-item > *:first-child {
+  margin-inline-end: var(--size-4-4);
+}
+.setting-item > *:last-child {
+  margin-inline-end: 0;
+}
+.modal:not(.mod-settings) .setting-item:not(.setting-item-heading) {
+  padding: var(--size-4-4) 0;
+  border-top: var(--border-width) solid var(--background-modifier-border);
+  background-color: transparent;
+  border-radius: 0;
+  margin-bottom: 0;
+}
+.modal:not(.mod-settings) .setting-item:not(.setting-item-heading):first-child {
+  border-top: none;
+  padding-top: 0;
+}
+.modal:not(.mod-settings) .setting-item:not(.setting-item-heading):last-child {
+  padding-bottom: 0;
+}
+@container (max-width: 340px) {
+  .setting-item:not(.mod-toggle):not(.setting-item-heading) {
+    flex-direction: column;
+  }
+  .setting-item:not(.mod-toggle):not(.setting-item-heading) .setting-item-info {
+    margin-inline-end: 0;
+    align-self: flex-start;
+  }
+  .setting-item:not(.mod-toggle):not(.setting-item-heading) .setting-item-control {
+    width: 100%;
+    justify-content: flex-start;
+  }
+  .setting-item:not(.mod-toggle):not(.setting-item-heading) .setting-item-control button:not(.clickable-icon),
+  .setting-item:not(.mod-toggle):not(.setting-item-heading) .setting-item-control input,
+  .setting-item:not(.mod-toggle):not(.setting-item-heading) .setting-item-control select {
+    width: 100%;
+    max-width: 100%;
+  }
+}
+.setting-item.mod-cta {
+  justify-content: center;
+}
+.setting-item-heading {
+  border-top: none;
+  background-color: transparent;
+  color: var(--setting-group-heading-color);
+  font-size: var(--setting-group-heading-size);
+  font-weight: var(--setting-group-heading-weight);
+  padding: 0 var(--size-4-4);
+  margin: 0 0 var(--size-4-4);
+}
+.setting-item-heading .setting-item-name {
+  color: var(--setting-group-heading-color);
+  font-size: var(--setting-group-heading-size);
+  font-weight: var(--setting-group-heading-weight);
+}
+.setting-item-heading .setting-item-info {
+  flex-grow: 0;
+  margin-inline-end: 0;
+}
+.setting-item-heading .setting-item-description {
+  font-weight: var(--font-normal);
+  flex-basis: 100%;
+  padding-top: 0;
+  font-size: var(--font-ui-small);
+}
+.vertical-tab-content h1,
+.vertical-tab-content h2,
+.vertical-tab-content h3,
+.vertical-tab-content h4 {
+  color: var(--setting-group-heading-color);
+  font-size: var(--setting-group-heading-size);
+  font-weight: var(--setting-group-heading-weight);
+  padding: 0 var(--size-4-4);
+  margin: 0 0 var(--size-4-4);
+}
+.vertical-tab-content .setting-item ~ :is(h1, h2, h3, h4, .setting-item-heading) {
+  margin-top: var(--size-4-6);
+}
+.setting-item-info {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.setting-item-description {
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+  padding-top: var(--size-4-1);
+  line-height: var(--line-height-tight);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.setting-item-description:empty {
+  display: none;
+}
+.setting-item-description code {
+  font-family: var(--font-monospace);
+  font-size: var(--font-smaller);
+  border-radius: var(--radius-s);
+  corner-shape: var(--corner-shape);
+  padding: 0 3px 2px 3px;
+  position: relative;
+  bottom: 1px;
+}
+.setting-item-description ul {
+  margin: var(--size-4-1) 0;
+  padding-inline-start: var(--size-4-6);
+}
+.setting-item-name {
+  color: var(--text-normal);
+  font-size: var(--font-ui-medium);
+  line-height: var(--line-height-tight);
+  text-overflow: ellipsis;
+  overflow: hidden;
+}
+.setting-item-control {
+  flex: 1 1 auto;
+  text-align: end;
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: var(--size-4-2);
+}
+.setting-item-control:empty {
+  display: none;
+}
+.setting-item-control.mod-vertical {
+  flex-direction: column;
+}
+.setting-item-control.mod-vertical > *:not(:last-child) {
+  margin-bottom: 10px;
+  margin-inline-end: 0;
+}
+.setting-item-control.mod-hotkey {
+  padding-top: 0;
+  cursor: default;
+}
+.setting-item-control.mod-hotkey input {
+  font-family: var(--font-monospace);
+  font-size: var(--font-smaller);
+}
+.setting-item-control.mod-hotkey input:focus {
+  background-color: var(--interactive-accent);
+  color: var(--text-on-accent);
+}
+.setting-item-control select {
+  width: inherit;
+  max-width: 400px;
+}
+
+/* ------------------------------------------------------------ hotkeys (app.css 4980) */
+.setting-command-hotkeys {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--size-4-1);
+}
+.setting-hotkey {
+  font-family: -apple-system, BlinkMacSystemFont, var(--font-monospace);
+  font-size: var(--font-ui-small);
+  background-color: var(--background-modifier-hover);
+  border-radius: var(--radius-s);
+  corner-shape: var(--corner-shape);
+  padding: 2px 4px 2px 8px;
+  align-self: flex-end;
+  white-space: nowrap;
+  display: flex;
+  align-items: center;
+  gap: var(--size-4-1);
+}
+.setting-hotkey.has-conflict {
+  background-color: var(--background-modifier-error);
+  color: var(--text-on-accent);
+}
+@media (hover: hover) {
+  .setting-hotkey.has-conflict:hover {
+    background-color: var(--background-modifier-error-hover);
+  }
+}
+.setting-hotkey.mod-active {
+  background-color: var(--interactive-accent);
+  color: var(--text-on-accent);
+}
+.setting-hotkey.mod-empty {
+  padding-inline-end: var(--size-4-2);
+}
+.setting-password {
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  max-width: 10ch;
+  overflow: hidden;
+}
+.setting-hotkey-icon {
+  display: flex;
+  align-items: center;
+  cursor: var(--cursor);
+  border-radius: 50%;
+  line-height: 1;
+  text-align: center;
+}
+.setting-hotkey-icon .svg-icon {
+  width: 16px;
+  height: 16px;
+  stroke-width: 2px;
+  opacity: 0.6;
+}
+@media (hover: hover) {
+  .setting-hotkey-icon:hover .svg-icon {
+    opacity: 1;
+  }
+}
+@media (hover: hover) {
+  .setting-delete-hotkey:hover {
+    background-color: var(--background-modifier-error);
+    color: var(--text-on-accent);
+  }
+}
+.setting-add-hotkey-button,
+.setting-restore-hotkey-button {
+  padding: var(--size-2-2);
+  border-radius: var(--radius-s);
+  corner-shape: var(--corner-shape);
+  color: var(--text-faint);
+  cursor: var(--cursor);
+  height: calc(var(--icon-l) + var(--size-2-2) + var(--size-2-2));
+}
+.setting-add-hotkey-button.mod-active,
+.setting-restore-hotkey-button.mod-active {
+  color: var(--text-accent);
+}
+@media (hover: hover) {
+  .setting-add-hotkey-button:hover,
+  .setting-restore-hotkey-button:hover {
+    background-color: var(--background-modifier-hover);
+    color: var(--text-normal);
+  }
+}
+.extra-setting-button {
+  line-height: 0;
+}
+.setting-message {
+  font-size: var(--font-ui-small);
+}
+.setting-font-list {
+  margin: 1.5em 0 0.75em 0;
+}
+.hotkey-settings-container {
+  display: flex;
+  flex-direction: column;
+}
+.hotkey-settings-container .setting-item-description {
+  padding-top: 0;
+}
+.hotkey-settings-container hr {
+  margin: 20px 0 10px 0;
+}
+.hotkey-list-container {
+  overflow: auto;
+}
+.hotkey-header-container {
+  justify-content: space-between;
+  padding-bottom: var(--size-4-8);
+  display: flex;
+  flex-wrap: wrap;
+}
+.hotkey-filter {
+  align-items: center;
+  background-color: var(--background-modifier-hover);
+  border-radius: var(--radius-s);
+  corner-shape: var(--corner-shape);
+  display: flex;
+  font-size: var(--font-ui-small);
+  padding: var(--size-4-1) var(--size-4-1) var(--size-4-1) var(--size-4-2);
+  gap: var(--size-2-1);
+}
+.setting-filter-container {
+  display: flex;
+  gap: var(--size-4-2);
+  margin-bottom: var(--size-4-4);
+}
+.input-right-decorator {
+  position: absolute;
+  transform: translateY(-50%);
+  top: 50%;
+  inset-inline-end: var(--input-icon-inset);
+}
+.search-input-container.mod-hotkey .clickable-icon {
+  padding: var(--size-2-1);
+}
+.hotkey-filter-remove-button {
+  cursor: var(--cursor);
+  color: var(--text-muted);
+  padding: var(--size-2-1);
+  border-radius: var(--radius-s);
+  corner-shape: var(--corner-shape);
+  display: flex;
+  align-items: center;
+  --icon-size: var(--icon-xs);
+  --icon-stroke: var(--icon-xs-stroke-width);
+}
+@media (hover: hover) {
+  .hotkey-filter-remove-button:hover {
+    background-color: var(--background-modifier-hover);
+  }
+}
+.setting-progress-bar {
+  width: 100%;
+  height: var(--size-4-2);
+  border-radius: var(--radius-s);
+  background-color: var(--background-secondary);
+  box-shadow: inset 0 0 0 1px var(--background-modifier-border);
+}
+.setting-progress-bar-inner {
+  width: 0;
+  height: 100%;
+  border-radius: var(--radius-s);
+  background-color: var(--interactive-accent);
+}
+
+/* ---------------------------------------------------------- toggle (app.css 9199) */
+.checkbox-container {
+  -webkit-app-region: no-drag;
+  cursor: var(--cursor);
+  background-color: var(--background-modifier-border-hover);
+  border-radius: var(--toggle-radius);
+  display: inline-block;
+  flex-shrink: 0;
+  position: relative;
+  user-select: none;
+  box-shadow: inset 0 4px 10px rgba(0, 0, 0, 0.07), inset 0 0 1px rgba(0, 0, 0, 0.21);
+  transition: box-shadow 0.15s ease-in-out, outline 0.15s ease-in-out, border 0.15s ease-in-out, opacity 0.15s ease-in-out;
+  outline: 0 solid var(--background-modifier-border-focus);
+  width: var(--toggle-s-width);
+  height: calc(var(--toggle-s-thumb-height) + var(--toggle-s-border-width) * 2);
+}
+.checkbox-container input[type='checkbox'] {
+  position: absolute;
+  opacity: 0;
+  left: 0;
+}
+@media (hover: hover) {
+  .checkbox-container:hover {
+    box-shadow: inset 0 6px 20px rgba(0, 0, 0, 0.14), inset 0 0 1px rgba(0, 0, 0, 0.28);
+  }
+}
+.checkbox-container.is-enabled {
+  background-color: var(--interactive-accent);
+}
+.checkbox-container:before {
+  content: '';
+  display: block;
+  position: absolute;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  right: 0;
+  opacity: 0;
+}
+.checkbox-container:after {
+  pointer-events: none;
+  content: '';
+  display: block;
+  position: absolute;
+  background-color: var(--toggle-thumb-color);
+  border-radius: var(--toggle-thumb-radius);
+  transition: transform 0.15s ease-in-out, width 0.1s ease-in-out 0.05s, height 0.1s ease-in-out 0.05s, margin-top 0.1s ease-in-out 0.05s, left 0.1s ease-in-out 0.05s, opacity 0.1s ease-in-out 0.05s;
+  left: 0;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.15);
+}
+.checkbox-container:focus-visible {
+  outline: var(--toggle-s-border-width) solid var(--background-modifier-border-focus);
+}
+.checkbox-container:after {
+  width: var(--toggle-s-thumb-width);
+  height: var(--toggle-s-thumb-height);
+  margin: var(--toggle-s-border-width) 0 0 0;
+  transform: translate3d(var(--toggle-s-border-width), 0, 0);
+}
+.checkbox-container.is-enabled:after {
+  transform: translate3d(calc(var(--toggle-s-width) - var(--toggle-s-thumb-width) - var(--toggle-s-border-width)), 0, 0);
+}
+.checkbox-container:active:after {
+  opacity: var(--toggle-thumb-opacity-active);
+  width: calc(var(--toggle-s-thumb-width) + var(--toggle-s-border-width) * 2);
+  height: calc(var(--toggle-s-thumb-height) + var(--toggle-s-border-width) * 2);
+  margin-top: 0;
+}
+.modal .checkbox-container {
+  width: var(--toggle-width);
+  height: calc(var(--toggle-thumb-height) + var(--toggle-border-width) * 2);
+}
+.modal .checkbox-container:focus-visible {
+  outline: var(--toggle-border-width) solid var(--background-modifier-border-focus);
+}
+.modal .checkbox-container:after {
+  width: var(--toggle-thumb-width);
+  height: var(--toggle-thumb-height);
+  margin: var(--toggle-border-width) 0 0 0;
+  transform: translate3d(var(--toggle-border-width), 0, 0);
+}
+.modal .checkbox-container.is-enabled:after {
+  transform: translate3d(calc(var(--toggle-width) - var(--toggle-thumb-width) - var(--toggle-border-width)), 0, 0);
+}
+.modal .checkbox-container.is-enabled:active:after {
+  left: -4px;
+}
+.modal .checkbox-container:active:after {
+  opacity: var(--toggle-thumb-opacity-active);
+  width: calc(var(--toggle-thumb-width) + var(--toggle-border-width) * 4);
+  height: calc(var(--toggle-thumb-height) + var(--toggle-border-width) * 4);
+  margin-top: calc(var(--toggle-border-width) * -1);
+}
+.checkbox-container.mod-small {
+  width: var(--toggle-s-width);
+  height: calc(var(--toggle-s-thumb-height) + var(--toggle-s-border-width) * 2);
+}
+.checkbox-container.mod-small:after {
+  width: var(--toggle-s-thumb-width);
+  height: var(--toggle-s-thumb-height);
+  margin: var(--toggle-s-border-width) 0 0 0;
+  transform: translate3d(var(--toggle-s-border-width), 0, 0);
+}
+.checkbox-container.mod-small.is-enabled:after {
+  transform: translate3d(calc(var(--toggle-s-width) - var(--toggle-s-thumb-width) - var(--toggle-s-border-width)), 0, 0);
+}
+.checkbox-container.is-disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* --------------------------------------------------------- dropdown (app.css 7051) */
+.dropdown {
+  -webkit-app-region: no-drag;
+  height: var(--input-height);
+  font-size: var(--font-ui-small);
+  font-family: inherit;
+  font-weight: var(--input-font-weight);
+  color: var(--text-normal);
+  line-height: var(--line-height-tight);
+  max-width: 100%;
+  box-sizing: border-box;
+  margin: 0;
+  border: 0;
+  box-shadow: var(--input-shadow);
+  border-radius: var(--input-radius);
+  corner-shape: var(--input-corner-shape);
+  -webkit-appearance: none;
+  appearance: none;
+  background-color: var(--dropdown-background);
+  padding: var(--dropdown-padding);
+  background-repeat: no-repeat, repeat;
+  background-position: var(--dropdown-background-position);
+  background-size: var(--dropdown-background-size);
+  background-blend-mode: hard-light;
+}
+@media (hover: hover) {
+  select:hover,
+  .dropdown:hover {
+    box-shadow: var(--input-shadow-hover);
+    background-color: var(--dropdown-background-hover);
+  }
+}
+select:focus-visible,
+.dropdown:focus-visible {
+  box-shadow: 0 0 0px 3px var(--background-modifier-border-focus);
+  outline: none;
+}
+.dropdown {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 width=%2724%27 height=%2724%27 viewBox=%270 0 24 24%27 fill=%27none%27 stroke=%27%23000%27 opacity=%270.9%27 stroke-width=%272%27 stroke-linecap=%27round%27 stroke-linejoin=%27round%27 %3E%3Cpath d=%27m7 15 5 5 5-5%27/%3E%3Cpath d=%27m7 9 5-5 5 5%27/%3E%3C/svg%3E");
+}
+.theme-dark .dropdown {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 width=%2724%27 height=%2724%27 viewBox=%270 0 24 24%27 fill=%27none%27 stroke=%27%23FFF%27 opacity=%270.6%27 stroke-width=%272%27 stroke-linecap=%27round%27 stroke-linejoin=%27round%27 %3E%3Cpath d=%27m7 15 5 5 5-5%27/%3E%3Cpath d=%27m7 9 5-5 5 5%27/%3E%3C/svg%3E");
+}
+.dropdown option {
+  font-weight: normal;
+  background-color: var(--background-primary);
+}
+
+/* ----------------------------------------------------- slider + color (app.css 7769) */
+input[type='range'] {
+  width: 100px;
+  -webkit-appearance: none;
+  background-color: var(--slider-track-background);
+  border-radius: var(--slider-track-height);
+  height: var(--slider-track-height);
+  padding: 0;
+  outline: none;
+}
+input[type='range']::-webkit-slider-runnable-track {
+  height: 6px;
+  -webkit-appearance: none;
+}
+input[type='range']::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  height: var(--slider-thumb-height);
+  width: var(--slider-thumb-width);
+  border-radius: var(--slider-thumb-radius);
+  cursor: default;
+  background: #FFF;
+  border: var(--slider-thumb-border-width) solid var(--slider-thumb-border-color);
+  position: relative;
+  top: var(--slider-thumb-y);
+  transition: all 0.1s linear;
+  box-shadow: 0 1px 1px 0px rgba(0, 0, 0, 0.05), 0 2px 2px 0px rgba(0, 0, 0, 0.1);
+}
+input[type='range']::-webkit-slider-thumb:hover,
+input[type='range']::-webkit-slider-thumb:active {
+  background: white;
+  border-color: var(--background-modifier-border-focus);
+  box-shadow: 0 1px 2px 0px rgba(0, 0, 0, 0.1), 0 2px 3px 0px rgba(0, 0, 0, 0.2);
+  transition: all 0.1s linear;
+}
+body:not(.is-mobile) input[type=range]:focus {
+  box-shadow: none;
+}
+body:not(.is-mobile) input[type=range]:focus-visible::-webkit-slider-thumb {
+  border-color: var(--background-modifier-border-focus);
+  box-shadow: 0 1px 2px 0px rgba(0, 0, 0, 0.05), 0 2px 3px 0px rgba(0, 0, 0, 0.2), 0 0 0px 2px var(--background-modifier-border-focus);
+}
+input[type="color"] {
+  -webkit-appearance: none;
+  width: calc(var(--swatch-width) + 4px);
+  background-color: transparent;
+  border: none;
+  cursor: var(--cursor);
+  padding: 0;
+}
+input[type="color"]::-webkit-color-swatch-wrapper {
+  padding: 2px;
+}
+input[type="color"]::-webkit-color-swatch {
+  border: 0px;
+  box-shadow: var(--swatch-shadow);
+  border-radius: var(--swatch-radius);
+  height: var(--swatch-height);
+  width: var(--swatch-width);
+  align-self: center;
+}
+@media (hover: hover) {
+  input[type="color"]::-webkit-color-swatch:hover {
+    box-shadow: inset 0 0 0 1px rgba(var(--mono-rgb-100), 0.25), 0 0 0 var(--input-border-width-focus) var(--background-modifier-border-hover);
+  }
+}
+input[type="color"]:focus-visible::-webkit-color-swatch,
+input[type="color"]:focus::-webkit-color-swatch {
+  box-shadow: var(--swatch-shadow), 0 0 0 var(--input-border-width-focus) var(--background-modifier-border-focus);
+}
+select.mod-hidden {
+  display: none;
+}
+
+/* --------------------------------------------------- core plugin list extras */
+.setting-item.mod-toggle {
+  flex-wrap: nowrap;
+}
+.installed-plugins-container {
+  border: var(--border-width) solid var(--background-modifier-border);
+  padding: var(--size-4-3);
+  border-radius: var(--radius-m);
+}

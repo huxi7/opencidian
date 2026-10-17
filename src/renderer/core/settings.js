@@ -1,0 +1,238 @@
+/**
+ * [INPUT]: 依赖 ./events.js 的 Events；Node 内置 fs/path
+ * [OUTPUT]: 导出 Settings 类（load/save/get/set/on('change')/config 合并视图）、DEFAULT_APP_SETTINGS/DEFAULT_APPEARANCE_SETTINGS/DEFAULT_CORE_PLUGINS（逐字对齐原版桌面默认配置）
+ * [POS]: core/ 的配置层，读写 vault 下 .obsidian/*.json，合并保留未知键。workspace.js 与各视图通过它读取用户偏好；config getter 合并 app.json+appearance.json（appearance 优先），对齐原版 vault.config。
+ * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
+ */
+/* Settings: vault .obsidian config files with merge-preserving writes. */
+import { Events } from './events.js';
+
+const fs = require('fs');
+const nodePath = require('path');
+
+export const DEFAULT_APP_SETTINGS = {
+  // —— 原版桌面默认配置（app.js 中 DC 对象逐字对齐）——
+  alwaysUpdateLinks: false,           // 重命名时始终自动更新内部链接
+  spellcheck: true,
+  spellcheckLanguages: null,
+  readableLineLength: true,
+  strictLineBreaks: false,
+  propertiesInDocument: 'visible',    // 'visible' | 'hidden' | 'source'
+  showInlineTitle: true,
+  useMarkdownLinks: false,
+  showUnsupportedFiles: false,
+  autoPairBrackets: true,
+  autoPairMarkdown: true,
+  smartIndentList: true,
+  foldHeading: true,
+  foldIndent: true,
+  showLineNumber: false,
+  showIndentGuide: true,
+  useTab: true,
+  tabSize: 4,
+  rightToLeft: false,
+  autoConvertHtml: true,
+  vimMode: false,
+  livePreview: true,
+  attachmentFolderPath: '/',          // '/' 根目录 | './' 当前文件夹 | './name' 子文件夹 | 'name' 指定文件夹
+  newFileLocation: 'root',            // 'root' | 'folder' | 'current'
+  newFileFolderPath: '/',
+  newLinkFormat: 'shortest',          // 'shortest' | 'relative' | 'absolute'
+  userIgnoreFilters: null,
+  focusNewTab: true,
+  defaultViewMode: 'source',          // 'source'（编辑视图） | 'preview'（阅读视图）
+  promptDelete: true,
+  trashOption: 'system',              // 'system' | 'local' | 'none'
+  deleteUnlinkedAttachments: 'ask',   // 'ask' | 'always' | 'never'
+  openBehavior: '',                   // '' | 'new' | 'daily' | 'file:<path>'
+  pdfExportSettings: { pageSize: 'Letter', landscape: false, margin: '0', downscalePercent: 100 },
+  uriCallbacks: false,
+  // 1.12 起外观键实际存 appearance.json（见 DEFAULT_APPEARANCE_SETTINGS），此处保留同名兜底
+  showViewHeader: true,
+  showRibbon: true,
+  nativeMenus: null,
+  // —— 本复刻的兼容扩展 ——
+  showStatusBar: true,
+  folderNoteLocation: '',
+  showTabs: true,
+  newFileLocationMobile: 'root',
+};
+
+export const DEFAULT_APPEARANCE_SETTINGS = {
+  // 原版 appearance.json 同步键（app.js 的同步键列表）
+  accentColor: '',
+  theme: 'obsidian',                  // 'obsidian' | 'moonstone' | 'system'
+  cssTheme: '',
+  enabledCssSnippets: [],
+  showViewHeader: true,
+  showRibbon: true,
+  nativeMenus: null,                  // null = 跟随平台（macOS 用原生菜单）
+  translucency: false,
+  textFontFamily: '',
+  interfaceFontFamily: '',
+  monospaceFontFamily: '',
+  baseFontSize: 16,
+  baseFontSizeAction: true,
+  slidingSidebar: true,
+  floatingNavigation: true,
+  autoFullScreen: true,
+  zoomLevel: 0,                       // 复刻扩展：界面缩放级别
+  // —— 兼容旧键（读取时兜底）——
+  translucentWindow: false,
+  browserZoom: 1,
+  textFontSize: 16,
+  monospaceFontSize: 13,
+  showStatusBar: true,
+};
+
+export const DEFAULT_CORE_PLUGINS = {
+  'file-explorer': true,
+  'global-search': true,
+  'switcher': true,
+  graph: true,
+  backlink: true,
+  canvas: true,
+  'outgoing-link': true,
+  'tag-pane': true,
+  'page-preview': true,
+  'daily-notes': true,
+  templates: true,
+  'note-composer': true,
+  'command-palette': true,
+  'editor-status': true,
+  bookmarks: true,
+  outline: true,
+  'word-count': true,
+  'file-recovery': true,
+  'random-note': false,
+  'zk-prefixer': false,
+  workspaces: false,
+  slides: false,
+  'audio-recorder': false,
+  'markdown-importer': false,
+  'format-converter': false,
+  'web-viewer': false,
+  publish: false,
+  sync: false,
+  bases: false,
+  'unique-note-creator': false,
+};
+
+export class Settings extends Events {
+  constructor(app) {
+    super();
+    this.app = app;
+    this.dir = '';
+    this.appSettings = { ...DEFAULT_APP_SETTINGS };
+    this.appearance = { ...DEFAULT_APPEARANCE_SETTINGS };
+    this.hotkeys = {};
+    this.corePlugins = { ...DEFAULT_CORE_PLUGINS };
+    this.communityPlugins = [];
+  }
+
+  setDir(vaultPath) {
+    this.dir = nodePath.join(vaultPath, '.obsidian');
+  }
+
+  /** 合并配置视图（对齐原版 vault.config）：app.json 与 appearance.json 合并，appearance 优先。 */
+  get config() {
+    return { ...this.appSettings, ...this.appearance };
+  }
+
+  readJson(name) {
+    try {
+      const raw = fs.readFileSync(nodePath.join(this.dir, name), 'utf8');
+      const data = JSON.parse(raw);
+      if (data && typeof data === 'object') return data;
+    } catch (e) {}
+    return null;
+  }
+
+  writeJsonMerged(name, patch) {
+    let current = this.readJson(name) || {};
+    if (Array.isArray(current) || typeof current !== 'object') current = {};
+    const merged = { ...current, ...patch };
+    try {
+      fs.mkdirSync(this.dir, { recursive: true });
+      fs.writeFileSync(nodePath.join(this.dir, name), JSON.stringify(merged));
+    } catch (e) {
+      console.error('Failed to write settings', name, e);
+    }
+  }
+
+  load() {
+    const appFile = this.readJson('app.json');
+    if (appFile) this.appSettings = { ...DEFAULT_APP_SETTINGS, ...appFile };
+    const appearance = this.readJson('appearance.json');
+    if (appearance) this.appearance = { ...DEFAULT_APPEARANCE_SETTINGS, ...appearance };
+    const hotkeys = this.readJson('hotkeys.json');
+    if (hotkeys && typeof hotkeys === 'object') this.hotkeys = hotkeys;
+    const core = this.readJson('core-plugins.json');
+    if (core) {
+      if (Array.isArray(core)) {
+        // legacy format: array of enabled plugin ids
+        const map = {};
+        for (const id of core) map[id] = true;
+        this.corePlugins = { ...DEFAULT_CORE_PLUGINS, ...map };
+      } else if (typeof core === 'object') {
+        // object format may only contain enabled:true entries
+        this.corePlugins = { ...DEFAULT_CORE_PLUGINS, ...core };
+      }
+    }
+    const community = this.readJson('community-plugins.json');
+    if (Array.isArray(community)) this.communityPlugins = community;
+    this.trigger('change');
+  }
+
+  updateAppSettings(patch) {
+    Object.assign(this.appSettings, patch);
+    this.writeJsonMerged('app.json', patch);
+    this.trigger('change');
+    this.app.workspace && this.app.workspace.trigger('settings-changed');
+  }
+
+  updateAppearance(patch) {
+    Object.assign(this.appearance, patch);
+    this.writeJsonMerged('appearance.json', patch);
+    this.trigger('change');
+    this.app.workspace && this.app.workspace.trigger('settings-changed');
+  }
+
+  setHotkey(commandId, hotkeys) {
+    if (hotkeys && hotkeys.length) this.hotkeys[commandId] = hotkeys;
+    else delete this.hotkeys[commandId];
+    this.writeJsonMerged('hotkeys.json', { [commandId]: hotkeys });
+    if (!hotkeys || !hotkeys.length) {
+      // remove entry entirely
+      const cur = this.readJson('hotkeys.json') || {};
+      delete cur[commandId];
+      try { fs.writeFileSync(nodePath.join(this.dir, 'hotkeys.json'), JSON.stringify(cur)); } catch (e) {}
+    }
+    this.trigger('hotkeys-changed');
+  }
+
+  setCorePluginEnabled(id, enabled) {
+    this.corePlugins[id] = enabled;
+    this.writeJsonMerged('core-plugins.json', { [id]: enabled });
+    this.trigger('change');
+  }
+
+  setCommunityPlugins(list) {
+    this.communityPlugins = list;
+    try {
+      fs.writeFileSync(nodePath.join(this.dir, 'community-plugins.json'), JSON.stringify(list));
+    } catch (e) {}
+    this.trigger('change');
+  }
+
+  // per-plugin data files (data.json inside plugin folder for community, or provided name)
+  loadPluginData(name, defaults = {}) {
+    const data = this.readJson(name);
+    return data ? { ...defaults, ...data } : { ...defaults };
+  }
+
+  savePluginData(name, data) {
+    this.writeJsonMerged(name, data);
+    this.trigger('change');
+  }
+}

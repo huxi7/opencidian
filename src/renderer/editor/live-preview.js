@@ -1,0 +1,719 @@
+/**
+ * [INPUT]: 依赖 @codemirror/view 的 Decoration/ViewPlugin/WidgetType/EditorView、@codemirror/state 的 RangeSet/Facet/StateField/StateEffect；依赖 ../markdown/reading.js 的 getMarkdownIt/attachMarkdownInteractions/renderMermaidBlocks；依赖 ../markdown/properties.js 的 buildMetadataContainer；依赖 ../core/metadata.js 的 parseFrontmatterText；依赖 ../core/ipc.js 的 Desktop
+ * [OUTPUT]: 导出 livePreviewExtension(app, getSourcePath)，返回 [appFacet, sourcePathFacet, fmSourceField, blockLayerField, ViewPlugin]
+ * [POS]: editor/ 的实时预览装饰层，由 editor.js 经 _livePreviewCompartment 装载/卸载。行内装饰走 ViewPlugin；块级 widget（属性面板/表格/callout/块级数学/代码块/mermaid）必须走 StateField，因为 CM6 禁止 ViewPlugin 提供 block 装饰。
+ * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
+ */
+/*
+ * Live preview for the markdown editor — a CodeMirror 6 layer that:
+ *  - hides markdown syntax the cursor is not inside
+ *  - renders checkboxes, bullets, images, math, hr and links as widgets
+ *  - renders block widgets (frontmatter properties, tables, callouts, math,
+ *    fenced code blocks, mermaid) from a StateField: CM6 only allows block
+ *    decorations via state fields
+ *  - styles headings, quotes, code blocks and lists like the original app
+ */
+import { Decoration, ViewPlugin, WidgetType, EditorView } from '@codemirror/view';
+import { RangeSet, Facet, StateField, StateEffect } from '@codemirror/state';
+import { Desktop } from '../core/ipc.js';
+import { getMarkdownIt, attachMarkdownInteractions, renderMermaidBlocks } from '../markdown/reading.js';
+import { buildMetadataContainer } from '../markdown/properties.js';
+import { parseFrontmatterText } from '../core/metadata.js';
+
+const appFacet = Facet.define({ combine: (values) => values[0] });
+const sourcePathFacet = Facet.define({ combine: (values) => values[0] });
+
+// ---------------------------------------------------------------------------
+// Inline widgets
+// ---------------------------------------------------------------------------
+class CheckboxWidget extends WidgetType {
+  constructor(checked, pos) { super(); this.checked = checked; this.pos = pos; }
+  eq(other) { return other.checked === this.checked && other.pos === this.pos; }
+  toDOM(view) {
+    const input = createEl('input', { type: 'checkbox', cls: 'task-list-item-checkbox' });
+    input.checked = this.checked;
+    input.onmousedown = (e) => {
+      e.preventDefault();
+      const insert = this.checked ? '[ ]' : '[x]';
+      view.dispatch({ changes: { from: this.pos, to: this.pos + 3, insert } });
+    };
+    return input;
+  }
+  ignoreEvent() { return false; }
+}
+
+class BulletWidget extends WidgetType {
+  constructor(ordered, number) { super(); this.ordered = ordered; this.number = number; }
+  eq(other) { return other.ordered === this.ordered && other.number === this.number; }
+  toDOM() {
+    const span = createSpan({ cls: this.ordered ? 'cm-formatting-list cm-formatting-list-ol' : 'cm-formatting-list cm-formatting-list-ul' });
+    span.setText(this.ordered ? `${this.number}.` : '');
+    return span;
+  }
+}
+
+class ImageWidget extends WidgetType {
+  constructor(src, alt) { super(); this.src = src; this.alt = alt; }
+  eq(other) { return other.src === this.src && other.alt === this.alt; }
+  toDOM() {
+    const wrap = createDiv({ cls: 'image-embed' });
+    const img = wrap.createEl('img', { cls: 'cm-inline-image' });
+    img.src = this.src;
+    img.alt = this.alt || '';
+    return wrap;
+  }
+  ignoreEvent() { return false; }
+}
+
+class MathWidget extends WidgetType {
+  constructor(tex, display) { super(); this.tex = tex; this.display = display; }
+  eq(other) { return other.tex === this.tex && other.display === this.display; }
+  toDOM() {
+    const el = createSpan({ cls: this.display ? 'math math-block' : 'math math-inline' });
+    try {
+      const katex = require('katex');
+      katex.render(this.tex, el, { throwOnError: false, displayMode: this.display });
+    } catch (e) { el.setText(this.tex); }
+    return el;
+  }
+}
+
+class HrWidget extends WidgetType {
+  toDOM() { return createEl('hr', { cls: 'cm-hr' }); }
+}
+
+class LangWidget extends WidgetType {
+  constructor(lang) { super(); this.lang = lang; }
+  eq(o) { return o.lang === this.lang; }
+  toDOM() {
+    const el = createSpan({ cls: 'cm-codeblock-lang' });
+    el.setText(this.lang || '');
+    return el;
+  }
+}
+
+class LinkWidget extends WidgetType {
+  constructor(text, target, embed, sourcePath, external) {
+    super();
+    this.text = text; this.target = target; this.embed = embed;
+    this.sourcePath = sourcePath || ''; this.external = !!external;
+  }
+  eq(other) {
+    return other.text === this.text && other.target === this.target &&
+      other.embed === this.embed && other.sourcePath === this.sourcePath && other.external === this.external;
+  }
+  toDOM(view) {
+    const span = createSpan({ cls: this.embed ? 'cm-wikilink cm-wikilink-embed' : this.external ? 'cm-url cm-external-link' : 'cm-wikilink' });
+    span.setText(this.text);
+    span.setAttr('data-href', this.target);
+    span.onclick = (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const app = view.state.facet(appFacet);
+      if (!app) return;
+      if (this.external) {
+        Desktop.openExternal(this.target);
+        return;
+      }
+      const newLeaf = (e.metaKey || e.ctrlKey) ? 'tab' : this.embed ? 'tab' : false;
+      app.workspace.openLinkText(this.target, this.sourcePath, newLeaf);
+    };
+    return span;
+  }
+  ignoreEvent() { return false; }
+}
+
+// ---------------------------------------------------------------------------
+// Block widgets
+// ---------------------------------------------------------------------------
+class MathBlockWidget extends WidgetType {
+  constructor(tex) { super(); this.tex = tex; }
+  eq(o) { return o.tex === this.tex; }
+  toDOM() {
+    const el = createDiv({ cls: 'math math-block' });
+    try {
+      const katex = require('katex');
+      katex.render(this.tex, el, { throwOnError: false, displayMode: true });
+    } catch (e) { el.setText(this.tex); }
+    return el;
+  }
+}
+
+/** 实时预览代码块 widget：光标不在块内时以 <pre><code> 呈现（对齐阅读视图样式）。 */
+class CodeBlockWidget extends WidgetType {
+  constructor(lang, code) { super(); this.lang = lang; this.code = code; }
+  eq(other) { return other.lang === this.lang && other.code === this.code; }
+  toDOM() {
+    const pre = createEl('pre', { cls: 'lp-codeblock' });
+    const code = pre.createEl('code', { cls: 'language-' + (this.lang || 'plain') });
+    if (this.lang) code.setAttr('data-lang', this.lang);
+    code.setText(this.code);
+    return pre;
+  }
+  ignoreEvent() { return false; }
+}
+
+/** 实时预览 mermaid widget：惰性渲染为 SVG（复用阅读视图的 renderMermaidBlocks）。 */
+class MermaidWidget extends WidgetType {
+  constructor(code) { super(); this.code = code; }
+  eq(other) { return other.code === this.code; }
+  toDOM() {
+    const wrap = createDiv({ cls: 'cm-lp-mermaid' });
+    const el = wrap.createDiv({ cls: 'mermaid-source' });
+    el.setAttr('data-source', this.code);
+    renderMermaidBlocks(wrap).catch(() => {});
+    return wrap;
+  }
+  ignoreEvent() { return false; }
+}
+
+class TableWidget extends WidgetType {
+  constructor(text, sourcePath) { super(); this.text = text; this.sourcePath = sourcePath || ''; }
+  eq(o) { return o.text === this.text; }
+  toDOM(view) {
+    const app = view.state.facet(appFacet);
+    const wrap = createDiv({ cls: 'cm-embed-block cm-table-widget markdown-rendered' });
+    try {
+      wrap.innerHTML = getMarkdownIt().render(this.text, { app, sourcePath: this.sourcePath, depth: 0 });
+      // original DOM: .cm-table-widget > .table-wrapper > table (drag handles omitted)
+      const tbl = wrap.querySelector('table');
+      if (tbl) {
+        const tableWrapper = createDiv({ cls: 'table-wrapper' });
+        tableWrapper.appendChild(tbl);
+        wrap.appendChild(tableWrapper);
+      }
+    } catch (e) { console.error('table widget render failed', e); wrap.setText(this.text); }
+    if (app) attachMarkdownInteractions(app, wrap, () => this.sourcePath);
+    return wrap;
+  }
+}
+
+class CalloutWidget extends WidgetType {
+  constructor(text, sourcePath) { super(); this.text = text; this.sourcePath = sourcePath || ''; }
+  eq(o) { return o.text === this.text; }
+  toDOM(view) {
+    const app = view.state.facet(appFacet);
+    const wrap = createDiv({ cls: 'cm-callout' });
+    try {
+      wrap.innerHTML = getMarkdownIt().render(this.text, { app, sourcePath: this.sourcePath, depth: 0 });
+    } catch (e) { console.error('callout widget render failed', e); wrap.setText(this.text); }
+    if (app) attachMarkdownInteractions(app, wrap, () => this.sourcePath);
+    return wrap;
+  }
+  ignoreEvent(e) {
+    // let the fold chevron toggle; everything else goes to the editor (cursor in)
+    return !(e.target && e.target.closest && e.target.closest('.callout-fold'));
+  }
+}
+
+class PropertiesWidget extends WidgetType {
+  constructor(app, file, fmText, from) {
+    super();
+    this.app = app; this.file = file; this.fmText = fmText; this.from = from;
+  }
+  eq(o) { return o.file === this.file && o.fmText === this.fmText; }
+  toDOM(view) {
+    const parsed = parseFrontmatterText(this.fmText);
+    const el = buildMetadataContainer(this.app, this.file, {
+      editable: true,
+      showAddButton: true,
+      frontmatter: parsed.frontmatter,
+      fmError: parsed.error,
+      onShowSource: () => {
+        view.dispatch({ effects: fmSourceEffect.of(true), selection: { anchor: this.from }, scrollIntoView: true });
+        view.focus();
+      },
+    });
+    if (!el) return createDiv('metadata-container');
+    return el;
+  }
+  ignoreEvent() { return false; }
+}
+
+// frontmatter raw-source flag: set by the properties widget "show source"
+// button, cleared automatically when the cursor leaves the frontmatter
+const fmSourceEffect = StateEffect.define();
+
+const fmSourceField = StateField.define({
+  create: () => false,
+  update(value, tr) {
+    for (const e of tr.effects) if (e.is(fmSourceEffect)) value = !!e.value;
+    if (value) {
+      const fm = classifyBlocks(tr.state.doc).frontmatter;
+      const sel = tr.state.selection.ranges;
+      const inside = fm && sel.some((r) => r.from <= fm.to && r.to >= fm.from);
+      if (!inside) value = false;
+    }
+    return value;
+  },
+});
+
+// ---------------------------------------------------------------------------
+// Block classification (whole-document scan, cached per Text instance)
+// ---------------------------------------------------------------------------
+const RE_FENCE_OPEN = /^\s{0,3}(`{3,}|~{3,})/;
+const RE_FENCE_INFO = /^\s{0,3}(`{3,}|~{3,})\s*([^\s`]*)/;
+const RE_MATH_ONLY = /^\s{0,3}\$\$\s*$/;
+const RE_MATH_SINGLE = /^\s{0,3}\$\$(.+?)\$\$\s*$/;
+const RE_TABLE_ROW = /^\s{0,3}\|/;
+const RE_TABLE_DELIM = /^\s{0,3}\|?[\s:|-]*-[\s:|-]*\|?\s*$/;
+const RE_CALLOUT = /^\s{0,3}>\s?\[!([\w-]+)\]([+-])?\s*(.*)$/;
+const RE_QUOTE_LINE = /^\s{0,3}>/;
+
+const blocksCache = new WeakMap();
+
+function classifyBlocks(doc) {
+  const hit = blocksCache.get(doc);
+  if (hit) return hit;
+  const out = { frontmatter: null, blocks: [] };
+  const total = doc.lines;
+
+  if (total > 0 && doc.line(1).text.trim() === '---') {
+    for (let n = 2; n <= Math.min(total, 201); n++) {
+      const tr = doc.line(n).text.trim();
+      if (tr === '---' || tr === '...') {
+        out.frontmatter = { startLine: 1, endLine: n, from: 0, to: doc.line(n).to };
+        break;
+      }
+    }
+  }
+  const inFm = (n) => out.frontmatter && n >= out.frontmatter.startLine && n <= out.frontmatter.endLine;
+
+  let fence = null; // { marker, len, startLine, lang }
+  for (let n = 1; n <= total; n++) {
+    if (inFm(n)) continue;
+    const line = doc.line(n);
+    const text = line.text;
+    const fm = text.match(RE_FENCE_INFO);
+    if (fence) {
+      if (fm && fm[1][0] === fence.marker && fm[1].length >= fence.len) {
+        out.blocks.push({
+          kind: 'code',
+          startLine: fence.startLine, endLine: n,
+          from: doc.line(fence.startLine).from, to: line.to,
+          lang: fence.lang,
+          code: doc.sliceString(doc.line(fence.startLine).to, line.from).replace(/\n$/, ''),
+        });
+        fence = null;
+      }
+      continue;
+    }
+    if (fm) { fence = { marker: fm[1][0], len: fm[1].length, startLine: n, lang: (fm[2] || '').toLowerCase() }; continue; }
+
+    // ---- block math: $$ ... $$
+    if (RE_MATH_ONLY.test(text)) {
+      for (let k = n + 1; k <= total; k++) {
+        if (inFm(k)) break;
+        if (RE_MATH_ONLY.test(doc.line(k).text)) {
+          out.blocks.push({
+            kind: 'math', startLine: n, endLine: k,
+            from: line.from, to: doc.line(k).to,
+            tex: doc.sliceString(line.to, doc.line(k).from).trim(),
+          });
+          n = k;
+          break;
+        }
+      }
+      continue;
+    }
+    const ms = text.match(RE_MATH_SINGLE);
+    if (ms) {
+      out.blocks.push({ kind: 'math', startLine: n, endLine: n, from: line.from, to: line.to, tex: ms[1] });
+      continue;
+    }
+
+    // ---- table: header row + delimiter row
+    if (RE_TABLE_ROW.test(text) && n + 1 <= total
+      && RE_TABLE_DELIM.test(doc.line(n + 1).text) && doc.line(n + 1).text.includes('-')) {
+      let endN = n + 1;
+      while (endN + 1 <= total && RE_TABLE_ROW.test(doc.line(endN + 1).text)
+        && !RE_FENCE_OPEN.test(doc.line(endN + 1).text)) endN++;
+      out.blocks.push({ kind: 'table', startLine: n, endLine: endN, from: line.from, to: doc.line(endN).to });
+      n = endN;
+      continue;
+    }
+
+    // ---- callout: > [!type] ...
+    if (RE_CALLOUT.test(text)) {
+      let endN = n;
+      while (endN + 1 <= total && RE_QUOTE_LINE.test(doc.line(endN + 1).text)) endN++;
+      out.blocks.push({ kind: 'callout', startLine: n, endLine: endN, from: line.from, to: doc.line(endN).to });
+      n = endN;
+      continue;
+    }
+  }
+
+  blocksCache.set(doc, out);
+  return out;
+}
+
+// ---------------------------------------------------------------------------
+// Block decoration layer (StateField — block widgets are only legal here)
+// ---------------------------------------------------------------------------
+function computeBlockLayer(state) {
+  const app = state.facet(appFacet);
+  const getPath = state.facet(sourcePathFacet);
+  const sourcePath = getPath ? getPath() : '';
+  const doc = state.doc;
+  const { frontmatter, blocks } = classifyBlocks(doc);
+  const sel = state.selection.ranges;
+  const touched = (from, to) => {
+    for (const r of sel) if (r.from <= to && r.to >= from) return true;
+    return false;
+  };
+
+  const decorations = [];
+  const coveredLines = new Set();
+  const settings = (app && app.settings && app.settings.appSettings) || {};
+  const propsMode = settings.propertiesInDocument || 'visible';
+
+  if (frontmatter) {
+    for (let n = frontmatter.startLine; n <= frontmatter.endLine; n++) coveredLines.add(n);
+    const file = app && app.vault ? app.vault.getFileByPath(sourcePath) : null;
+    const fmRaw = state.field(fmSourceField, false);
+    const showWidget = propsMode === 'visible' && file && !fmRaw;
+    if (propsMode === 'hidden') {
+      // 隐藏模式：属性不显示（源码仍在文件中，切换为“源码”模式可编辑）
+      decorations.push(Decoration.replace({ block: true }).range(frontmatter.from, frontmatter.to));
+    } else if (showWidget) {
+      const fmText = doc.sliceString(frontmatter.from, frontmatter.to);
+      decorations.push(Decoration.replace({
+        widget: new PropertiesWidget(app, file, fmText, frontmatter.from), block: true,
+      }).range(frontmatter.from, frontmatter.to));
+    } else {
+      for (let n = frontmatter.startLine; n <= frontmatter.endLine; n++) {
+        decorations.push(Decoration.line({ class: 'cm-hmd-frontmatter' }).range(doc.line(n).from));
+      }
+    }
+  }
+
+  for (const b of blocks) {
+    if (touched(b.from, b.to)) continue;
+    let widget = null;
+    if (b.kind === 'math') widget = new MathBlockWidget(b.tex);
+    else if (b.kind === 'table') widget = new TableWidget(doc.sliceString(b.from, b.to), sourcePath);
+    else if (b.kind === 'callout') widget = new CalloutWidget(doc.sliceString(b.from, b.to), sourcePath);
+    else if (b.kind === 'code') widget = b.lang === 'mermaid' ? new MermaidWidget(b.code) : new CodeBlockWidget(b.lang, b.code);
+    if (!widget) continue;
+    for (let n = b.startLine; n <= b.endLine; n++) coveredLines.add(n);
+    decorations.push(Decoration.replace({ widget, block: true }).range(b.from, b.to));
+  }
+
+  return { decorations: Decoration.set(decorations, true), coveredLines };
+}
+
+const blockLayerField = StateField.define({
+  create(state) { return computeBlockLayer(state); },
+  update(value, tr) {
+    if (tr.docChanged || tr.selection || tr.effects.length) return computeBlockLayer(tr.state);
+    return value;
+  },
+  provide: (f) => EditorView.decorations.from(f, (v) => v.decorations),
+});
+
+// ---------------------------------------------------------------------------
+// Line classification helpers
+// ---------------------------------------------------------------------------
+const RE_HEADING = /^(\s{0,3})(#{1,6})(\s+)(.*)$/;
+const RE_QUOTE = /^(\s{0,3}(?:>\s?)+)(.*)$/;
+const RE_TASK = /^(\s*(?:[-*+]|\d+[.)])\s+)\[([ xX])\]([ \t]?)/;
+const RE_BULLET = /^(\s*)([-*+])(\s+)/;
+const RE_ORDERED = /^(\s*)(\d+)([.)])(\s+)/;
+const RE_HR = /^\s{0,3}(?:(?:-\s*){3,}|(?:\*\s*){3,}|(?:_\s*){3,})$/;
+
+function computeFenceLines(doc) {
+  const map = new Map();
+  let inFence = false;
+  let marker = '';
+  for (let i = 1; i <= doc.lines; i++) {
+    const text = doc.line(i).text;
+    const m = text.match(RE_FENCE_OPEN);
+    if (!inFence) {
+      if (m) { inFence = true; marker = m[1][0]; map.set(i - 1, 'begin'); }
+    } else {
+      if (m && m[1][0] === marker) { inFence = false; marker = ''; map.set(i - 1, 'end'); }
+      else map.set(i - 1, 'body');
+    }
+  }
+  return map;
+}
+
+function lineClass(line, cls) {
+  return Decoration.line({ class: cls }).range(line.from);
+}
+
+// ---------------------------------------------------------------------------
+// Build inline decorations (ViewPlugin — no block decorations allowed here)
+// ---------------------------------------------------------------------------
+function buildDecorations(view, app) {
+  const doc = view.state.doc;
+  const decorations = [];
+  const sel = view.state.selection.ranges;
+  const touches = (from, to) => {
+    for (const r of sel) {
+      if (r.from <= to && r.to >= from) return true;
+    }
+    return false;
+  };
+
+  const field = view.state.field(blockLayerField, false);
+  const covered = field ? field.coveredLines : new Set();
+
+  const fenceLines = view.__fenceCacheDoc === doc ? view.__fenceCache : computeFenceLines(doc);
+  view.__fenceCache = fenceLines;
+  view.__fenceCacheDoc = doc;
+  const getPath = view.state.facet(sourcePathFacet);
+  const sourcePath = getPath ? getPath() : '';
+
+  for (const { from, to } of view.visibleRanges) {
+    const startLineNo = doc.lineAt(from).number;
+    const endLineNo = doc.lineAt(to).number;
+    for (let n = startLineNo; n <= endLineNo; n++) {
+      if (covered.has(n)) continue;
+      const line = doc.line(n);
+      const l = n - 1;
+      const text = line.text;
+      const lineStart = line.from;
+      if (text) {
+        // ---- fenced code blocks
+        const fenceState = fenceLines.get(l);
+        if (fenceState) {
+          decorations.push(lineClass(line, 'HyperMD-codeblock'));
+          if (fenceState === 'begin') {
+            decorations.push(lineClass(line, 'HyperMD-codeblock-begin HyperMD-codeblock-bg'));
+            if (!touches(lineStart, lineStart + text.length)) {
+              const m = text.match(RE_FENCE_OPEN);
+              const lang = text.slice(m[1].length).trim().split(/\s+/)[0] || '';
+              decorations.push(Decoration.replace({}).range(lineStart, lineStart + text.length));
+              decorations.push(Decoration.widget({ widget: new LangWidget(lang), side: 1 }).range(lineStart));
+            }
+          } else if (fenceState === 'end') {
+            decorations.push(lineClass(line, 'HyperMD-codeblock-end HyperMD-codeblock-bg'));
+            if (!touches(lineStart, lineStart + text.length)) {
+              decorations.push(Decoration.replace({}).range(lineStart, lineStart + text.length));
+            }
+          } else {
+            decorations.push(lineClass(line, 'HyperMD-codeblock-bg'));
+          }
+        } else {
+          // ---- headings
+          const hm = text.match(RE_HEADING);
+          if (hm) {
+            const level = hm[2].length;
+            decorations.push(lineClass(line, `HyperMD-header HyperMD-header-${level} cm-header cm-header-${level}`));
+            const markFrom = lineStart + hm[1].length;
+            const markTo = markFrom + hm[2].length + hm[3].length;
+            if (!touches(markFrom, markTo)) {
+              decorations.push(Decoration.replace({}).range(markFrom, markTo));
+            }
+          }
+
+          // ---- blockquote
+          const qm = text.match(RE_QUOTE);
+          if (qm && qm[1]) {
+            decorations.push(lineClass(line, 'HyperMD-quote'));
+            const markTo = lineStart + qm[1].length;
+            if (!touches(lineStart, markTo)) {
+              decorations.push(Decoration.replace({}).range(lineStart, markTo));
+            }
+          }
+
+          // ---- horizontal rule
+          if (RE_HR.test(text) && !RE_HEADING.test(text)) {
+            if (!touches(lineStart, lineStart + text.length)) {
+              decorations.push(Decoration.replace({ widget: new HrWidget() }).range(lineStart, lineStart + text.length));
+            }
+            continue;
+          }
+
+          // ---- tasks & bullets
+          const tm = text.match(RE_TASK);
+          if (tm) {
+            const cbStart = lineStart + tm[1].length;
+            decorations.push(Decoration.replace({ widget: new CheckboxWidget(tm[2].toLowerCase() === 'x', cbStart) }).range(cbStart, cbStart + 3));
+            decorations.push(lineClass(line, 'HyperMD-task-line'));
+            bulletDecoration(decorations, line, text, lineStart, touches, tm[1].length);
+          } else {
+            bulletDecoration(decorations, line, text, lineStart, touches, 0);
+          }
+
+          // ---- inline formats
+          applyInline(decorations, app, line, text, lineStart, sourcePath, touches);
+        }
+      }
+    }
+  }
+  return Decoration.set(decorations, true);
+}
+
+function bulletDecoration(decorations, line, text, lineStart, touches, offset) {
+  const sub = text.slice(offset);
+  if (RE_HR.test(text)) return;
+  const om = sub.match(RE_ORDERED);
+  if (om) {
+    decorations.push(lineClass(line, 'HyperMD-list-line cm-list-line-ol'));
+    const from = lineStart + offset + om[1].length;
+    const to = from + om[2].length + 1;
+    if (!touches(from, to)) {
+      decorations.push(Decoration.replace({ widget: new BulletWidget(true, om[2]) }).range(from, to));
+    }
+    return;
+  }
+  const bm = sub.match(RE_BULLET);
+  if (bm) {
+    decorations.push(lineClass(line, 'HyperMD-list-line cm-list-line-ul'));
+    const from = lineStart + offset + bm[1].length;
+    if (!touches(from, from + 1)) {
+      decorations.push(Decoration.replace({ widget: new BulletWidget(false) }).range(from, from + 1));
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Inline patterns
+// ---------------------------------------------------------------------------
+function resolveImageSrc(app, url, sourcePath) {
+  if (/^(https?|data|app):/i.test(url)) return url;
+  let clean = url;
+  try { clean = decodeURIComponent(url); } catch (e) {}
+  const dest = app.metadataCache.getFirstLinkpathDest(clean, sourcePath, true);
+  const file = dest && app.vault.getFileByPath(dest);
+  if (file) return app.vault.adapter.getResourcePath(file.path);
+  return url;
+}
+
+const IMAGE_EXTS = ['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'bmp', 'avif'];
+
+function applyInline(decorations, app, line, text, lineStart, sourcePath, touches) {
+  // images: ![alt](url)
+  let m;
+  const imgRe = /!\[([^\]]*)\]\(([^()\s]+)(?:\s+"[^"]*")?\)/g;
+  while ((m = imgRe.exec(text))) {
+    const from = lineStart + m.index, to = from + m[0].length;
+    if (touches(from, to)) continue;
+    const src = resolveImageSrc(app, m[2], sourcePath);
+    decorations.push(Decoration.replace({ widget: new ImageWidget(src, m[1]) }).range(from, to));
+  }
+
+  // inline math $...$
+  const mathRe = /\$([^$\n]+?)\$/g;
+  while ((m = mathRe.exec(text))) {
+    const from = lineStart + m.index, to = from + m[0].length;
+    if (touches(from, to)) continue;
+    decorations.push(Decoration.replace({ widget: new MathWidget(m[1], false) }).range(from, to));
+  }
+
+  // comments %%...%%
+  const cRe = /%%[\s\S]*?%%/g;
+  while ((m = cRe.exec(text))) {
+    const from = lineStart + m.index;
+    decorations.push(Decoration.mark({ class: 'cm-comment' }).range(from, Math.min(from + m[0].length, lineStart + text.length)));
+  }
+
+  // formats
+  const formats = [
+    [/\*\*([^*\n]+?)\*\*/g, 'cm-strong'],
+    [/__([^_\n]+?)__/g, 'cm-strong'],
+    [/(?<!\*)\*([^*\n]+?)\*(?!\*)/g, 'cm-em'],
+    [/(?<![\w_])_([^_\n]+?)_(?![\w_])/g, 'cm-em'],
+    [/~~([^~\n]+?)~~/g, 'cm-strikethrough'],
+    [/==([^=\n]+?)==/g, 'cm-highlight'],
+    [/`([^`\n]+?)`/g, 'cm-inline-code'],
+  ];
+  for (const [re, cls] of formats) {
+    let mm;
+    while ((mm = re.exec(text))) {
+      const full = mm[0];
+      const inner = mm[1];
+      const leftLen = full.indexOf(inner);
+      const from = lineStart + mm.index + leftLen;
+      const to = from + inner.length;
+      if (touches(from, to)) continue;
+      decorations.push(Decoration.mark({ class: cls }).range(from, to));
+      if (leftLen > 0) decorations.push(Decoration.replace({}).range(lineStart + mm.index, from));
+      const fullEnd = lineStart + mm.index + full.length;
+      if (to < fullEnd) decorations.push(Decoration.replace({}).range(to, fullEnd));
+    }
+  }
+
+  // wikilinks [[target|alias]] and embeds ![[target]]
+  const wlRe = /(!?)\[\[([^\[\]\n]+?)\]\]/g;
+  let wm;
+  while ((wm = wlRe.exec(text))) {
+    const from = lineStart + wm.index, to = from + wm[0].length;
+    if (touches(from, to)) continue;
+    const embed = wm[1] === '!';
+    const inner = wm[2];
+    const parts = inner.split('|');
+    let target = parts[0].trim();
+    const alias = parts.length > 1 ? parts.slice(1).join('|').trim() : null;
+    let display = alias || target;
+    const hash = target.indexOf('#');
+    if (hash >= 0) {
+      const sub = target.slice(hash + 1);
+      target = target.slice(0, hash);
+      if (!alias) display = sub ? sub : display;
+    }
+    if (embed) {
+      const dest = app.metadataCache.getFirstLinkpathDest(target, sourcePath, true);
+      const file = dest && app.vault.getFileByPath(dest);
+      if (file && IMAGE_EXTS.includes(file.extension)) {
+        const src = app.vault.adapter.getResourcePath(file.path);
+        decorations.push(Decoration.replace({ widget: new ImageWidget(src, alias || file.basename) }).range(from, to));
+        continue;
+      }
+    }
+    decorations.push(Decoration.replace({ widget: new LinkWidget(display || target, inner, embed, sourcePath) }).range(from, to));
+  }
+
+  // markdown links [text](url)
+  const mlRe = /(?<!!)\[([^\[\]\n]*)\]\(([^()\s]+)(?:\s+"[^"]*")?\)/g;
+  let mm2;
+  while ((mm2 = mlRe.exec(text))) {
+    const from = lineStart + mm2.index, to = from + mm2[0].length;
+    if (touches(from, to)) continue;
+    const label = mm2[1];
+    const url = mm2[2];
+    if (/^(https?|obsidian):/i.test(url)) {
+      decorations.push(Decoration.replace({ widget: new LinkWidget(label || url, url, false, sourcePath, true) }).range(from, to));
+    } else if (!/^[a-z][a-z0-9+.-]*:/i.test(url) || /^file:/i.test(url)) {
+      decorations.push(Decoration.replace({ widget: new LinkWidget(label || url, url, false, sourcePath) }).range(from, to));
+    }
+  }
+
+  // tags
+  const tagRe = /(^|[\s(【（[,;：:])#([\p{L}\p{N}_\-\/]+)/gu;
+  let tg;
+  while ((tg = tagRe.exec(text))) {
+    const tagStart = lineStart + tg.index + tg[1].length;
+    const tagBody = tg[2];
+    if (/^[0-9a-fA-F]{3,8}$/.test(tagBody)) continue;
+    if (/^\d+$/.test(tagBody)) continue;
+    decorations.push(Decoration.mark({ class: 'cm-tag' }).range(tagStart, tagStart + tagBody.length + 1));
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Extension
+// ---------------------------------------------------------------------------
+export function livePreviewExtension(app, getSourcePath) {
+  return [
+    appFacet.of(app),
+    sourcePathFacet.of(getSourcePath || (() => '')),
+    fmSourceField,
+    blockLayerField,
+    ViewPlugin.fromClass(class {
+      constructor(view) {
+        this.decorations = RangeSet.empty;
+        try { this.decorations = buildDecorations(view, app); } catch (e) { console.error('live preview', e); }
+      }
+      update(update) {
+        if (update.docChanged || update.viewportChanged || update.selectionSet || update.geometryChanged) {
+          try { this.decorations = buildDecorations(update.view, app); } catch (e) { console.error('live preview', e); }
+        }
+      }
+    }, {
+      decorations: (v) => v.decorations,
+    }),
+  ];
+}

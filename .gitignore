@@ -1,0 +1,16 @@
+# 依赖
+node_modules/
+
+# 构建产物（由 npm run build 生成）
+dist/
+
+# 逆向分析参考（从 /Applications/Obsidian.app 提取，可随时重新导出）
+_analysis/
+
+# 日志与系统噪声
+*.log
+.DS_Store
+
+# 临时文件
+*.tmp
+*.bak

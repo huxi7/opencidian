@@ -1,0 +1,100 @@
+/* ==========================================================================
+   explorer.css — file explorer (.nav-* tree), shared by outline/tag panes
+   ========================================================================== */
+
+.file-explorer-view,
+.nav-files-container {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+}
+
+.nav-buttons-container {
+  display: flex;
+  align-items: center;
+  gap: var(--size-2-2);
+  padding: var(--size-4-1) var(--size-4-3);
+  flex: 0 0 auto;
+}
+.nav-action-button { color: var(--text-muted); }
+.nav-action-button.is-active { color: var(--text-normal); background-color: var(--background-modifier-hover); }
+
+.nav-files-container {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  padding: var(--size-4-1) var(--size-4-2) var(--size-4-6) var(--size-4-2);
+  overscroll-behavior: contain;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+/* nav tree — the base structure comes from tree.css (.tree-item-self, .tree-item-icon,
+   .tree-item-children). The rules below are the nav-specific layer, ported from app.css */
+.nav-folder-title-content,
+.nav-file-title-content {
+  display: inline-block;
+  overflow-wrap: anywhere;
+  overflow: hidden;
+  white-space: var(--nav-item-white-space);
+}
+.nav-file-title-content:not([contenteditable="true"]),
+.nav-folder-title-content:not([contenteditable="true"]) {
+  text-overflow: ellipsis;
+}
+.nav-folder.is-being-dragged-over {
+  border-radius: var(--radius-s);
+  background: hsla(var(--interactive-accent-hsl), 0.1);
+}
+.nav-folder.is-being-dragged-over > .nav-folder-title {
+  color: var(--nav-item-color-highlighted);
+}
+.nav-folder.is-being-dragged-over > .nav-folder-title .collapse-icon {
+  color: var(--nav-item-color-highlighted);
+}
+
+.nav-file-tag {
+  background-color: var(--nav-tag-background);
+  border-radius: var(--nav-tag-radius);
+  color: var(--nav-tag-color);
+  font-size: 9px;
+  font-weight: var(--nav-tag-weight);
+  letter-spacing: 0.05em;
+  line-height: var(--line-height-normal);
+  margin-inline-start: auto;
+  padding: 0 var(--size-4-1);
+  text-transform: uppercase;
+  align-self: center;
+}
+@media (hover: hover) {
+  .tree-item-self:hover .nav-file-tag {
+    color: var(--nav-tag-color-hover);
+  }
+}
+.tree-item-self.is-active .nav-file-tag {
+  color: var(--nav-tag-color-active);
+}
+.tree-item-self.is-being-dragged .nav-file-tag {
+  color: var(--text-normal);
+}
+
+.nav-rename-input {
+  flex: 1 1 auto;
+  height: auto;
+  min-height: 0;
+  padding: 0 2px;
+  font-size: var(--nav-item-size);
+  border-radius: 2px;
+}
+
+/* vault profile / sidebar footer (left sidebar bottom section) */
+.workspace-sidedock-vault-profile {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--size-4-1);
+  padding: var(--size-4-2);
+  background-color: var(--background-secondary);
+  border-top: var(--tab-outline-width) solid var(--tab-outline-color);
+  flex: 0 0 auto;
+}

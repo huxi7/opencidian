@@ -1,0 +1,472 @@
+/**
+ * [INPUT]: 依赖 ../core/view.js 的 View 基类；依赖 ../core/i18n.js 的 t；依赖 ../core/icons.js 的 setIcon；依赖 ../editor/editor.js 的 Editor 与 livePreviewExtension；依赖 ../markdown/reading.js 的 renderMarkdown/attachMarkdownInteractions；依赖 ../markdown/properties.js 的 renderProperties
+ * [OUTPUT]: 导出 MarkdownView 类（三模式：source/live/preview），registerView 注册 'markdown'
+ * [POS]: views/ 的核心视图。DOM 对齐原版：.markdown-source-view.mod-cm6 / .markdown-reading-view > .markdown-preview-view.markdown-rendered。data-editor-mode 随模式切换同步。属性面板仅在非 source 模式且 propertiesInDocument==='visible' 时显示。
+ * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
+ */
+/*
+ * MarkdownView — source / live-preview / reading modes for .md files.
+ * DOM follows the original: .markdown-source-view.mod-cm6 and
+ * .markdown-reading-view > .markdown-preview-view.markdown-rendered.
+ */
+import { View } from '../core/view.js';
+import { t } from '../core/i18n.js';
+import { setIcon } from '../core/icons.js';
+import { Menu } from '../core/menu.js';
+import { Editor } from '../editor/editor.js';
+import {
+  renderMarkdown, attachMarkdownInteractions, scrollToSubpath, stripFrontmatter,
+} from '../markdown/reading.js';
+import { renderProperties } from '../markdown/properties.js';
+import { Notice } from '../core/notices.js';
+import { normalizePath } from '../core/vault.js';
+import { PromptModal } from '../core/modals.js';
+
+const SAVE_DELAY = 150;
+
+export class MarkdownView extends View {
+  constructor(leaf) {
+    super(leaf);
+    this.file = null;
+    this.mode = 'live';         // 'source' | 'live' | 'preview'
+    this._lastEditMode = 'live';
+    this.editor = null;
+    this.navigation = true;
+    this.icon = 'file-text';
+    this._suppressChange = false;
+    this._renderedText = null;
+    this._saveTimer = null;
+    this._pendingScroll = null;
+  }
+
+  getViewType() { return 'markdown'; }
+  getIcon() { return 'file-text'; }
+  getDisplayText() { return this.file ? this.file.basename : (this.getState().file || 'Untitled'); }
+  getMode() { return this.mode; }
+
+  getState() {
+    const state = { file: this.file ? this.file.path : undefined, mode: this.mode };
+    if (this.mode !== 'preview') state.mode = this.mode;
+    if (this.editor && this.mode !== 'preview') {
+      state.scroll = this.editor.getScrollInfo().top;
+    }
+    return state;
+  }
+
+  getEphemeralState() {
+    return { ...(this._eState || {}) };
+  }
+
+  setEphemeralState(state) {
+    this._eState = state || {};
+    if (state && state.subpath) this._pendingScroll = { subpath: state.subpath };
+    if (state && state.line !== undefined) this._pendingScroll = { line: state.line, ch: state.ch || 0 };
+    this._applyPendingScroll();
+  }
+
+  async setState(state, result) {
+    state = state || {};
+    if (state.mode === 'preview') this.mode = 'preview';
+    else if (state.mode === 'source' || state.mode === 'live') { this.mode = state.mode; this._lastEditMode = state.mode; }
+    if (state.file && (!this.file || this.file.path !== state.file)) {
+      await this._loadFile(state.file, state);
+    } else {
+      this._applyMode();
+    }
+    if (state.scroll !== undefined && this.editor) {
+      this.editor.applyScrollInfo({ top: state.scroll });
+    }
+    if (state.subpath) this._pendingScroll = { subpath: state.subpath };
+    if (state.line !== undefined) this._pendingScroll = { line: state.line, ch: state.ch || 0 };
+    this._applyPendingScroll();
+  }
+
+  async onOpen() {
+    const contentEl = this.contentEl;
+    contentEl.addClass('markdown-view');
+
+    // ---- editing DOM (source / live preview)
+    this.sourceEl = contentEl.createDiv('markdown-source-view mod-cm6');
+    this.inlineTitleEdit = this.sourceEl.createDiv('inline-title');
+    this.inlineTitleEdit.setAttr('contenteditable', 'true');
+    this.inlineTitleEdit.setAttr('spellcheck', 'false');
+    if (this.app.settings.appSettings.showInlineTitle === false) this.inlineTitleEdit.addClass('is-hidden');
+
+    const editorHost = this.sourceEl.createDiv('cm-editor-host');
+    this.editor = new Editor(editorHost, this.app, { doc: '' });
+    this.editor.cm.dom.setAttr('data-editor-mode', 'source');
+    this.editor.onChange(() => this._onEditorChange());
+    this._bindEditorKeys();
+    this._bindInlineTitle();
+
+    // ---- reading DOM
+    this.readingEl = contentEl.createDiv('markdown-reading-view');
+    this.readingSizer = this.readingEl.createDiv('markdown-preview-view markdown-rendered');
+    this.readingContent = this.readingSizer.createDiv('markdown-preview-sizer markdown-preview-section');
+    this.readingTitle = this.readingContent.createDiv('inline-title');
+    this.propertiesReadingEl = this.readingContent.createDiv('metadata-container-host');
+    this.renderedContent = this.readingContent.createDiv('markdown-content');
+    attachMarkdownInteractions(this.app, this.readingEl, () => (this.file ? this.file.path : ''));
+
+    // react to external changes/renames
+    this._refs = [
+      this.app.vault.on('modify', (file) => { if (this.file && file.path === this.file.path) this._onExternalModify(); }),
+      this.app.vault.on('rename', (file, oldPath) => {
+        if (this.file && oldPath === this.file.path) { this.file = file; this._updateTitles(); }
+      }),
+      this.app.vault.on('delete', (file) => {
+        if (this.file && file.path === this.file.path) { this._fileDeleted = true; this._renderFilePathMissing(); }
+      }),
+      // 设置变化即时生效：行号 / 实时预览 / 阅读渲染（strictLineBreaks 等）
+      this.app.workspace.on('settings-changed', () => this._applyEditorSettings()),
+    ];
+
+    this._applyMode();
+  }
+
+  /** 编辑器级设置变化后重配置 CM 扩展；阅读视图重渲染。 */
+  _applyEditorSettings() {
+    const s = this.app.settings.appSettings;
+    if (!this.editor) return;
+    this.editor.toggleLineNumbers(s.showLineNumber === true);
+    this.editor.setIndentUnit();
+    this.editor.setCloseBrackets(s.autoPairBrackets !== false);
+    this.editor.setSpellcheck(s.spellcheck === true);
+    if (this.mode === 'live') this.editor.setLivePreview(true);
+    if (this.mode === 'preview') this._renderReading();
+  }
+
+  async onClose() {
+    for (const ref of this._refs || []) ref.unregister();
+    this._refs = [];
+    if (this._saveTimer) { clearTimeout(this._saveTimer); this._saveTimer = null; }
+    await this.save();
+    if (this.editor) this.editor.destroy();
+  }
+
+  onResize() {
+    if (this.editor) this.editor.refresh();
+  }
+
+  // -------------------------------------------------------------------------
+  // File loading & saving
+  // -------------------------------------------------------------------------
+  async _loadFile(path, state) {
+    const file = this.app.vault.getFileByPath(path) || this.app.vault.getAbstractFileByPath(path);
+    if (!file || !file.path || file.extension !== 'md') {
+      this.file = null;
+      this._renderFilePathMissing(path);
+      return;
+    }
+    this.file = file;
+    this._fileDeleted = false;
+    let text = '';
+    try { text = await this.app.vault.cachedRead(file); } catch (e) { console.error(e); }
+    this._loadedText = text;
+    this._suppressChange = true;
+    this.editor.sourcePath = file.path;
+    this.editor.setValue(text);
+    this._suppressChange = false;
+    this._renderedText = null;
+    this._updateTitles();
+    this._renderProperties();
+    if (this.mode === 'preview') this._renderReading();
+    this.app.workspace.trigger('markdown-view-file-loaded', this.file, this);
+    this._emitEditorChange();
+  }
+
+  _renderFilePathMissing(path) {
+    if (this.leaf) this.leaf.contentEl.setAttr('data-type', 'markdown');
+    this.contentEl.empty();
+    const msg = this.contentEl.createDiv('empty-state');
+    msg.createDiv('empty-state-title', (el) => el.setText(this._fileDeleted ? 'File was deleted' : 'File not found'));
+    if (path) msg.createDiv('empty-state-description', (el) => el.setText(path));
+  }
+
+  _onEditorChange() {
+    if (this._suppressChange) return;
+    if (!this.file) return;
+    if (this._saveTimer) clearTimeout(this._saveTimer);
+    this._saveTimer = setTimeout(() => { this._saveTimer = null; this.save(); }, SAVE_DELAY);
+    this._renderedText = null;
+    this._emitEditorChange();
+  }
+
+  _emitEditorChange() {
+    this.app.workspace.trigger('editor-change', this.editor ? this.editor.getValue() : '', this);
+  }
+
+  async save() {
+    if (!this.file || this._fileDeleted || !this.editor) return;
+    const text = this.editor.getValue();
+    if (text === this._loadedText) return;
+    this._loadedText = text;
+    try {
+      await this.app.vault.modify(this.file, text);
+    } catch (e) {
+      console.error('Failed to save', e);
+      new Notice('Failed to save file: ' + (e.message || e));
+    }
+  }
+
+  async _onExternalModify() {
+    if (!this.file || !this.editor) return;
+    // our own write? contents match
+    let text = '';
+    try { text = await this.app.vault.cachedRead(this.file); } catch (e) { return; }
+    if (text === this.editor.getValue()) return;
+    // file changed on disk
+    this._loadedText = text;
+    const scroll = this.editor.getScrollInfo();
+    const cursor = this.editor.getCursor();
+    this._suppressChange = true;
+    this.editor.setValue(text);
+    this._suppressChange = false;
+    try { this.editor.setCursor(cursor); this.editor.applyScrollInfo(scroll); } catch (e) {}
+    this._renderedText = null;
+    this._renderProperties();
+    if (this.mode === 'preview') this._renderReading();
+  }
+
+  // -------------------------------------------------------------------------
+  // Modes
+  // -------------------------------------------------------------------------
+  _applyMode() {
+    const preview = this.mode === 'preview';
+    const live = this.mode === 'live' && this.app.settings.appSettings.livePreview !== false;
+    this.sourceEl.toggle(!preview);
+    this.readingEl.toggle(preview);
+    this.sourceEl.toggleClass('is-live-preview', live);
+    this.sourceEl.toggleClass('is-source-mode', this.mode === 'source' || !live);
+    this.editor.cm.dom.setAttr('data-editor-mode', preview ? this._lastEditMode : this.mode);
+    this.editor.setLivePreview(live);
+    if (preview) {
+      this._renderReading();
+    } else {
+      this.editor.refresh();
+    }
+    this._fillViewActions();
+    this.app.workspace.trigger('markdown-view-mode-change', this);
+    this.app.workspace.trigger('layout-change');
+  }
+
+  toggleMode() {
+    if (this.mode === 'preview') {
+      this.mode = this._lastEditMode || 'live';
+    } else {
+      this._lastEditMode = this.mode;
+      this.save();
+      this.mode = 'preview';
+    }
+    this._applyMode();
+  }
+
+  toggleSourceLive() {
+    if (this.mode === 'preview') { this.toggleMode(); return; }
+    this.mode = this.mode === 'live' ? 'source' : 'live';
+    this._lastEditMode = this.mode;
+    this._applyMode();
+  }
+
+  // -------------------------------------------------------------------------
+  // Rendering
+  // -------------------------------------------------------------------------
+  async _renderReading() {
+    if (!this.file || !this.renderedContent) return;
+    const text = this.editor ? this.editor.getValue() : '';
+    this._renderedText = text;
+    const body = stripFrontmatter(text);
+    try {
+      await renderMarkdown(this.app, body, this.renderedContent, this.file.path);
+    } catch (e) {
+      console.error('reading render failed', e);
+      this.renderedContent.setText(body);
+    }
+    this._applyPendingScroll();
+  }
+
+  _renderProperties() {
+    const settings = this.app.settings.appSettings;
+    const mode = settings.propertiesInDocument || 'visible';
+    const editable = this.mode !== 'preview' ? true : false;
+    if (!this.file) return;
+    // live preview: the properties widget renders inside the editor; the
+    // container visibility is driven by the show-properties class
+    if (this.sourceEl) this.sourceEl.toggleClass('show-properties', mode === 'visible');
+    // reading view
+    this.propertiesReadingEl.empty();
+    if (mode === 'visible') {
+      renderProperties(this.app, this.propertiesReadingEl, this.file, { editable: false, showAddButton: false });
+    } else if (mode === 'hidden') {
+      // nothing
+    } else if (mode === 'source') {
+      // raw frontmatter handled by reading renderer (kept in content)
+    }
+  }
+
+  _applyPendingScroll() {
+    if (!this._pendingScroll) return;
+    const pending = this._pendingScroll;
+    requestAnimationFrame(() => {
+      if (pending.subpath) {
+        if (this.mode === 'preview') {
+          const ok = scrollToSubpath(this.readingEl, pending.subpath);
+          if (!ok && this.editor) this._scrollEditorToHeadingText(pending.subpath);
+        } else if (this.editor) {
+          this._scrollEditorToHeadingText(pending.subpath);
+        }
+      } else if (pending.line !== undefined) {
+        if (this.mode !== 'preview' && this.editor) {
+          this.editor.scrollTo(pending.line, pending.ch || 0);
+          this.editor.setCursor({ line: pending.line, ch: pending.ch || 0 });
+        } else if (this.editor) {
+          const total = Math.max(1, this.editor.lineCount);
+          const frac = Math.min(1, pending.line / total);
+          const scroller = this.readingEl;
+          scroller.scrollTop = frac * scroller.scrollHeight;
+        }
+      }
+      this._pendingScroll = null;
+    });
+  }
+
+  _scrollEditorToHeadingText(subpath) {
+    if (!this.file) return;
+    const cache = this.app.metadataCache.getFileCache(this.file);
+    if (!cache || !cache.headings) return;
+    const target = subpath.replace(/^#/, '').trim().toLowerCase();
+    const h = cache.headings.find((x) => x.heading.toLowerCase() === target) ||
+      cache.headings.find((x) => x.heading.toLowerCase().includes(target));
+    if (h) {
+      this.editor.scrollTo(h.position.start.line, 0);
+    }
+  }
+
+  // -------------------------------------------------------------------------
+  // Titles
+  // -------------------------------------------------------------------------
+  _updateTitles() {
+    const name = this.file ? this.file.basename : '';
+    if (this.inlineTitleEdit) {
+      this.inlineTitleEdit.setText(name);
+      this.inlineTitleEdit.setAttr('data-path', this.file ? this.file.path : '');
+    }
+    if (this.readingTitle) this.readingTitle.setText(name);
+    if (this.inlineTitleEdit) this.inlineTitleEdit.toggle(!(this.app.settings.appSettings.showInlineTitle === false));
+    if (this.leaf) this.leaf.updateTabHeader();
+    this.app.workspace.updateTitle();
+  }
+
+  _bindInlineTitle() {
+    this.inlineTitleEdit.addEventListener('keydown', (ev) => {
+      if (ev.key === 'Enter') { ev.preventDefault(); this.inlineTitleEdit.blur(); }
+      if (ev.key === 'Escape') { ev.preventDefault(); this.inlineTitleEdit.setText(this.file ? this.file.basename : ''); this.inlineTitleEdit.blur(); }
+    });
+    this.inlineTitleEdit.addEventListener('blur', async () => {
+      if (!this.file) return;
+      const value = this.inlineTitleEdit.textContent.trim();
+      if (!value || value === this.file.basename) return;
+      const parent = this.file.path.split('/').slice(0, -1).join('/');
+      const newPath = normalizePath((parent ? parent + '/' : '') + value + '.md');
+      const ok = await this.app.fileManager.renameFile(this.file, newPath);
+      if (!ok) this.inlineTitleEdit.setText(this.file.basename);
+    });
+    this.inlineTitleEdit.addEventListener('click', () => {
+      if (document.activeElement === this.inlineTitleEdit) return;
+      this.inlineTitleEdit.focus();
+      const range = document.createRange();
+      range.selectNodeContents(this.inlineTitleEdit);
+      const sel = window.getSelection();
+      sel.removeAllRanges();
+      sel.addRange(range);
+    });
+  }
+
+  focusInlineTitle() {
+    this.inlineTitleEdit.focus();
+    const range = document.createRange();
+    range.selectNodeContents(this.inlineTitleEdit);
+    const sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(range);
+  }
+
+  // -------------------------------------------------------------------------
+  // Editor key bindings
+  // -------------------------------------------------------------------------
+  _bindEditorKeys() {
+    // handled through app-level hotkeys (editor:* commands)
+    this.editor.cm.dom.addEventListener('click', (ev) => {
+      const link = ev.target.closest('.cm-wikilink');
+      if (link) return; // widget handles it
+    });
+  }
+
+  // -------------------------------------------------------------------------
+  // View header actions
+  // -------------------------------------------------------------------------
+  _fillViewActions(actions) {
+    if (!actions) return;
+    actions.empty();
+    const preview = this.mode === 'preview';
+    const toggle = actions.createDiv('clickable-icon view-action');
+    toggle.setAttr('aria-label', preview ? (t('interface.menu.switch-to-edit-view') || 'Click to edit') : (t('interface.menu.switch-to-read-view') || 'Click to read'));
+    toggle.toggleClass('is-active', preview);
+    setIcon(toggle, preview ? 'pencil' : 'book-open');
+    toggle.onclick = () => this.toggleMode();
+
+    const more = actions.createDiv('clickable-icon view-action mod-more-options');
+    more.setAttr('aria-label', t('interface.menu.more-options') || 'More options');
+    setIcon(more, 'more-horizontal');
+    more.onclick = (ev) => this._showMoreMenu(ev);
+  }
+
+  _showMoreMenu(ev) {
+    const menu = new Menu(this.app);
+    if (this.mode === 'preview') {
+      menu.addItem((i) => i.setTitle(t('interface.menu.edit') || 'Edit').setIcon('pencil').onClick(() => { this.mode = this._lastEditMode || 'live'; this._applyMode(); }));
+      menu.addItem((i) => i.setTitle(t('interface.menu.toggle-source-mode') || 'Source mode').setIcon('code').onClick(() => { this.mode = 'source'; this._lastEditMode = 'source'; this._applyMode(); }));
+    } else {
+      menu.addItem((i) => i.setTitle(t('interface.menu.toggle-reading-view') || 'Reading view').setIcon('book-open')
+        .setChecked(this.mode === 'preview').onClick(() => this.toggleMode()));
+      if (this.mode === 'live') {
+        menu.addItem((i) => i.setTitle(t('interface.menu.toggle-source-mode') || 'Source mode').setIcon('code').onClick(() => this.toggleSourceLive()));
+      } else {
+        menu.addItem((i) => i.setTitle(t('plugins.editor-status.edit-live-preview') || 'Live Preview').setIcon('pencil').onClick(() => this.toggleSourceLive()));
+      }
+    }
+    menu.addSeparator();
+    menu.addItem((i) => i.setTitle(t('interface.menu.close') || 'Close').setIcon('x').onClick(() => (this.leaf ? this.leaf.detach() : null)));
+    menu.addItem((i) => i.setTitle('Duplicate current file').setIcon('copy').onClick(() => this._duplicateFile()));
+    menu.addSeparator();
+    menu.addItem((i) => i.setTitle(t('menu-items.inline-title') || 'Inline title').setChecked(this.app.settings.appSettings.showInlineTitle !== false).onClick(() => {
+      const next = !(this.app.settings.appSettings.showInlineTitle !== false);
+      this.app.settings.updateAppSettings({ showInlineTitle: next });
+      this._updateTitles();
+    }));
+    menu.addItem((i) => i.setTitle(t('menu-items.line-numbers') || 'Line numbers').setChecked(!!this.app.settings.appSettings.showLineNumber).onClick(() => {
+      const next = !app.settings.appSettings.showLineNumber;
+      this.app.settings.updateAppSettings({ showLineNumber: next });
+      this.editor.toggleLineNumbers(next);
+    }));
+    menu.showAtMouseEvent(ev);
+  }
+
+  async _duplicateFile() {
+    if (!this.file) return;
+    const folder = this.app.vault.getFolderByPath(this.file.path.split('/').slice(0, -1).join('/') || '/');
+    const copy = await this.app.fileManager.copyFile(this.file, folder);
+    if (copy) this.app.workspace.openFile(copy, { newLeaf: 'tab' });
+  }
+
+  async promptAddProperty() {
+    if (!this.file) return;
+    new PromptModal(this.app, {
+      title: 'Property name',
+      onSubmit: async (key) => {
+        if (!key) return;
+        await this.app.fileManager.processFrontMatter(this.file, (fm) => { if (!(key in fm)) fm[key] = ''; });
+      },
+    }).open();
+  }
+}

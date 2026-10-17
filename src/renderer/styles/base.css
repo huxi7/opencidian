@@ -1,0 +1,253 @@
+/* ==========================================================================
+   base.css — resets, typography defaults, primitives (icons, buttons, inputs)
+   ========================================================================== */
+
+*, *::before, *::after { box-sizing: border-box; }
+
+html {
+  height: 100%;
+  font-size: var(--font-text-size, 16px);
+}
+
+body {
+  height: 100vh;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  color: var(--text-normal);
+  font-family: var(--font-interface);
+  font-size: var(--font-ui-medium);
+  font-weight: var(--font-normal);
+  line-height: var(--line-height-normal, 1.5);
+  background-color: var(--background-secondary);
+  -webkit-font-smoothing: antialiased;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+h1, h2, h3, h4, h5, h6 { margin: 0; font-weight: var(--font-semibold); }
+
+/* text direction constants — original app.css 4504-4516. --direction drives
+   folding indicator transforms, --inset-start/end drive direction-aware insets */
+body,
+[dir='ltr'] {
+  --direction: 1;
+  --inset-start: left;
+  --inset-end: right;
+}
+.mod-rtl,
+[dir='rtl'] {
+  --direction: -1;
+  --inset-start: right;
+  --inset-end: left;
+}
+
+a {
+  color: var(--link-color);
+  text-decoration-line: var(--link-decoration);
+  text-decoration-thickness: var(--link-decoration-thickness);
+  cursor: var(--cursor-link, pointer);
+}
+a:hover { color: var(--link-color-hover); text-decoration-line: var(--link-decoration-hover); }
+
+p { margin-block-start: 0; margin-block-end: 0; }
+
+svg.svg-icon {
+  display: inline-block;
+  width: var(--icon-m, 18px);
+  height: var(--icon-m, 18px);
+  stroke-width: var(--icon-stroke, 1.75px);
+  vertical-align: baseline;
+  flex-shrink: 0;
+}
+.svg-icon path, .svg-icon circle, .svg-icon rect, .svg-icon line, .svg-icon polyline, .svg-icon polygon, .svg-icon ellipse { fill: none; }
+
+/* ---------------------------------------------------------------- helpers */
+.is-hidden { display: none !important; }
+.hidden { display: none; }
+.is-unloaded { display: none; }
+.mobile-only { display: none; }
+
+.clickable-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--size-2-2);
+  margin: 0;
+  cursor: var(--cursor, pointer);
+  color: var(--icon-color);
+  opacity: var(--icon-opacity);
+  border-radius: var(--clickable-icon-radius, var(--radius-s));
+  transition: opacity var(--anim-duration-superfast), background-color var(--anim-duration-superfast);
+  background-color: transparent;
+  border: none;
+}
+.clickable-icon:hover { color: var(--icon-color-hover); opacity: var(--icon-opacity-hover); background-color: var(--background-modifier-hover); }
+.clickable-icon:active { color: var(--icon-color-active); opacity: var(--icon-opacity-active); }
+.clickable-icon.clickable-icon { padding: var(--size-2-2); }
+.clickable-icon.is-active { opacity: var(--icon-opacity-active, 1); color: var(--icon-color-active); }
+
+svg.svg-icon path { fill: none; }
+
+.iconic { display: flex; align-items: center; justify-content: center; }
+
+/* ------------------------------------------------------------ scrollbars */
+/* 原版仅在非 macOS 平台给 body 加 styled-scrollbars（macOS 用系统 overlay 滚动条）。
+   以下规则逐字移植 app.css 的 body.styled-scrollbars 段。 */
+body.styled-scrollbars ::-webkit-scrollbar {
+  background-color: var(--scrollbar-bg);
+  width: var(--scrollbar-width);
+  height: var(--scrollbar-height);
+  -webkit-border-radius: var(--scrollbar-radius);
+  background-color: transparent;
+}
+body.styled-scrollbars ::-webkit-scrollbar-track { background-color: transparent; }
+body.styled-scrollbars ::-webkit-scrollbar-thumb {
+  background-color: var(--scrollbar-thumb-bg);
+  -webkit-border-radius: var(--scrollbar-radius);
+  background-clip: padding-box;
+  border: 2px solid transparent;
+  border-width: var(--scrollbar-border-width);
+  min-height: 45px;
+}
+body.styled-scrollbars ::-webkit-scrollbar-thumb:active { -webkit-border-radius: var(--scrollbar-radius); }
+body.styled-scrollbars ::-webkit-scrollbar-thumb:hover,
+body.styled-scrollbars ::-webkit-scrollbar-thumb:active { background-color: var(--scrollbar-active-thumb-bg); }
+body.styled-scrollbars ::-webkit-scrollbar-corner { background: transparent; }
+@supports not selector(::-webkit-scrollbar) {
+  body.styled-scrollbars {
+    scrollbar-width: thin;
+    scrollbar-color: var(--scrollbar-thumb-bg) var(--scrollbar-bg);
+  }
+}
+
+/* --------------------------------------------------------------- inputs */
+input, textarea, select, button { font-family: inherit; font-size: inherit; color: inherit; }
+
+input[type="text"],
+input[type="search"],
+input[type="number"],
+input[type="email"],
+input[type="password"],
+input[type="date"],
+input[type="datetime-local"],
+textarea,
+select,
+.text-input {
+  background-color: var(--background-modifier-form-field);
+  border: var(--input-border-width, 1px) solid var(--background-modifier-border);
+  border-radius: var(--input-radius, var(--radius-s));
+  color: var(--text-normal);
+  padding: var(--input-padding, 4px 8px);
+  height: var(--input-height, 30px);
+  min-height: var(--input-height, 30px);
+  font-size: var(--font-ui-small);
+  outline: none;
+  -webkit-user-select: text;
+  user-select: text;
+  width: 100%;
+  transition: box-shadow var(--anim-duration-superfast), border-color var(--anim-duration-superfast);
+}
+textarea { height: auto; min-height: var(--input-height, 30px); resize: vertical; line-height: var(--line-height-tight, 1.3); }
+input:hover, textarea:hover, select:hover, .text-input:hover { border-color: var(--background-modifier-border-hover); }
+input:focus, textarea:focus, select:focus, .text-input:focus {
+  border-color: var(--background-modifier-border-focus);
+  box-shadow: 0 0 0 var(--input-border-width-focus, 2px) rgba(var(--color-accent-rgb, 127, 109, 242), 0.25);
+}
+input::placeholder, textarea::placeholder { color: var(--input-placeholder-color, var(--text-faint)); }
+input[type="checkbox"] { width: auto; height: auto; }
+input[type="search"]::-webkit-search-cancel-button { display: none; }
+
+button {
+  background-color: var(--interactive-normal, var(--background-modifier-form-field));
+  border: none;
+  border-radius: var(--input-radius, var(--radius-s));
+  color: var(--text-normal);
+  padding: 4px 12px;
+  height: var(--input-height, 30px);
+  font-size: var(--font-ui-small);
+  cursor: var(--cursor, pointer);
+  transition: background-color var(--anim-duration-superfast);
+  -webkit-app-region: no-drag;
+}
+button:hover { background-color: var(--interactive-hover); }
+button:active { transform: none; }
+button.mod-cta { background-color: var(--interactive-accent); color: var(--text-on-accent); }
+button.mod-cta:hover { background-color: var(--interactive-accent-hover); }
+button.mod-warning { background-color: var(--background-modifier-error); color: var(--text-on-accent); }
+button:disabled { opacity: 0.5; cursor: not-allowed; }
+
+/* checkbox (Obsidian's square) */
+input[type="checkbox"]:not(.task-list-item-checkbox) {
+  appearance: none;
+  width: var(--checkbox-size, 16px);
+  height: var(--checkbox-size, 16px);
+  border: 1px solid var(--checkbox-border-color);
+  border-radius: var(--checkbox-radius, var(--radius-s));
+  background-color: transparent;
+  vertical-align: middle;
+  position: relative;
+  cursor: var(--cursor, pointer);
+}
+input[type="checkbox"]:not(.task-list-item-checkbox):hover { border-color: var(--checkbox-border-color-hover); }
+input[type="checkbox"]:not(.task-list-item-checkbox):checked { background-color: var(--checkbox-color); border-color: var(--checkbox-color); }
+input[type="checkbox"]:not(.task-list-item-checkbox):checked:hover { background-color: var(--checkbox-color-hover); border-color: var(--checkbox-color-hover); }
+input[type="checkbox"]:not(.task-list-item-checkbox):checked::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: var(--checkbox-marker-color) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23fff' stroke-width='4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='20 6 9 17 4 12'/%3E%3C/svg%3E") center/72% no-repeat;
+}
+
+/* toggle（.checkbox-container）与滑块样式在 settings.css 中逐字移植。 */
+
+/* focus outlines */
+:focus-visible { outline: 2px solid var(--background-modifier-border-focus); outline-offset: 1px; }
+.cm-editor :focus-visible, input:focus-visible, textarea:focus-visible { outline: none; }
+
+/* selection */
+::selection { background-color: var(--text-selection); }
+
+/* drag ghost */
+.drag-ghost {
+  position: fixed;
+  z-index: var(--layer-dragged-item, 80);
+  pointer-events: none;
+  background-color: var(--drag-ghost-background);
+  color: var(--drag-ghost-text-color);
+  border-radius: var(--radius-s);
+  padding: var(--size-2-2) var(--size-4-2);
+  font-size: var(--font-ui-small);
+  box-shadow: var(--shadow-s);
+}
+
+/* misc primitives */
+hr { border: none; border-top: 1px solid var(--divider-color); height: 0; margin: var(--size-4-3) 0; }
+kbd {
+  background-color: var(--background-modifier-form-field);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--radius-s);
+  padding: 1px 4px;
+  font-family: var(--font-monospace);
+  font-size: var(--font-ui-smaller);
+  color: var(--text-muted);
+}
+code {
+  font-family: var(--font-monospace);
+  font-size: var(--code-size, 0.9em);
+  background-color: var(--code-background);
+  color: var(--code-normal);
+  border-radius: var(--code-radius, var(--radius-s));
+  padding: 0.15em 0.3em;
+}
+pre { margin: 0; }
+pre code { background: transparent; padding: 0; }
+
+.u-flex { display: flex; }
+.mod-shadow { box-shadow: var(--shadow-s); }
+.text-muted { color: var(--text-muted); }
+.text-faint { color: var(--text-faint); }
+
+/* context: no drag regions inside interactive areas */
+input, textarea, select, button, a, .clickable-icon, .menu, .modal { -webkit-app-region: no-drag; }

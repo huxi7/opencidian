@@ -1,0 +1,46 @@
+/* ==========================================================================
+   bookmarks.css — bookmarks pane + view header bookmark action
+   The first block is ported verbatim from the original app.css (bookmarks
+   plugin styles). The pane itself reuses the tree.css primitives
+   (.tree-item-self, .tree-item-icon, .tree-item-children); only scrolling and
+   the row-end menu visibility are added here.
+   ========================================================================== */
+
+/* --- view header action (original: view-action mod-bookmark) --- */
+.view-action.mod-bookmarked {
+  --icon-color: var(--icon-color-active);
+  --icon-color-hover: var(--icon-color-active);
+}
+/* Only browser shows the bookmark icon if not bookmarked */
+.workspace-leaf-content:not([data-type="browser"]) .view-action.mod-bookmark {
+  display: none;
+}
+.workspace-leaf-content:not([data-type="browser"]) .view-action.mod-bookmarked {
+  display: flex;
+}
+.view-action.mod-bookmark.mod-filled svg {
+  fill: var(--icon-color);
+}
+
+/* --- bookmarks pane --- */
+.workspace-leaf-content[data-type=bookmarks] .view-content {
+  padding: var(--size-4-1) var(--size-4-3) var(--size-4-8);
+}
+.bookmarks-tree {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-user-select: none;
+  user-select: none;
+}
+/* row-end menu button: shown on row hover (matches the original item menu) */
+.tree-item-self.bookmark .bookmark-item-menu {
+  margin-inline-start: auto;
+  opacity: 0;
+  flex: 0 0 auto;
+}
+.tree-item-self.bookmark:hover .bookmark-item-menu,
+.tree-item-self.bookmark.has-active-menu .bookmark-item-menu {
+  opacity: var(--icon-opacity, 1);
+}

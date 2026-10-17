@@ -1,0 +1,81 @@
+/* ==========================================================================
+   slides.css — slides view (plugins-core/slides.js + views/slides-view.js)
+   .slides-container / .slides-close-btn / .slides-container .controls button /
+   .slides-container li .collapse-indicator 移植自原版 app.css 的 slides 段。
+   原版是 reveal.js 全屏覆盖层（position:fixed + 100vw/100vh）；本复刻把幻灯片
+   做成工作区视图，故 .slides-container 改为填满所在 leaf 的 .view-content。
+   背景用 --background-primary（原版硬编码 #191919，项目规则禁止硬编码色值）。
+   ========================================================================== */
+
+.workspace-leaf-content[data-type="slides"] .view-content { padding: 0; }
+
+.slides-container {
+  position: absolute;
+  inset: 0;
+  background-color: var(--background-primary);
+  z-index: var(--layer-slides);
+  border: none;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  outline: none;
+}
+
+.slides-container li .collapse-indicator { display: none; }
+
+.slides-container .controls button { box-shadow: none; }
+
+.slides-close-btn {
+  display: inline-block;
+  position: absolute;
+  top: calc(var(--safe-area-inset-top) + var(--size-4-2));
+  inset-inline-end: var(--size-4-2);
+  color: var(--text-faint);
+  cursor: var(--cursor);
+  z-index: 1;
+}
+.slides-close-btn:hover { color: var(--text-muted); }
+.is-phone .slides-close-btn {
+  --icon-size: var(--icon-l);
+  inset-inline-end: var(--size-4-4);
+}
+
+/* --- deck --- */
+.slides-deck {
+  flex: 1 1 auto;
+  min-height: 0;
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--size-4-8);
+  cursor: pointer;
+  overflow: hidden;
+}
+.slides-section {
+  display: none;
+  width: 100%;
+  max-width: 900px;
+  max-height: 100%;
+  overflow-y: auto;
+  font-size: calc(var(--font-text-size) * 1.4);
+  line-height: 1.6;
+  text-align: center;
+}
+.slides-section.is-active { display: block; }
+.slides-section h1 { font-size: 2.2em; }
+.slides-section h2 { font-size: 1.7em; }
+.slides-section h3 { font-size: 1.4em; }
+.slides-section img { max-height: 60vh; margin-inline: auto; }
+.slides-section pre { text-align: start; }
+.slides-section ul,
+.slides-section ol { display: inline-block; text-align: start; }
+
+.slides-progress {
+  position: absolute;
+  bottom: var(--size-4-3);
+  inset-inline-end: var(--size-4-4);
+  color: var(--text-faint);
+  font-size: var(--font-ui-smaller);
+  z-index: 1;
+}
