@@ -370,3 +370,31 @@ node --experimental-vm-modules src/renderer/core/workspace-regression.js
 - 在跑批次（6）：编辑器审计、核心插件审计、（shell 手感批）、（通用组件批 tooltip/notice/suggest）、（设置页续做）、（外观页批字体管理/主题）。
 - 待派队列：菜单+模态批（等 components.css 释放）、功能区配置行/自定义图标（等 shell 批释放 workspace-renderer.js/main.js）、编辑器保真批（等审计）、核心插件保真批（等审计）、画布 CM6 卡片编辑/图片导出等（等审计）。
 - 提醒：所有子代理用 `sh scripts/with-lock.sh` 跑构建与验收；不许 commit；完成后由主 agent 集成提交。
+
+### §16 进度看板（2026-10-17 深夜，滚动更新）
+
+本次会话已完成并提交的批次（每批都有可复跑验收）：
+- `4c4fcc2` 社区插件安全模式：双布局/信任模态/setEnable 语义 + community 场景（run 19 + restart 3）。
+- `ab44cba` shell 手感批：drag-ghost、drop overlay、侧栏 140ms 补间、标签列表按钮/Close all/Close after、pin、关闭钮容器查询、窗口状态与红绿灯、非 mac 三按钮、状态栏双段、空标签、titlebar 镜像；sidebar-shell 61 项。
+- `8cf232a` 设置与窗口 IPC：拼写词典/语言 IPC + 启动恢复、启动耗时弹窗、窗口状态通道。
+- `022feef` page-preview 插件 + **修复 reading.js wiki 链接切片 bug**（[[A]] 目标被切掉前 2 字符，阅读模式全部内部链接误判未解析）；math 场景旧 origin 修正。
+- `3e69c47` 设置页行级：拼写词典弹窗、语言 pills、路径建议、忽略文件弹窗、重建缓存 destructive、Vim 弹窗；settings-ui 22 项。
+- `79c6509` 外观页：字体管理（存在性指示/删除图标/拖拽/建议）、主题 Legacy、主题色恢复主题默认（app.js 不再写死 #7f6df2）；appearance 18→22 项。
+- `e915b90` 编辑器：阅读代码块复制按钮、LP code-block-flair、LP 笔记嵌入 ![[...]]、clipboard 未聚焦保护；editor 107 项。
+- `5cbc03c` 外观：自定义应用图标（set-icon/get-icon + dock/窗口应用 + 预览/重置）；文件树 drag-ghost。
+
+关键 bug 记录（新发现）：
+- `reading.js` wiki inline rule 偏移错误（pos+2），已修；嵌入/链接/解析全部受影响过。
+- 插件 shim 引用未导入的 Keymap：任何社区插件加载都会 ReferenceError，已修。
+- `metadataCache.getFirstLinkpathDest` 返回路径字符串而非 TFile（新代码需 getFileByPath 转换）。
+- Chromium `document.fonts.check` 对未知字体返回 true → 字体检测改宽度测量法。
+- `navigator.clipboard.writeText` 在窗口未聚焦时异步 reject → 全部调用点吞掉 rejection（否则验收日志判失败）。
+
+未完成/已知缺口（后续）：
+- 通用组件批（tooltip/notice/suggest）由子代理处理中（限流反复失败，当前 1 个子代理在跑）；若失败需主 agent 续做：`core/tooltip.js` 新建 + components.css 移植 + notices 右上角/4000ms/hover 暂停 + suggest clear 按钮/PageUp/PageDown。
+- 菜单 `.menu-scroll` 结构与边缘滚动未做；菜单快捷键右对齐无原版证据。
+- 功能区配置弹窗（Zee）未做（需 ribbon item registry；依赖 workspace-renderer）；自定义图标已完成。
+- 画布：CM6 卡片编辑、图片导出、对齐参考线、空间索引未做。
+- 图谱：颜色组拖拽、悬停高亮细节未做。
+- 编辑器：属性行编辑已存在；表格/嵌入右键菜单、链接 tooltip 细节未逐项核对。
+- 无 macOS 分发包。
