@@ -1,5 +1,5 @@
 /**
- * [INPUT]: 依赖 @codemirror/view 的 Decoration/ViewPlugin/WidgetType/EditorView、@codemirror/state 的 RangeSet/Facet/StateField/StateEffect；依赖 ../markdown/reading.js 的 getMarkdownIt/attachMarkdownInteractions/renderMermaidBlocks；依赖 ../markdown/properties.js 的 buildMetadataContainer；依赖 ../core/metadata.js 的 parseFrontmatterText；依赖 ../core/ipc.js 的 Desktop
+ * [INPUT]: 依赖 CM6 装饰与折叠状态；依赖 reading.js、highlight.js、math.js、properties.js 的块渲染及 metadata.js 的属性解析。
  * [OUTPUT]: 导出 livePreviewExtension(app, getSourcePath)，返回 [appFacet, sourcePathFacet, fmSourceField, blockLayerField, ViewPlugin]
  * [POS]: editor/ 的实时预览装饰层，由 editor.js 经 _livePreviewCompartment 装载/卸载。行内装饰走 ViewPlugin；块级 widget（属性面板/表格/callout/块级数学/代码块/mermaid）必须走 StateField，因为 CM6 禁止 ViewPlugin 提供 block 装饰。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
@@ -15,10 +15,13 @@
  */
 import { Decoration, ViewPlugin, WidgetType, EditorView } from '@codemirror/view';
 import { RangeSet, Facet, StateField, StateEffect } from '@codemirror/state';
+import { foldedRanges } from '@codemirror/language';
 import { Desktop } from '../core/ipc.js';
 import { getMarkdownIt, attachMarkdownInteractions, renderMermaidBlocks } from '../markdown/reading.js';
 import { buildMetadataContainer } from '../markdown/properties.js';
 import { parseFrontmatterText } from '../core/metadata.js';
+import { codeLanguageName, highlightCodeElement, cancelCodeHighlight } from '../markdown/highlight.js';
+import { renderMath } from '../markdown/math.js';
 
 const appFacet = Facet.define({ combine: (values) => values[0] });
 const sourcePathFacet = Facet.define({ combine: (values) => values[0] });
@@ -68,12 +71,11 @@ class ImageWidget extends WidgetType {
 class MathWidget extends WidgetType {
   constructor(tex, display) { super(); this.tex = tex; this.display = display; }
   eq(other) { return other.tex === this.tex && other.display === this.display; }
-  toDOM() {
+  toDOM(view) {
     const el = createSpan({ cls: this.display ? 'math math-block' : 'math math-inline' });
-    try {
-      const katex = require('katex');
-      katex.render(this.tex, el, { throwOnError: false, displayMode: this.display });
-    } catch (e) { el.setText(this.tex); }
+    renderMath(el, this.tex, this.display).then(() => {
+      if (view.dom.isConnected) view.requestMeasure();
+    });
     return el;
   }
 }
@@ -129,12 +131,11 @@ class LinkWidget extends WidgetType {
 class MathBlockWidget extends WidgetType {
   constructor(tex) { super(); this.tex = tex; }
   eq(o) { return o.tex === this.tex; }
-  toDOM() {
+  toDOM(view) {
     const el = createDiv({ cls: 'math math-block' });
-    try {
-      const katex = require('katex');
-      katex.render(this.tex, el, { throwOnError: false, displayMode: true });
-    } catch (e) { el.setText(this.tex); }
+    renderMath(el, this.tex, true).then(() => {
+      if (view.dom.isConnected) view.requestMeasure();
+    });
     return el;
   }
 }
@@ -143,13 +144,17 @@ class MathBlockWidget extends WidgetType {
 class CodeBlockWidget extends WidgetType {
   constructor(lang, code) { super(); this.lang = lang; this.code = code; }
   eq(other) { return other.lang === this.lang && other.code === this.code; }
-  toDOM() {
+  toDOM(view) {
     const pre = createEl('pre', { cls: 'lp-codeblock' });
     const code = pre.createEl('code', { cls: 'language-' + (this.lang || 'plain') });
     if (this.lang) code.setAttr('data-lang', this.lang);
     code.setText(this.code);
+    highlightCodeElement(code, this.lang).then(() => {
+      if (view.dom.isConnected) view.requestMeasure();
+    });
     return pre;
   }
+  destroy(dom) { cancelCodeHighlight(dom.querySelector('code')); }
   ignoreEvent() { return false; }
 }
 
@@ -262,6 +267,11 @@ const RE_QUOTE_LINE = /^\s{0,3}>/;
 
 const blocksCache = new WeakMap();
 
+function closesFence(text, fence) {
+  const match = /^\s{0,3}(`{3,}|~{3,})\s*$/.exec(text);
+  return match && match[1][0] === fence.marker && match[1].length >= fence.len;
+}
+
 function classifyBlocks(doc) {
   const hit = blocksCache.get(doc);
   if (hit) return hit;
@@ -286,19 +296,20 @@ function classifyBlocks(doc) {
     const text = line.text;
     const fm = text.match(RE_FENCE_INFO);
     if (fence) {
-      if (fm && fm[1][0] === fence.marker && fm[1].length >= fence.len) {
+      if (closesFence(text, fence)) {
         out.blocks.push({
           kind: 'code',
           startLine: fence.startLine, endLine: n,
           from: doc.line(fence.startLine).from, to: line.to,
           lang: fence.lang,
-          code: doc.sliceString(doc.line(fence.startLine).to, line.from).replace(/\n$/, ''),
+          closed: true,
+          code: doc.sliceString(doc.line(fence.startLine).to + 1, line.from),
         });
         fence = null;
       }
       continue;
     }
-    if (fm) { fence = { marker: fm[1][0], len: fm[1].length, startLine: n, lang: (fm[2] || '').toLowerCase() }; continue; }
+    if (fm) { fence = { marker: fm[1][0], len: fm[1].length, startLine: n, lang: codeLanguageName(fm[2]) }; continue; }
 
     // ---- block math: $$ ... $$
     if (RE_MATH_ONLY.test(text)) {
@@ -343,6 +354,13 @@ function classifyBlocks(doc) {
     }
   }
 
+  if (fence) {
+    const opening = doc.line(fence.startLine);
+    out.blocks.push({ kind: 'code', startLine: fence.startLine, endLine: total,
+      from: opening.from, to: doc.length, lang: fence.lang, closed: false,
+      code: doc.sliceString(Math.min(opening.to + 1, doc.length)),
+    });
+  }
   blocksCache.set(doc, out);
   return out;
 }
@@ -366,8 +384,13 @@ function computeBlockLayer(state) {
   const coveredLines = new Set();
   const settings = (app && app.settings && app.settings.appSettings) || {};
   const propsMode = settings.propertiesInDocument || 'visible';
+  const folded = (from, to) => {
+    let hidden = false;
+    foldedRanges(state).between(from, to, (start, end) => { if (start < to && end > from) hidden = true; });
+    return hidden;
+  };
 
-  if (frontmatter) {
+  if (frontmatter && !folded(frontmatter.from, frontmatter.to)) {
     for (let n = frontmatter.startLine; n <= frontmatter.endLine; n++) coveredLines.add(n);
     const file = app && app.vault ? app.vault.getFileByPath(sourcePath) : null;
     const fmRaw = state.field(fmSourceField, false);
@@ -388,7 +411,7 @@ function computeBlockLayer(state) {
   }
 
   for (const b of blocks) {
-    if (touched(b.from, b.to)) continue;
+    if (touched(b.from, b.to) || folded(b.from, b.to)) continue;
     let widget = null;
     if (b.kind === 'math') widget = new MathBlockWidget(b.tex);
     else if (b.kind === 'table') widget = new TableWidget(doc.sliceString(b.from, b.to), sourcePath);
@@ -423,16 +446,10 @@ const RE_HR = /^\s{0,3}(?:(?:-\s*){3,}|(?:\*\s*){3,}|(?:_\s*){3,})$/;
 
 function computeFenceLines(doc) {
   const map = new Map();
-  let inFence = false;
-  let marker = '';
-  for (let i = 1; i <= doc.lines; i++) {
-    const text = doc.line(i).text;
-    const m = text.match(RE_FENCE_OPEN);
-    if (!inFence) {
-      if (m) { inFence = true; marker = m[1][0]; map.set(i - 1, 'begin'); }
-    } else {
-      if (m && m[1][0] === marker) { inFence = false; marker = ''; map.set(i - 1, 'end'); }
-      else map.set(i - 1, 'body');
+  for (const block of classifyBlocks(doc).blocks) {
+    if (block.kind !== 'code') continue;
+    for (let n = block.startLine; n <= block.endLine; n++) {
+      map.set(n - 1, n === block.startLine ? 'begin' : n === block.endLine && block.closed ? 'end' : 'body');
     }
   }
   return map;

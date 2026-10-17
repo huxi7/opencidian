@@ -1,3 +1,9 @@
+/**
+ * [INPUT]: 依赖 Editor、live-preview 的 CM6 DOM 与 tokens.css。
+ * [OUTPUT]: 编辑区、折叠控件和实时预览部件样式。
+ * [POS]: 编辑器样式入口；代码 token 颜色由 markdown-highlight.css 提供。
+ * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
+ */
 /* ==========================================================================
    editor.css — source / live-preview (CodeMirror 6) and view chrome
    ========================================================================== */
@@ -66,7 +72,18 @@
 .cm-editor .cm-selectionBackground,
 .cm-editor .cm-content ::selection,
 .cm-editor.cm-focused .cm-selectionBackground { background-color: var(--text-selection) !important; }
-.cm-editor .cm-gutters { display: none; }
+.cm-editor .cm-gutters { background: transparent; border: none; }
+.cm-editor .cm-foldGutter { width: var(--size-4-5); }
+.cm-editor .cm-foldGutter .cm-gutterElement { padding: 0; cursor: var(--cursor); }
+.cm-editor .cm-foldGutter .collapse-indicator { color: var(--text-faint); }
+.cm-editor .cm-foldGutter .collapse-indicator.is-collapsed { opacity: 1; }
+.markdown-source-view.mod-cm6 .cm-foldPlaceholder {
+  color: var(--text-faint);
+  background-color: transparent;
+  border: none;
+  margin-inline-start: 8px;
+  user-select: none;
+}
 .cm-editor .cm-activeLine { background-color: transparent; }
 .cm-editor .cm-activeLineGutter { background-color: transparent; }
 .cm-editor .cm-placeholder { color: var(--text-faint); }

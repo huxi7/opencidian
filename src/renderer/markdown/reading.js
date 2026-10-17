@@ -1,5 +1,5 @@
 /**
- * [INPUT]: 依赖 markdown-it 及 footnote/task-lists 插件；依赖 ../core/ipc.js 的 Desktop；依赖 ../core/icons.js 的 createIcon；依赖 ../core/vault.js 的 normalizePath/parentPathOf
+ * [INPUT]: 依赖 markdown-it、footnote/task-lists、Desktop、图标和 vault 路径；代码块委托 highlight.js，公式委托 math.js。
  * [OUTPUT]: 导出 getMarkdownIt、renderMarkdown、attachMarkdownInteractions、stripFrontmatter、scrollToSubpath、resolvePath、resolveFileUrl、parseFrontmatterText 之外的 escapeHtml
  * [POS]: markdown/ 的阅读视图渲染器，被 markdown-view.js（阅读模式）与 live-preview.js（块级 widget 内嵌 HTML）共同调用。callout 渲染为 div.callout（原版 DOM 非 blockquote），核心规则挂在 core.ruler 的 inline 之后。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
@@ -14,6 +14,8 @@ import taskLists from 'markdown-it-task-lists';
 import { Desktop } from '../core/ipc.js';
 import { createIcon } from '../core/icons.js';
 import { normalizePath, parentPathOf } from '../core/vault.js';
+import { codeLanguageName, highlightCodeBlocks } from './highlight.js';
+import { renderMathBlocks } from './math.js';
 
 const IMAGE_EXTS = ['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'bmp', 'avif'];
 const AUDIO_EXTS = ['mp3', 'wav', 'm4a', 'ogg', '3gp', 'flac', 'opus'];
@@ -75,16 +77,14 @@ export function getMarkdownIt() {
     return `<span class="${cls}"><img src="${escapeAttr(resolved)}" alt="${escapeAttr(alt)}" class="cm-inline-image"></span>`;
   };
 
-  // fenced code blocks: mermaid + language class
-  const defaultFence = md.renderer.rules.fence;
+  // ---- 围栏代码块：Mermaid 独立渲染，其余共用 Lezer 高亮 ---------------------
   md.renderer.rules.fence = (tokens, idx, options, env, self) => {
     const token = tokens[idx];
     const info = token.info ? token.info.trim() : '';
-    const lang = info.split(/\s+/)[0];
+    const lang = codeLanguageName(info);
     if (lang === 'mermaid') {
       return `<div class="mermaid-source" data-source="${escapeAttr(token.content)}"></div>`;
     }
-    const highlighted = ''; // Prism-style highlighting is emulated via CSS only
     return `<pre><code class="language-${escapeAttr(lang)}" data-lang="${escapeAttr(lang)}">${escapeHtml(token.content)}</code></pre>`;
   };
 
@@ -197,7 +197,7 @@ function installMath(md) {
     state.pos = i + 1;
     return true;
   });
-  md.renderer.rules.math_inline = (tokens, idx) => renderKatex(tokens[idx].content, false);
+  md.renderer.rules.math_inline = (tokens, idx) => mathPlaceholder(tokens[idx].content, false);
 
   md.block.ruler.before('fence', 'math_block', (state, startLine, endLine, silent) => {
     const start = state.bMarks[startLine] + state.tShift[startLine];
@@ -233,16 +233,13 @@ function installMath(md) {
     token.map = [startLine, state.line];
     return true;
   });
-  md.renderer.rules.math_block = (tokens, idx) => renderKatex(tokens[idx].content, true);
+  md.renderer.rules.math_block = (tokens, idx) => mathPlaceholder(tokens[idx].content, true);
 }
 
-function renderKatex(content, display) {
-  try {
-    const katex = require('katex');
-    return katex.renderToString(content, { displayMode: display, throwOnError: false, output: 'html' });
-  } catch (e) {
-    return `<code>${escapeHtml(content)}</code>`;
-  }
+function mathPlaceholder(content, display) {
+  const tag = display ? 'div' : 'span';
+  const mode = display ? 'math-block' : 'math-inline';
+  return `<${tag} class="math ${mode}" data-math="${escapeAttr(content)}">${escapeHtml(content)}</${tag}>`;
 }
 
 function installTags(md) {
@@ -462,6 +459,8 @@ export async function renderMarkdown(app, markdown, el, sourcePath, options = {}
   const env = { app, sourcePath, depth: options.depth || 0 };
   let html = md.render(markdown, env);
   el.innerHTML = html;
+  const highlighting = highlightCodeBlocks(el);
+  const mathematics = renderMathBlocks(el);
 
   // nested embeds
   const embeds = pendingEmbeds;
@@ -485,6 +484,8 @@ export async function renderMarkdown(app, markdown, el, sourcePath, options = {}
 
   // mermaid diagrams
   await renderMermaidBlocks(el);
+  await highlighting;
+  await mathematics;
 
   // annotate headings for subpath navigation
   annotateHeadings(el);

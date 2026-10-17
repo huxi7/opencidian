@@ -1,3 +1,9 @@
+<!--
+[INPUT]: styles 样式入口与 dist/renderer.js。
+[OUTPUT]: 桌面主窗口文档。
+[POS]: renderer 宿主；MathJax 由公式适配器懒加载。
+[PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
+-->
 <!DOCTYPE html>
 <html>
 <head>
@@ -19,7 +25,6 @@
 	<link href="styles/canvas.css" type="text/css" rel="stylesheet"/>
 	<link href="styles/bookmarks.css" type="text/css" rel="stylesheet"/>
 	<link href="styles/slides.css" type="text/css" rel="stylesheet"/>
-	<link href="dist/katex.css" type="text/css" rel="stylesheet"/>
 </head>
 <body class="theme-dark">
 <script type="text/javascript" defer src="dist/renderer.js"></script>

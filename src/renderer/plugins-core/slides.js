@@ -1,7 +1,7 @@
 /**
  * [INPUT]: 依赖 ../core/i18n.js 的 tt；依赖 ../views/slides-view.js 的 SlidesView
  * [OUTPUT]: 导出 nameKey、create(app)（注册 'slides' 视图 + 命令 slides:start）
- * [POS]: plugins-core/ 的幻灯片插件。原版用 reveal.js 全屏覆盖层；本实现注册工作区视图 'slides'，命令把当前 md 以该视图打开。checkCallback 语义与原版一致：活动文件不是 md 时命令不可用。
+ * [POS]: plugins-core/ 的幻灯片入口。仅当前 Markdown 可开始演示。切换前保存返回模式、滚动与选区；叶子关闭流程负责保存正文。卸载先退出全部演示再撤销注册。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 /* Core plugin: slides — present the current markdown file as slides. */
@@ -10,11 +10,27 @@ import { SlidesView } from '../views/slides-view.js';
 
 export const nameKey = 'plugins.slides';
 
-function openSlides(app, file) {
-  app.workspace.getLeaf(false).setViewState({ type: 'slides', state: { file: file.path } });
+async function openSlides(app, file) {
+  const leaf = app.workspace.activeLeaf;
+  if (!leaf || leaf._openingSlides || leaf.view.getViewType() !== 'markdown') return;
+  const view = leaf.view;
+  const returnState = { ...view.getState() };
+  const returnEphemeral = { ...view.getEphemeralState() };
+  const selection = view.editor ? {
+    anchor: view.editor.getCursor('anchor'), head: view.editor.getCursor('head'),
+  } : null;
+  leaf._openingSlides = true;
+  try {
+    await leaf.setViewState({ type: 'slides', state: { file: file.path, returnState, returnEphemeral, selection } });
+  } finally { leaf._openingSlides = false; }
 }
 
 export function create(app) {
+  const unload = async () => {
+    for (const leaf of app.workspace.getLeavesOfType('slides')) await leaf.view.exit();
+    app.viewRegistry.unregisterView('slides');
+    app.commands.removeCommand('slides:start');
+  };
   return {
     onload() {
       app.viewRegistry.registerView('slides', (leaf) => new SlidesView(leaf));
@@ -25,18 +41,12 @@ export function create(app) {
         checkCallback: (checking) => {
           const file = app.workspace.getActiveFile();
           if (!file || file.extension !== 'md') return false;
-          if (!checking) openSlides(app, file);
+          if (!checking) openSlides(app, file).catch((error) => console.error('slides: presentation failed', error));
           return true;
         },
       });
     },
-    onunload() {
-      app.viewRegistry.unregisterView('slides');
-      app.commands.removeCommand('slides:start');
-    },
-    deregister(app2) {
-      app2.viewRegistry.unregisterView('slides');
-      app2.commands.removeCommand('slides:start');
-    },
+    onunload: unload,
+    deregister: unload,
   };
 }

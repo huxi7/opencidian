@@ -1,7 +1,7 @@
 /**
  * [INPUT]: 依赖 ../core/i18n.js 的 tt；依赖 ../core/notices.js 的 Notice；依赖 ../core/modals.js 的 Modal；依赖 ../core/suggest.js 的 SuggestModal；依赖 ../core/icons.js 的 setIcon；moment
  * [OUTPUT]: 导出 nameKey、DATA_FILE、create(app)（命令 workspaces:load/save/save-and-load/open-modal + ribbon 管理工作区）
- * [POS]: plugins-core/ 的工作区插件。数据 .obsidian/workspaces.json（{workspaces:{名称:布局}, active:名称}，布局含 mtime 字符串），逐字对齐原版保存格式。原版用 workspace.changeLayout 就地换布局；本实现用 loadLayout + postLayoutLoad 组合（与 app.js 启动恢复同一路径），换布局后整体重渲染。
+ * [POS]: plugins-core/ 的工作区插件。保存与加载共用串行队列。保存先等待叶子落盘，再独立复制命名布局。加载关闭旧视图并释放监听器，再用 loadLayout/postLayoutLoad 重建；激活后同步文件事件与启动布局。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 /* Core plugin: workspaces — save and load workspace layouts. */
@@ -22,10 +22,11 @@ export const DATA_FILE = 'workspaces.json';
 class Workspaces {
   constructor(app) {
     this.app = app;
-    this.workspaces = {};
+    this.workspaces = Object.create(null);
     this.activeWorkspace = '';
     this._ribbonEl = null;
     this._commandIds = [];
+    this._loading = Promise.resolve();
   }
 
   /* ------------------------------------------------------------ 数据层 */
@@ -37,10 +38,18 @@ class Workspaces {
   }
 
   saveWorkspace(name) {
-    const layout = this.app.workspace.getLayout();
-    layout.mtime = moment().format();
-    this.workspaces[name] = layout;
-    this.saveData();
+    return this.enqueue(async () => {
+      const leaves = [];
+      this.app.workspace.iterateAllLeaves((leaf) => leaves.push(leaf));
+      for (const leaf of leaves) {
+        if (leaf.view && typeof leaf.view.save === 'function') await leaf.view.save();
+      }
+      // 布局含 lastOpenFiles 等可变引用，命名快照必须与活动布局隔离。
+      const layout = JSON.parse(JSON.stringify(this.app.workspace.getLayout()));
+      layout.mtime = moment().format();
+      this.workspaces[name] = layout;
+      this.saveData();
+    });
   }
 
   setActiveWorkspace(name) {
@@ -48,27 +57,63 @@ class Workspaces {
     this.saveData();
   }
 
-  async loadWorkspace(name) {
-    if (!Object.prototype.hasOwnProperty.call(this.workspaces, name)) return;
-    this.activeWorkspace = name;
-    const layout = this.workspaces[name];
-    const active = await this.app.workspace.loadLayout(layout);
-    await this.app.workspace.postLayoutLoad(typeof active === 'string' ? active : null);
-    this.app.workspace.trigger('layout-change');
-    this.saveData();
+  loadWorkspace(name) {
+    return this.enqueue(() => this._loadWorkspace(name));
   }
 
-  async deleteWorkspace(name) {
-    delete this.workspaces[name];
+  enqueue(action) {
+    const operation = this._loading.then(action);
+    this._loading = operation.catch(() => {});
+    return operation;
+  }
+
+  async _loadWorkspace(name) {
+    if (!Object.prototype.hasOwnProperty.call(this.workspaces, name)) return false;
+    const layout = JSON.parse(JSON.stringify(this.workspaces[name]));
+    if (!layout.main || !layout.left || !layout.right) throw new Error('Invalid workspace layout');
+    const workspace = this.app.workspace;
+    const leaves = [];
+    workspace.iterateAllLeaves((leaf) => leaves.push(leaf));
+    // loadLayout 是启动恢复入口，不会替调用方关闭已存在的视图。
+    for (const leaf of leaves) {
+      if (leaf.view) {
+        if (typeof leaf.view.save === 'function') await leaf.view.save();
+        await leaf.view.onClose();
+        for (const dispose of leaf.view._children || []) if (typeof dispose === 'function') dispose();
+        leaf.view._children = [];
+        if (leaf.view._rootEl) leaf.view._rootEl.detach();
+      }
+      if (leaf._resizeObserver) leaf._resizeObserver.disconnect();
+    }
+    workspace.activeLeaf = null;
+    workspace._lastActiveLeaves = [];
+    const active = await workspace.loadLayout(layout);
+    if (active === false) throw new Error('Failed to load workspace layout');
+    await workspace.postLayoutLoad(typeof active === 'string' ? active : null);
+    this.activeWorkspace = name;
+    workspace.trigger('file-open', workspace.getActiveFile());
+    workspace.trigger('layout-change');
     this.saveData();
+    await this.app.saveLayout();
+    return true;
+  }
+
+  deleteWorkspace(name) {
+    return this.enqueue(() => {
+      delete this.workspaces[name];
+      if (this.activeWorkspace === name) this.activeWorkspace = '';
+      this.saveData();
+    });
   }
 
   /* ------------------------------------------------------------ 入口 */
-  onSave() {
+  async onSave() {
     const name = this.activeWorkspace;
     if (name && Object.prototype.hasOwnProperty.call(this.workspaces, name)) {
-      this.saveWorkspace(name);
-      new Notice(tt('plugins.workspaces.msg-save-layout-success', 'Successfully saved layout "{{name}}"', { name }));
+      try {
+        await this.saveWorkspace(name);
+        new Notice(tt('plugins.workspaces.msg-save-layout-success', 'Successfully saved layout "{{name}}"', { name }));
+      } catch (error) { new Notice(error.message || String(error)); }
     } else {
       new ManageWorkspacesModal(this.app, this).open();
     }
@@ -76,8 +121,9 @@ class Workspaces {
 
   onload() {
     const data = this.app.settings.loadPluginData(DATA_FILE, {});
-    this.workspaces = data.workspaces && typeof data.workspaces === 'object' ? data.workspaces : {};
-    this.activeWorkspace = typeof data.active === 'string' ? data.active : '';
+    this.workspaces = Object.assign(Object.create(null),
+      data.workspaces && !Array.isArray(data.workspaces) && typeof data.workspaces === 'object' ? data.workspaces : {});
+    this.activeWorkspace = Object.prototype.hasOwnProperty.call(this.workspaces, data.active) ? data.active : '';
     const add = (command) => {
       this.app.commands.addCommand(command);
       this._commandIds.push(command.id);
@@ -185,7 +231,12 @@ class ManageWorkspacesModal extends Modal {
         cls: 'list-item-part',
         text: tt('plugins.workspaces.button-load', 'Load'),
       });
-      loadBtn.onclick = () => { this.plugin.loadWorkspace(name); this.close(); };
+      loadBtn.onclick = async () => {
+        loadBtn.disabled = true;
+        try { await this.plugin.loadWorkspace(name); this.close(); }
+        catch (error) { new Notice(error.message || String(error)); }
+        finally { loadBtn.disabled = false; }
+      };
       const deleteBtn = actions.createDiv('list-item-part clickable-icon');
       setIcon(deleteBtn, 'lucide-x');
       deleteBtn.setAttr('aria-label', tt('plugins.workspaces.tooltip-delete-layout', 'Delete layout'));
@@ -194,13 +245,14 @@ class ManageWorkspacesModal extends Modal {
     }
   }
 
-  onFinish() {
+  async onFinish() {
     const name = this.nameEl.value.trim();
     if (!name) {
       new Notice(tt('plugins.workspaces.msg-enter-name', 'Please enter a name for the new layout.'));
       return;
     }
-    this.plugin.saveWorkspace(name);
+    try { await this.plugin.saveWorkspace(name); }
+    catch (error) { new Notice(error.message || String(error)); return; }
     this.plugin.setActiveWorkspace(name);
     new Notice(tt('plugins.workspaces.msg-save-layout-success', 'Successfully saved layout "{{name}}"', { name }));
     this.nameEl.value = '';
@@ -243,14 +295,16 @@ class LoadWorkspaceModal extends SuggestModal {
     }
   }
 
-  onChooseSuggestion(name) {
+  async onChooseSuggestion(name) {
     if (this.shouldSave) {
       const active = this.plugin.activeWorkspace;
       if (active && Object.prototype.hasOwnProperty.call(this.plugin.workspaces, active)) {
-        this.plugin.saveWorkspace(active);
+        try { await this.plugin.saveWorkspace(active); }
+        catch (error) { new Notice(error.message || String(error)); return; }
       }
     }
-    this.plugin.loadWorkspace(name);
+    try { await this.plugin.loadWorkspace(name); }
+    catch (error) { new Notice(error.message || String(error)); }
   }
 }
 

@@ -382,6 +382,9 @@ h6:hover .collapse-indicator,
   }
   .text-icon-button.has-active-menu .text-button-icon,
   .text-icon-button:hover .text-button-icon {
+    color: var(--icon-color-hover);
+  }
+}
 
 .prompt {
   display: flex;
@@ -450,4 +453,144 @@ input.prompt-input:focus-visible {
 .prompt-instruction-command {
   font-weight: var(--bold-weight);
   margin-inline-end: var(--size-2-2);
+}
+
+/* 文件恢复：原版历史列表与内容区规则。 */
+.file-recovery-list-item-container {
+  overflow: auto;
+  flex: 1 1 0;
+}
+.file-recovery-list {
+  overflow: auto;
+  padding: var(--size-4-3) var(--size-4-2);
+  flex-grow: 1;
+  display: flex;
+  flex-direction: column;
+}
+.file-recovery-list .search-input-container {
+  width: 100%;
+}
+.file-recovery-list-container {
+  display: flex;
+  flex-direction: column;
+  flex-basis: 250px;
+  flex-shrink: 0;
+  border-inline-end: 1px solid var(--background-modifier-border);
+}
+.file-recovery-list-item-header {
+  display: flex;
+  padding: var(--size-4-2);
+  border-radius: var(--radius-s);
+  transition: background-color 200ms ease-in-out, color 200ms ease-in-out;
+}
+.file-recovery-list-item-header:not(:last-child) {
+  margin-bottom: var(--size-4-2);
+}
+.file-recovery-list-item-header.is-active,
+.file-recovery-list-item-header.is-active:hover {
+  background-color: var(--interactive-accent);
+  color: var(--text-on-accent);
+}
+.file-recovery-list-item-header.is-active .u-muted,
+.file-recovery-list-item-header.is-active:hover .u-muted {
+  color: var(--text-on-accent);
+  opacity: 0.8;
+}
+@media (hover: hover) {
+  .file-recovery-list-item-header:hover {
+    background-color: var(--background-modifier-hover);
+  }
+}
+.file-recovery-list-item-header .file-recovery-list-item-details {
+  flex-grow: 1;
+  cursor: var(--cursor);
+  font-size: var(--font-ui-small);
+}
+.file-recovery-list-item-header .collapse-indicator {
+  min-width: var(--size-4-6);
+  padding-inline-start: var(--size-4-2);
+  opacity: 1;
+}
+.file-recovery-text {
+  font-size: var(--code-size);
+  font-family: var(--font-monospace);
+  tab-size: 4;
+  resize: none;
+  flex: 1 0 0;
+  padding: var(--size-4-6);
+  font-size: var(--font-ui-medium);
+  background-color: var(--background-primary);
+}
+.file-recovery-text[data-ext="md"] {
+  font-family: var(--font-text);
+  font-size: var(--font-text-size);
+}
+
+.modal-setting-titlebar {
+  display: flex;
+  align-items: center;
+  padding: var(--size-4-2) var(--size-4-4);
+  border-bottom: 1px solid var(--background-modifier-border);
+  padding-inline-end: var(--size-4-10);
+}
+.modal-setting-titlebar .modal-setting-title {
+  font-size: var(--font-ui-medium);
+  font-weight: var(--file-header-font-weight);
+  flex-grow: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.modal-setting-titlebar .modal-setting-titlebar-toggle {
+  display: flex;
+  align-items: center;
+  margin: 0 var(--size-4-3);
+  gap: var(--size-4-2);
+}
+.modal-setting-titlebar .modal-setting-titlebar-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--size-4-1);
+}
+
+.sync-history-content-container {
+  background-color: var(--background-primary);
+  padding: 0;
+  height: auto;
+  display: flex;
+  flex-direction: column;
+  width: 0;
+  flex: 1 1 auto;
+}
+.sync-history-content-container .modal-button-container {
+  border-top: 1px solid var(--background-modifier-border);
+  margin: 0;
+  padding: 12px;
+  justify-content: center;
+}
+.sync-history-content-container textarea {
+  resize: none;
+  border: none;
+  box-shadow: none;
+}
+.sync-history-content-container textarea:hover,
+.sync-history-content-container textarea:active,
+.sync-history-content-container textarea:focus {
+  border: none;
+  box-shadow: none;
+}
+.sync-history-content-empty {
+  display: none;
+}
+.sync-history-content-container.mod-empty .sync-history-content-empty {
+  display: block;
+  text-align: center;
+  padding: 24px;
+}
+.sync-history-content {
+  display: flex;
+  flex-direction: column;
+  flex-grow: 1;
+  overflow: hidden;
+  padding: 0;
 }

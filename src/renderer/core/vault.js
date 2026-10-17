@@ -1,7 +1,7 @@
 /**
  * [INPUT]: 依赖 ./events.js 的 Events；Node 内置 fs/path/chokidar/os
  * [OUTPUT]: 导出 Vault、TFile、TFolder、TAbstractFile、FileSystemAdapter、isHiddenPath
- * [POS]: core/ 的文件模型与磁盘适配层，全应用唯一文件真相源。点开头的路径段一律不进树（原版 nu() 语义）——.obsidian 配置经适配器直读，不暴露给插件。
+ * [POS]: core/ 的文件模型与磁盘适配层，全应用唯一文件真相源。首次扫描与文件监听均拒绝点开头路径段（原版 nu() 语义）——.obsidian 配置经适配器直读，不暴露给插件。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 /* Vault + file system adapter. Mirrors Obsidian's Vault/TFile/TFolder model. */
@@ -341,12 +341,12 @@ export class Vault extends Events {
       awaitWriteFinish: { stabilityThreshold: 250, pollInterval: 50 },
       ignored: (p) => {
         const name = nodePath.basename(p);
-        return name === '.DS_Store' || name === 'node_modules';
+        return isHiddenPath(this.adapter.toRel(p)) || name === 'node_modules';
       },
     });
     const handle = async (event, abs) => {
       const rel = this.adapter.toRel(abs);
-      if (rel.startsWith('..')) return;
+      if (rel.startsWith('..') || isHiddenPath(rel)) return;
       const existing = this.all.get(rel);
       if (event === 'unlink' || event === 'unlinkDir') {
         if (existing) { this.removeFromMaps(existing); this.trigger('delete', existing); }

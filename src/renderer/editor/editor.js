@@ -1,25 +1,22 @@
 /**
- * [INPUT]: 依赖 @codemirror/{state,view,commands,lang-markdown}；依赖 ./live-preview.js 的 livePreviewExtension；依赖 ./completions.js；依赖 ../core/i18n.js 的 t
- * [OUTPUT]: 导出 Editor 类（Obsidian Editor API 子集：getValue/setValue/getLine/getCursor/posToOffset/replaceRange/…）、createEditorState/createEditorView、livePreviewExtension 装配入口
- * [POS]: editor/ 的 CodeMirror 6 包装层。Editor.sourcePath 供 live-preview 定位文件；_livePreviewCompartment 控制实时预览装载。位置约定 {line, ch} 0-based。
+ * [INPUT]: 依赖 CM6、folding.js 折叠策略、live-preview.js 装饰与 markdown/highlight.js 语义颜色。
+ * [OUTPUT]: 导出 Editor、EditorState、EditorView、ViewPlugin；Editor.setFolding 热切换标题与缩进折叠。
+ * [POS]: editor/ 的 CM6 包装层。独立 Compartment 保留文档与撤销栈；位置采用零基 {line, ch}。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 /*
  * Editor — CodeMirror 6 wrapper exposing the Obsidian `Editor` API subset.
  * Positions are {line, ch} 0-based (EditorPosition / EditorRange / EditorSelection).
  */
-import { EditorState, Compartment, Prec } from '@codemirror/state';
+import { EditorState, EditorSelection, Compartment, Prec } from '@codemirror/state';
 import {
   EditorView, keymap as cmKeymap, drawSelection, dropCursor, highlightActiveLine,
   highlightActiveLineGutter, highlightSpecialChars, lineNumbers, rectangularSelection,
   crosshairCursor, placeholder as cmPlaceholder, ViewPlugin,
 } from '@codemirror/view';
 import { defaultKeymap, history, historyKeymap, indentWithTab, undo, redo } from '@codemirror/commands';
-import { markdown, markdownLanguage } from '@codemirror/lang-markdown';
-import { languages } from '@codemirror/language-data';
 import {
-  syntaxHighlighting, HighlightStyle, bracketMatching, indentUnit, foldGutter,
-  foldKeymap, indentOnInput, defaultHighlightStyle,
+  syntaxHighlighting, HighlightStyle, bracketMatching, indentUnit, indentOnInput,
 } from '@codemirror/language';
 import { tags as hlTags } from '@lezer/highlight';
 import {
@@ -29,6 +26,8 @@ import { autocompletion, completionKeymap, closeBrackets, closeBracketsKeymap } 
 import { livePreviewExtension } from './live-preview.js';
 import { wikilinkCompletionSource } from './completions.js';
 import { eventToHotkey } from '../core/keymap.js';
+import { markdownEditing, foldingExtensions, unfoldDisabledFolds } from './folding.js';
+import { codeHighlighter } from '../markdown/highlight.js';
 
 // ---------------------------------------------------------------------------
 // Theme
@@ -128,12 +127,17 @@ export class Editor {
     this._extCompartment = new Compartment();
     this._indentCompartment = new Compartment();
     this._bracketsCompartment = new Compartment();
+    this._foldingCompartment = new Compartment();
+    const settings = app.settings?.appSettings || {};
+    this._foldHeading = settings.foldHeading !== false;
+    this._foldIndent = settings.foldIndent !== false;
     this._extensions = [];
 
     const extensions = this._baseExtensions();
     const state = EditorState.create({ doc: options.doc || '', extensions });
 
     this.cm = new EditorView({ state, parent: containerEl });
+    this.cm.dom.classList.toggle('is-folding', this._foldHeading || this._foldIndent);
     this.setSpellcheck(app.settings && app.settings.appSettings.spellcheck === true);
 
     // intercept Obsidian-style keys before the default browser behavior
@@ -164,9 +168,11 @@ export class Editor {
       Prec.high(cmKeymap.of([
         { key: 'Mod-f', run: (v) => { openSearchPanel(v); return true; }, preventDefault: true },
       ])),
-      cmKeymap.of([...closeBracketsKeymap, ...defaultKeymap, ...searchKeymap, ...historyKeymap, ...foldKeymap, ...completionKeymap, indentWithTab]),
-      markdown({ base: markdownLanguage, codeLanguages: languages, addKeymap: false }),
+      cmKeymap.of([...closeBracketsKeymap, ...defaultKeymap, ...searchKeymap, ...historyKeymap, ...completionKeymap, indentWithTab]),
+      markdownEditing,
+      this._foldingCompartment.of(foldingExtensions(this._foldHeading, this._foldIndent)),
       syntaxHighlighting(markdownHighlightDark),
+      syntaxHighlighting(codeHighlighter),
       highlightSelectionMatches(),
       this._themeCompartment.of(themeSpec(dark)),
       this._livePreviewCompartment.of(livePreviewExtension(app, () => this.sourcePath)),
@@ -263,6 +269,10 @@ export class Editor {
   }
 
   setCursor(line, ch) {
+    if (line && typeof line === 'object') {
+      this.setSelection(line);
+      return;
+    }
     if (typeof line === 'number') {
       this.setSelection({ line, ch: ch || 0 });
       return;
@@ -296,11 +306,11 @@ export class Editor {
   scrollIntoView(range, center = false) {
     const from = this.posToOffset(range.from || range);
     const to = this.posToOffset(range.to || range);
-    this.cm.dispatch({ effects: EditorView.scrollIntoView({ from, to }, { y: center ? 'center' : 'nearest' }) });
+    this.cm.dispatch({ effects: EditorView.scrollIntoView(EditorSelection.range(from, to), { y: center ? 'center' : 'nearest' }) });
   }
 
   scrollTo(line, ch = 0) {
-    const l = Math.max(0, Math.min(this.lineCount - 1, line));
+    const l = Math.max(0, Math.min(this.cm.state.doc.lines - 1, line));
     this.scrollIntoView({ from: { line: l, ch }, to: { line: l, ch } }, true);
   }
 
@@ -378,6 +388,18 @@ export class Editor {
 
   setSpellcheck(enabled) {
     if (this.cm && this.cm.contentDOM) this.cm.contentDOM.spellcheck = !!enabled;
+  }
+
+  setFolding(heading, indent) {
+    heading = !!heading;
+    indent = !!indent;
+    if (heading === this._foldHeading && indent === this._foldIndent) return;
+    const effects = unfoldDisabledFolds(this.cm.state, heading, indent);
+    effects.push(this._foldingCompartment.reconfigure(foldingExtensions(heading, indent)));
+    this._foldHeading = heading;
+    this._foldIndent = indent;
+    this.cm.dispatch({ effects });
+    this.cm.dom.classList.toggle('is-folding', heading || indent);
   }
 
   setReadOnly(ro) {

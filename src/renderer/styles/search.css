@@ -1,10 +1,12 @@
-/* ==========================================================================
-   search.css — global search, backlinks, outline, tag pane (tree panes)
-   ========================================================================== */
+/**
+ * [INPUT]: tokens 设计变量、tree.css 树基础与各面板 DOM。
+ * [OUTPUT]: 搜索、反链、大纲与标签面板的布局规则。
+ * [POS]: 树面板专属样式。右栏按原版 app.css 布局，树基础交给 tree.css。
+ * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
+ */
 
 .search-view, .search-view-container,
-.backlink-view, .backlink-pane,
-.outline-view, .outline-view-container,
+.backlink-view,
 .tag-pane-view, .tag-container {
   display: flex;
   flex-direction: column;
@@ -102,55 +104,89 @@
 .search-result-file-match-content { overflow: hidden; text-overflow: ellipsis; }
 .search-result-file-matched-text { color: var(--text-accent); font-weight: var(--font-medium); }
 
-/* -------------------------------------------------------------- tree items */
-.tree-item { position: relative; }
-.tree-item-self {
+/* --- 反链：原版 app.css 5997、13101、15576 起 --- */
+.workspace-leaf-content[data-type='backlink'] .view-content {
+  padding: 0;
+  overflow: hidden;
   display: flex;
-  align-items: center;
-  gap: var(--size-2-2);
-  padding: var(--size-4-1) var(--size-4-2);
-  border-radius: var(--nav-item-radius);
-  color: var(--text-muted);
-  font-size: var(--font-ui-small);
-  cursor: default;
-  min-height: 24px;
+  flex-direction: column;
 }
-.tree-item-self.is-clickable { cursor: var(--cursor, pointer); }
-.tree-item-self:hover { background-color: var(--background-modifier-hover); color: var(--text-normal); }
-.tree-item-icon { display: flex; color: var(--text-faint); }
-.tree-item-icon .svg-icon { width: var(--icon-s); height: var(--icon-s); }
-.tree-item-inner { flex: 1 1 auto; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
-.tree-item-flair {
+.backlink-view > .nav-header {
+  display: block;
   flex: 0 0 auto;
-  font-size: var(--font-ui-smaller);
-  color: var(--nav-tag-color);
-  font-weight: var(--nav-tag-weight);
-  background-color: var(--nav-tag-background);
-  border-radius: var(--nav-tag-radius);
-  padding: 0 var(--size-2-2);
+  padding: var(--size-4-2);
 }
-.tree-item-flair-outer { display: flex; }
-.tree-item-children { margin-inline-start: var(--size-4-3); border-inline-start: var(--nav-indentation-guide-width) solid transparent; }
-.tree-item-children:hover { border-inline-start-color: var(--nav-indentation-guide-color); }
-.tree-item.is-collapsed > .tree-item-children { display: none; }
-.tree-item .collapse-icon { display: flex; align-items: center; color: var(--collapse-icon-color); }
-.tree-item.is-collapsed .collapse-icon { color: var(--collapse-icon-color-collapsed); }
-.collapse-icon svg.svg-icon { width: 10px; height: 10px; stroke-width: 4px; transition: transform 100ms ease-in-out; }
-.collapse-icon.is-collapsed svg.svg-icon { transform: rotate(-90deg); }
-
-/* ------------------------------------------------------------- backlinks */
+.backlink-view .nav-buttons-container { padding: 0; flex-wrap: wrap; gap: var(--size-2-1); }
+.backlink-view .nav-header .search-input-container { margin: 4px auto; padding: 0; }
+.backlink-search-input { width: 100%; }
 .backlink-pane {
   padding-top: var(--size-4-1);
   overflow-y: auto;
   flex: 1 0 0;
-  padding-inline: var(--size-4-3);
-  padding-bottom: var(--size-4-8);
+  padding-inline-start: var(--size-4-3);
+  padding-inline-end: var(--size-4-3);
+  padding-bottom: max(var(--safe-area-inset-bottom), var(--size-4-8));
 }
-.backlink-pane .search-result-container { padding: var(--size-4-1) 1px var(--size-4-4); }
+.backlink-pane .search-result-container {
+  padding: var(--size-4-1) 1px var(--size-4-4);
+  position: relative;
+  flex: 1 0 0;
+}
 .backlink-pane > .tree-item-self { color: var(--nav-heading-color); padding-inline-start: var(--size-4-2); }
 .backlink-pane > .tree-item-self .tree-item-inner { font-weight: var(--nav-heading-weight); }
+.backlink-pane > .tree-item-self.is-clickable.is-collapsed { color: var(--nav-heading-color-collapsed); }
 .backlink-pane > .tree-item-self .collapse-icon { display: none; }
-.backlink-pane > .tree-item-self:hover { color: var(--nav-heading-color-hover); }
+@media (hover: hover) {
+  .backlink-pane > .tree-item-self.is-clickable.is-collapsed:hover { color: var(--nav-heading-color-collapsed-hover); }
+  .backlink-pane > .tree-item-self:hover { color: var(--nav-heading-color-hover); font-weight: var(--nav-heading-weight-hover); }
+}
+.backlink-pane .search-empty-state {
+  color: var(--text-faint);
+  font-size: var(--font-ui-small);
+  margin: 0 0 var(--size-4-3);
+  padding-inline-start: var(--size-4-2);
+}
+.backlink-pane .search-result { word-break: break-word; margin-bottom: 0; }
+.backlink-pane .search-result-file-title {
+  align-items: baseline;
+  gap: normal;
+  padding: var(--nav-item-padding);
+  cursor: var(--cursor);
+  color: var(--nav-item-color);
+  font-size: var(--nav-item-size);
+}
+.backlink-pane .search-result-file-title.mod-collapsible { padding: var(--nav-item-parent-padding); }
+.backlink-pane .search-result:not(.is-collapsed) .search-result-file-title { color: var(--nav-item-color-active); }
+.backlink-pane .search-result-file-matches {
+  padding: 0;
+  font-size: var(--font-ui-smaller);
+  line-height: var(--line-height-tight);
+  background-color: var(--search-result-background);
+  border-radius: var(--radius-s);
+  overflow: hidden;
+  margin: var(--size-4-1) 0 var(--size-4-2);
+  color: var(--text-muted);
+  box-shadow: 0 0 0 var(--border-width) var(--background-modifier-border);
+}
+.backlink-pane .search-result-file-matches:empty { display: none; }
+.backlink-pane .search-result-file-match {
+  cursor: var(--cursor);
+  position: relative;
+  padding: var(--size-4-2) var(--size-4-5) var(--size-4-2) var(--size-4-3);
+  white-space: pre-wrap;
+  width: 100%;
+  border-radius: 0;
+  border-bottom: var(--border-width) solid var(--background-modifier-border);
+}
+.backlink-pane .search-result-file-match:last-child { border-bottom: none; }
+@media (hover: hover) {
+  .backlink-pane .search-result-file-match:hover { color: var(--text-normal); background-color: var(--text-selection); }
+}
+.backlink-pane .search-result-file-matched-text {
+  color: var(--text-normal);
+  background-color: var(--text-highlight-bg);
+  font-weight: inherit;
+}
 .backlink-filter-button { flex: 0 0 auto; }
 .backlink-search-input-container { flex: 1 1 auto; }
 .backlink-unlinked-link-button {
@@ -176,10 +212,21 @@
 }
 .tag-pane-header input { flex: 1 1 auto; }
 
-/* --------------------------------------------------------------- outline */
-.outline-view-container { flex: 1 1 auto; overflow-y: auto; padding: var(--size-4-1) var(--size-4-1) var(--size-4-4); }
-.outline-view .tree-item-self { color: var(--text-muted); }
-.outline-view .tree-item-self:hover { color: var(--text-normal); }
+/* --- 大纲：原版 app.css 5990、15132、4178 起 --- */
+.workspace-leaf-content[data-type='outline'] .view-content {
+  display: block;
+  overflow: auto;
+  padding: var(--size-4-1) var(--size-4-3) max(var(--safe-area-inset-bottom), var(--size-4-8));
+}
+.outline-view-container { min-height: 0; }
+.outline-view .pane-empty {
+  display: block;
+  color: var(--text-faint);
+  font-size: var(--font-ui-small);
+  margin: var(--size-4-2) auto;
+  padding: var(--size-4-6) var(--size-4-4);
+  text-align: center;
+}
 
 /* -------------------------------------------------------------- tag pane */
 .tag-list { flex: 1 1 auto; overflow-y: auto; padding: var(--size-4-1) var(--size-4-2) var(--size-4-4); }

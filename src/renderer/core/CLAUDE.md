@@ -10,7 +10,7 @@ events.js: Events 基类(on/off/once/trigger/offref) + debounce/sleep。
 i18n.js: setLanguage/detectLanguage(systemLocale)/t(带 {{var}} 与 _plural 处理)/tt(key,fallback,vars)(设置界面兜底)/getNouns(连字符 key)。
 icons.js: resolveIcon/createIcon/setIcon/getIconData/iconExists/getIconIds/addIcon/removeIcon。解析链逐字复刻原版 Zm()：lucide- 前缀 → 运行时图标 → 36 个自有图标(assets/icons-obsidian.json) → 152 条别名映射(assets/icon-aliases.json) → 1874 个 Lucide 图标(assets/icons.json)。
 ipc.js: ipcSync/ipcSend/ipcInvoke/ipcOn + Desktop 门面(与主进程通道一一对应)。
-vault.js: Vault/TFile/TFolder/FileSystemAdapter/normalizePath/parentPathOf/isHiddenPath。文件 IO 走 Node fs；watch 用 chokidar。点开头路径段不进树(原版 nu() 语义)。
+vault.js: Vault/TFile/TFolder/FileSystemAdapter/normalizePath/parentPathOf/isHiddenPath。文件 IO 走 Node fs；watch 用 chokidar。首次扫描与文件监听均拒绝点开头路径段。
 vault-utils.js: getUniquePath 等路径纯函数。
 metadata.js: MetadataCache。内存态：headings/links/embeds/tags/frontmatter；getFirstLinkpathDest 解析短链。
 fileManager.js: 文件创建/重命名/删除/移动，含链接自动更新与 processFrontMatter。附件路径四语义(attachmentFolderPath: '/' 根 | './' 当前文件夹 | './sub' 子文件夹 | 'name' 指定文件夹)；删除走 promptDelete + trashOption(system|local|none)。重命名链接更新对齐原版：alwaysUpdateLinks 为假时弹窗（总是更新/仅此一次/不做更新），计数与文本替换必须在 metadataCache.onFileRename 之前完成。
@@ -24,7 +24,11 @@ modals.js: 可复开的 Modal 基座与确认、输入弹窗。确认先结算�
 menu.js: Menu/MenuItem。上下文菜单、子菜单、键盘导航。
 suggest.js: 文件与命令建议。输入位于结果前，选择结果与取消关闭分开结算。
 view.js: View 基类(load/onOpen/onClose/getState/setState/_rootEl 契约) + ViewRegistry。
-workspace.js: 布局引擎。WorkspaceSplit(方向语义 mod-vertical=row/mod-horizontal=column)/WorkspaceTabs/WorkspaceLeaf/Workspace。含拖拽、分割、序列化、侧栏、把手、ribbon、状态栏、导航历史依赖的 _lastActiveLeaves。openFile 读取 defaultViewMode(source|preview)+livePreview 决定新标签模式；focusNewTab=false 时新标签后台打开。
+workspace.js: 布局装配、文件导航与序列化。链接路径转为文件后打开，保留公开接口。侧栏沿用最近中心文件。
+workspace-model.js: 分割、标签组与叶子模型。视图切换依次关闭旧视图、装载新视图。
+workspace-renderer.js: 将节点树映射为 DOM。重绘迁移已有视图根，避免重复加载。
+workspace-interactions.js: 标签拖拽与菜单。委托 Workspace 改树，不持有额外布局。
+workspace-regression.js: 17 组内存回归。固定接口、导航、分栏、恢复与事件边界。
 plugins.js: PluginManager(内部+社区插件)与 buildObsidianApi() shim。内部插件模块经 plugins-registry.js 汇总。restrictedMode(安全模式，默认 true)开启时不加载社区插件；插件设置页经 manifest.module.settingTab(app, containerEl) 由设置宿主打开。
 plugins-registry.js: corePluginModules 汇总表(id → 模块)。新增核心插件必须登记在此。
 app-commands.js: registerAppCommands(app)：导航历史、标签/窗格命令、设置/帮助、主题切换。

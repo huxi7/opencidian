@@ -1,3 +1,9 @@
+/*
+ * [INPUT]: 依赖 tokens.css 的颜色、间距与层级；依赖 SlidesView 的分页 DOM。
+ * [OUTPUT]: 提供 leaf 内的演示布局、活动页显隐、关闭按钮与页码样式。
+ * [POS]: styles/ 的幻灯片样式。hidden 与 is-active 一起约束页面显隐；保持关闭按钮可见且可键盘操作。
+ * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
+ */
 /* ==========================================================================
    slides.css — slides view (plugins-core/slides.js + views/slides-view.js)
    .slides-container / .slides-close-btn / .slides-container .controls button /
@@ -28,11 +34,14 @@
 .slides-close-btn {
   display: inline-block;
   position: absolute;
-  top: calc(var(--safe-area-inset-top) + var(--size-4-2));
+  top: calc(var(--safe-area-inset-top, 0px) + var(--size-4-2));
   inset-inline-end: var(--size-4-2);
   color: var(--text-faint);
   cursor: var(--cursor);
   z-index: 1;
+  background: transparent;
+  border: none;
+  box-shadow: none;
 }
 .slides-close-btn:hover { color: var(--text-muted); }
 .is-phone .slides-close-btn {
@@ -63,6 +72,7 @@
   text-align: center;
 }
 .slides-section.is-active { display: block; }
+.slides-section[hidden] { display: none; }
 .slides-section h1 { font-size: 2.2em; }
 .slides-section h2 { font-size: 1.7em; }
 .slides-section h3 { font-size: 1.4em; }

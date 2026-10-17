@@ -2,6 +2,7 @@
 
 > 本文件不属于 GEB 文档体系，是 agent 的跨上下文记忆。每次重要推进后更新。
 > 更新时机：阶段完成 / 提交前后 / 发现关键事实 / 子代理交付验收后。
+> **当前状态以 §8 为准。§3 和 §7 是接任前及过程记录，不再表示当前待办。**
 
 ---
 
@@ -91,7 +92,7 @@ OBS_SCREENSHOT_RECT=x,y,w,h
   2. renderer 加 ResizeObserver：视图打开时容器可能 0x0，拿到真实尺寸后重建画布（fresh layout 命令打开图谱 canvas 0x0 的根因）。
   - 验证数据：canvas 1008x1388（dpr 2）、pan (504,694)、4 节点 1 连线正常渲染。
 
-### 子代理交付状态（四个全部 rate-limit 中断，产物已入库）
+### 接任前子代理交付快照（历史记录，现状见 §8）
 - canvas / bookmarks+4 插件 / graph / R1 五插件 四个子代理均因 "Rate limit exceeded" 终止，**非正常完成**；产物在磁盘上，build 通过、registry 全部注册（20 模块）。
 - graph：`plugins-core/graph.js`（**1119 行 ⚠️ 超 800 上限，待拆分**）、`views/graph-view.js`（800 行整）、`styles/graph.css`。**已验收**（渲染正常；交互未抽查）。
 - canvas：`plugins-core/canvas.js`、`views/canvas-view.js`/canvas-node.js/canvas-edge.js/canvas-interactions.js/canvas-menu.js/canvas-utils.js/canvas-viewport.js、`styles/canvas.css`。**未验收**。
@@ -100,7 +101,7 @@ OBS_SCREENSHOT_RECT=x,y,w,h
 - R1 五插件：file-recovery（449 行）、random-note、zk-prefixer、workspaces、slides（+`views/slides-view.js`、`styles/slides.css`）。**未验收**。
 - 验收标准：build 通过 + 日志零报错 + 打开视图/执行命令截图 + 交互抽查（新建/编辑/持久化）。
 
-### 待办（优先级从高到低）
+### 接任前待办（历史记录，现状见 §8）
 1. **核心插件逐个验收**（子代理产物，见上节）：canvas（新建/打开/节点编辑/连线）→ bookmarks（添加/删除/分组/持久化）→ graph 交互抽查（拖拽/筛选/局部图/右键菜单）→ daily-notes（打开今日）→ templates（插入模板 + 设置页签）→ note-composer（创建笔记）→ file-recovery（快照列表/恢复）→ random-note → zk-prefixer → workspaces（保存/加载布局）→ slides（演示模式）。
 2. **graph.js 拆分**：1119 行超 800 上限 → 按 GEB 拆分（建议：buildGraphData/工具函数与 GraphEngine 分文件）。
 3. 设置持久化冒烟：改值 → 重启 → app.json / appearance.json / hotkeys.json / core-plugins.json 保留。
@@ -137,7 +138,7 @@ OBS_SCREENSHOT_RECT=x,y,w,h
 - **图谱画布 0x0**：视图构造/打开时容器可能未布局，onResize 拿到 0x0；必须用 ResizeObserver 在拿到真实尺寸后重建画布；首次真实尺寸时 resetPan（否则 pan=(0,0)，updateZoom 围绕屏幕中心把 pan 算成负值，节点全在视口外）。
 - **zsh 展开坑**：`${var:+OBS_ACT="$var"}` 这类条件展开在 zsh 下会被拆成命令执行；直接写完整命令，别玩花活。
 
-## 7. 接任验收（2026-10-17，进行中）
+## 7. 接任验收过程（2026-10-17，历史记录）
 
 - 画布：已修复正常缩放下正文卸载、初始尺寸 0×0、输入未失焦不保存、无限缩放帧与关闭后帧残留。
 - 画布：已通过新建、输入落盘、指针连线、上下限缩放收敛、视图重开及进程重启恢复。截图与日志在 `$T/acceptance-20261017/`。
@@ -157,3 +158,61 @@ OBS_SCREENSHOT_RECT=x,y,w,h
 - 图谱脚本鼠标坐标：MouseEvent clientX 截断到整数；锚点断言改用实际整数坐标。菜单跳转暴露 workspace.openLinkText 把路径当文件传入，正在修复。
 - 恢复组：首轮 53 项通过，重启暴露 Markdown mode 与 DOM 不同步，编辑器代理修复中。
 - 用户更新：后续子代理仅当前模型、中思考；编辑器已按此重建，不再使用 sol。
+
+- 阶段提交 `9be2517`：画布、书签、笔记五插件、设置/弹窗基座与主进程验收钩子拆分（30 文件）。图谱/恢复/工作区/编辑器尚未进入该提交。
+
+
+## 8. 当前状态（2026-10-17，本轮验收完成）
+
+### 已验收并修复
+
+- 11 个优先核心插件全部完成本轮交互抽查：canvas、bookmarks、graph、daily-notes、templates、note-composer、file-recovery、random-note、zk-prefixer、workspaces、slides。
+- 画布：节点正文挂载、初次尺寸、编辑自动保存、指针连线、缩放停止、切换/关闭保存与进程重启恢复。
+- 书签：空分组、重命名、分组项打开/删除、文件视图收藏、目录改名同步子路径、重启恢复。
+- 图谱：40 项断言涵盖数据、标签/附件/孤立筛选、颜色组、平移/缩放、跨边界拖拽、菜单/中键打开、局部方向/深度/跟随与关闭清理；graph.json 重启保留。
+- 笔记五插件：72 项交互断言通过；跨进程读回配置、提取/合并正文、回收副本。末节提取使用宿主 lineCount 属性。
+- 恢复组：新建/修改快照、选中版本恢复、删除后恢复、工作区保存前 flush、布局加载关闭旧视图、监听无增长、幻灯片翻页与 Esc 还原选区。全新测试库首次 55 项、重启 41 项通过。
+- 设置：app.json、appearance.json、hotkeys.json、core-plugins.json 的改值/退出/重启通过。设置双栏与弹窗复开、确认结果回调已修正。
+- 编辑器：foldHeading/foldIndent 独立即时开关；关闭时清除对应折叠；事务过滤阻止语法回退绕过设置。阅读、实时预览及源码共用 Lezer 高亮；JS/Python/JSON、未知语言与文本保真检查通过。
+- 模式恢复：MarkdownView 首次 setState 统一 _applyMode，已移除工作区/幻灯片重复 setState 绕行。
+- 文件切换：同类型叶子切换前保存未落盘编辑；已删除视图可复用打开其他文件，回归通过。
+- 位置接口：scrollIntoView 使用 EditorSelection.range；scrollTo 从 CM 文档读取行数；setCursor 支持 {line,ch}。同名大纲标题精确跳转通过。
+- 右侧栏：反链与大纲 93 项断言通过；标题层级、折叠保持、筛选、空态、焦点上下文及关闭清理。源码规则及截图均复核，未启动真实 Obsidian。
+- 数学：切换为 MathJax 3.2.2 CHTML，官方公开构建与字体离线托管。阅读/实时预览、aligned/矩阵、字体、错误隔离、协议过滤均通过。适配器子代理另测 41 项；来源和完整性见 assets/mathjax/SOURCE.md。
+- 基础插件：文件树、全文搜索、快速切换、命令面板、标签与字数冒烟通过。
+- 文件边界：新建文件立即解析元数据；首次扫描与 watcher 共用隐藏路径过滤，.obsidian 及测试标记不进入文件树/图谱。
+- 分拆：graph.js 80 行；workspace.js 680 行，拆为 model/renderer/interactions；main.js 调试钩子提至 dev-hooks.js。画布/设计变量/Markdown CSS 按规则边界拆分，保留级联顺序。
+- 源码 JS/CSS 全部 <=800 行。修改文件 L3 与模块 L2 已同步。原版 app.js/app.css SHA-256 不变。
+- 当前构建通过；最终验收日志无未捕获异常/TypeError/ReferenceError。开发版 Electron CSP 提示仍存在，不计为业务错误。
+
+### 可重复验收
+
+```sh
+npm run build
+node scripts/acceptance/run.mjs canvas
+node scripts/acceptance/run.mjs bookmarks
+node scripts/acceptance/run.mjs graph --screen global
+node scripts/acceptance/run.mjs notes
+node scripts/acceptance/run.mjs recovery
+node scripts/acceptance/run.mjs editor
+node scripts/acceptance/run.mjs sidebar
+node scripts/acceptance/run.mjs math
+node --experimental-vm-modules src/renderer/core/workspace-regression.js
+```
+
+- 运行器自动创建 `/tmp/obs-copy-acceptance/` 下独立测试库和截图/日志目录。
+- 重启流程复用运行器输出的 vault：`recovery --phase restart --vault <路径>`；`notes --phase reload --vault <路径>`；`settings-write` 后用 `settings-restart --vault <路径>`。
+- 运行器拒绝非临时目录及没有验收标记的既有 vault。不得改成真实 Obsidian 库。
+- 17 组工作区内存回归固定导出、导航、分栏、恢复、侧栏上下文；测试不进入 renderer 依赖图。
+- 更详细验证记录见 `scripts/acceptance/RESULTS.md`。
+
+### 后续保真边界（本轮不声称整产品已 1:1）
+
+- 保留 §3 原有的主动跳过清单；社区插件/市场不做。
+- 画布仍用 textarea 编辑卡片；完整撤销历史、图片导出、转换为文件等原版功能尚未覆盖。
+- 图谱斥力/碰撞仍为 O(n²)；超大图性能、悬停预览、完整查询语法、颜色组拖拽等未覆盖。
+- 文件恢复沿用 .obsidian/.file-recovery 的每日 JSON、秒配置与 Markdown 范围；未对齐原版 IndexedDB/默认5分钟/Canvas快照。
+- 幻灯片仍在 leaf 内展示，未实现原版覆盖全窗口的演示宿主。
+- 本轮截图为复刻品验收，静态原版代码/CSS是对照源；尚未完成与真实 Obsidian 同步截图的全屏逐像素对比。
+- KaTeX 不再参与渲染与资源加载；package.json 中旧依赖暂保留，未重新安装或改动锁文件。
+- 后续子代理使用当前模型、思考等级中；不使用 sol。所有本轮子代理已停止。

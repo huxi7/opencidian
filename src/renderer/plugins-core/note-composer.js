@@ -263,7 +263,7 @@ class NoteComposer {
       }
     }
     if (!current) return null;
-    let endLine = next ? next.position.start.line - 1 : editor.lineCount() - 1;
+    let endLine = next ? next.position.start.line - 1 : editor.lineCount - 1;
     while (endLine > line && editor.getLine(endLine).trim() === '') endLine--;
     return {
       heading: current.heading.trim(),

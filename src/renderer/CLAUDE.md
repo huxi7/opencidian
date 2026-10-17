@@ -7,7 +7,7 @@
 成员清单
 main.js: 渲染进程入口。顺序：core/dom.js(全局 DOM 助手) → App 构造 → registerBuiltinViews → registerEditorCommands → app.initialize() → registerAppCommands → 布局自动保存 + 全局错误捕获。
 starter.js: vault 选择窗口逻辑：列出/打开/新建/移除 vault，拖拽文件夹入窗。
-index.html: 主窗口骨架，链接 styles/*.css 与 dist/renderer.js。
+index.html: 主窗口骨架，链接 styles/*.css 与 dist/renderer.js。公式由 math.js 懒加载官方资源。
 starter.html: vault 选择窗口骨架。
 core/ - 应用内核 (见 core/CLAUDE.md)
 editor/ - CodeMirror 6 编辑器层 (见 editor/CLAUDE.md)

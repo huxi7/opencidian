@@ -1,15 +1,15 @@
 # Obsidian Copy - Obsidian 桌面版 1.12.4 的 1:1 复刻
 
-Electron 33 + esbuild + CodeMirror 6 + markdown-it + 原生 CSS 变量主题
+Electron 33 + esbuild + CodeMirror 6 + markdown-it + MathJax 3.2.2 CHTML + 原生 CSS 变量主题
 
 <directory>
 src/ - 全部源码 (2 子目录)
   main/ - Electron 主进程：窗口、app:// 协议、IPC、原生菜单；dev-hooks 承接验收
   renderer/ - 渲染进程：应用主体 (6 子目录: core, editor, markdown, views, plugins-core, styles)
-scripts/ - 构建脚本 (esbuild 打包 + 资源复制)
-assets/ - 从原版提取的事实型资产 (图标表、字体)
+scripts/ - esbuild 构建与隔离 Electron 验收 (acceptance/)
+assets/ - 图标表、字体与官方 MathJax 离线资源
 _analysis/ - 原版解包产物 (app.asar/obsidian.asar)，只读参考资料
-dist/ - esbuild 输出 (renderer.js, starter.js, katex.css)
+dist/ - esbuild 输出 (renderer.js, starter.js)
 </directory>
 
 <config>

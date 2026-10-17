@@ -1,6 +1,11 @@
+/**
+ * [INPUT]: esbuild、Node fs 与 renderer 入口。
+ * [OUTPUT]: dist/renderer.js、dist/starter.js；支持 watch 增量构建。
+ * [POS]: 打包入口。MathJax 静态资源由 app 协议直接读取 assets/mathjax。
+ * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
+ */
 import esbuild from 'esbuild';
 import fs from 'fs';
-import path from 'path';
 
 const watch = process.argv.includes('--watch');
 
@@ -33,18 +38,6 @@ const targets = [
 
 fs.mkdirSync('dist', { recursive: true });
 
-// copy katex css + fonts into dist
-const katexCss = 'node_modules/katex/dist/katex.min.css';
-if (fs.existsSync(katexCss)) {
-  fs.copyFileSync(katexCss, 'dist/katex.css');
-  const srcFonts = 'node_modules/katex/dist/fonts';
-  if (fs.existsSync(srcFonts)) {
-    fs.mkdirSync('dist/fonts', { recursive: true });
-    for (const f of fs.readdirSync(srcFonts)) {
-      fs.copyFileSync(path.join(srcFonts, f), path.join('dist/fonts', f));
-    }
-  }
-}
 
 if (watch) {
   for (const t of targets) {

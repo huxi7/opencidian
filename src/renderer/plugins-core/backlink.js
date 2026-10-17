@@ -1,13 +1,16 @@
-/* Core plugin: backlinks — linked & unlinked mentions of the active file. */
+/**
+ * [INPUT]: View 生命周期、workspace 当前文件、metadataCache 反链索引与 DOM 图标。
+ * [OUTPUT]: 导出 BacklinkView、findLinkContexts 与插件 create。
+ * [POS]: 右栏反链视图。复用搜索结果结构，关闭时释放订阅与重绘计时器。
+ * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
+ */
 import { View } from '../core/view.js';
 import { t } from '../core/i18n.js';
 import { setIcon } from '../core/icons.js';
-import { Menu } from '../core/menu.js';
-import { renderMarkdown } from '../markdown/reading.js';
 
 export const nameKey = 'plugins.backlinks';
 
-// find [[link]] / [text](link) occurrences that resolve to target
+// --- 从来源正文提取指向目标文件的链接上下文 ---
 export function findLinkContexts(app, sourceFile, targetFile) {
   const cache = app.metadataCache.getFileCache(sourceFile);
   const text = (cache && cache._rawText) || '';
@@ -43,7 +46,10 @@ export class BacklinkView extends View {
     this._showSearch = false;
     this._query = '';
     this._backlinkCollapsed = false;
-    this._unlinkedCollapsed = false;
+    this._unlinkedCollapsed = true;
+    this._pending = null;
+    this._filePath = null;
+    this._collapsedFiles = new Set();
   }
   getViewType() { return 'backlink'; }
   getDisplayText() {
@@ -55,6 +61,9 @@ export class BacklinkView extends View {
 
   async onOpen() {
     this.contentEl.addClass('backlink-view');
+    this.contentEl.empty();
+    this._header = this.contentEl.createDiv('nav-header');
+    this._renderHeader();
     this._pane = this.contentEl.createDiv('backlink-pane');
     this._render();
     this._refs = [
@@ -62,15 +71,20 @@ export class BacklinkView extends View {
       this.app.workspace.on('file-open', () => this._render()),
       this.app.metadataCache.on('changed', () => this._queueRender()),
       this.app.metadataCache.on('resolved', () => this._queueRender()),
+      this.app.workspace.on('layout-change', () => this._updateTitle()),
     ];
-    this.app.workspace.on('layout-change', () => this._updateTitle());
   }
   onClose() {
     for (const r of this._refs) r.unregister && r.unregister();
     this._refs = [];
+    clearTimeout(this._pending);
+    this._pending = null;
+    this._pane = null;
+    this._header = null;
+    this._collapsedFiles.clear();
   }
   _queueRender() {
-    if (this._pending) return;
+    if (!this._pane || this._pending !== null) return;
     this._pending = setTimeout(() => { this._pending = null; this._render(); }, 120);
   }
   _updateTitle() {
@@ -82,16 +96,23 @@ export class BacklinkView extends View {
     this._pane.empty();
     this._updateTitle();
     const file = this.app.workspace.getActiveFile();
+    if (this._filePath !== (file?.path || null)) {
+      this._filePath = file?.path || null;
+      this._collapsedFiles.clear();
+    }
     if (!file) {
-      this._pane.createDiv({ cls: 'pane-empty', text: t('plugins.backlinks.label-no-backlinks') || 'No backlinks found.' });
+      this._pane.createDiv({ cls: 'search-empty-state', text: t('plugins.backlinks.label-no-backlinks') || 'No backlinks found.' });
       return;
     }
     this._renderResults(file);
   }
 
-  // Search filter lives in the tab title bar (view actions), like the original.
-  _fillViewActions(actions) {
-    actions.empty();
+  // --- 原版筛选框位于面板导航栏，不放进标签标题操作区 ---
+  _renderHeader() {
+    const header = this._header;
+    if (!header) return;
+    header.empty();
+    const actions = header.createDiv('nav-buttons-container');
     const btn = actions.createDiv('clickable-icon backlink-filter-button');
     setIcon(btn, 'search');
     btn.setAttr('aria-label', t('plugins.backlinks.label-show-search') || 'Show search filter');
@@ -99,20 +120,22 @@ export class BacklinkView extends View {
     btn.onclick = () => {
       this._showSearch = !this._showSearch;
       this._render();
-      this._fillViewActions(actions);
+      this._renderHeader();
+      this._header?.querySelector('input')?.focus();
     };
     if (this._showSearch) {
-      const container = actions.createDiv('search-input-container backlink-search-input-container');
+      const container = header.createDiv('search-input-container backlink-search-input-container');
       const input = container.createEl('input', { type: 'search', cls: 'backlink-search-input' });
       input.value = this._query;
-      input.placeholder = t('interface.search') || 'Search...';
+      input.placeholder = t('plugins.search.prompt-start-search');
       input.oninput = () => { this._query = input.value; this._render(); };
-      setTimeout(() => input.focus(), 0);
     }
   }
 
   _section(pane, labelText, count, collapsed, onToggle) {
     const header = pane.createDiv('tree-item-self is-clickable backlink-pane-header');
+    header.toggleClass('is-collapsed', collapsed);
+    header.setAttr('aria-expanded', String(!collapsed));
     const iconSpan = header.createSpan('tree-item-icon collapse-icon');
     setIcon(iconSpan, 'right-triangle');
     iconSpan.toggleClass('is-collapsed', collapsed);
@@ -130,7 +153,7 @@ export class BacklinkView extends View {
     const entries = Object.entries(data.backlinks).filter(([path]) => !q || path.toLowerCase().includes(q));
     const total = entries.reduce((a, [, info]) => a + (info.count || 0), 0);
 
-    // linked mentions: header + search-result-container as siblings (original DOM)
+    // --- 分节标题与搜索结果容器保持同级 ---
     this._section(pane, t('plugins.backlinks.label-linked-mentions') || 'Linked mentions', total, this._backlinkCollapsed, (c) => {
       this._backlinkCollapsed = c;
       this._render();
@@ -138,15 +161,15 @@ export class BacklinkView extends View {
     const linkedDom = pane.createDiv('search-result-container');
     if (this._backlinkCollapsed) linkedDom.hide();
     if (!entries.length) {
-      linkedDom.createDiv({ cls: 'pane-empty', text: t('plugins.backlinks.label-no-backlinks') || 'No backlinks found.' });
+      linkedDom.createDiv({ cls: 'search-empty-state', text: t('plugins.backlinks.label-no-backlinks') || 'No backlinks found.' });
     } else {
       for (const [path, info] of entries) {
         this._renderBacklinkFile(linkedDom, path, info.count);
       }
     }
 
-    // unlinked mentions
-    const unlinked = this.app.metadataCache.getUnlinkedMentions(file).filter(({ file: f }) => !q || f.path.toLowerCase().includes(q));
+    // --- 未链接提及默认收起 ---
+    const unlinked = this.app.metadataCache.getUnlinkedMentions(file).filter(({ file: f }) => f && (!q || f.path.toLowerCase().includes(q)));
     this._section(pane, t('plugins.backlinks.label-unlinked-mentions') || 'Unlinked mentions', unlinked.length, this._unlinkedCollapsed, (c) => {
       this._unlinkedCollapsed = c;
       this._render();
@@ -154,15 +177,15 @@ export class BacklinkView extends View {
     const unlinkedDom = pane.createDiv('search-result-container');
     if (this._unlinkedCollapsed) unlinkedDom.hide();
     if (!unlinked.length) {
-      unlinkedDom.createDiv({ cls: 'pane-empty', text: t('plugins.backlinks.label-no-unlinked-mentions') || 'No unlinked mentions found.' });
+      unlinkedDom.createDiv({ cls: 'search-empty-state', text: t('plugins.backlinks.label-no-unlinked-mentions') || 'No unlinked mentions found.' });
     } else {
       for (const { file: source, name } of unlinked.slice(0, 50)) {
         const contexts = findContextsByName(this.app, source, name);
         const item = unlinkedDom.createDiv('tree-item search-result');
         const selfEl = item.createDiv('tree-item-self search-result-file-title is-clickable');
         selfEl.createDiv({ cls: 'tree-item-inner', text: source.basename });
-        selfEl.createDiv({ cls: 'tree-item-flair', text: String(contexts.length) });
-        const matchList = item.createDiv('tree-item-children');
+        selfEl.createDiv('tree-item-flair-outer').createSpan({ cls: 'tree-item-flair', text: String(contexts.length) });
+        const matchList = item.createDiv('search-result-file-matches');
         for (const ctx of contexts.slice(0, 5)) {
           const match = matchList.createDiv('search-result-file-match');
           match.setText(ctx.text.slice(0, 300));
@@ -188,17 +211,25 @@ export class BacklinkView extends View {
     if (!source) return;
     const current = this.app.workspace.getActiveFile();
     const item = container.createDiv('tree-item search-result');
-    const self = item.createDiv('tree-item-self search-result-file-title is-clickable');
+    item.setAttr('data-path', path);
+    const self = item.createDiv('tree-item-self search-result-file-title is-clickable mod-collapsible');
     const icon = self.createSpan('tree-item-icon collapse-icon');
     setIcon(icon, 'right-triangle');
     self.createDiv({ cls: 'tree-item-inner', text: source.basename });
-    self.createDiv({ cls: 'tree-item-flair', text: String(count) });
-    const children = item.createDiv('tree-item-children');
+    self.createDiv('tree-item-flair-outer').createSpan({ cls: 'tree-item-flair', text: String(count) });
+    const children = item.createDiv('search-result-file-matches');
+    const setCollapsed = (collapsed) => {
+      item.toggleClass('is-collapsed', collapsed);
+      icon.toggleClass('is-collapsed', collapsed);
+      self.setAttr('aria-expanded', String(!collapsed));
+      children.toggle(!collapsed);
+      if (collapsed) this._collapsedFiles.add(path);
+      else this._collapsedFiles.delete(path);
+    };
+    setCollapsed(this._collapsedFiles.has(path));
     icon.onclick = (ev) => {
       ev.stopPropagation();
-      const c = item.toggleClass('is-collapsed');
-      icon.toggleClass('is-collapsed', c);
-      children.toggle(!c);
+      setCollapsed(!item.hasClass('is-collapsed'));
     };
     self.onclick = () => this.app.workspace.openFile(source);
     const contexts = current ? findLinkContexts(this.app, source, current) : [];

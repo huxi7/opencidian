@@ -1,7 +1,7 @@
 /**
  * [INPUT]: 依赖 ../core/view.js 的 View 基类；依赖 ../core/i18n.js 的 t；依赖 ../core/icons.js 的 setIcon；依赖 ../editor/editor.js 的 Editor 与 livePreviewExtension；依赖 ../markdown/reading.js 的 renderMarkdown/attachMarkdownInteractions；依赖 ../markdown/properties.js 的 renderProperties
  * [OUTPUT]: 导出 MarkdownView 类（三模式：source/live/preview），registerView 注册 'markdown'
- * [POS]: views/ 的核心视图。DOM 对齐原版：.markdown-source-view.mod-cm6 / .markdown-reading-view > .markdown-preview-view.markdown-rendered。data-editor-mode 随模式切换同步。属性面板仅在非 source 模式且 propertiesInDocument==='visible' 时显示。
+ * [POS]: views/ 的 Markdown 生命周期入口。换文件前保存正文；首次加载与布局恢复均同步模式 DOM；设置事件热重配编辑器。阅读正文交给 markdown/ 渲染。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 /*
@@ -70,9 +70,8 @@ export class MarkdownView extends View {
     else if (state.mode === 'source' || state.mode === 'live') { this.mode = state.mode; this._lastEditMode = state.mode; }
     if (state.file && (!this.file || this.file.path !== state.file)) {
       await this._loadFile(state.file, state);
-    } else {
-      this._applyMode();
     }
+    this._applyMode();
     if (state.scroll !== undefined && this.editor) {
       this.editor.applyScrollInfo({ top: state.scroll });
     }
@@ -132,8 +131,8 @@ export class MarkdownView extends View {
     this.editor.setIndentUnit();
     this.editor.setCloseBrackets(s.autoPairBrackets !== false);
     this.editor.setSpellcheck(s.spellcheck === true);
-    if (this.mode === 'live') this.editor.setLivePreview(true);
-    if (this.mode === 'preview') this._renderReading();
+    this.editor.setFolding(s.foldHeading !== false, s.foldIndent !== false);
+    this._applyMode();
   }
 
   async onClose() {
@@ -152,6 +151,11 @@ export class MarkdownView extends View {
   // File loading & saving
   // -------------------------------------------------------------------------
   async _loadFile(path, state) {
+    if (this.file && !this._fileDeleted) {
+      clearTimeout(this._saveTimer);
+      this._saveTimer = null;
+      await this.save();
+    }
     const file = this.app.vault.getFileByPath(path) || this.app.vault.getAbstractFileByPath(path);
     if (!file || !file.path || file.extension !== 'md') {
       this.file = null;
@@ -160,6 +164,10 @@ export class MarkdownView extends View {
     }
     this.file = file;
     this._fileDeleted = false;
+    if (!this.contentEl.contains(this.sourceEl)) {
+      this.contentEl.empty();
+      this.contentEl.append(this.sourceEl, this.readingEl);
+    }
     let text = '';
     try { text = await this.app.vault.cachedRead(file); } catch (e) { console.error(e); }
     this._loadedText = text;
@@ -170,13 +178,12 @@ export class MarkdownView extends View {
     this._renderedText = null;
     this._updateTitles();
     this._renderProperties();
-    if (this.mode === 'preview') this._renderReading();
     this.app.workspace.trigger('markdown-view-file-loaded', this.file, this);
     this._emitEditorChange();
   }
 
   _renderFilePathMissing(path) {
-    if (this.leaf) this.leaf.contentEl.setAttr('data-type', 'markdown');
+    if (this.leaf?.contentEl) this.leaf.contentEl.setAttr('data-type', 'markdown');
     this.contentEl.empty();
     const msg = this.contentEl.createDiv('empty-state');
     msg.createDiv('empty-state-title', (el) => el.setText(this._fileDeleted ? 'File was deleted' : 'File not found'));
@@ -200,9 +207,9 @@ export class MarkdownView extends View {
     if (!this.file || this._fileDeleted || !this.editor) return;
     const text = this.editor.getValue();
     if (text === this._loadedText) return;
-    this._loadedText = text;
     try {
       await this.app.vault.modify(this.file, text);
+      this._loadedText = text;
     } catch (e) {
       console.error('Failed to save', e);
       new Notice('Failed to save file: ' + (e.message || e));
@@ -238,8 +245,9 @@ export class MarkdownView extends View {
     this.readingEl.toggle(preview);
     this.sourceEl.toggleClass('is-live-preview', live);
     this.sourceEl.toggleClass('is-source-mode', this.mode === 'source' || !live);
-    this.editor.cm.dom.setAttr('data-editor-mode', preview ? this._lastEditMode : this.mode);
+    this.editor.cm.dom.setAttr('data-editor-mode', this.mode);
     this.editor.setLivePreview(live);
+    this._renderProperties();
     if (preview) {
       this._renderReading();
     } else {
