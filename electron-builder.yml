@@ -1,0 +1,29 @@
+appId: app.opensidian
+productName: OpenSidian
+copyright: Copyright (c) 2026 OpenSidian contributors
+
+directories:
+  output: release
+  buildResources: build
+
+# 渲染层由 esbuild 打进 dist/，主进程只用 Node 内置模块：不带 node_modules
+files:
+  - dist/**
+  - src/**
+  - assets/**
+  - package.json
+  - "!**/*.map"
+
+asar: true
+
+mac:
+  category: public.app-category.productivity
+  icon: build/icon.icns
+  # 本地/开源分发不签名（正式分发需 Apple 开发者证书后再移除本行）
+  identity: null
+  target:
+    - dmg
+    - zip
+
+dmg:
+  title: OpenSidian

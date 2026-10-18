@@ -417,5 +417,5 @@ node --experimental-vm-modules src/renderer/core/workspace-regression.js
 - 编辑器/阅读：链接路径 tooltip、图片尺寸语法未逐项核对；卡片内命令 no-op（见画布行）。
 - 核心插件：slash-command/webviewer/bases/markdown-importer/publish/sync 按约定跳过；audio-recorder 真机麦克风仍需手点一次。
 - 第三方插件页：捐赠按钮未做（市场未接入）。
-- 系统级：无 macOS 分发包/签名/自动更新（LICENSE 已定 MIT）。
+- 系统级：electron-builder 打包已完成（dmg/zip + 打包版冒烟；未签名，`identity: null`；正式分发需证书与公证）。自动更新仍未做（LICENSE 已定 MIT）。
 - 未做像素级视觉验收（用户要求停截图）：只保证 DOM/逻辑/计算样式与回归。

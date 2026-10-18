@@ -177,3 +177,9 @@ MathJax 独立适配器子代理的41项基础/故障测试见 assets/mathjax/SO
 - 本轮修复的深层 bug 汇总：附件链接丢扩展名（generateMarkdownLink）、自家写入迟到通知回滚文档（MarkdownView 外部同步）、菜单链点击不关闭父菜单、CM6 gutter 延迟挂载 NotFoundError（sizer DOM 重定向）、阅读视图 wiki 链接切片（早期）、插件 shim 缺 Keymap 导入（早期）。
 - 运行方式：`npm run build`；单场景 `node scripts/acceptance/run.mjs <场景> --no-screenshot`；并发的构建/验收一律 `sh scripts/with-lock.sh "<命令>"`。
 - 剩余缺口见 AGENT-STATE.md §16（表格拖拽重排/单元格选择、图谱 worker、画布空间索引、卡片内编辑命令、macOS 分发包、像素级视觉验收等）。
+
+## 打包分发批（2026-10-18）
+
+- `scripts/make-app-icon.py`：原创应用图标（地平线与曜日）→ build/icon.png + build/icon.icns；`electron-builder.yml`：appId app.opensidian、files 仅 dist/src/assets/package.json、asar、identity null（未签名）、mac dmg+zip。
+- 产物：`release/OpenSidian-1.0.0-arm64.dmg`（119MB）、`OpenSidian-1.0.0-arm64-mac.zip`；`npm run dist:dir` 可快速验证。
+- `scripts/smoke-packaged.mjs`：打包版真实启动冒烟（库启动/建文件/开文件/protocol=app:），实测冷启动约 1.9s 通过。

@@ -48,6 +48,19 @@ node scripts/acceptance/run.mjs canvas --no-screenshot
 
 运行器会在系统临时目录创建隔离测试库，不会触碰你的真实笔记。
 
+## 打包分发
+
+```sh
+npm install
+npm run dist:dir   # 快速验证：release/mac-arm64/OpenSidian.app
+npm run dist       # 正式产物：release/*.dmg 与 *.zip
+node scripts/smoke-packaged.mjs   # 打包版冒烟（真实启动 + 建文件 + 打开文件）
+```
+
+- 当前为**未签名**构建（`electron-builder.yml` 里 `identity: null`）。macOS Gatekeeper 首次打开需右键 → 打开，或 `xattr -dr com.apple.quarantine /Applications/OpenSidian.app`。
+- 应用图标由 `scripts/make-app-icon.py` 生成（原创几何设计），可自行替换 `build/icon.icns`。
+- 正式对外分发需 Apple 开发者证书：移除 `identity: null` 并配置签名/公证。
+
 ## 边界与说明
 
 - 不劫持 `obsidian://` 协议；不读写真实 Obsidian 应用的 userData。

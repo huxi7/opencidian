@@ -9,7 +9,9 @@
     "build": "node scripts/build.mjs",
     "watch": "node scripts/build.mjs --watch",
     "start": "npm run build && electron .",
-    "dev": "node scripts/dev.mjs"
+    "dev": "node scripts/dev.mjs",
+    "dist": "npm run build && electron-builder --mac",
+    "dist:dir": "npm run build && electron-builder --mac dir"
   },
   "dependencies": {
     "@codemirror/autocomplete": "^6.18.0",
@@ -32,10 +34,12 @@
   },
   "devDependencies": {
     "electron": "^33.0.0",
+    "electron-builder": "^26.15.3",
     "esbuild": "^0.24.0"
   },
   "allowScripts": {
     "electron@33.4.11": true,
     "esbuild@0.24.2": true
-  }
+  },
+  "author": "OpenSidian contributors"
 }
