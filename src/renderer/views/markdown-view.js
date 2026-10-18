@@ -224,11 +224,12 @@ export class MarkdownView extends View {
 
   async save() {
     if (!this.file || this._fileDeleted || !this.editor) return;
+    const file = this.file;   // 写盘期间可能切文件：只更新仍在编辑的那份的 _loadedText
     const text = this.editor.getValue();
     if (text === this._loadedText) return;
     try {
-      await this.app.vault.modify(this.file, text);
-      this._loadedText = text;
+      await this.app.vault.modify(file, text);
+      if (this.file === file) this._loadedText = text;
     } catch (e) {
       console.error('Failed to save', e);
       new Notice('Failed to save file: ' + (e.message || e));
@@ -237,8 +238,11 @@ export class MarkdownView extends View {
 
   async _onExternalModify() {
     if (!this.file || !this.editor) return;
+    const path = this.file.path;   // 发起读取时的文件
     let text = '';
     try { text = await this.app.vault.cachedRead(this.file); } catch (e) { return; }
+    // 读取期间切了文件 → 丢弃迟到内容，绝不打进另一个文件（跨文件内容损坏防线）
+    if (!this.file || this.file.path !== path) return;
     // 与我们最后一次写盘/加载的内容一致 → 自家写入的迟到通知，绝不回滚正在编辑的文档
     if (text === this._loadedText) return;
     if (text === this.editor.getValue()) { this._loadedText = text; return; }

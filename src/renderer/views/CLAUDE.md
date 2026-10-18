@@ -6,7 +6,7 @@
 
 成员清单
 index.js: registerBuiltinViews(app)。注册 empty/markdown/image/video/audio/pdf，附带扩展名提示；安装 settings host。
-markdown-view.js: MarkdownView。换文件先保存，删除后复用视图根。首次加载即同步 source/live/preview DOM 三态、inline-title 改名（元素挂在编辑器 .cm-sizer 内）、行宽 class（is-readable-line-width）挂 source/reading 视图元素并随设置联动、150ms 防抖自动保存（外部修改同步用 _loadedText 判别自家写入的迟到通知，绝不回滚在编辑的文档）、编辑器右键菜单挂载、subpath/line 滚动、view-actions 菜单。
+markdown-view.js: MarkdownView。换文件先保存，删除后复用视图根。首次加载即同步 source/live/preview DOM 三态、inline-title 改名（元素挂在编辑器 .cm-sizer 内）、行宽 class（is-readable-line-width）挂 source/reading 视图元素并随设置联动、150ms 防抖自动保存（外部修改同步：先按“发起读取时的文件路径”守卫，读期间切文件即丢弃迟到内容，防跨文件内容污染；再用 _loadedText 判别自家写入的迟到通知，绝不回滚在编辑的文档；save 仅更新仍在编辑文件的 _loadedText）、编辑器右键菜单挂载、subpath/line 滚动、view-actions 菜单。
 empty-view.js: EmptyView。空标签页动作列表(新建笔记/打开文件等)。
 media-view.js: MediaView 及 ImageView/VideoView/AudioView/PdfView。经 adapter.getResourcePath() 取 app:// 文件 URL。
 settings-view.js: SettingsHost(app.setting 的实现) + installSettingsHost(app)。克隆原版 fte 宿主：三组导航(options/core/community)、navEl、openTab/closeActiveTab/openTabById/openPluginOptions/updateModalTitle、PluginSettingTab 兼容层(addSettingTab/removePluginTabs 挂载点)。侧栏布局设置弹窗。
@@ -14,7 +14,7 @@ settings-tabs.js: AboutTab/EditorTab/FileTab 三个内置页签 + VimTestModal(�
 settings-tabs-appearance.js: AppearanceTab + FontManagerModal。对齐原版 Jee：基础颜色/主题色/主题/界面/字体/高级(缩放·原生菜单·窗口边框·硬件加速)/CSS 代码片段；CSS 注入由 app._applyCustomCss 执行。
 settings-tabs-plugins.js: HotkeysTab + HotkeyRecorderModal(按键录制)、CorePluginsTab、CommunityPluginsTab。快捷键页对齐原版 w0：工具栏 filter 菜单 + hotkey-filter 芯片承载状态筛选（全部/已分配/由我分配/未分配，选"全部"移除芯片），搜索框右缘 lucide-keyboard 装饰图标进入捕获态按组合键筛选（再次点击或 Esc 退出），冲突芯片带 has-conflict 类、点击清空搜索并按该快捷键筛选；行结构为 setting-command-hotkeys + setting-hotkey(文本+lucide-x)+setting-add/restore-hotkey-button；暴露 setQuery/setHotkeyFilter。核心页对齐 dte：.setting-group-search 裸搜索 + 打开时自动聚焦，齿轮(有 settingTab)/快捷键(有命令)入口仅在启用时显隐，lucide-plus-circle 跳快捷键页并按插件 id 前缀过滤。第三方页对齐 tte 启用布局：行内齿轮(插件页签已注册)/快捷键/卸载(lucide-trash-2 → confirmDialog mod-warning → plugins.uninstallPlugin 删目录)入口；市场不接入。
 graph-view.js: 全局/局部图视图生命周期。跟随文件变化，关闭时清理引擎和渲染器。
-graph-renderer.js: 画布绘制、命中、拖拽和平移。设备像素统一换算，销毁释放监听与帧。
+graph-renderer.js: 画布绘制、命中、拖拽和平移。设备像素统一换算，销毁释放监听、帧与力学 worker；worker 后端由 sim.onUpdate → changed() 驱动重绘，本地回退才在帧回调里 tick()。
 canvas-view.js: 画布装配。观察挂载尺寸，防抖保存，切换文件前落盘，关闭后释放帧与节点。vault modify 的外部修改按磁盘内容重载并保留视口，自身写入按 _savedText 过滤 watcher 回声。撤销/重做：requestSave 防抖推进全量快照历史（上限 100），applyHistory 经 importData 差量重建且不产生新条目；控件组含快速设置（对齐网格/对齐物体/只读）与撤销/重做按钮。只读标记按原版 localDataManager 存 localStorage('canvas-<路径>')，重命名迁移、删除清理，初次装载恢复；切换只读时逐节点通知正文（onReadonlyChange，文本卡片立即退出编辑）。导出图片只在本类暴露 renderCanvasImage(可测试)与 generateHDImage(命令/面板菜单入口)，绘制在 canvas-export.js；视图头部经 installCanvasViewActions 增加「更多选项」按钮打开面板菜单。
 diff-view.js: renderDiffView(prev,next)。行级 LCS 对齐，删除/插入按块配对，行内差异标 diff-changed；相等行按原版阈值折叠(N lines folded 可点击展开)。供文件恢复弹窗"显示差异"。
 canvas-viewport.js: 画布坐标与缩放。限制缩放目标，按缩放挂载正文，收敛后停止帧。帧内把移动节点的关联边一并加入重绘集合。含物体对齐 getSnapping：候选框取「4 角 + 中心」5 点，逐轴取最近对齐值并返回位移，同时把匹配点画进 svg.canvas-snaps（原版 D3/A3/L3 的参考线）；clearSnapPoints 每次 move 先清，endSnapPointRendering 在 drag 收尾摘除容器。snapToObjects=false 时不吸附也不画线；候选取全部节点而非视口内节点。

@@ -183,3 +183,10 @@ MathJax 独立适配器子代理的41项基础/故障测试见 assets/mathjax/SO
 - `scripts/make-app-icon.py`：原创应用图标（地平线与曜日）→ build/icon.png + build/icon.icns；`electron-builder.yml`：appId app.opensidian、files 仅 dist/src/assets/package.json、asar、identity null（未签名）、mac dmg+zip。
 - 产物：`release/OpenSidian-1.0.0-arm64.dmg`（119MB）、`OpenSidian-1.0.0-arm64-mac.zip`；`npm run dist:dir` 可快速验证。
 - `scripts/smoke-packaged.mjs`：打包版真实启动冒烟（库启动/建文件/开文件/protocol=app:），实测冷启动约 1.9s 通过。
+
+## 切文件竞态修复批（2026-10-18）
+
+- 根因（视图层，非表格）：`_onExternalModify` 发起 `cachedRead` 后若期间切文件，迟到内容会被判定为外部改动并 `setValue` 进**新文件**，随后自动保存把旧内容写进新文件——跨文件内容损坏级 bug；表表格批的 `table-widget` 排序回归即由它触发（约 29% 概率）。
+- 修复：`_onExternalModify` 记住发起读取时的文件路径，读毕路径不一致即丢弃；`save()` 写盘期间切文件则不更新 `_loadedText`。
+- 新增 `editor-race` 场景 9 项（挂起 cachedRead 确定性复现）；**变异测试**：撤掉路径守卫必失败（`迟到内容未打进 B :: "# A\n\nAAA dirty\n"`），恢复后通过。
+- 回归：table-widget 76、table-interaction 97、editor 113、editor-switch 2、notes 72 全过。
