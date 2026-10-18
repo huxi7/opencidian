@@ -17,7 +17,7 @@ components.css: 菜单、弹窗、建议、通知、悬浮提示、设置外壳�
 download-attachments.css: 下载附件模态。.modal.mod-scrollable-content(app.css 8168-8184)与 .attachments-gallery/.download-attachment-item(app.css 3248-3312)逐字移植；末尾 .download-attachment-name 是本实现补的可见文件名标签。
 tree.css: .tree-item 体系(collapse-icon 尺寸与旋转、tree-item-self/icon/inner/children/flair)，逐字移植自原版 app.css 7263-7287 与 9446-9591。全部树视图共用。
 explorer.css: .nav-* 文件树层(标题内容、nav-file-tag、拖拽高亮)，被 explorer/outline/tag 面板共用。基础结构来自 tree.css。
-editor.css: CodeMirror 与 live preview(HyperMD-*)、inline-title、media 视图。含原版 file layout（.cm-sizer/.cm-contentContainer 布局、is-readable-line-width 的 --file-line-width 居中、.cm-line padding 0、.cm-gutters folding offset）与阅读视图 sizer 居中。表格段（app.css 3551-3797）含 .table-editor 单元格、table-row/col-btn、table-row/col-drag-handle 与 align 属性驱动的对齐。
+editor.css: CodeMirror 与 live preview(HyperMD-*)、inline-title、media 视图。含原版 file layout（.cm-sizer/.cm-contentContainer 布局、is-readable-line-width 的 --file-line-width 居中、.cm-line padding 0、.cm-gutters folding offset）与阅读视图 sizer 居中。表格段（app.css 3551-3797）含 .table-editor 单元格、table-row/col-btn、table-row/col-drag-handle 与 align 属性驱动的对齐，另移植单元格选区覆盖层（is-selected 与 start/end/top/bottom 边框，app.css 3586-3607/3769-3805）、拖拽落点线 .table-drag-target（app.css 12821-12836）与 is-dragging 手柄显隐；.table-cell-editor 是本实现的单元格编辑 textarea（mod-editing 隐藏渲染内容）。
 markdown.css: 阅读样式入口，按原顺序导入内容、属性与高亮规则。
 markdown-content.css: 阅读排版、表格、代码、引用与嵌入。
 markdown-properties.css: 属性、标签与内容补充规则。

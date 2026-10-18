@@ -1,14 +1,19 @@
 /**
- * [INPUT]: 依赖 @codemirror/view 的 WidgetType；依赖 core/menu.js 的 Menu、core/icons.js 的 setIcon、core/i18n.js 的 t；依赖 markdown/reading.js 的 getMarkdownIt 与 attachMarkdownInteractions。
- * [OUTPUT]: 导出 TableWidget 与 parseTableText、serializeTable、splitRow 纯函数。
- * [POS]: editor/ 的实时预览表格部件，由 live-preview.js 的块层在表格块上实例化（构造时带 Markdown 文本与文档区间）。部件不保存可变状态：每个动作都重新解析 this.text，经 view.dispatch 改写文档，DOM 由 CM6 重建。
+ * [INPUT]: 依赖 @codemirror/view 的 WidgetType；依赖 core/menu.js 的 Menu、core/icons.js 的 setIcon、core/i18n.js 的 t；依赖 markdown/reading.js 的 getMarkdownIt 与 attachMarkdownInteractions；
+ *          依赖 editor/table-model.js 的模型纯函数、table-drag.js 的手柄拖拽、table-selection.js 的矩形选区与剪贴板、table-edit.js 的原位置编辑。
+ * [OUTPUT]: 导出 TableWidget，并转出 parseTableText、serializeTable、splitRow。
+ * [POS]: editor/ 的实时预览表格部件，由 live-preview.js 的块层在表格块上实例化（构造时带 Markdown 文本与文档区间）。
+ *        部件不保存可变文档状态：每个动作重新解析 this.text，经 view.dispatch 改写整块文本，DOM 由 CM6 重建；
+ *        拖拽期间的选区与换格焦点经模块级 carriedState 交接给重建后的实例（原版 render() 末尾重放 selectionAnchor/Head 的等价物）。
+ *        拖拽重排在 table-drag.js，选区菜单与剪贴板在 table-selection.js，单元格原位置编辑在 table-edit.js。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 /*
  * Live-preview table widget — the original `.cm-table-widget`:
  *   .table-wrapper > (table.table-editor + .table-row-btn + .table-col-btn)
  * per-cell `.table-row-drag-handle` / `.table-col-drag-handle` (lucide grip)
- * with row / column / alignment / sort context menus.
+ * with drag reorder, rectangle cell selection, row / column / alignment /
+ * sort / selection context menus and in-place cell editing.
  * The widget is a pure view of the markdown block it replaces: every edit
  * re-parses the stored text, mutates the model and dispatches the new text.
  */
@@ -17,123 +22,18 @@ import { Menu } from '../core/menu.js';
 import { setIcon } from '../core/icons.js';
 import { t } from '../core/i18n.js';
 import { getMarkdownIt, attachMarkdownInteractions } from '../markdown/reading.js';
+import { clamp, moveInArray, parseTableText, serializeTable, splitRow } from './table-model.js';
+import { attachDragHandle } from './table-drag.js';
+import { attachCellSelection, cellElement, clampBounds, selectionBounds } from './table-selection.js';
+import { beginCellEdit, enterFromCell, tabFromCell } from './table-edit.js';
 
-/** 列最小宽度。原版从 5 起算；这里取 7，使任意对齐的分隔行都至少三个连字符（居中是 `:---:`）。 */
-const MIN_COL_WIDTH = 7;
+export { parseTableText, serializeTable, splitRow };
+
 /** 原版 lb：大小写不敏感、数字感知的排序比较器。 */
 const compareText = new Intl.Collator(undefined, { usage: 'sort', sensitivity: 'base', numeric: true }).compare;
 
-// ---------------------------------------------------------------------------
-// Table model — parse / serialize (mirrors the original getTableString)
-// ---------------------------------------------------------------------------
-
-/** 拆一行表格：按未转义的 `|` 切分，去掉首尾空段，单元格取 trim 后的原文。 */
-export function splitRow(line) {
-  let body = String(line == null ? '' : line).trim();
-  if (body.startsWith('|')) body = body.slice(1);
-  if (body.endsWith('|') && !body.endsWith('\\|')) body = body.slice(0, -1);
-  const cells = [];
-  let current = '';
-  for (let index = 0; index < body.length; index++) {
-    const char = body[index];
-    if (char === '\\' && index + 1 < body.length) {
-      current += char + body[index + 1];
-      index++;
-      continue;
-    }
-    if (char === '|') {
-      cells.push(current.trim());
-      current = '';
-      continue;
-    }
-    current += char;
-  }
-  cells.push(current.trim());
-  return cells;
-}
-
-/** 分隔行单元格 → 对齐：`:--` 左、`:-:` 中、`--:` 右、`---` 默认（null）。 */
-function parseAlignment(cell) {
-  const value = String(cell == null ? '' : cell).trim();
-  if (!/^:?-+:?$/.test(value)) return null;
-  const start = value.startsWith(':');
-  const end = value.endsWith(':');
-  if (start && end) return 'center';
-  if (start) return 'left';
-  if (end) return 'right';
-  return null;
-}
-
-/** 解析表格 Markdown 为 { rows, alignments }；rows[0] 是表头行，分隔行不入模型。 */
-export function parseTableText(text) {
-  const lines = String(text == null ? '' : text).split('\n').filter((line) => line.trim() !== '');
-  if (lines.length < 2) return null;
-  const header = splitRow(lines[0]);
-  const delimiter = splitRow(lines[1]);
-  if (!header.length || header.length !== delimiter.length) return null;
-  if (!delimiter.every((cell) => /^:?-+:?$/.test(cell))) return null;
-  const alignments = delimiter.map(parseAlignment);
-  const rows = [header];
-  for (let index = 2; index < lines.length; index++) rows.push(splitRow(lines[index]));
-  for (const row of rows) {
-    while (row.length < alignments.length) row.push('');
-    row.length = alignments.length;
-  }
-  return { rows, alignments };
-}
-
-/** 分隔行：镜像原版 makeAlignmentRow 的冒号与连字符写回。 */
-function alignmentRow(alignments, widths) {
-  let line = '';
-  for (let col = 0; col < alignments.length; col++) {
-    const width = Math.max(MIN_COL_WIDTH, widths[col]);
-    switch (alignments[col]) {
-      case 'left': line += '| :' + '-'.repeat(width - 3) + ' '; break;
-      case 'center': line += '| :' + '-'.repeat(width - 4) + ': '; break;
-      case 'right': line += '| ' + '-'.repeat(width - 3) + ': '; break;
-      default: line += '| ' + '-'.repeat(width - 2) + ' ';
-    }
-  }
-  return line + '|';
-}
-
-/** 序列化回 Markdown：单元格按列宽补空格，左/中/右对齐决定留白位置。 */
-export function serializeTable(rows, alignments) {
-  const colCount = alignments.length;
-  const widths = new Array(colCount).fill(MIN_COL_WIDTH);
-  for (const row of rows) {
-    for (let col = 0; col < colCount; col++) {
-      widths[col] = Math.max(widths[col], String(row[col] == null ? '' : row[col]).length + 2);
-    }
-  }
-  const lines = [];
-  for (let index = 0; index < rows.length; index++) {
-    let line = '';
-    for (let col = 0; col < colCount; col++) {
-      const cell = String(rows[index][col] == null ? '' : rows[index][col]);
-      const pad = Math.max(2, widths[col] - cell.length);
-      let left = 1;
-      let right = pad - 1;
-      if (alignments[col] === 'right') { left = pad - 1; right = 1; }
-      else if (alignments[col] === 'center') { left = Math.floor(pad / 2); right = Math.ceil(pad / 2); }
-      line += '|' + ' '.repeat(left) + cell + ' '.repeat(right);
-    }
-    lines.push(line + '|');
-    if (index === 0) lines.push(alignmentRow(alignments, widths));
-  }
-  return lines.join('\n');
-}
-
-/** 原版 ac：把数组元素从 from 移到 to。 */
-function moveInArray(array, from, to) {
-  const value = array.splice(from, 1)[0];
-  array.splice(to, 0, value);
-  return array;
-}
-
-function clamp(value, min, max) {
-  return Math.min(Math.max(value, min), max);
-}
+/** 跨重建携带的视图状态（选区和换格焦点）；dispatch 后由新实例在 toDOM 里认领，未重建时 settle 落到当前实例。 */
+let carriedState = null;
 
 /** 单元格内容：按行内 Markdown 渲染（链接/强调/wiki 链接），失败时退回纯文本。 */
 function renderCellHtml(app, text, sourcePath) {
@@ -165,6 +65,14 @@ export class TableWidget extends WidgetType {
     this.sourcePath = sourcePath || '';
     this.from = from;
     this.to = to;
+    this.containerEl = null;
+    this.tableElement = null;
+    this.selectionAnchor = null;
+    this.selectionHead = null;
+    this.selectedCells = [];
+    this.focusCell = null;
+    this.edit = null;
+    this.suppressClick = false;
   }
 
   eq(other) {
@@ -173,18 +81,8 @@ export class TableWidget extends WidgetType {
 
   toDOM(view) {
     const container = createDiv({ cls: 'cm-embed-block cm-table-widget markdown-rendered' });
-    container.addEventListener('pointerdown', (event) => {
-      if (event.target === container) event.preventDefault();
-    });
-    container.addEventListener('click', (event) => {
-      const target = event.target;
-      if (target !== container && !(target.closest && target.closest('.table-cell-wrapper'))) return;
-      if (target.closest && (target.closest('a') || target.closest('.tag'))) return;
-      const row = target.closest && target.closest('.table-cell-wrapper')
-        ? target.closest('tr').rowIndex
-        : 0;
-      this.placeCursor(view, row);
-    });
+    container.tabIndex = -1;
+    this.containerEl = container;
     const model = parseTableText(this.text);
     if (!model) {
       container.setText(this.text);
@@ -193,6 +91,7 @@ export class TableWidget extends WidgetType {
     const wrapper = container.createDiv('table-wrapper');
     const table = wrapper.createEl('table', { cls: 'table-editor' });
     table.tabIndex = -1;
+    this.tableElement = table;
     const head = table.createEl('thead');
     const headRow = head.createEl('tr');
     for (let col = 0; col < model.alignments.length; col++) {
@@ -209,7 +108,43 @@ export class TableWidget extends WidgetType {
       () => this.insertRow(view, model.rows.length));
     this.buildAddButton(wrapper, 'table-col-btn', t('table.action-column-after'),
       () => this.insertColumn(view, model.alignments.length, null));
+
+    container.addEventListener('click', (event) => {
+      if (this.suppressClick) { this.suppressClick = false; return; }
+      if (this.edit) return;
+      const target = event.target;
+      if (target !== container && !(target.closest && target.closest('.table-cell-wrapper'))) return;
+      if (target.closest && (target.closest('a') || target.closest('.tag'))) return;
+      const row = target.closest && target.closest('.table-cell-wrapper') ? target.closest('tr').rowIndex : 0;
+      this.placeCursor(view, row);
+    });
+    container.addEventListener('keydown', (event) => {
+      if (this.edit || event.defaultPrevented) return;
+      if (event.key === 'Escape') {
+        if (this.selectionAnchor) { this.deselectCells(); event.preventDefault(); }
+        return;
+      }
+      const start = this.selectionHead || this.focusCell || { row: 0, col: 0 };
+      if (event.key === 'Tab') {
+        event.preventDefault();
+        this.deselectCells();
+        tabFromCell(this, view, start.row, start.col, event.shiftKey);
+        return;
+      }
+      if (event.key === 'Enter') {
+        event.preventDefault();
+        this.deselectCells();
+        enterFromCell(this, view, start.row, start.col);
+      }
+    });
+    attachCellSelection(this, view, container);
+
     if (this.app) attachMarkdownInteractions(this.app, container, () => this.sourcePath);
+    const staged = carriedState;
+    if (staged && staged.from === this.from && staged.text === this.text) {
+      carriedState = null;
+      this.applyState(view, staged);
+    }
     return container;
   }
 
@@ -231,7 +166,12 @@ export class TableWidget extends WidgetType {
     const handle = cell.createDiv('table-' + axis + '-drag-handle');
     setIcon(handle, axis === 'col' ? 'lucide-grip-horizontal' : 'lucide-grip-vertical');
     handle.dataset.ignoreSwipe = 'true';
-    handle.addEventListener('pointerdown', (event) => event.preventDefault());
+    handle.addEventListener('pointerdown', (event) => {
+      if (!event.isPrimary || event.button !== 0 || event.defaultPrevented) return;
+      const tableEl = this.tableEl();
+      if (!tableEl) return;
+      attachDragHandle(this, view, { event, handle, axis, row, col, container: this.containerEl, tableEl });
+    });
     handle.addEventListener('contextmenu', (event) => {
       event.preventDefault();
       event.stopPropagation();
@@ -247,6 +187,7 @@ export class TableWidget extends WidgetType {
       }
       menu.setParentElement(handle);
       menu.showAtMouseEvent(event);
+      menu.onHide = () => this.deselectCells();
     });
   }
 
@@ -256,6 +197,22 @@ export class TableWidget extends WidgetType {
     setTip(button, title);
     button.addEventListener('pointerdown', (event) => event.preventDefault());
     button.addEventListener('click', action);
+  }
+
+  // ---- accessors ---------------------------------------------------------
+
+  /** 当前 DOM 里的表格元素；实例与 DOM 生命周期不完全重合，查不到就回退到子树查询。 */
+  tableEl() {
+    if (this.tableElement && this.tableElement.isConnected) return this.tableElement;
+    return this.containerEl ? this.containerEl.querySelector('table.table-editor') : null;
+  }
+
+  model() {
+    return parseTableText(this.text);
+  }
+
+  cellElement(row, col) {
+    return this.containerEl ? cellElement(this.containerEl, row, col) : null;
   }
 
   // ---- menus -------------------------------------------------------------
@@ -279,9 +236,9 @@ export class TableWidget extends WidgetType {
     this.addMenuGroups(menu, [
       [
         { section: 'table-add', icon: 'lucide-panel-top-close', title: t('table.action-row-before'),
-          onClick: () => this.insertRow(view, cell.row, cell.col) },
+          onClick: () => this.insertRow(view, cell.row) },
         { section: 'table-add', icon: 'lucide-panel-bottom-close', title: t('table.action-row-after'),
-          onClick: () => this.insertRow(view, cell.row + 1, cell.col) },
+          onClick: () => this.insertRow(view, cell.row + 1) },
       ],
       [
         cell.row > 0 ? { section: 'table-move', icon: 'lucide-arrow-up', title: t('table.action-row-up'),
@@ -352,11 +309,29 @@ export class TableWidget extends WidgetType {
     return this.text && index >= 0 ? { from: index, to: index + this.text.length } : null;
   }
 
-  dispatch(view, model) {
+  /** 写回整块文本；state 里的选区/焦点交给重建后的实例认领。 */
+  dispatch(view, model, state) {
     const range = this.range(view);
     if (!range) return false;
-    view.dispatch({ changes: { from: range.from, to: range.to, insert: serializeTable(model.rows, model.alignments) } });
+    const text = serializeTable(model.rows, model.alignments);
+    if (state) carriedState = { from: range.from, text, ...state };
+    view.dispatch({ changes: { from: range.from, to: range.to, insert: text } });
+    this.settle(view);
     return true;
+  }
+
+  /** 没触发重建（文本等价）时，携带状态落到当前实例。 */
+  settle(view) {
+    const staged = carriedState;
+    if (!staged) return;
+    if (staged.from === this.from && staged.text === this.text) this.applyState(view, staged);
+    carriedState = null;
+  }
+
+  applyState(view, state) {
+    if (!state) return;
+    if (state.selection) this.selectCells(view, state.selection.anchor, state.selection.head);
+    if (state.focus) beginCellEdit(this, view, state.focus.row, state.focus.col, { selectAll: !!state.focus.selectAll });
   }
 
   removeTable(view) {
@@ -366,7 +341,7 @@ export class TableWidget extends WidgetType {
     view.focus();
   }
 
-  /** 点击单元格/容器：光标落到对应源码行，部件让位给原始 Markdown。 */
+  /** 点击单元格/容器：光标落到对应源码行，部件让位给原始 Markdown（T0 验收锁定的行为）。 */
   placeCursor(view, row) {
     const range = this.range(view);
     if (!range) return;
@@ -377,32 +352,140 @@ export class TableWidget extends WidgetType {
     view.focus();
   }
 
+  focusContainer() {
+    if (!this.containerEl || !this.containerEl.isConnected) return;
+    try { this.containerEl.focus({ preventScroll: true }); } catch (error) { this.containerEl.focus(); }
+  }
+
+  // ---- selection ---------------------------------------------------------
+
+  /** 原版 selectCells：单格 anchor===head 时只清空旧选区；否则按矩形打 is-selected 系列类。 */
+  selectCells(view, anchor, head, dragging) {
+    this.deselectCells();
+    if (!anchor || !head) return;
+    if (anchor.row === head.row && anchor.col === head.col) return;
+    const model = this.model();
+    if (!model) return;
+    const bounds = clampBounds(selectionBounds(anchor, head), model.rows.length, model.alignments.length);
+    if (!bounds) return;
+    this.selectionAnchor = anchor;
+    this.selectionHead = head;
+    const cells = [];
+    for (let row = bounds.minRow; row <= bounds.maxRow; row++) {
+      for (let col = bounds.minCol; col <= bounds.maxCol; col++) {
+        const cell = this.cellElement(row, col);
+        if (!cell) continue;
+        const classes = ['is-selected'];
+        if (dragging) classes.push('mod-dragging');
+        if (col === bounds.minCol) classes.push('start');
+        if (col === bounds.maxCol) classes.push('end');
+        if (row === bounds.minRow) classes.push('top');
+        if (row === bounds.maxRow) classes.push('bottom');
+        cell.addClasses(classes);
+        cells.push(cell);
+      }
+    }
+    this.selectedCells = cells;
+    if (this.containerEl) this.containerEl.addClass('has-selection');
+  }
+
+  deselectCells() {
+    for (const cell of this.selectedCells) {
+      cell.removeClasses(['mod-dragging', 'is-selected', 'start', 'end', 'top', 'bottom']);
+    }
+    this.selectedCells = [];
+    this.selectionAnchor = null;
+    this.selectionHead = null;
+    if (this.containerEl) this.containerEl.removeClass('has-selection');
+  }
+
+  /** 当前选区的行列范围（夹回表格内）；无选区返回 null。 */
+  getSelectionBounds() {
+    const model = this.model();
+    if (!model) return null;
+    return clampBounds(selectionBounds(this.selectionAnchor, this.selectionHead), model.rows.length, model.alignments.length);
+  }
+
+  // ---- selection actions -------------------------------------------------
+
+  /** 原版 actionClearSelection：选中格文本清空，保持选区。 */
+  clearSelectedCells(view) {
+    const model = this.model();
+    const bounds = this.getSelectionBounds();
+    if (!model || !bounds) return;
+    for (let row = bounds.minRow; row <= bounds.maxRow; row++) {
+      for (let col = bounds.minCol; col <= bounds.maxCol; col++) model.rows[row][col] = '';
+    }
+    this.dispatch(view, model, { selection: { anchor: this.selectionAnchor, head: this.selectionHead } });
+  }
+
+  /** 原版 actionDeleteSelection → deleteSelection(-1)：整表删块、整行/整列删行/列、矩形清空单元格。 */
+  deleteSelection(view, edge) {
+    const model = this.model();
+    const bounds = this.getSelectionBounds();
+    if (!model || !bounds) return;
+    const { minRow, maxRow, minCol, maxCol } = bounds;
+    const lastCol = model.alignments.length - 1;
+    const lastRow = model.rows.length - 1;
+    const head = this.selectionHead || { row: minRow, col: minCol };
+    this.deselectCells();
+    if (minCol === 0 && maxCol === lastCol) {
+      if (minRow === 0 && maxRow === lastRow) {
+        this.removeTable(view);
+        return;
+      }
+      model.rows.splice(minRow, maxRow - minRow + 1);
+      this.dispatch(view, model, { focus: { row: edge === -1 ? minRow - 1 : minRow, col: head.col } });
+      return;
+    }
+    if (minRow === 0 && maxRow === lastRow) {
+      model.alignments.splice(minCol, maxCol - minCol + 1);
+      for (const row of model.rows) row.splice(minCol, maxCol - minCol + 1);
+      this.dispatch(view, model, { focus: { row: head.row, col: edge === -1 ? minCol - 1 : minCol } });
+      return;
+    }
+    for (let row = minRow; row <= maxRow; row++) {
+      for (let col = minCol; col <= maxCol; col++) model.rows[row][col] = '';
+    }
+    this.dispatch(view, model, { focus: { row: edge === -1 ? minRow : maxRow, col: edge === -1 ? minCol : maxCol } });
+  }
+
+  /** 对齐应用到选区覆盖的所有列（原版 makeAlignmentMenu 的列集合）。 */
+  setSelectionAlignment(view, align) {
+    const model = this.model();
+    const bounds = this.getSelectionBounds();
+    if (!model || !bounds) return;
+    for (let col = bounds.minCol; col <= bounds.maxCol; col++) model.alignments[col] = align;
+    this.dispatch(view, model, { selection: { anchor: this.selectionAnchor, head: this.selectionHead } });
+  }
+
   // ---- actions (each rebuilds the markdown from the current text) --------
 
-  insertRow(view, index) {
-    const model = parseTableText(this.text);
+  insertRow(view, index, state) {
+    const model = this.model();
     if (!model) return;
     const at = clamp(index, 0, model.rows.length);
     model.rows.splice(at, 0, new Array(model.alignments.length).fill(''));
-    this.dispatch(view, model);
+    const next = state && state.focus ? { ...state, focus: { ...state.focus, row: at } } : state;
+    this.dispatch(view, model, next);
   }
 
   duplicateRow(view, index) {
-    const model = parseTableText(this.text);
+    const model = this.model();
     if (!model || index < 0 || index >= model.rows.length) return;
     model.rows.splice(index, 0, model.rows[index].slice());
     this.dispatch(view, model);
   }
 
-  moveRow(view, from, to) {
-    const model = parseTableText(this.text);
+  moveRow(view, from, to, state) {
+    const model = this.model();
     if (!model || to < 0 || to >= model.rows.length) return;
     moveInArray(model.rows, from, to);
-    this.dispatch(view, model);
+    this.dispatch(view, model, state);
   }
 
   removeRow(view, index) {
-    const model = parseTableText(this.text);
+    const model = this.model();
     if (!model || index < 0 || index >= model.rows.length) return;
     if (model.rows.length === 1) {
       this.removeTable(view);
@@ -413,7 +496,7 @@ export class TableWidget extends WidgetType {
   }
 
   insertColumn(view, index, align) {
-    const model = parseTableText(this.text);
+    const model = this.model();
     if (!model) return;
     const at = clamp(index, 0, model.alignments.length);
     model.alignments.splice(at, 0, align || null);
@@ -422,7 +505,7 @@ export class TableWidget extends WidgetType {
   }
 
   duplicateColumn(view, index) {
-    const model = parseTableText(this.text);
+    const model = this.model();
     if (!model || index < 0 || index >= model.alignments.length) return;
     const align = model.alignments[index];
     model.alignments.splice(index + 1, 0, align);
@@ -430,16 +513,16 @@ export class TableWidget extends WidgetType {
     this.dispatch(view, model);
   }
 
-  moveColumn(view, from, to) {
-    const model = parseTableText(this.text);
+  moveColumn(view, from, to, state) {
+    const model = this.model();
     if (!model || to < 0 || to >= model.alignments.length) return;
     moveInArray(model.alignments, from, to);
     for (const row of model.rows) moveInArray(row, from, to);
-    this.dispatch(view, model);
+    this.dispatch(view, model, state);
   }
 
   removeColumn(view, index) {
-    const model = parseTableText(this.text);
+    const model = this.model();
     if (!model || index < 0 || index >= model.alignments.length) return;
     if (model.alignments.length === 1) {
       this.removeTable(view);
@@ -451,15 +534,28 @@ export class TableWidget extends WidgetType {
   }
 
   setAlignment(view, col, align) {
-    const model = parseTableText(this.text);
+    const model = this.model();
     if (!model || col < 0 || col >= model.alignments.length) return;
     model.alignments[col] = align;
     this.dispatch(view, model);
   }
 
+  /** 单元格文本写回：内容不变时只按 state 移动焦点，不写文档。 */
+  updateCell(view, row, col, text, state) {
+    const model = this.model();
+    if (!model || !model.rows[row] || model.rows[row][col] === undefined) return false;
+    if (model.rows[row][col] === text) {
+      if (state) this.applyState(view, state);
+      return false;
+    }
+    model.rows[row][col] = text;
+    this.dispatch(view, model, state);
+    return true;
+  }
+
   /** 排序表体（保留表头），比较单元格原文；reverse 即 Z→A。 */
   sortColumn(view, col, reverse) {
-    const model = parseTableText(this.text);
+    const model = this.model();
     if (!model || col < 0 || col >= model.alignments.length) return;
     const head = model.rows[0];
     const body = model.rows.slice(1).sort((left, right) => {
