@@ -36,3 +36,5 @@ src/renderer/starter.html - 仓库选择窗口 HTML
 </rules>
 
 [PROTOCOL]: 变更时更新此头部，然后检查 src/CLAUDE.md 与本文件
+
+> 逆向证据与工具选择见 AGENT-STATE.md“REA 自动使用政策”。
