@@ -60,6 +60,10 @@ export function create(app) {
   let hoverHandle = null;
   let hoverParent = null;
   let lastPointer = null;
+  let hoverAnchor = null;        // 已悬停但被 Mod 门控挡住的链接（等按下 Mod）
+  let pendingHoverLink = null;   // 同上，图谱等 hover-link 来源
+
+  const modPressed = (ev) => !!(ev && (ev.metaKey || ev.ctrlKey));
 
   function modRequired(source) {
     return Object.prototype.hasOwnProperty.call(overrides, source) ? !!overrides[source] : !!SOURCE_DEFAULT_MOD[source];
@@ -204,10 +208,12 @@ export function create(app) {
 
   const onPointerOver = (ev) => {
     const anchor = linkAnchor(ev.target);
-    if (!anchor || anchor === targetEl) return;
+    if (!anchor) return;
+    hoverAnchor = anchor;   // 原版：已悬停在链接上时，再按 Mod 也会弹预览
+    if (anchor === targetEl) return;
     if (popoverEl && popoverEl.contains(ev.target)) { keepAlive(); return; }
     const source = sourceOf(anchor);
-    if (modRequired(source) && !(ev.metaKey || ev.ctrlKey)) return;
+    if (modRequired(source) && !modPressed(ev)) return;
     clearTimeout(showTimer);
     showTimer = setTimeout(() => {
       showTimer = null;
@@ -218,7 +224,7 @@ export function create(app) {
   /* workspace 的 hover-link 事件：图谱等非 DOM 来源请求预览（原版 app.workspace.on('hover-link')） */
   const onHoverLink = (info) => {
     if (!info || !info.event || !info.linktext) return;
-    if (modRequired(info.source) && !(info.event.metaKey || info.event.ctrlKey)) return;
+    if (modRequired(info.source) && !modPressed(info.event)) { pendingHoverLink = info; return; }
     clearTimeout(showTimer);
     showTimer = setTimeout(() => {
       showTimer = null;
@@ -229,13 +235,40 @@ export function create(app) {
   const onPointerOut = (ev) => {
     const anchor = linkAnchor(ev.target);
     if (anchor && anchor === targetEl) scheduleHide();
+    if (anchor && anchor === hoverAnchor) {
+      const intoPopover = popoverEl && ev.relatedTarget && popoverEl.contains(ev.relatedTarget);
+      if (!intoPopover) hoverAnchor = null;
+    }
   };
 
   const onDocMouseDown = (ev) => {
     if (popoverEl && !popoverEl.contains(ev.target)) hidePopover();
   };
   const onScroll = () => { if (popoverEl) hidePopover(); };
-  const onKeyDown = (ev) => { if (ev.key === 'Escape') hidePopover(); };
+  const onKeyDown = (ev) => {
+    if (ev.key === 'Escape') { hidePopover(); return; }
+    if (!modPressed(ev) || popoverEl) return;
+    // 原版：悬停已发生但当时没按 Mod，按下后补弹（图谱来源用最后指针坐标）
+    if (pendingHoverLink) {
+      const info = pendingHoverLink;
+      pendingHoverLink = null;
+      const point = lastPointer || { x: info.event.clientX, y: info.event.clientY };
+      showForHoverLink({ ...info, event: { clientX: point.x, clientY: point.y } }).catch((e) => console.error(e));
+      return;
+    }
+    if (hoverAnchor && hoverAnchor.isConnected) {
+      const anchor = hoverAnchor;
+      showFor(anchor).catch((e) => console.error(e));
+    }
+  };
+
+  /* 松开 Mod：Mod 门控来源的预览随之收起（原版语义） */
+  const onKeyUp = (ev) => {
+    if (ev.key !== 'Meta' && ev.key !== 'Control') return;
+    if (!popoverEl) return;
+    if (targetEl && modRequired(sourceOf(targetEl)) && !modPressed(ev)) hidePopover();
+    else if (!targetEl && hoverParent) hidePopover();
+  };
   const onPointerMove = (ev) => { lastPointer = { x: ev.clientX, y: ev.clientY }; };
 
   let hoverLinkRef = null;
@@ -245,6 +278,7 @@ export function create(app) {
       document.addEventListener('pointerout', onPointerOut, true);
       document.addEventListener('mousedown', onDocMouseDown, true);
       document.addEventListener('keydown', onKeyDown, true);
+      document.addEventListener('keyup', onKeyUp, true);
       window.addEventListener('mousemove', onPointerMove, true);
       window.addEventListener('scroll', onScroll, true);
       hoverLinkRef = app.workspace.on('hover-link', onHoverLink);
@@ -254,6 +288,7 @@ export function create(app) {
       document.removeEventListener('pointerout', onPointerOut, true);
       document.removeEventListener('mousedown', onDocMouseDown, true);
       document.removeEventListener('keydown', onKeyDown, true);
+      document.removeEventListener('keyup', onKeyUp, true);
       window.removeEventListener('mousemove', onPointerMove, true);
       window.removeEventListener('scroll', onScroll, true);
       if (hoverLinkRef) { hoverLinkRef.unregister(); hoverLinkRef = null; }

@@ -246,3 +246,9 @@ MathJax 独立适配器子代理的41项基础/故障测试见 assets/mathjax/SO
 - 原版用 `fix-webm-duration` 重建元数据头补 Duration（MediaRecorder 产出的 webm 缺时长，播放器进度条异常）；我们同样引入该库（MIT，esbuild 打进 bundle）。
 - `audio-recorder.js`：记录会话开始时间，webm 落盘前 `fixWebmDuration(blob, elapsedMs)`；**补失败回退原始 blob（录音绝不丢）**；`app.fixWebmDuration` 为验收注入点。
 - 验收 audio-recorder 65→72（新增：补丁调用与时长、落盘内容来自补丁后 blob、失败回退原始数据）；real-library 在无效 fixture 上抛错走回退的路径也被覆盖。
+
+## page-preview 悬停后按 Mod 批（2026-10-18）
+
+- 原版行为：已悬停在链接上（未按 Mod 不弹），此时按下 Mod **补弹**预览、松开 Mod 收起。
+- 实现：记录 hoverAnchor（链接）与 pendingHoverLink（图谱等 hover-link 来源）；keydown Mod → 立即弹出（图谱用最后指针坐标）；keyup Mod → 门控来源的预览收起。
+- 验收 page-preview 13→16（悬停不弹仅挂起 / 按 Mod 补弹 / 松开收起）。

@@ -58,5 +58,17 @@ document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: tr
 await wait(60);
 check(!findPop(), 'popover 清理完成');
 
+// ------------------------------------------------ 已悬停时再按 Mod（原版延迟监听）
+wl.dispatchEvent(new PointerEvent('pointerover', { bubbles: true, cancelable: true }));
+await wait(420);
+check(!findPop(), '复现: 未按 Mod 时悬停不弹（仅挂起）');
+document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Meta', metaKey: true, bubbles: true }));
+await wait(120);
+check(!!findPop(), '悬停后按下 Mod 立即补弹预览');
+document.dispatchEvent(new KeyboardEvent('keyup', { key: 'Meta', metaKey: false, bubbles: true }));
+await wait(120);
+check(!findPop(), '松开 Mod 后预览收起');
+document.dispatchEvent(new KeyboardEvent('keyup', { key: 'Meta', metaKey: false, bubbles: true }));
+
 return {pass:true,count};
 })()
