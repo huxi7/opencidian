@@ -216,3 +216,12 @@ MathJax 独立适配器子代理的41项基础/故障测试见 assets/mathjax/SO
 | alpha 衰减 | `1-0.001^(1/300)`，alpha<0.001 停 | 同 | ✓ |
 
 - 结论：参数与公式为**行为级 1:1**（原版 WASM 与其自带 JS d3 回退同源；本实现即按该 d3 语义重写）。未复刻位级 WASM 二进制（法律与收益原因，见 AGENT-STATE“REA 自动使用政策”）。
+
+## 图谱力学内核深挖对齐（原版 JS 回退实现逐行对照，2026-10-18）
+
+- 证据：REA `ev_69f236a3…`（WASM 3322B，WAT 34527 字符）+ 原版 `sim.js` 自带可读 JS 回退实现（与 WASM 同源）。
+- 原版每帧调用（JS 胶水）：`simulate(0, n, m, alpha, centerStrength, linkStrength, linkDistance, charge, 0.9, 0.5)` → `complete(0, n, 0.6)`；力顺序 `[forceX, forceY, link, manyBody, collide]`。
+- 逐条核对结论（`graph-force.js`）：
+  - 中心力 `.strength(.1)` 目标原点 ×alpha ✓；弹簧：预测位置 `x+vx`、`bias=count(vk)/(count(v)+count(k))`、距离 250、strength `1/min(度数)`、iterations=1 ✓；斥力：θ²=0.81、`distanceMin²=30²` 钳制、`value*alpha/l`、自节点排除 ✓；碰撞：半径 60、strength .5、预测位置、**不乘 alpha**、面积比权重 `r²/(r_s²+r_n²)`、包围盒裁剪 `s+cell.r`、`index>` 去重、iterations=1 ✓；积分 `vx*=.6; x+=vx` + `fx/fy` 钉住 ✓；alpha 衰减 `1-0.001^(1/300)`、`>0.001` 继续 ✓。
+  - **本批修正的 4 处偏差**：① jiggle 由 `Math.random` 改为原版确定性 LCG（seed=1，逐位同序列）；② 弹簧逐分量补零 jiggle；③ 自环度数计两次；④ 碰撞逐分量补零（累加 jiggle²）。
+- 回归：graph-worker 55、graph 72、core-ribbon 47 全绿。

@@ -5,6 +5,7 @@
  *        斥力为 Barnes-Hut 四叉树近似（theta²=0.81），碰撞按四叉树包围盒裁剪半径 120 的候选对，两者共用同一棵树（tick 内位置不变）。
  *        受力遍历内联为复用栈，避免逐点闭包分配。参数对齐原版 d3-force：manyBody strength=-1000/distanceMin=30、
  *        collide radius=60/strength=.5、速度衰减 .6、alpha 衰减 1-0.001^(1/300)。
+ *        零距离补 jiggle 用原版确定性 LCG（seed=1），弹簧/碰撞逐分量处理，自环度数计两次。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 import { buildQuadtree, visitAfter } from './graph-quadtree.js';
@@ -17,7 +18,13 @@ export const COLLIDE_STRENGTH = 0.5;                     // 原版 strength(.5)
 export const ALPHA_MIN = 0.001;                          // 原版循环停止阈值 Q>.001
 export const ALPHA_START = 0.3;                          // 原版 postMessage({alpha:.3})
 
-const jiggle = () => 1e-6 * (Math.random() - 0.5);
+/* 原版确定性 jiggle：LCG `p=(1664525p+1013904223) % 2^32`，seed=1，`1e-6*(p/2^32 - 0.5)`（sim.js 的 U）。
+   用确定性序列而非 Math.random：与原件逐位同序列，重合节点的散开可复现。 */
+let lcgState = 1;
+const jiggle = () => {
+  lcgState = (1664525 * lcgState + 1013904223) % 4294967296;
+  return 1e-6 * (lcgState / 4294967296 - 0.5);
+};
 const hasOwn = (object, key) => Object.prototype.hasOwnProperty.call(object, key);
 
 /* 原版 worker 的新节点形态：{id,x,y,vx,vy,fx:null,fy:null}（index 由 setNodes 重排） */
@@ -80,8 +87,9 @@ export class ForceKernel {
     /* 弹簧强度取两端度数：拓扑变化时计数；逐帧对每条边重扫全图会产生 O(E²) 开销 */
     this.linkCounts = new Map();
     for (const { source, target } of this.links) {
+      /* 原版对 source/target 各无条件 +1（自环因此计两次），此处对齐 */
       this.linkCounts.set(source, (this.linkCounts.get(source) || 0) + 1);
-      if (target !== source) this.linkCounts.set(target, (this.linkCounts.get(target) || 0) + 1);
+      this.linkCounts.set(target, (this.linkCounts.get(target) || 0) + 1);
     }
   }
 
@@ -141,8 +149,10 @@ export class ForceKernel {
       const strength = this.linkStrength / Math.min(countSource, countTarget);
       let dx = target.x + target.vx - source.x - source.vx;
       let dy = target.y + target.vy - source.y - source.vy;
-      let distance = Math.sqrt(dx * dx + dy * dy);
-      if (distance === 0) { dx = jiggle(); dy = jiggle(); distance = Math.sqrt(dx * dx + dy * dy); }
+      /* 原版逐分量：某轴投影距离为 0 时该轴补 jiggle（`proj || jiggle()`） */
+      if (dx === 0) dx = jiggle();
+      if (dy === 0) dy = jiggle();
+      const distance = Math.sqrt(dx * dx + dy * dy);
       const scale = ((distance - this.linkDistance) / distance) * alpha * strength;
       dx *= scale;
       dy *= scale;
@@ -277,8 +287,11 @@ export class ForceKernel {
             let y = yi - quad.data.y - quad.data.vy;
             let l = x * x + y * y;
             if (l < reach2) {
-              if (l === 0) { x = jiggle(); y = jiggle(); l = x * x + y * y; }
-              const scale = (reach - Math.sqrt(l)) / Math.sqrt(l) * COLLIDE_STRENGTH;
+              /* 原版逐分量：某轴为 0 时补 jiggle 并把 jiggle² 累加进距离平方 */
+              if (x === 0) { x = jiggle(); l += x * x; }
+              if (y === 0) { y = jiggle(); l += y * y; }
+              const dist = Math.sqrt(l);
+              const scale = (reach - dist) / dist * COLLIDE_STRENGTH;
               x *= scale;
               y *= scale;
               node.vx += x * share;
