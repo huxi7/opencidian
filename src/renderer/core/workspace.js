@@ -10,6 +10,8 @@
 import { Events } from './events.js';
 import { t } from './i18n.js';
 import { Notice } from './notices.js';
+import { FileNameModal } from './modals.js';
+import { normalizePath } from './vault.js';
 import { Desktop } from './ipc.js';
 import { WorkspaceSplit, WorkspaceTabs, WorkspaceLeaf } from './workspace-model.js';
 import * as workspaceRenderer from './workspace-renderer.js';
@@ -390,7 +392,57 @@ export class Workspace extends Events {
     }
     const hashIdx = linktext.indexOf('#');
     const subpath = hashIdx >= 0 ? linktext.slice(hashIdx + 1) : '';
-    await this.openFile(file, { newLeaf: !!newLeaf, eState: subpath ? { subpath } : undefined });
+    await this.openFile(file, {
+      newLeaf: typeof newLeaf === 'string' ? newLeaf : !!newLeaf,
+      eState: subpath ? { subpath } : undefined,
+    });
+  }
+
+  /**
+   * 原版 handleLinkContextMenu：已解析 → 新标签页/新标签组/重命名（并触发 file-menu）；
+   * 未解析 → 创建此文件。返回是否已填充菜单。
+   */
+  handleLinkContextMenu(menu, linktext, sourcePath, ctx) {
+    if (!linktext) return false;
+    const dest = this.app.metadataCache.getFirstLinkpathDest(linktext, sourcePath || '');
+    const file = dest && dest.path ? dest : (dest ? this.app.vault.getFileByPath(dest) : null);
+    if (file) {
+      menu.addItem((i) => i.setSection('open').setTitle(t('interface.menu.open-in-new-tab') || 'Open in new tab')
+        .setIcon('lucide-file-plus').onClick(() => this.openLinkText(linktext, sourcePath || '', 'tab')));
+      menu.addItem((i) => i.setSection('open').setTitle(t('interface.menu.open-to-the-right') || 'Open to the right')
+        .setIcon('lucide-separator-vertical').onClick(() => this.openLinkText(linktext, sourcePath || '', 'split')));
+      menu.addItem((i) => i.setSection('action').setTitle(t('plugins.file-explorer.menu-opt-rename') || 'Rename')
+        .setIcon('lucide-edit-3').onClick(() => {
+          const modal = new FileNameModal(this.app, file.name, async (name) => {
+            let finalName = name;
+            if (file.extension && !/\.[^./]+$/.test(finalName)) finalName += '.' + file.extension;
+            const parent = file.path.split('/').slice(0, -1).join('/');
+            await this.app.fileManager.renameFile(file, normalizePath((parent ? parent + '/' : '') + finalName));
+          });
+          modal.open();
+        }));
+      this.trigger('file-menu', menu, file, 'link-context-menu', ctx);
+      return true;
+    }
+    menu.addItem((i) => i.setSection('open').setTitle(t('interface.menu.create-file') || 'Create this file')
+      .setIcon('lucide-file').onClick(() => this.openLinkText(linktext, sourcePath || '', false)));
+    return true;
+  }
+
+  /** 原版 handleExternalLinkContextMenu：复制链接（info）/ 在默认浏览器打开（open），并触发 url-menu。 */
+  handleExternalLinkContextMenu(menu, href) {
+    if (!href) return false;
+    menu.addItem((i) => i.setSection('info').setTitle(t('interface.menu.copy-url') || 'Copy URL')
+      .setIcon('lucide-link').onClick(() => {
+        try { navigator.clipboard.writeText(href); } catch (e) { /* ignore */ }
+        new Notice(t('interface.copied', { item: 'URL' }) || 'URL copied to your clipboard');
+      }));
+    menu.addItem((i) => i.setSection('open').setTitle(t('plugins.web-viewer.action-open-link-default-browser') || 'Open in default browser')
+      .setIcon('lucide-globe-2').onClick(() => {
+        try { Desktop.openExternal(href); } catch (e) { window.open(href, '_external'); }
+      }));
+    this.trigger('url-menu', menu, href);
+    return true;
   }
 
   // -------------------------------------------------------------------------

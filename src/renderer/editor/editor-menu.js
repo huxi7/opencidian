@@ -114,30 +114,15 @@ function tokenAtMouse(editor, ev) {
 function addLinkItems(menu, app, editor, ev, sourcePath) {
   const token = tokenAtMouse(editor, ev);
   if (!token) return;
-  const selectToken = () => {
-    editor.cm.dispatch({ selection: { anchor: token.start, head: token.end } });
-    editor.cm.focus();
-  };
-  menu.addItem((i) => i.setTitle(t('editor.menu.edit-link') || 'Edit link').setIcon('lucide-text-cursor-input').onClick(selectToken));
-  if (token.type === 'internal') {
-    menu.addItem((i) => i.setTitle(t('interface.menu.open-link') || 'Open link').setIcon('lucide-file-symlink')
-      .onClick(() => openInternal(app, token.link, sourcePath, false)));
-    menu.addItem((i) => i.setTitle(t('interface.menu.open-in-new-tab') || 'Open in new tab').setIcon('lucide-file-plus')
-      .onClick(() => openInternal(app, token.link, sourcePath, true)));
-  } else {
-    menu.addItem((i) => i.setTitle(t('interface.menu.open-in-browser') || 'Open in browser').setIcon('lucide-external-link')
-      .onClick(() => { try { Desktop.openExternal(token.link); } catch (e) { window.open(token.link, '_blank'); } }));
-  }
-  menu.addItem((i) => i.setTitle(t('interface.menu.copy-url') || 'Copy link').setIcon('lucide-copy')
-    .onClick(() => { try { navigator.clipboard.writeText(token.link); } catch (e) { /* ignore */ } }));
+  menu.addItem((i) => i.setTitle(t('editor.menu.edit-link') || 'Edit link').setIcon('lucide-text-cursor-input')
+    .onClick(() => {
+      editor.cm.dispatch({ selection: { anchor: token.start, head: token.end } });
+      editor.cm.focus();
+    }));
+  // 原版：链接菜单由 workspace 统一生成（编辑器与阅读视图共用）
+  if (token.type === 'internal') app.workspace.handleLinkContextMenu(menu, token.link, sourcePath, ev);
+  else app.workspace.handleExternalLinkContextMenu(menu, token.link);
   menu.addSeparator();
-}
-
-function openInternal(app, link, sourcePath, newLeaf) {
-  // getFirstLinkpathDest 返回路径字符串；兼容将来返回 TFile 的形态
-  const dest = app.metadataCache.getFirstLinkpathDest(link, sourcePath || '');
-  const target = dest && dest.path ? dest : (dest ? app.vault.getFileByPath(dest) : null);
-  if (target) app.workspace.openFile(target, { newLeaf });
 }
 
 // ------------------------------------------------------------- 剪贴板

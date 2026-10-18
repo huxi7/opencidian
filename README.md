@@ -56,4 +56,4 @@ node scripts/acceptance/run.mjs canvas --no-screenshot
 
 ## 许可证
 
-待定（LICENSE 文件尚未加入）。
+MIT License（见 LICENSE）。如需改为 AGPL-3.0 等其它许可证，替换 LICENSE 文件并同步本段即可。

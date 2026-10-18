@@ -14,6 +14,8 @@ import taskLists from 'markdown-it-task-lists';
 import { Desktop } from '../core/ipc.js';
 import { createIcon, setIcon } from '../core/icons.js';
 import { tt } from '../core/i18n.js';
+import { Menu } from '../core/menu.js';
+import { Notice } from '../core/notices.js';
 import { normalizePath, parentPathOf } from '../core/vault.js';
 import { codeLanguageName, highlightCodeBlocks } from './highlight.js';
 import { renderMathBlocks } from './math.js';
@@ -75,7 +77,8 @@ export function getMarkdownIt() {
       resolved = resolveFileUrl(env.app, decodeURIComponent(src), env.sourcePath) || src;
     }
     const cls = /\.(png|jpe?g|gif|webp|svg|bmp|avif)$/i.test(src) ? 'internal-embed image-embed' : '';
-    return `<span class="${cls}"><img src="${escapeAttr(resolved)}" alt="${escapeAttr(alt)}" class="cm-inline-image"></span>`;
+    // data-href：右键"复制图片"用原始目标（路径或 URL）解析
+    return `<span class="${cls}" data-href="${escapeAttr(src)}"><img src="${escapeAttr(resolved)}" alt="${escapeAttr(alt)}" class="cm-inline-image"></span>`;
   };
 
   // ---- 围栏代码块：Mermaid 独立渲染，其余共用 Lezer 高亮 ---------------------
@@ -424,7 +427,7 @@ function renderEmbed(env, target, subpath, alias) {
   const ext = file.extension;
   const url = app.vault.adapter.getResourcePath(file.path);
   if (IMAGE_EXTS.includes(ext)) {
-    return `<span class="internal-embed image-embed is-loaded"><img src="${escapeAttr(url)}" alt="${escapeAttr(alias || file.basename)}"></span>`;
+    return `<span class="internal-embed image-embed is-loaded" data-href="${escapeAttr(file.path)}"><img src="${escapeAttr(url)}" alt="${escapeAttr(alias || file.basename)}"></span>`;
   }
   if (AUDIO_EXTS.includes(ext)) {
     return `<span class="internal-embed audio-embed is-loaded"><audio controls src="${escapeAttr(url)}"></audio></span>`;
@@ -664,6 +667,71 @@ export function attachMarkdownInteractions(app, container, getSourcePath) {
       }
     }
   });
+
+  // 原版阅读视图右键：内部链接 / 外部链接 / 图片（复制图片）
+  container.addEventListener('contextmenu', (ev) => {
+    const target = ev.target;
+    if (!target || !target.closest) return;
+    const sourcePath = getSourcePath ? getSourcePath() : '';
+    const img = target.closest('.internal-embed.image-embed img, img.cm-inline-image');
+    if (img) {
+      ev.preventDefault();
+      const holder = img.closest('[data-href]');
+      const menu = new Menu(app);
+      addImageContextMenu(app, menu, holder ? holder.getAttr('data-href') : '', sourcePath);
+      menu.showAtMouseEvent(ev);
+      return;
+    }
+    const link = target.closest('a.internal-link');
+    if (link) {
+      ev.preventDefault();
+      const menu = new Menu(app);
+      app.workspace.handleLinkContextMenu(menu, link.getAttr('data-href'), sourcePath, ev);
+      menu.showAtMouseEvent(ev);
+      return;
+    }
+    const ext = target.closest('a.external-link');
+    if (ext) {
+      ev.preventDefault();
+      const menu = new Menu(app);
+      app.workspace.handleExternalLinkContextMenu(menu, ext.getAttribute('href'));
+      menu.showAtMouseEvent(ev);
+    }
+  });
+}
+
+/** 原版图片右键菜单（阅读视图部分）：复制图片（库内文件读二进制，URL/data 走 fetch）。 */
+function addImageContextMenu(app, menu, href, sourcePath) {
+  menu.addItem((i) => i.setSection('image').setTitle(tt('interface.menu.copy-image') || 'Copy image').setIcon('lucide-copy')
+    .onClick(async () => {
+      try {
+        let bytes = null;
+        let type = 'image/png';
+        const dest = href ? app.metadataCache.getFirstLinkpathDest(href, sourcePath || '') : null;
+        const file = dest && dest.path ? dest : (dest ? app.vault.getFileByPath(dest) : null);
+        if (file) {
+          bytes = await app.vault.readBinary(file);
+          type = mimeForExtension(file.extension) || type;
+        } else if (href && /^(data:|https?:|app:|blob:)/i.test(href)) {
+          const res = await fetch(href);
+          const blob = await res.blob();
+          bytes = new Uint8Array(await blob.arrayBuffer());
+          if (blob.type) type = blob.type;
+        }
+        if (!bytes) throw new Error('no image');
+        await navigator.clipboard.write([new ClipboardItem({ [type]: new Blob([bytes], { type }) })]);
+      } catch (e) {
+        new Notice(tt('interface.copy-failed') || 'Failed to copy');
+      }
+    }));
+}
+
+function mimeForExtension(ext) {
+  const map = {
+    png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif',
+    webp: 'image/webp', bmp: 'image/bmp', svg: 'image/svg+xml', avif: 'image/avif',
+  };
+  return map[String(ext || '').toLowerCase()] || '';
 }
 
 function openTagSearch(app, tag) {

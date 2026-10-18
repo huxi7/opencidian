@@ -32,6 +32,7 @@ import * as zkPrefixer from '../plugins-core/zk-prefixer.js';
 import * as workspaces from '../plugins-core/workspaces.js';
 import * as slides from '../plugins-core/slides.js';
 import * as pagePreview from '../plugins-core/page-preview.js';
+import * as audioRecorder from '../plugins-core/audio-recorder.js';
 
 export const corePluginModules = {
   'file-explorer': fileExplorer,
@@ -57,4 +58,5 @@ export const corePluginModules = {
   'workspaces': workspaces,
   'slides': slides,
   'page-preview': pagePreview,
+  'audio-recorder': audioRecorder,
 };

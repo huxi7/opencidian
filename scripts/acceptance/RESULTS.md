@@ -142,3 +142,10 @@ MathJax 独立适配器子代理的41项基础/故障测试见 assets/mathjax/SO
 - `editor.js` 拦截带图片的 paste（File / HTML data URL），落盘 `Pasted image <YYYYMMDDHHmmss>.png|jpg` 并插入嵌入；文本粘贴交回 CM6。`editor:paste` 命令同序（剪贴板图片优先）。
 - 文件树：系统外部文件拖到文件夹标题或根区域 → 复制进库（重名序号），不插链接。
 - 新增 `editor-paste` 场景 7 项；回归 editor 113、editor-menu 23、basic-plugins 6、sidebar 93、sidebar-shell 61、notes 72。
+
+## 阅读视图链接/图片右键菜单批（2026-10-18）
+
+- `core/workspace.js` 新增 `handleLinkContextMenu`（已解析：在新标签页/新标签组/重命名 + file-menu 事件；未解析：创建此文件）与 `handleExternalLinkContextMenu`（复制链接 + 默认浏览器打开 + url-menu 事件），`openLinkText` 支持 'tab'/'split' 透传。
+- `markdown/reading.js`：阅读视图右键接线（内部链接/外链/图片），图片节点补 `data-href`（库内读二进制、URL/data 走 fetch 复制到剪贴板，失败提示 copy-failed）。
+- `editor/editor-menu.js`：链接区改为委托 workspace 共享处理器（编辑器与阅读视图同一套原版菜单）。
+- 新增 `reading-menus` 场景 11 项；回归 editor-menu 23、notes 72、page-preview 13、sidebar 93、core-views 83、math。
