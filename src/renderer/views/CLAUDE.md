@@ -6,7 +6,7 @@
 
 成员清单
 index.js: registerBuiltinViews(app)。注册 empty/markdown/image/video/audio/pdf，附带扩展名提示；安装 settings host。
-markdown-view.js: MarkdownView。换文件先保存，删除后复用视图根。首次加载即同步 source/live/preview DOM 三态、inline-title 改名、150ms 防抖自动保存、外部修改同步、subpath/line 滚动、view-actions 菜单。
+markdown-view.js: MarkdownView。换文件先保存，删除后复用视图根。首次加载即同步 source/live/preview DOM 三态、inline-title 改名（元素挂在编辑器 .cm-sizer 内）、行宽 class（is-readable-line-width）挂 source/reading 视图元素并随设置联动、150ms 防抖自动保存、外部修改同步、subpath/line 滚动、view-actions 菜单。
 empty-view.js: EmptyView。空标签页动作列表(新建笔记/打开文件等)。
 media-view.js: MediaView 及 ImageView/VideoView/AudioView/PdfView。经 adapter.getResourcePath() 取 app:// 文件 URL。
 settings-view.js: SettingsHost(app.setting 的实现) + installSettingsHost(app)。克隆原版 fte 宿主：三组导航(options/core/community)、navEl、openTab/closeActiveTab/openTabById/openPluginOptions/updateModalTitle、PluginSettingTab 兼容层(addSettingTab/removePluginTabs 挂载点)。侧栏布局设置弹窗。

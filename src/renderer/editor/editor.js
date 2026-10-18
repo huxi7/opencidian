@@ -1,7 +1,7 @@
 /**
  * [INPUT]: 依赖 CM6、folding.js 折叠策略、live-preview.js 装饰与 markdown/highlight.js 语义颜色。
  * [OUTPUT]: 导出 Editor、EditorState、EditorView、ViewPlugin；Editor.setFolding 热切换标题与缩进折叠。
- * [POS]: editor/ 的 CM6 包装层。独立 Compartment 保留文档与撤销栈；位置采用零基 {line, ch}。
+ * [POS]: editor/ 的 CM6 包装层。构造原版 file layout DOM（.cm-sizer/.cm-contentContainer）。独立 Compartment 保留文档与撤销栈；位置采用零基 {line, ch}。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 /*
@@ -138,12 +138,39 @@ export class Editor {
     const state = EditorState.create({ doc: options.doc || '', extensions });
 
     this.cm = new EditorView({ state, parent: containerEl });
+    this._buildSizerDom();
     this.cm.dom.classList.toggle('is-folding', this._foldHeading || this._foldIndent);
     this.setSpellcheck(app.settings && app.settings.appSettings.spellcheck === true);
 
     // intercept Obsidian-style keys before the default browser behavior
     this._containerKeyHandler = (ev) => this._onKeyDown(ev);
     containerEl.addEventListener('keydown', this._containerKeyHandler, true);
+  }
+
+  /**
+   * 原版 rZ 构造：CM6 原生没有 .cm-sizer/.cm-contentContainer；
+   * 这里自建并把 .cm-content 移入，行宽（is-readable-line-width）与居中规则才会生效。
+   * CM6 挂载 gutter 时假设 .cm-content 仍是 .cm-scroller 直接子元素（insertBefore 引用它），
+   * 故重定向到 .cm-contentContainer —— 与原版同形 DOM。
+   */
+  _buildSizerDom() {
+    const scroller = this.cm.scrollDOM;
+    const content = this.cm.contentDOM;
+    const nativeInsertBefore = scroller.insertBefore.bind(scroller);
+    scroller.insertBefore = (node, reference) => {
+      if (reference === content && content.parentElement && content.parentElement !== scroller) {
+        return content.parentElement.insertBefore(node, content);
+      }
+      return nativeInsertBefore(node, reference);
+    };
+    content.detach();
+    const sizer = scroller.createDiv('cm-sizer');
+    const contentContainer = sizer.createDiv('cm-contentContainer');
+    const gutters = scroller.querySelector('.cm-gutters');
+    if (gutters) contentContainer.appendChild(gutters);
+    contentContainer.appendChild(content);
+    this.sizerEl = sizer;
+    this.contentContainerEl = contentContainer;
   }
 
   _baseExtensions() {

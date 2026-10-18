@@ -1,7 +1,7 @@
 /**
  * [INPUT]: 依赖 ../core/view.js 的 View 基类；依赖 ../core/i18n.js 的 t；依赖 ../core/icons.js 的 setIcon；依赖 ../editor/editor.js 的 Editor 与 livePreviewExtension；依赖 ../markdown/reading.js 的 renderMarkdown/attachMarkdownInteractions；依赖 ../markdown/properties.js 的 renderProperties
  * [OUTPUT]: 导出 MarkdownView 类（三模式：source/live/preview），registerView 注册 'markdown'
- * [POS]: views/ 的 Markdown 生命周期入口。换文件前保存正文；首次加载与布局恢复均同步模式 DOM；设置事件热重配编辑器。阅读正文交给 markdown/ 渲染。
+ * [POS]: views/ 的 Markdown 生命周期入口。行内标题挂在编辑器 .cm-sizer 内；行宽 class 挂视图元素。换文件前保存正文；首次加载与布局恢复均同步模式 DOM；设置事件热重配编辑器。阅读正文交给 markdown/ 渲染。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 /*
@@ -94,6 +94,8 @@ export class MarkdownView extends View {
     const editorHost = this.sourceEl.createDiv('cm-editor-host');
     this.editor = new Editor(editorHost, this.app, { doc: '' });
     this.editor.cm.dom.setAttr('data-editor-mode', 'source');
+    // 原版：行内标题是 .cm-sizer 的子元素，随内容滚动、与正文同宽居中
+    this.editor.sizerEl.prepend(this.inlineTitleEdit);
     this.editor.onChange(() => this._onEditorChange());
     // 原版 editor-selection-change：状态栏（字数/视图状态）据此刷新选区统计
     this.editor.onSelectionChange(() => this.app.workspace.trigger('editor-selection-change', this));
@@ -122,11 +124,20 @@ export class MarkdownView extends View {
       this.app.workspace.on('settings-changed', () => this._applyEditorSettings()),
     ];
 
+    this._applyReadableLineLength();
     this._applyMode();
+  }
+
+  /** 原版 updateReadableLineLength：class 挂视图元素（源码视图 / 阅读视图）。 */
+  _applyReadableLineLength() {
+    const on = this.app.settings.appSettings.readableLineLength !== false;
+    if (this.sourceEl) this.sourceEl.toggleClass('is-readable-line-width', on);
+    if (this.readingSizer) this.readingSizer.toggleClass('is-readable-line-width', on);
   }
 
   /** 编辑器级设置变化后重配置 CM 扩展；阅读视图重渲染。 */
   _applyEditorSettings() {
+    this._applyReadableLineLength();
     const s = this.app.settings.appSettings;
     if (!this.editor) return;
     this.editor.toggleLineNumbers(s.showLineNumber === true);

@@ -194,8 +194,7 @@ export class App extends Events {
     if (ribbon) ribbon.toggle(config.showRibbon !== false);
     const statusBar = this.workspace.statusBar;
     if (statusBar) statusBar.toggle(config.showStatusBar !== false);
-    // readable line length
-    document.body.toggleClass('is-readable-line-width', settings.readableLineLength !== false);
+    // 行宽（readableLineLength）由 MarkdownView 挂在视图元素上，见 views/markdown-view.js
     document.body.toggleClass('is-folding', settings.foldHeading !== false);
     // 自定义主题与 CSS 代码片段
     this._applyCustomCss();

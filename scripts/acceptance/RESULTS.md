@@ -120,3 +120,11 @@ MathJax 独立适配器子代理的41项基础/故障测试见 assets/mathjax/SO
 - 已知未完成项见 AGENT-STATE.md §16（画布 CM6 卡片编辑/空间索引、音频录制、macOS 分发、LICENSE、像素级视觉验收等）。
 - 重启/持久化阶段：recovery restart 45 项、community restart 3 项、settings-restart 通过（`/tmp/obs-copy-acceptance/recovery-restart-result-0D4oDX`、`community-restart-result-ahCzgN`、`settings-restart-result-kXSnfA`）。
 - 工作区内存回归：`node --experimental-vm-modules src/renderer/core/workspace-regression.js` 19 组通过。
+
+## 主编辑区 file layout 批（2026-10-18）
+
+- 构造原版 DOM：`.cm-scroller > .cm-sizer > .cm-contentContainer > (.cm-gutters + .cm-content)`；行宽（readableLineLength）默认开启时内容列 700px 居中，关闭时满宽贴边。
+- 行内标题移入 `.cm-sizer`（原版行为：随内容滚动、与列同宽）；`margin` 简写改 `margin-block-end`（修标题右移 ~14px）。
+- `.cm-line` 去掉 2px 水平内边距（修中文文本位置）；`.cm-gutters` 增加 `--file-folding-offset: 24px`。
+- 新增 `scripts/acceptance/editor-layout.js`（21 项）：结构/居中/行位置/设置联动/阅读视图/折叠全关后开行号 gutter 挂载。
+- 回归：editor 113、editor-switch 2、folding-disabled、math、notes 72、sidebar-shell 61、core-ribbon 47、settings-ui 22、page-preview 13。
