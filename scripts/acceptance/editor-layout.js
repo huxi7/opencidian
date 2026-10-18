@@ -28,6 +28,9 @@ const cc=sizer&&sizer.querySelector(':scope > .cm-contentContainer');
 check(!!cc&&cc.contains(content),'.cm-contentContainer 包住 .cm-content');
 check(!!view.inlineTitleEdit.closest('.cm-sizer'),'行内标题位于 .cm-sizer 内（随内容滚动、同宽居中）');
 check(view.inlineTitleEdit.closest('.cm-sizer')===sizer,'行内标题挂在同一个 .cm-sizer');
+const titleStyle=getComputedStyle(view.inlineTitleEdit);
+check(parseFloat(titleStyle.letterSpacing)<0,'行内标题应用原版字距 -0.015em');
+check(titleStyle.whiteSpace==='pre-wrap','行内标题 white-space: pre-wrap');
 
 // ---- 居中与行宽
 const expected=Math.min(700,inner(scroller));

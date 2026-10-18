@@ -234,6 +234,8 @@ body {
   --file-margins-x: var(--size-4-8);
   --file-margins-y: var(--size-4-8);
   --file-header-font: var(--font-interface);
+  /* Sidebar */
+  --sidebar-markdown-font-size: calc(var(--font-text-size) * 0.9);
   --file-header-font-size: var(--font-ui-small);
   --file-header-font-weight: 400;
   --file-header-background: var(--background-primary);

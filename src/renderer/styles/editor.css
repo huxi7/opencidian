@@ -16,6 +16,8 @@
   font-weight: var(--inline-title-weight, var(--font-bold));
   color: var(--inline-title-color, var(--text-normal));
   line-height: var(--inline-title-line-height, 1.3);
+  white-space: pre-wrap;
+  letter-spacing: -0.015em;
   margin-block-end: var(--inline-title-margin-bottom, 1.2em);
   margin-block-start: 0;
   padding: 0;
@@ -131,6 +133,13 @@
   margin-left: auto;
   margin-right: auto;
 }
+/* 原版：侧栏中的笔记用 0.9 倍正文字号与更小的页边距 */
+.mod-right-split .markdown-preview-view,
+.mod-left-split .markdown-preview-view,
+.mod-right-split .markdown-source-view,
+.mod-left-split .markdown-source-view { font-size: var(--sidebar-markdown-font-size); }
+.mod-right-split .markdown-source-view.mod-cm6 .cm-scroller,
+.mod-left-split .markdown-source-view.mod-cm6 .cm-scroller { --file-margins: var(--size-4-5); }
 
 /* inline title / metadata sit inside the scroller above .cm-contentContainer */
 .markdown-source-view .markdown-source-view-toolbar { display: none; }
