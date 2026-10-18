@@ -1,18 +1,27 @@
 /**
- * [INPUT]: 依赖 core/menu.js 的 Menu、core/i18n.js 的 t、markdown/reading.js 的 getMarkdownIt（复制 HTML）；依赖 editor/table-model.js 的 serializeTable 与 clamp。
- * [OUTPUT]: 导出 cellElement、cellPosition、closestCell、selectionBounds、clampBounds、attachCellSelection、buildSelectionMenu、copySelection、pasteSelection。
+ * [INPUT]: 依赖 core/menu.js 的 Menu、core/i18n.js 的 t、markdown/reading.js 的 getMarkdownIt（复制 HTML）；依赖 editor/table-model.js 的 serializeTable 与 clamp；
+ *          依赖 editor/table-format.js 的 buildFormattingSubmenu（单元格文本格式子菜单）。
+ * [OUTPUT]: 导出 cellElement、cellPosition、closestCell、selectionBounds、clampBounds、attachCellSelection、buildSelectionMenu、buildCellMenu、
+ *           appendPendingTableMenu、copySelection、pasteSelection、writeClipboardText、readClipboardText。
  * [POS]: editor/ 表格部件的选区层。逐字移植原版 mq.init/gq 的 pointerdown 矩形选择（getClosestCell 命中、is-selected/start/end/top/bottom 类）、
  *        选区右键菜单（clipboard → 对齐 → 清空/删除；原版 onContextMenu 的 selection 分支，去掉 formatting 子菜单）与子表格剪贴板载荷
- *        （原版 obsidian/table MIME；浏览器剪贴板写不了自定义类型，用同进程缓存实现等价语义，正文仍写 text/plain 与 text/html）。
+ *        （原版 obsidian/table MIME；浏览器剪贴板写不了自定义类型，用同进程缓存实现等价语义，正文仍写 text/plain 与 text/html；
+ *        窗口未聚焦时 Chromium 拒绝系统剪贴板，纯文本同样留同进程副本兜底）。
+ *        无选区单元格右键菜单 = clipboard 三项 + 文本格式子菜单 + Table 子菜单（widget.appendTableMenuItems）；
+ *        剪切/复制落在单元格文本上（编辑器选区 > DOM 选区 > 整格），原版由主进程 editFlags 判定，部件渲染态没有可选文本。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 import { Menu } from '../core/menu.js';
 import { t } from '../core/i18n.js';
 import { getMarkdownIt } from '../markdown/reading.js';
-import { serializeTable, parseTableText, clamp } from './table-model.js';
+import { serializeTable, parseTableText, clamp, cellTextFromInput, cellTextToInput } from './table-model.js';
+import { buildFormattingSubmenu } from './table-format.js';
 
 /** 原版 obsidian/table 载荷的同进程等价物；系统剪贴板在无权限时读不回自定义类型。 */
 let tableClipboard = null;
+
+/** 纯文本的同进程副本：窗口未聚焦时 Chromium 拒绝系统剪贴板（NotAllowedError），读回走它。 */
+let textClipboard = null;
 
 export function cellElement(container, row, col) {
   const table = container && container.querySelector('table.table-editor');
@@ -108,15 +117,25 @@ export function attachCellSelection(widget, view, container) {
     const target = event.target;
     const cellEl = target.closest ? target.closest('th, td') : null;
     if (!cellEl || !container.contains(cellEl)) return;
-    if (widget.edit && cellEl.contains(widget.edit.textarea)) return;
     if (widget.selectedCells.includes(cellEl)) {
       event.preventDefault();
       event.stopPropagation();
       buildSelectionMenu(widget, view, event);
       return;
     }
-    // 原版：选区之外的单元格先取消选择（随后的文本菜单交回编辑器菜单）
+    // 原版：选区之外的单元格先取消选择，随后的菜单按无选区分支构建
     if (widget.selectionAnchor) widget.deselectCells();
+    const position = cellPosition(cellEl);
+    if (!position) return;
+    if (widget.edit && cellEl.contains(widget.edit.textarea)) {
+      // 原位编辑中的单元格：原版走单元格 CM 的文本菜单（这里由编辑器菜单承接，含拼写与剪贴板），
+      // 菜单末尾由 appendPendingTableMenu 追加表格子菜单（原版 iZ.onMenu）。
+      pendingCellMenu = { widget, view, position, time: Date.now() };
+      return;
+    }
+    event.preventDefault();
+    event.stopPropagation();
+    buildCellMenu(widget, view, position, event);
   });
 }
 
@@ -192,6 +211,129 @@ export function buildSelectionMenu(widget, view, event) {
   return menu;
 }
 
+// ---------------------------------------------------------------------------
+// 无选区单元格菜单（原版 iZ.onContextMenu + onMenu 的等价物）
+// ---------------------------------------------------------------------------
+
+/** 原位编辑中的单元格菜单交回编辑器菜单，由它追加表格子菜单；这里记住待追加的目标。 */
+let pendingCellMenu = null;
+
+/** 供 table-widget 的 editor-menu 钩子调用：原版 onMenu 末尾的 table.onContextMenu(cell)。 */
+export function appendPendingTableMenu(menu) {
+  const pending = pendingCellMenu;
+  pendingCellMenu = null;
+  if (!pending || Date.now() - pending.time > 1000) return false;
+  if (!pending.widget.containerEl || !pending.widget.containerEl.isConnected) return false;
+  pending.widget.appendTableMenuItems(menu, pending.position, pending.view);
+  return true;
+}
+
+/**
+ * 无选区单元格右键菜单：clipboard 三项 + 文本格式子菜单 + Table 子菜单（Row/Column/Sort）。
+ * 部件渲染态没有可选的单元格文本（Chromium 对 user-select:none 的部件不给选区），所以剪切/复制落在
+ * 单元格文本上：编辑器内的选区 > 部件内的 DOM 选区 > 整格文本；粘贴优先用同进程的表格载荷。
+ */
+export function buildCellMenu(widget, view, position, event) {
+  const source = cellClipboardSource(widget, position);
+  const menu = new Menu(widget.app);
+  menu.addItem((item) => item.setSection('clipboard').setIcon('lucide-scissors').setTitle(t('interface.menu.cut'))
+    .setDisabled(!source).onClick(() => cutCellText(widget, view, position, source)));
+  menu.addItem((item) => item.setSection('clipboard').setIcon('lucide-copy').setTitle(t('interface.menu.copy'))
+    .setDisabled(!source).onClick(() => {
+      if (!source) return;
+      // 剪贴板现在装的是纯文本，同进程表格载荷随之失效（原版 obsidian/table 类型被覆盖）
+      tableClipboard = null;
+      writeClipboardText(source.text);
+    }));
+  menu.addItem((item) => item.setSection('clipboard').setIcon('lucide-clipboard-check').setTitle(t('interface.menu.paste'))
+    .onClick(() => pasteIntoCell(widget, view, position)));
+  menu.addSeparator();
+  buildFormattingSubmenu(menu, widget, view, position);
+  menu.addSeparator();
+  widget.appendTableMenuItems(menu, position, view);
+  menu.setParentElement(widget.containerEl);
+  menu.showAtMouseEvent(event);
+  return menu;
+}
+
+/** 单元格内可剪贴的文本；空单元格返回 null（原版 editFlags.canCut/canCopy 的等价判定）。 */
+function cellClipboardSource(widget, position) {
+  const editor = widget.edit && widget.edit.row === position.row && widget.edit.col === position.col
+    ? widget.edit.textarea
+    : null;
+  if (editor && editor.selectionEnd > editor.selectionStart) {
+    return { text: editor.value.slice(editor.selectionStart, editor.selectionEnd), from: 'editor' };
+  }
+  const dom = widgetTextSelection(widget);
+  if (dom) return { text: dom.text, from: 'dom' };
+  const model = widget.model();
+  const text = model && model.rows[position.row] ? cellTextToInput(model.rows[position.row][position.col]) : '';
+  return text ? { text, from: 'cell' } : null;
+}
+
+/** 部件内的 DOM 文本选区；没有选区返回 null。 */
+function widgetTextSelection(widget) {
+  const selection = window.getSelection ? window.getSelection() : null;
+  if (!selection || selection.isCollapsed || !selection.rangeCount) return null;
+  const range = selection.getRangeAt(0);
+  if (!widget.containerEl || !widget.containerEl.contains(range.commonAncestorContainer)) return null;
+  const text = selection.toString();
+  return text ? { text, range } : null;
+}
+
+/** 剪切：文本进剪贴板，并从来源（编辑器选区 / DOM 选区 / 整格）删掉它。 */
+function cutCellText(widget, view, position, source) {
+  if (!source) return false;
+  tableClipboard = null;
+  writeClipboardText(source.text);
+  widget.deselectCells();
+  if (source.from === 'editor') {
+    const editor = widget.edit && widget.edit.row === position.row && widget.edit.col === position.col
+      ? widget.edit.textarea
+      : null;
+    if (!editor) return true;
+    const start = editor.selectionStart;
+    const end = editor.selectionEnd;
+    editor.value = editor.value.slice(0, start) + editor.value.slice(end);
+    editor.setSelectionRange(start, start);
+    editor.dispatchEvent(new Event('input', { bubbles: true }));
+    return true;
+  }
+  const model = widget.model();
+  const current = model && model.rows[position.row] ? model.rows[position.row][position.col] : null;
+  if (current == null) return false;
+  const index = source.from === 'cell' ? 0 : current.indexOf(source.text);
+  if (index < 0) return true;
+  const length = source.from === 'cell' ? current.length : source.text.length;
+  const next = (current.slice(0, index) + current.slice(index + length)).trim();
+  return widget.updateCell(view, position.row, position.col, next, null);
+}
+
+/** 粘贴：表格载荷从按下的单元格起写入；纯文本进编辑器光标处，否则整格替换。 */
+async function pasteIntoCell(widget, view, position) {
+  widget.deselectCells();
+  widget.focusCell = { row: position.row, col: position.col };
+  const payload = await readClipboardPayload();
+  if (payload && payload.rows.length && payload.alignment.length) return pasteSelection(widget, view);
+  const text = await readClipboardText();
+  if (!text) return false;
+  const editor = widget.edit && widget.edit.row === position.row && widget.edit.col === position.col
+    ? widget.edit.textarea
+    : null;
+  if (editor) {
+    const start = editor.selectionStart;
+    const end = editor.selectionEnd;
+    editor.value = editor.value.slice(0, start) + text + editor.value.slice(end);
+    const caret = start + text.length;
+    editor.setSelectionRange(caret, caret);
+    editor.dispatchEvent(new Event('input', { bubbles: true }));
+    return true;
+  }
+  return widget.updateCell(view, position.row, position.col, cellTextFromInput(text), {
+    focus: { row: position.row, col: position.col, selectAll: false },
+  });
+}
+
 /** 选区 → 子表格 Markdown，并写系统剪贴板：原版 copySelection 的四个 MIME 砍到 text/plain 与 text/html。 */
 export function copySelection(widget, view, cut) {
   const model = widget.model();
@@ -210,12 +352,7 @@ export function copySelection(widget, view, cut) {
 }
 
 function writeClipboard(markdown) {
-  const writeText = () => {
-    try {
-      const written = navigator.clipboard.writeText(markdown);
-      if (written && written.catch) written.catch(() => { /* 剪贴板不可用 */ });
-    } catch (error) { /* 剪贴板不可用 */ }
-  };
+  const writeText = () => writeClipboardText(markdown);
   try {
     const html = getMarkdownIt().render(markdown);
     const item = new ClipboardItem({
@@ -229,14 +366,72 @@ function writeClipboard(markdown) {
   }
 }
 
+/** 纯文本写剪贴板：navigator.clipboard 失败时退回隐藏 textarea + execCommand("copy")；两条路都留同进程副本。 */
+export function writeClipboardText(text) {
+  const value = String(text == null ? '' : text);
+  textClipboard = value;
+  const fallback = () => execCommandCopy(value);
+  try {
+    const written = navigator.clipboard.writeText(value);
+    if (written && written.catch) written.catch(fallback);
+    return true;
+  } catch (error) {
+    return fallback();
+  }
+}
+
+/** 隐藏缓冲区：原版剪贴板兜底用的离屏 textarea（fixed + 透明 + 负 z-index）。 */
+function clipboardBuffer() {
+  const buffer = document.body.createEl('textarea');
+  buffer.style.position = 'fixed';
+  buffer.style.opacity = '0';
+  buffer.style.zIndex = '-9999';
+  return buffer;
+}
+
+function execCommandCopy(text) {
+  try {
+    const buffer = clipboardBuffer();
+    buffer.value = text;
+    buffer.focus();
+    buffer.select();
+    const copied = document.execCommand('copy');
+    buffer.detach();
+    return copied;
+  } catch (error) {
+    return false;
+  }
+}
+
+/** 读系统剪贴板文本：navigator.clipboard 失败时退回 execCommand("paste")，再退回同进程副本。 */
+export async function readClipboardText() {
+  try {
+    const text = await navigator.clipboard.readText();
+    if (text) return text;
+  } catch (error) { /* 剪贴板不可用（窗口未聚焦/无权限） */ }
+  return execCommandPaste() || textClipboard;
+}
+
+function execCommandPaste() {
+  try {
+    const buffer = clipboardBuffer();
+    buffer.value = '';
+    buffer.focus();
+    const pasted = document.execCommand('paste');
+    const text = pasted ? buffer.value : '';
+    buffer.detach();
+    return text || null;
+  } catch (error) {
+    return null;
+  }
+}
+
 /** 从同进程缓存取原版 obsidian/table 载荷；没有时退回系统剪贴板里的 Markdown 表格。 */
 async function readClipboardPayload() {
   if (tableClipboard) return tableClipboard;
-  try {
-    const text = await navigator.clipboard.readText();
-    const parsed = text ? parseTableText(text) : null;
-    if (parsed) return { rows: parsed.rows, alignment: parsed.alignments };
-  } catch (error) { /* 剪贴板不可用 */ }
+  const text = await readClipboardText();
+  const parsed = text ? parseTableText(text) : null;
+  if (parsed) return { rows: parsed.rows, alignment: parsed.alignments };
   return null;
 }
 

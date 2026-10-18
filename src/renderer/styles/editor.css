@@ -461,6 +461,25 @@
 .markdown-source-view.mod-cm6 .cm-table-widget.is-dragging .table-col-drag-handle:active {
   display: flex;
 }
+/* 原版 app.css 3725-3740：触屏没有 hover，非激活行列手柄隐藏；编辑中的行列手柄常显，加行/加列按钮只在部件有焦点时可见。
+   原版用 .is-mobile 门控；这里由部件按 (hover: none) 给 body 打 is-touch（等价探测），桌面保持 hover 显形 */
+body.is-touch .markdown-source-view.mod-cm6 .cm-table-widget .table-row-drag-handle,
+body.is-touch .markdown-source-view.mod-cm6 .cm-table-widget .table-col-drag-handle {
+  display: none;
+}
+body.is-touch .markdown-source-view.mod-cm6 .cm-table-widget .mod-active-row-handle > .table-row-drag-handle,
+body.is-touch .markdown-source-view.mod-cm6 .cm-table-widget .mod-active-col-handle > .table-col-drag-handle {
+  opacity: 1;
+  display: flex;
+}
+body.is-touch .markdown-source-view.mod-cm6 .cm-table-widget:not(.has-focus) .table-row-btn,
+body.is-touch .markdown-source-view.mod-cm6 .cm-table-widget:not(.has-focus) .table-col-btn {
+  pointer-events: none;
+}
+body.is-touch .markdown-source-view.mod-cm6 .cm-table-widget.has-focus .table-row-btn,
+body.is-touch .markdown-source-view.mod-cm6 .cm-table-widget.has-focus .table-col-btn {
+  opacity: 1;
+}
 /* 原版 app.css 12821-12836：行列拖拽落点指示线（.table-drag-target） */
 .table-drag-target {
   position: absolute;

@@ -5,6 +5,9 @@
  * [POS]: editor/ 的实时预览表格部件，由 live-preview.js 的块层在表格块上实例化（构造时带 Markdown 文本与文档区间）。
  *        部件不保存可变文档状态：每个动作重新解析 this.text，经 view.dispatch 改写整块文本，DOM 由 CM6 重建；
  *        拖拽期间的选区与换格焦点经模块级 carriedState 交接给重建后的实例（原版 render() 末尾重放 selectionAnchor/Head 的等价物）。
+ *        删行路径带 blankEdges：原版 deleteSelection 在删首/末行时补 \n，这里只在相邻行有正文时补（块间空行）。
+ *        appendTableMenuItems 产出原版无选区表格菜单的 Row/Column 子菜单与排序项；
+ *        setActiveDragHandles 给编辑中的行列打 mod-active-* 类，触屏下常显手柄（CSS 由 body.is-touch 门控）。
  *        拖拽重排在 table-drag.js，选区菜单与剪贴板在 table-selection.js，单元格原位置编辑在 table-edit.js。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
@@ -24,7 +27,7 @@ import { t } from '../core/i18n.js';
 import { getMarkdownIt, attachMarkdownInteractions } from '../markdown/reading.js';
 import { clamp, moveInArray, parseTableText, serializeTable, splitRow } from './table-model.js';
 import { attachDragHandle } from './table-drag.js';
-import { attachCellSelection, cellElement, clampBounds, selectionBounds } from './table-selection.js';
+import { attachCellSelection, appendPendingTableMenu, cellElement, clampBounds, selectionBounds } from './table-selection.js';
 import { beginCellEdit, enterFromCell, tabFromCell } from './table-edit.js';
 
 export { parseTableText, serializeTable, splitRow };
@@ -34,6 +37,17 @@ const compareText = new Intl.Collator(undefined, { usage: 'sort', sensitivity: '
 
 /** 跨重建携带的视图状态（选区和换格焦点）；dispatch 后由新实例在 toDOM 里认领，未重建时 settle 落到当前实例。 */
 let carriedState = null;
+
+/** 触屏探测只做一次：原版 Gl.isMobile 的等价物，给 body 打 is-touch 供 CSS 门控手柄常显。 */
+let touchDetected = false;
+
+function detectTouchDevice() {
+  if (touchDetected) return;
+  touchDetected = true;
+  try {
+    if (window.matchMedia && window.matchMedia('(hover: none)').matches) document.body.addClass('is-touch');
+  } catch (error) { /* 探测失败时保持桌面 hover 规则 */ }
+}
 
 /** 单元格内容：按行内 Markdown 渲染（链接/强调/wiki 链接），失败时退回纯文本。 */
 function renderCellHtml(app, text, sourcePath) {
@@ -46,6 +60,19 @@ function renderCellHtml(app, text, sourcePath) {
     span.setText(text);
     return span.outerHTML;
   }
+}
+
+/**
+ * 原版 deleteSelection 的两处 insert:"\n"：删掉首行时块首补空行，删掉末行时块尾补空行。
+ * 原版无条件补；这里只在相邻行有正文（块间会被吃掉空行）时补，避免叠出连续空行。
+ */
+function withBlankEdges(doc, range, text, edges) {
+  const firstLine = doc.lineAt(range.from).number;
+  const lastLine = doc.lineAt(range.to).number;
+  let out = text;
+  if (edges.leading && firstLine > 1 && doc.line(firstLine - 1).text.trim() !== '') out = '\n' + out;
+  if (edges.trailing && lastLine < doc.lines && doc.line(lastLine + 1).text.trim() !== '') out += '\n';
+  return out;
 }
 
 function setTip(el, text) {
@@ -82,6 +109,7 @@ export class TableWidget extends WidgetType {
   toDOM(view) {
     const container = createDiv({ cls: 'cm-embed-block cm-table-widget markdown-rendered' });
     container.tabIndex = -1;
+    detectTouchDevice();
     this.containerEl = container;
     const model = parseTableText(this.text);
     if (!model) {
@@ -138,6 +166,7 @@ export class TableWidget extends WidgetType {
       }
     });
     attachCellSelection(this, view, container);
+    this.installCellMenuHook();
 
     if (this.app) attachMarkdownInteractions(this.app, container, () => this.sourcePath);
     const staged = carriedState;
@@ -217,6 +246,17 @@ export class TableWidget extends WidgetType {
 
   // ---- menus -------------------------------------------------------------
 
+  /**
+   * 原版 iZ.onMenu：单元格文本菜单（编辑器菜单）末尾追加表格子菜单。每个 app 只订阅一次 editor-menu 事件，
+   * 只有事件前刚在单元格上按过右键（table-selection 记录的待追加目标）才追加，其它编辑器右键不受影响。
+   */
+  installCellMenuHook() {
+    const app = this.app;
+    if (!app || !app.workspace || app._tableCellMenuHook) return;
+    app._tableCellMenuHook = true;
+    app.workspace.on('editor-menu', (menu) => appendPendingTableMenu(menu));
+  }
+
   /** 按组添加条目，只在非空组之间插入分隔线（原版 setSection 的视觉语义）。 */
   addMenuGroups(menu, groups) {
     groups.filter((group) => group.length).forEach((group, index) => {
@@ -264,6 +304,19 @@ export class TableWidget extends WidgetType {
     ]]);
   }
 
+  /** 无选区表格菜单：Row / Column 子菜单 + 两个排序项（原版 onContextMenu 无选区分支的 section 与图标）。 */
+  appendTableMenuItems(menu, cell, view) {
+    const model = this.model();
+    if (!model) return;
+    const rowItem = menu.addItem((item) => item
+      .setSection('table').setIcon('lucide-table').setTitle(t('table.label-row')));
+    this.makeRowMenu(rowItem.setSubmenu(), model, cell, view);
+    const colItem = menu.addItem((item) => item
+      .setSection('table').setIcon('lucide-table').setTitle(t('table.label-column')));
+    this.makeColMenu(colItem.setSubmenu(), model, cell, view);
+    this.makeSortMenu(menu, cell, view);
+  }
+
   makeColMenu(menu, model, cell, view) {
     const colCount = model.alignments.length;
     const align = model.alignments[cell.col];
@@ -309,12 +362,14 @@ export class TableWidget extends WidgetType {
     return this.text && index >= 0 ? { from: index, to: index + this.text.length } : null;
   }
 
-  /** 写回整块文本；state 里的选区/焦点交给重建后的实例认领。 */
+  /** 写回整块文本；state 里的选区/焦点交给重建后的实例认领，blankEdges 只由删行路径给出。 */
   dispatch(view, model, state) {
     const range = this.range(view);
     if (!range) return false;
-    const text = serializeTable(model.rows, model.alignments);
-    if (state) carriedState = { from: range.from, text, ...state };
+    const { blankEdges, ...carried } = state || {};
+    let text = serializeTable(model.rows, model.alignments);
+    if (blankEdges) text = withBlankEdges(view.state.doc, range, text, blankEdges);
+    if (state) carriedState = { from: range.from, text, ...carried };
     view.dispatch({ changes: { from: range.from, to: range.to, insert: text } });
     this.settle(view);
     return true;
@@ -355,6 +410,28 @@ export class TableWidget extends WidgetType {
   focusContainer() {
     if (!this.containerEl || !this.containerEl.isConnected) return;
     try { this.containerEl.focus({ preventScroll: true }); } catch (error) { this.containerEl.focus(); }
+  }
+
+  // ---- touch handles -----------------------------------------------------
+
+  /**
+   * 原版 setActiveDragHandles/unsetActiveDragHandles：编辑中的行、列在首格打 mod-active-* 类，
+   * 容器带 has-focus；触屏（body.is-touch）下这些手柄常显，桌面仍走 hover 显形。
+   */
+  setActiveDragHandles(row, col) {
+    this.unsetActiveDragHandles();
+    const rowCell = this.cellElement(row, 0);
+    if (rowCell) rowCell.addClass('mod-active-row-handle');
+    const colCell = this.cellElement(0, col);
+    if (colCell) colCell.addClass('mod-active-col-handle');
+    if (this.containerEl) this.containerEl.addClass('has-focus');
+  }
+
+  unsetActiveDragHandles() {
+    if (!this.containerEl) return;
+    this.containerEl.removeClass('has-focus');
+    const cells = this.containerEl.querySelectorAll('.mod-active-row-handle, .mod-active-col-handle');
+    for (const cell of cells) cell.removeClasses(['mod-active-row-handle', 'mod-active-col-handle']);
   }
 
   // ---- selection ---------------------------------------------------------
@@ -434,8 +511,9 @@ export class TableWidget extends WidgetType {
         this.removeTable(view);
         return;
       }
+      const blankEdges = { leading: minRow === 0, trailing: maxRow === lastRow };
       model.rows.splice(minRow, maxRow - minRow + 1);
-      this.dispatch(view, model, { focus: { row: edge === -1 ? minRow - 1 : minRow, col: head.col } });
+      this.dispatch(view, model, { focus: { row: edge === -1 ? minRow - 1 : minRow, col: head.col }, blankEdges });
       return;
     }
     if (minRow === 0 && maxRow === lastRow) {
@@ -484,6 +562,7 @@ export class TableWidget extends WidgetType {
     this.dispatch(view, model, state);
   }
 
+  /** 删行补空行（原版 deleteSelection 的块首/块尾 \n）；index 为删除前的行号。 */
   removeRow(view, index) {
     const model = this.model();
     if (!model || index < 0 || index >= model.rows.length) return;
@@ -491,8 +570,9 @@ export class TableWidget extends WidgetType {
       this.removeTable(view);
       return;
     }
+    const blankEdges = { leading: index === 0, trailing: index === model.rows.length - 1 };
     model.rows.splice(index, 1);
-    this.dispatch(view, model);
+    this.dispatch(view, model, { blankEdges });
   }
 
   insertColumn(view, index, align) {

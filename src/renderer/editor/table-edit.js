@@ -3,7 +3,9 @@
  * [OUTPUT]: 导出 beginCellEdit、closeCellEdit、cancelCellEdit、commitCellEdit、tabFromCell、enterFromCell、nextCellIn。
  * [POS]: editor/ 表格部件的原位置编辑层。原版每个单元格是一个 CM 编辑器（mq/iZ），这里以单元格内的 textarea 对齐其可观察语义：
  *        进入即全选（Tab/Enter 换格）、Enter 下移或末行加行、Tab/Shift+Tab 逐格移动（末格加行、首格上方插行）、Esc 取消、
- *        blur 提交（trim + 换行落 <br> + 未转义 | 补反斜杠）、IME 合成期间挂起提交。table-widget.js 是唯一调用方。
+ *        blur 提交（trim + 换行落 <br> + 未转义 | 补反斜杠）、IME 合成期间挂起提交。
+ *        进入时调 widget.setActiveDragHandles（原版 editTableCell），关闭时 unsetActiveDragHandles（原版 destroyTableCell）。
+ *        table-widget.js 是唯一调用方。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 import { cellTextFromInput, cellTextToInput } from './table-model.js';
@@ -41,6 +43,7 @@ export function beginCellEdit(widget, view, row, col, options) {
   const state = { row, col, textarea, wrapper, composing: false, pendingCommit: false };
   widget.edit = state;
   widget.focusCell = { row, col };
+  widget.setActiveDragHandles(row, col);
 
   const resize = () => {
     textarea.style.height = 'auto';
@@ -82,6 +85,7 @@ export function closeCellEdit(widget) {
   widget.edit = null;
   state.textarea.detach();
   if (state.wrapper) state.wrapper.removeClass('mod-editing');
+  widget.unsetActiveDragHandles();
 }
 
 /** Esc：丢弃编辑内容，焦点回到表格容器（选区与 Tab 导航仍可用）。 */
