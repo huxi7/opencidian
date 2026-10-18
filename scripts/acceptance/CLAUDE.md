@@ -24,8 +24,10 @@ dialogs.js: 弹窗复开、确认结果与选择器布局。
 download-attachments.js: 外部附件下载。命令门控（md 可用 / txt 与图片等非 md 不可用）、画廊模态结构与命名、取消不落盘、部分勾选只下载勾选项、字节完整性、嵌入与 frontmatter 改写、Notice 计数与无附件提示。stub app.requestUrl，不访问真实网络。
 editor-switch.js: 切换文件先保存，已删除视图再次打开文件可编辑。
 editor.js: 模式、折叠、高亮和滚动。
+editor-block-button.js: 块 widget（代码/数学/Mermaid）的 edit-block-button：默认隐藏、悬停显形、点击把光标放回源码。
 editor-layout.js: 行宽布局：sizer/contentContainer 结构、700px 居中、行内标题同列、设置联动、阅读视图居中、折叠全关后开行号 gutter 正常挂载。
 editor-paste.js: 剪贴板图片粘贴（截图 File / HTML data URL）落盘与嵌入、文本粘贴不误伤、文件树根目录外部文件拖入。
+reading-menus.js: 阅读视图右键菜单：内部链接（新标签页/新标签组/重命名）、外链（复制链接/浏览器打开）、图片复制、笔记/音视频/PDF 嵌块菜单、未解析链接创建文件。
 editor-menu.js: 编辑器右键菜单（剪切/粘贴/全选、文本格式/段落/插入/复制路径子菜单、editor-menu 事件、加粗动作）与外部文件拖入（落盘附件、字节完整、带扩展名嵌入链接、链接可解析）及标题/清除格式命令。
 folding-disabled.js: 禁止语法回退绕过折叠开关。
 graph.js: 72 项图谱交互与销毁。含颜色组拖拽排序（顺序即优先色）、节点悬停 hover-link 预览、力参数滑块落盘与重开保留。
