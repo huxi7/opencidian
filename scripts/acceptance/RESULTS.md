@@ -168,3 +168,12 @@ MathJax 独立适配器子代理的41项基础/故障测试见 assets/mathjax/SO
 - `editor:download-attachments` 由瘫痪桩变为完整功能：扫描（正文图片嵌入 + frontmatter 图片 URL，代码块掩码）、画廊勾选模态（复选框默认勾选、缩略图、可见文件名）、逐项下载（data URL 解码 / 远程经 Desktop.requestUrl，文件名走 URL→content-disposition→content-type→Image.jpg 规则）、改写（嵌入 `![[…]]`、frontmatter `[[…]]`）、Notice 计数；取消不落盘不改写。
 - 新增 styles/download-attachments.css（原版 .attachments-gallery 逐字 + 补可见文件名标签）；core/attachments-downloader.js（375 行）。
 - 验收 download-attachments 35 项（stub app.requestUrl，零真实网络）；回归 notes 72、editor 113。
+
+## 终版全量回归（2026-10-18，网络恢复后 · 33 场景）
+
+- 主循环 **33/33 通过、0 失败**（`/tmp/opencidian-final-regression-3.log`）：appearance 32、audio-recorder 65、basic-plugins 6、bookmarks、canvas（68）、canvas-edit 58、community 19、core-ribbon 47、core-views 83、dialogs 7、download-attachments 35、editor 113、editor-block-button 11、editor-layout 23、editor-menu 23、editor-paste 7、editor-switch 2、folding-disabled、graph 72、graph-persist-write、math、notes 72、notes-settings、page-preview 13、reading-menus 13、recovery 84、settings-plugins 52、settings-ui 22、settings-write、sidebar 93、sidebar-shell 61、table-widget 76、vault-hidden。
+- `graph-perf` 需 `--nodes`：100/1000/5000 三档各 4 项通过（`graph-perf-run-result-sNgO5U / ZRohG0 / LHX5hj`）。
+- 阶段回归：graph-persist-read ✓、settings-restart ✓、community restart 3、recovery restart 45、audio-recorder restart 7。
+- 本轮修复的深层 bug 汇总：附件链接丢扩展名（generateMarkdownLink）、自家写入迟到通知回滚文档（MarkdownView 外部同步）、菜单链点击不关闭父菜单、CM6 gutter 延迟挂载 NotFoundError（sizer DOM 重定向）、阅读视图 wiki 链接切片（早期）、插件 shim 缺 Keymap 导入（早期）。
+- 运行方式：`npm run build`；单场景 `node scripts/acceptance/run.mjs <场景> --no-screenshot`；并发的构建/验收一律 `sh scripts/with-lock.sh "<命令>"`。
+- 剩余缺口见 AGENT-STATE.md §16（表格拖拽重排/单元格选择、图谱 worker、画布空间索引、卡片内编辑命令、macOS 分发包、像素级视觉验收等）。
