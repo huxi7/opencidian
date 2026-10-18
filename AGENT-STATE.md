@@ -410,6 +410,12 @@ node --experimental-vm-modules src/renderer/core/workspace-regression.js
 已完成补充（组件批，`0c8dbe9`）：
 - 全局 tooltip（`core/tooltip.js`，1000ms 延迟/100ms 宽限/上下左右/翻转/抑制原生 title）、Notice 右上角+4000ms+hover 暂停+收拢动画、Suggest clear 按钮/PageUp/PageDown/Ctrl+p/n/auxclick；dialogs 场景扩到 7 项。同时把 file-explorer 移动失败的英文硬编码改成 locale 键（zh/en 同步）。
 
+## E2E 模式（2026-10-18 定稿）
+
+- `E2E=1`（run.mjs 注入）：`setActivationPolicy('accessory')` + `dock.hide()` + `showInactive()` + `focusable:false` + `opacity:0` + `setIgnoreMouseEvents(true)` → 测试窗口完全不可见、不抢键盘/焦点、不夺菜单栏、不遮挡界面。
+- **Dock 图标启动瞬间轻动一下是有意保留的行为**：Electron 宿主 App 在 `main.js` 执行前的那一下，用户视作"测试正在运行"的指示。**不要**为此引入 LSUIElement 测试专用 app bundle（方案已评估并否决）。
+- 正常 `npm start` 行为不变；E2E 只改呈现层。
+
 ## REA 自动使用政策（工具选择，2026-10-18 定）
 
 默认用 grep/read（源码仓库、minified JS、CSS、locale、协议片段）。
