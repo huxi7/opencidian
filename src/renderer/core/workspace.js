@@ -5,6 +5,8 @@
  * WorkspaceLeaf 与 parseSubpath。保留既有方法签名和调用入口。
  * [POS]: 装配分割树与导航。侧栏工具固定，文档新标签始终进入中心。侧栏沿用最近中心文件，链接路径由 vault 转为文件。
  * loadLayout 只替换布局；旧视图保存与关闭仍由调用方负责。
+ * 活动编辑器（原版 workspace.activeEditor）：getActiveEditor 取登记项（画布卡片宿主），否则回落活动叶子的编辑器视图；
+ * setActiveEditor/unsetActiveEditor 是登记与清空入口，切换活动叶子即清空登记。命令层经此拿到当前应作用的内嵌编辑器。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 import { Events } from './events.js';
@@ -35,6 +37,7 @@ export class Workspace extends Events {
     this.lastOpenFiles = [];
     this._leafMap = new Map();
     this._lastActiveLeaves = [];
+    this._activeEditor = null;
   }
 
   // -------------------------------------------------------------------------
@@ -257,6 +260,8 @@ export class Workspace extends Events {
   setActiveLeaf(leaf, options = {}) {
     if (!leaf) return;
     const prev = this.activeLeaf;
+    // 原版：活动叶子变化即丢弃画布卡片登记，命令回落到新叶子的编辑器
+    if (prev !== leaf) this.unsetActiveEditor();
     this.activeLeaf = leaf;
     leaf.activeTime = Date.now();
     if (options.clear) {
@@ -726,6 +731,34 @@ export class Workspace extends Events {
   // -------------------------------------------------------------------------
   // 查询
   // -------------------------------------------------------------------------
+
+  /**
+   * 活动编辑器宿主（原版 workspace.activeEditor 的 getter）：
+   * 优先本次登记的画布卡片宿主，否则回落到活动叶子的编辑器视图（原版 getActiveViewOfType(MarkdownView)）。
+   * 返回对象带 { editor, file, containerEl }；活动叶子没有编辑器时返回 null。
+   */
+  getActiveEditor() {
+    if (this._activeEditor) return this._activeEditor;
+    const view = this.activeLeaf && this.activeLeaf.view;
+    return view && view.editor ? view : null;
+  }
+
+  /** 登记活动编辑器（原版 activeEditor 的 setter）：markdown 视图不登记，由回落路径命中；null 清空。 */
+  setActiveEditor(editor) {
+    if (editor && editor.getViewType && editor.getViewType() === 'markdown') return;
+    this._activeEditor = editor;
+  }
+
+  /** 清空登记：无参或与登记项相同时清空（原版 unsetActiveEditor）。 */
+  unsetActiveEditor(editor) {
+    if (!editor || this._activeEditor === editor) this._activeEditor = null;
+  }
+
+  /** 原版属性访问形式：workspace.activeEditor。 */
+  get activeEditor() { return this.getActiveEditor(); }
+
+  set activeEditor(editor) { this.setActiveEditor(editor); }
+
   getActiveFile() {
     const active = this.activeLeaf;
     const leaf = active && this._sideOf(active) !== 'center'

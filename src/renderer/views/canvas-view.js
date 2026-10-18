@@ -1,16 +1,17 @@
 /**
- * [INPUT]: 依赖 ./canvas-interactions.js 的 CanvasInteractions（类链基类）；依赖 ../core/i18n.js 的 t；依赖 ../core/icons.js 的 setIcon；依赖 ../core/notices.js 的 Notice；
+ * [INPUT]: 依赖 ./canvas-interactions.js 的 CanvasInteractions（类链基类）；依赖 ../core/i18n.js 的 t；依赖 ../core/icons.js 的 setIcon；依赖 ../core/notices.js 的 Notice；依赖 ../core/ipc.js 的 Desktop；
  *          依赖 ./canvas-utils.js 的 genId、boxesIntersect、expandBBox、nearestSide、rectFromPos、distanceToBox、rectOf、MultiMap；
- *          依赖 ./canvas-node.js 的 CanvasNode/CanvasTextNode/CanvasLinkNode/CanvasGroupNode/CanvasDummyNode；依赖 ./canvas-file-node.js 的 CanvasFileNode；依赖 ./canvas-edge.js 的 CanvasEdge；
- *          依赖 ./canvas-menu.js 的 FileSuggestModal/LinkSuggestModal/JumpToGroupModal/showQuickSettingsMenu/installCanvasViewActions；
- *          依赖 ./canvas-export.js 的 renderCanvasImage/exportCanvasImage
- * [OUTPUT]: 导出 CanvasView 类（含 renderCanvasImage 渲染入口与 generateHDImage 导出入口）
+ *          依赖 ./canvas-node.js 的 CanvasNode/CanvasTextNode/CanvasLinkNode/CanvasDummyNode；依赖 ./canvas-group-node.js 的 CanvasGroupNode；依赖 ./canvas-file-node.js 的 CanvasFileNode；依赖 ./canvas-edge.js 的 CanvasEdge；
+ *          依赖 ./canvas-menu.js 的 FileSuggestModal/LinkSuggestModal/JumpToGroupModal/installCanvasViewActions；
+ *          依赖 ./canvas-controls.js 的 buildCardMenu/buildControls（建卡菜单与控件组的 DOM 构建）；依赖 ./canvas-export.js 的 renderCanvasImage/exportCanvasImage
+ * [OUTPUT]: 导出 CanvasView 类（含 renderCanvasImage 渲染入口、generateHDImage 导出入口与 promptImageSavePath 保存对话框入口）
  * [POS]: views/ 画布类链的末端：View → CanvasViewport（视口）→ CanvasInteractions（交互）→ CanvasView（装配与调度）。持有 .canvas-wrapper DOM、节点/边集合、选择集合、JSON Canvas 读写。
  *        ResizeObserver 在挂载后更新视口。节点与边几何分层；数据防抖 500ms 写回，关闭时 flush。
  *        vault modify 的外部修改重载磁盘内容并保留视口；自身写入用 _writing 标记排除，避免覆盖在途编辑。
  *        撤销/重做历史（上限 100）与写盘共用一个 requestSave；控件组含快速设置（对齐网格/对齐物体/只读）与撤销/重做。
  *        只读标记按原版 localDataManager 存 localStorage('canvas-<路径>')，重命名迁移、删除清理；切换只读时逐节点通知正文（onReadonlyChange）。
- *        导出图片的绘制在 canvas-export.js；本类只提供 renderCanvasImage（可测试）与 generateHDImage（命令/面板菜单入口）。
+ *        导出图片：绘制在 canvas-export.js，选项弹窗在 canvas-export-dialog.js；本类只提供 renderCanvasImage（可测试）、generateHDImage（命令/面板菜单入口）
+ *        与 promptImageSavePath（保存对话框，验收场景替换它即可跳过原生对话框）。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 /* Canvas view — DOM assembly + scheduling on top of the viewport and interaction layers. */
@@ -19,18 +20,20 @@ import { CanvasHistory } from './canvas-history.js';
 import { t } from '../core/i18n.js';
 import { setIcon } from '../core/icons.js';
 import { Notice } from '../core/notices.js';
+import { Desktop } from '../core/ipc.js';
 import { debounce } from '../core/events.js';
-import { Menu } from '../core/menu.js';
 import {
   genId, boxesIntersect, containsBox, expandBBox, nearestSide, rectFromPos, distanceToBox, rectOf, MultiMap,
 } from './canvas-utils.js';
 import {
-  CanvasNode, CanvasTextNode, CanvasLinkNode, CanvasGroupNode, CanvasDummyNode,
+  CanvasNode, CanvasTextNode, CanvasLinkNode, CanvasDummyNode,
 } from './canvas-node.js';
+import { CanvasGroupNode } from './canvas-group-node.js';
 import { CanvasFileNode } from './canvas-file-node.js';
 import { loadCanvasLocalData, saveCanvasLocalData, migrateCanvasLocalData, dropCanvasLocalData } from './canvas-local-data.js';
 import { CanvasEdge } from './canvas-edge.js';
-import { FileSuggestModal, LinkSuggestModal, JumpToGroupModal, showQuickSettingsMenu, installCanvasViewActions } from './canvas-menu.js';
+import { FileSuggestModal, LinkSuggestModal, JumpToGroupModal, installCanvasViewActions } from './canvas-menu.js';
+import { buildCardMenu, buildControls } from './canvas-controls.js';
 import { renderCanvasImage, exportCanvasImage } from './canvas-export.js';
 
 const SAVE_DELAY = 500;
@@ -183,8 +186,8 @@ export class CanvasView extends CanvasInteractions {
     this.moverEl = createDiv('canvas-mover');
     this.moverEl.addEventListener('pointerdown', (e) => this.handleMoverPointerdown(e));
 
-    this.buildCardMenu();
-    this.buildControls();
+    buildCardMenu(this);
+    buildControls(this);
 
     const canvasEl = this.canvasEl = wrapperEl.createDiv('canvas');
     this.edgeContainerEl = canvasEl.createSvg('svg', { cls: 'canvas-edges' });
@@ -198,68 +201,6 @@ export class CanvasView extends CanvasInteractions {
     wrapperEl.addEventListener('dblclick', (e) => this.onDoubleClick(e));
     wrapperEl.addEventListener('contextmenu', (e) => this.onContextMenu(e));
     wrapperEl.addEventListener('wheel', (e) => this.onWheel(e), { passive: false });
-  }
-
-  buildCardMenu() {
-    const menu = this.cardMenuEl = this.wrapperEl.createDiv('canvas-card-menu');
-    const addButton = (icon, title, onClick, onDragStart) => {
-      const el = menu.createDiv({ cls: 'canvas-card-menu-button mod-draggable', attr: { 'aria-label': title } });
-      setIcon(el, icon);
-      el.addEventListener('click', onClick);
-      if (onDragStart) el.addEventListener('pointerdown', onDragStart);
-    };
-    addButton('lucide-sticky-note', t('plugins.canvas.action-drag-to-add-card'),
-      () => this.createTextNode({ pos: this.posCenter(), position: 'center' }),
-      (e) => this.dragTempNode(e, this.config.defaultTextNodeDimensions, (pos, size) => { this.deselectAll(); this.createTextNode({ pos, size }); }));
-    addButton('lucide-file-text', t('plugins.canvas.action-drag-to-add-note'),
-      () => this.promptAddFileNode({ pos: this.posCenter(), position: 'center' }),
-      (e) => this.dragTempNode(e, this.config.defaultFileNodeDimensions, (pos, size) => this.promptAddFileNode({ pos, size })));
-    addButton('lucide-file-image', t('plugins.canvas.action-drag-to-add-media'),
-      () => this.promptAddFileNode({ pos: this.posCenter(), position: 'center', media: true }),
-      (e) => this.dragTempNode(e, this.config.defaultFileNodeDimensions, (pos, size) => this.promptAddFileNode({ pos, size, media: true })));
-  }
-
-  buildControls() {
-    const controls = this.canvasControlsEl = this.wrapperEl.createDiv('canvas-controls');
-    // 快速设置组（原版第一组）：只读状态下直接点击退出只读，否则弹菜单
-    const settingsGroup = controls.createDiv('canvas-control-group mod-raised');
-    this.quickSettingsButton = settingsGroup.createDiv({ cls: 'canvas-control-item' });
-    setIcon(this.quickSettingsButton, this.readonly ? 'lucide-lock' : 'lucide-settings');
-    this.quickSettingsButton.setAttr('aria-label', t('plugins.canvas.label-canvas-settings'));
-    this.quickSettingsButton.addEventListener('click', (ev) => {
-      if (this.readonly) {
-        this.setReadonly(false);
-        this.saveLocalData();
-        return;
-      }
-      if (this.quickSettingsButton.hasClass('has-active-menu')) return;
-      const menu = new Menu(this.app);
-      showQuickSettingsMenu(this, menu);
-      menu.setParentElement(this.quickSettingsButton).showAtMouseEvent(ev);
-    });
-    const group = controls.createDiv('canvas-control-group mod-raised');
-    const addButton = (icon, title, onClick) => {
-      const el = group.createDiv({ cls: 'canvas-control-item', attr: { 'aria-label': title } });
-      setIcon(el, icon);
-      el.addEventListener('click', onClick);
-    };
-    addButton('lucide-plus', t('commands.zoom-in'), () => this.zoomBy(this.config.zoomMultiplier));
-    addButton('lucide-rotate-cw', t('commands.reset-zoom'), () => this.zoomBy(-this.zoom));
-    addButton('lucide-maximize', t('plugins.canvas.action-zoom-to-fit'), () => this.zoomToFit());
-    addButton('lucide-minus', t('commands.zoom-out'), () => this.zoomBy(-this.config.zoomMultiplier));
-    // 撤销/重做组（原版第三组控件）
-    const historyGroup = controls.createDiv('canvas-control-group mod-raised');
-    const addHistoryButton = (icon, title, onClick) => {
-      const el = historyGroup.createDiv({ cls: 'canvas-control-item', attr: { 'aria-label': title } });
-      setIcon(el, icon);
-      el.addEventListener('click', onClick);
-      return el;
-    };
-    this.undoBtnEl = addHistoryButton('lucide-undo-2', t('setting.mobile-toolbar.option-undo'), () => this.undo());
-    this.redoBtnEl = addHistoryButton('lucide-redo-2', t('setting.mobile-toolbar.option-redo'), () => this.redo());
-    this.updateHistoryUI();
-    // 让 controls 与 card menu 一样浮在节点之上
-    this.canvasControlsEl.style.zIndex = String(this.getZIndex() + 1);
   }
 
   /* ---------------------------------------------------------------- 数据 */
@@ -792,6 +733,18 @@ export class CanvasView extends CanvasInteractions {
   /** 可测试的渲染入口：返回 { dataURL, width, height, scale }，空画布返回 null。 */
   renderCanvasImage(opts) { return renderCanvasImage(this, opts); }
 
-  /** 命令 canvas:export-as-image 与面板菜单入口：渲染 → 保存对话框 → 写 PNG（原版 generateHDImage）。 */
+  /** 命令 canvas:export-as-image 与面板菜单入口：设置弹窗 → 渲染 → 保存对话框 → 写 PNG（原版 generateHDImage）。 */
   generateHDImage(opts) { return exportCanvasImage(this, opts); }
+
+  /**
+   * 保存对话框（原版 electron dialog.showSaveDialog）。验收场景替换本方法即可跳过原生对话框，
+   * 其余导出链路（渲染、写盘、通知）保持真实执行。
+   */
+  promptImageSavePath(defaultPath) {
+    return Desktop.saveDialog({
+      defaultPath,
+      filters: [{ name: 'PNG Files', extensions: ['png'] }, { name: 'All Files', extensions: ['*'] }],
+      properties: ['showOverwriteConfirmation'],
+    });
+  }
 }

@@ -6,6 +6,8 @@
  *        单击已聚焦卡片进编辑（原版 hg）、未聚焦（blocker 路径）与聚焦未编辑（正文内）两条拖拽路径、
  *        只读画布不可写且切换只读立刻退出编辑、缩放断点卸载/重建编辑器、正文编辑进撤销栈、
  *        空卡片本地化占位、关闭视图释放编辑器实例与 DOM。
+ *        活动编辑器（本批新增）：卡片聚焦/进入编辑时 workspace.getActiveEditor() 指向卡片宿主、
+ *        editor:toggle-bold 命令包裹卡片选区、退出编辑后回落到中心笔记、笔记内 Mod+B 仍作用于笔记。
  *        仅由 run.mjs 在带标记的临时库执行，不做视觉验收。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
@@ -185,6 +187,54 @@
   const placeholder = empty.contentEl.querySelector('.cm-placeholder');
   check(!!placeholder && /添加文字|Add text/.test(placeholder.textContent || ''), '空卡片显示本地化占位文案');
 
+  // ---- 活动编辑器：卡片进入编辑即登记，命令作用卡片；退出后回落中心笔记 ----
+  const note = await app.fileManager.createNewMarkdownFile(app.vault.getRoot(), 'Canvas Editor Target', 'target word');
+  const noteLeaf = await app.workspace.openFile(note, { newLeaf: 'split' });
+  app.workspace.setActiveLeaf(noteLeaf, { focus: true });
+  await wait(200);
+  const noteView = noteLeaf.view;
+  check(app.workspace.activeLeaf === noteLeaf, '中心笔记开在新标签组并成为活动叶子');
+  check(noteView.editor.getValue().includes('target'), '（前置）笔记正文已装入编辑器');
+  check(app.workspace.getActiveEditor() === noteView, '无卡片登记时活动编辑器回落活动叶子视图');
+  view.selectOnly(node);
+  node.startEditing();
+  await wait(150);
+  check(node.isEditing, '（前置）卡片重新进入编辑态');
+  check(app.workspace.activeLeaf === noteLeaf, '卡片聚焦不改变活动叶子');
+  check(app.workspace.getActiveEditor() === node, '卡片聚焦后登记为活动编辑器');
+  check(app.workspace.activeEditor === node, '原版属性形式 workspace.activeEditor 指向卡片');
+  check(app.workspace.getActiveEditor().editor === node.editor, '登记宿主带编辑器与文件形状');
+  check(app.workspace.getActiveEditor().file === view.file, '登记宿主的 file 是画布文件');
+  check(app.workspace.getActiveEditor().containerEl === node.containerEl, '登记宿主带 containerEl');
+
+  // ---- 卡片内编辑命令：editor:toggle-bold 包裹卡片选区（原版 activeEditor 语义）----
+  node.editor.setSelection({ line: 0, ch: 2 }, { line: 0, ch: 4 });
+  check(app.commands.executeCommandById('editor:toggle-bold') === true, 'Mod+B 命令在卡片内可用');
+  await wait(150);
+  check(node.text.startsWith('# **标题**'), '卡片正文被加粗包裹');
+  check(node.editor.getValue().startsWith('# **标题**'), '包裹结果同步到卡片编辑器');
+  // 真实按键路径：焦点在卡片编辑器内按 Mod+B 生效（选区落在标记内即还原）
+  node.editor.setSelection({ line: 0, ch: 4 }, { line: 0, ch: 6 });
+  key(node.editor.cm.contentDOM, 'b', { metaKey: true });
+  await wait(150);
+  check(node.text.startsWith('# 标题') && !node.text.includes('**标题**'), '卡片编辑器内 Mod+B 真实按键作用于卡片');
+
+  // ---- 退出编辑：登记清空，回落中心笔记 ----
+  key(node.editorEl, 'Escape');
+  await wait(150);
+  check(!node.isEditing, '（前置）Escape 退出卡片编辑');
+  check(app.workspace.getActiveEditor() === noteView, '退出编辑后活动编辑器回落中心笔记');
+  check(app.workspace.getActiveEditor().file.path === note.path, '回落对象带笔记文件');
+
+  // ---- 中心笔记 Mod+B 仍作用于笔记（editor 场景回归）----
+  noteView.editor.focus();
+  noteView.editor.setSelection({ line: 0, ch: 0 }, { line: 0, ch: 6 });
+  noteView.editor.cm.contentDOM.dispatchEvent(new KeyboardEvent('keydown', { key: 'b', metaKey: true, bubbles: true, cancelable: true }));
+  await wait(200);
+  check(noteView.editor.getValue().startsWith('**target** '), '中心笔记 Mod+B 仍作用于笔记正文');
+  app.workspace.setActiveLeaf(view.leaf, { focus: true });
+  await wait(80);
+
   // ---- 关闭视图：销毁编辑器实例与 DOM ----
   const liveEditor = node.editor;
   const editorPrototype = Object.getPrototypeOf(liveEditor);
@@ -199,6 +249,7 @@
   editorPrototype.destroy = originalDestroy;
   check(destroyCalls >= 1, '关闭画布视图时销毁编辑器');
   check(node.editor === null && node.editorEl === null, '节点不再持有编辑器引用');
+  check(app.workspace.getActiveEditor() === null, '关闭画布视图后清空活动编辑器登记');
   check(!node.nodeEl.isConnected, '节点 DOM 已卸载');
   check(!liveEditor.cm.dom.isConnected, '编辑器 DOM 已摘除');
 

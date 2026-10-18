@@ -1,51 +1,86 @@
 /**
  * [INPUT]: 依赖 ./canvas-utils.js 的 unionBBox/expandBBox/sidePoint/offsetPoint/bezierFor/SIDE_ROTATION；
- *          依赖 ./canvas-node.js 的 CanvasGroupNode/CanvasLinkNode；依赖 ./canvas-file-node.js 的 CanvasFileNode；
- *          依赖 ../core/i18n.js 的 t；依赖 ../core/notices.js 的 Notice；依赖 ../core/ipc.js 的 Desktop；依赖 ../core/keymap.js 的 IS_MAC
- * [OUTPUT]: 导出 renderCanvasImage(canvas, opts) 与 exportCanvasImage(canvas)。
+ *          依赖 ./canvas-node.js 的 CanvasLinkNode；依赖 ./canvas-group-node.js 的 CanvasGroupNode；依赖 ./canvas-file-node.js 的 CanvasFileNode；
+ *          依赖 ./canvas-export-dialog.js 的 CanvasExportModal；依赖 ../core/i18n.js 的 t；
+ *          依赖 ../core/notices.js 的 Notice；依赖 ../core/ipc.js 的 Desktop；依赖 ../core/keymap.js 的 IS_MAC
+ * [OUTPUT]: 导出 renderCanvasImage(canvas, opts)、canvasExportMetrics(canvas, opts)、exportCanvasImage(canvas, opts)、saveCanvasImage(canvas, opts)
  * [POS]: views/ 画布类的图片导出层。renderCanvasImage 用离屏 2D canvas 画出与视图一致的画面（背景取 .canvas-wrapper 计算色，
  *        边取 .canvas-display-path 计算描边色，卡片取 .canvas-node-container 计算底色/边框/圆角），是纯函数、不弹对话框，供验收直接断言。
- *        exportCanvasImage 叠加原版行为：空画布提示 msg-export-failed-empty-canvas → Desktop.saveDialog → 写 PNG → 通知带「在访达中显示」。
- *        原版用分块截图 + 保存弹窗（视图范围/缩放/logo/隐私模式），本复刻按全画布一次性绘制，不画 logo、无隐私模式。
+ *        opts 逐条对齐原版 generateHDImage 的选项：frame 'full'（全画布，外扩 100）| 'viewport'（当前视口，倍率取画布缩放，不画水印）、
+ *        scale（输出倍率，缺省 1；受 MAX_SIZE 4096 上限约束）、showLogo（左下角应用标记）、privacyMode（正文改灰条占位，原版 .is-text-garbled 的等价物）。
+ *        exportCanvasImage 是命令与面板菜单入口：空画布提示 msg-export-failed-empty-canvas → 设置弹窗（取消返回 null）→ saveCanvasImage 落盘。
+ *        saveCanvasImage 走视图的 promptImageSavePath（原版 dialog.showSaveDialog）→ 写 PNG → 通知带「在访达中显示」。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
-/* Canvas image export — offscreen 2D canvas renderer + save dialog (original generateHDImage). */
+/* Canvas image export — offscreen 2D canvas renderer + options modal + save dialog (original generateHDImage). */
 import {
   unionBBox, expandBBox, sidePoint, offsetPoint, bezierFor, SIDE_ROTATION,
 } from './canvas-utils.js';
-import { CanvasGroupNode, CanvasLinkNode } from './canvas-node.js';
+import { CanvasGroupNode } from './canvas-group-node.js';
+import { CanvasLinkNode } from './canvas-node.js';
 import { CanvasFileNode } from './canvas-file-node.js';
+import { CanvasExportModal } from './canvas-export-dialog.js';
 import { t } from '../core/i18n.js';
 import { Notice } from '../core/notices.js';
 import { Desktop } from '../core/ipc.js';
 import { IS_MAC } from '../core/keymap.js';
 
-/** 导出尺寸上限（原版上限 16284；本复刻缩到 4096 以限制一次性绘制的内存）。 */
-const MAX_SIZE = 4096;
-/** 画布包围盒外扩（原版 v3(box, 100)）。 */
+/** 导出像素上限（原版上限 16284；本复刻缩到 4096 以限制一次性绘制的内存）。 */
+export const MAX_SIZE = 4096;
+/** 全画布范围的外扩（原版 v3(box, 100)）。 */
 const PADDING = 100;
+/** 缩放滑杆上限（原版 h 里的 2：最高 2 倍输出）。 */
+const MAX_ZOOM = 2;
 /** 原版箭头多边形顶点（.canvas-edges polygon.canvas-path-end）。 */
 const ARROW_POINTS = [[0, 0], [6.5, 10.4], [-6.5, 10.4]];
 /** 卡片内边距，对齐卡片编辑器 .cm-scroller 的 --size-4-4。 */
 const CARD_PADDING = 16;
 
 /**
- * 把当前画布画成 PNG：全部节点 + 全部边，背景取画布主题背景色。
+ * 导出几何：范围框、输出倍率与像素尺寸。renderCanvasImage 与导出弹窗共用（弹窗用它算「预计图像尺寸」）。
  * @param {CanvasView} canvas
- * @param {{maxSize?:number, padding?:number}} [opts]
+ * @param {{frame?:'full'|'viewport', box?:object, scale?:number, padding?:number, maxSize?:number}} [opts]
+ */
+export function canvasExportMetrics(canvas, opts = {}) {
+  const maxSize = opts.maxSize || MAX_SIZE;
+  const box = exportBBox(canvas, opts);
+  const worldWidth = Math.max(box.maxX - box.minX, 1);
+  const worldHeight = Math.max(box.maxY - box.minY, 1);
+  // 视口范围是「所见即所得」：倍率跟随画布缩放；全画布按世界坐标 1:1 起步
+  const multiplier = opts.scale !== undefined ? opts.scale : (opts.frame === 'viewport' ? canvas.scale : 1);
+  const scale = Math.min(multiplier, maxSize / worldWidth, maxSize / worldHeight);
+  return {
+    box,
+    worldWidth,
+    worldHeight,
+    maxSize,
+    maxZoom: Math.min(MAX_ZOOM, maxSize / worldWidth, maxSize / worldHeight),
+    scale,
+    width: Math.max(1, Math.ceil(worldWidth * scale)),
+    height: Math.max(1, Math.ceil(worldHeight * scale)),
+  };
+}
+
+/** 导出范围：显式 box 优先；viewport 取当前视口世界坐标；full 取全部节点包围盒外扩 padding。 */
+function exportBBox(canvas, opts) {
+  if (opts.box) return opts.box;
+  if (opts.frame === 'viewport') return canvas.getViewportBBox();
+  const padding = opts.padding === undefined ? PADDING : opts.padding;
+  const nodes = Array.from(canvas.nodes.values());
+  return expandBBox(unionBBox(nodes.map((node) => node.getBBox())), padding);
+}
+
+/**
+ * 把画布画成 PNG，范围与选项见 opts：边 + 全部节点 + 可选水印。
+ * @param {CanvasView} canvas
+ * @param {{frame?:string, scale?:number, maxSize?:number, padding?:number, box?:object, showLogo?:boolean, privacyMode?:boolean}} [opts]
  * @returns {{dataURL:string, width:number, height:number, scale:number}|null} 空画布返回 null
  */
 export function renderCanvasImage(canvas, opts = {}) {
-  const nodes = Array.from(canvas.nodes.values());
-  if (!nodes.length) return null;
-  const maxSize = opts.maxSize || MAX_SIZE;
-  const padding = opts.padding === undefined ? PADDING : opts.padding;
-  const box = expandBBox(unionBBox(nodes.map((node) => node.getBBox())), padding);
-  const worldWidth = Math.max(box.maxX - box.minX, 1);
-  const worldHeight = Math.max(box.maxY - box.minY, 1);
-  const scale = Math.min(1, maxSize / worldWidth, maxSize / worldHeight);
-  const width = Math.max(1, Math.ceil(worldWidth * scale));
-  const height = Math.max(1, Math.ceil(worldHeight * scale));
+  if (!canvas.nodes.size) return null;
+  const { box, scale, width, height } = canvasExportMetrics(canvas, opts);
+  const privacyMode = !!opts.privacyMode;
+  const showLogo = !!opts.showLogo && opts.frame !== 'viewport';
 
   const canvasEl = document.createElement('canvas');
   canvasEl.width = width;
@@ -58,28 +93,54 @@ export function renderCanvasImage(canvas, opts = {}) {
 
   // 边在节点之下（原版 .canvas-edges 先于 .canvas-node 挂载）
   for (const edge of canvas.edges.values()) drawEdge(ctx, edge, toImage, scale);
-  const ordered = nodes.slice().sort((a, b) => a.zIndex - b.zIndex);
-  for (const node of ordered) drawNode(ctx, node, toImage, scale);
+  const ordered = Array.from(canvas.nodes.values()).sort((a, b) => a.zIndex - b.zIndex);
+  for (const node of ordered) drawNode(ctx, node, toImage, scale, { privacyMode });
+  if (showLogo) drawLogo(ctx, width, height);
   return { dataURL: canvasEl.toDataURL('image/png'), width, height, scale };
 }
 
 /**
- * 命令 canvas:export-as-image 与画布面板菜单的入口：渲染 → 保存对话框 → 写 PNG。
+ * 命令 canvas:export-as-image 与画布面板菜单的入口（原版 generateHDImage）。
+ * options 传入时跳过设置弹窗直接落盘（命令与菜单都不传）。
  * @param {CanvasView} canvas
- * @returns {Promise<{filePath:string,width:number,height:number}|null>}
+ * @returns {Promise<{filePath:string,width:number,height:number}|null>} 取消或空画布返回 null
  */
-export async function exportCanvasImage(canvas) {
-  const image = renderCanvasImage(canvas);
+export async function exportCanvasImage(canvas, options) {
+  if (!canvas.nodes.size) {
+    new Notice(t('plugins.canvas.msg-export-failed-empty-canvas'));
+    return null;
+  }
+  const opts = options || await promptCanvasExportOptions(canvas);
+  if (!opts) return null;
+  return saveCanvasImage(canvas, opts);
+}
+
+/** 设置弹窗（原版 generateHDImage 第一步）：范围/缩放/显示水印/隐私模式；取消（关闭）返回 null。 */
+function promptCanvasExportOptions(canvas) {
+  return new Promise((resolve) => {
+    const metrics = canvasExportMetrics(canvas);
+    const modal = new CanvasExportModal(canvas, {
+      worldWidth: metrics.worldWidth,
+      worldHeight: metrics.worldHeight,
+      maxSize: metrics.maxSize,
+      maxZoom: metrics.maxZoom,
+      dimensionsFor: (multiplier) => canvasExportMetrics(canvas, { scale: multiplier }),
+      onSave: (options) => resolve(options),
+    });
+    modal.onClose = () => resolve(null);
+    modal.open();
+  });
+}
+
+/** 确认后的落盘链路：渲染 → 保存对话框 → 写 PNG → 通知「在访达中显示」。 */
+export async function saveCanvasImage(canvas, options) {
+  const image = renderCanvasImage(canvas, options);
   if (!image) {
     new Notice(t('plugins.canvas.msg-export-failed-empty-canvas'));
     return null;
   }
   const name = canvas.file ? canvas.file.basename : 'Canvas';
-  const result = Desktop.saveDialog({
-    defaultPath: name + '.png',
-    filters: [{ name: 'PNG Files', extensions: ['png'] }, { name: 'All Files', extensions: ['*'] }],
-    properties: ['showOverwriteConfirmation'],
-  });
+  const result = canvas.promptImageSavePath(name + '.png');
   const filePath = result && !result.canceled && result.filePath ? result.filePath : null;
   if (!filePath) return null;
   const base64 = image.dataURL.slice(image.dataURL.indexOf(',') + 1);
@@ -111,6 +172,21 @@ function edgeColor(edge) {
     if (stroke && stroke !== 'none') return stroke;
   }
   return 'rgb(192, 192, 192)';
+}
+
+/** 解析 rgb()/rgba() 计算色；失败返回 null。 */
+function parseRgb(color) {
+  const m = /rgba?\(\s*([\d.]+)[,\s]+([\d.]+)[,\s]+([\d.]+)/.exec(color || '');
+  if (!m) return null;
+  return { r: Number(m[1]), g: Number(m[2]), b: Number(m[3]) };
+}
+
+/** 隐私模式的占位灰条：正文色按 22% 混进背景色，浅深主题下都可见且不构成「文字墨迹」。 */
+function privacyBarColor(canvas, node) {
+  const bg = parseRgb(canvasBackground(canvas)) || { r: 255, g: 255, b: 255 };
+  const fg = parseRgb(nodeTextColor(node)) || { r: 0, g: 0, b: 0 };
+  const mix = (a, b) => Math.round(a * 0.78 + b * 0.22);
+  return `rgb(${mix(bg.r, fg.r)}, ${mix(bg.g, fg.g)}, ${mix(bg.b, fg.b)})`;
 }
 
 /* ------------------------------------------------------------------ 绘制 */
@@ -164,7 +240,7 @@ function drawArrow(ctx, point, side, scale) {
   ctx.restore();
 }
 
-function drawNode(ctx, node, toImage, scale) {
+function drawNode(ctx, node, toImage, scale, opts) {
   const box = node.getBBox();
   const origin = toImage({ x: box.minX, y: box.minY });
   const width = Math.max(1, (box.maxX - box.minX) * scale);
@@ -184,14 +260,19 @@ function drawNode(ctx, node, toImage, scale) {
 
   if (node instanceof CanvasGroupNode) {
     // 分组标签画在框外（原版 .canvas-group-label 在框顶上方），不受卡片裁剪
-    drawGroupLabel(ctx, node, origin, scale);
+    if (opts.privacyMode) drawPrivacyLabelBar(ctx, node, origin, width, scale);
+    else drawGroupLabel(ctx, node, origin, scale);
     return;
   }
   ctx.save();
   roundRectPath(ctx, origin.x, origin.y, width, height, radius);
   ctx.clip();
-  if (node instanceof CanvasFileNode) drawFileCard(ctx, node, origin, width, height, scale);
-  else if (node instanceof CanvasLinkNode) {
+  if (opts.privacyMode) {
+    // 隐私模式：正文位置画灰条占位（原版用 is-text-garbled 让文字不可读）
+    drawPrivacyBars(ctx, node, origin, width, height, scale);
+  } else if (node instanceof CanvasFileNode) {
+    drawFileCard(ctx, node, origin, width, height, scale);
+  } else if (node instanceof CanvasLinkNode) {
     drawText(ctx, node.url, origin, width, height, scale, { align: 'center', color: nodeTextColor(node), font: nodeFont(node, scale) });
   } else {
     drawText(ctx, node.text || node.placeholderText, origin, width, height, scale, { color: nodeTextColor(node), font: nodeFont(node, scale) });
@@ -239,6 +320,32 @@ function drawGroupLabel(ctx, node, origin, scale) {
   ctx.fillText(label, origin.x, origin.y - 4 * scale);
 }
 
+/** 隐私模式：正文位置画 2~3 条灰条占位。 */
+function drawPrivacyBars(ctx, node, origin, width, height, scale) {
+  const padding = CARD_PADDING * scale;
+  const barHeight = Math.max(2, Math.round(10 * scale));
+  const gap = Math.max(2, Math.round(barHeight * 0.9));
+  const ratios = [0.72, 0.92, 0.45];
+  ctx.fillStyle = privacyBarColor(node.canvas, node);
+  let y = origin.y + padding;
+  for (const ratio of ratios) {
+    if (y + barHeight > origin.y + height - padding + gap) break;
+    const barWidth = Math.max(4, (width - padding * 2) * ratio);
+    roundRectPath(ctx, origin.x + padding, y, barWidth, barHeight, barHeight / 2);
+    ctx.fill();
+    y += barHeight + gap;
+  }
+}
+
+/** 隐私模式下的分组标签：框顶上方画一条灰条。 */
+function drawPrivacyLabelBar(ctx, node, origin, width, scale) {
+  const height = Math.max(3, Math.round(12 * scale));
+  const barWidth = Math.max(16, Math.min(width, 240 * scale) * 0.4);
+  ctx.fillStyle = privacyBarColor(node.canvas, node);
+  roundRectPath(ctx, origin.x, origin.y - 4 * scale - height, barWidth, height, height / 2);
+  ctx.fill();
+}
+
 /** 文件卡片：左上角文件名 + 居中的图标占位矩形（原版占位 .canvas-icon-placeholder 宽 25%）。 */
 function drawFileCard(ctx, node, origin, width, height, scale) {
   const label = node.file ? node.file.basename : (node.filePath || node.placeholderText || '');
@@ -253,6 +360,46 @@ function drawFileCard(ctx, node, origin, width, height, scale) {
   ctx.lineWidth = Math.max(1, 2 * scale);
   ctx.stroke();
   ctx.restore();
+}
+
+/**
+ * 左下角水印（原版 canvas-watermark 的 Obsidian logo）：本复刻画应用菱形标记 + 「OpenSidian」文字，
+ * 尺寸随输出等比（原版按画布坐标固定 80px 内缩；一次性离屏绘制用输出比例代替分块缩放）。
+ */
+function drawLogo(ctx, width, height) {
+  const unit = Math.min(width, height);
+  const size = Math.max(10, Math.round(unit * 0.022));
+  const inset = Math.max(10, Math.round(unit * 0.028));
+  const diamond = size * 0.85;
+  const x = inset;
+  const y = height - inset;
+  ctx.save();
+  ctx.fillStyle = logoColor();
+  ctx.beginPath();
+  ctx.moveTo(x + diamond / 2, y - diamond);
+  ctx.lineTo(x + diamond, y - diamond / 2);
+  ctx.lineTo(x + diamond / 2, y);
+  ctx.lineTo(x, y - diamond / 2);
+  ctx.closePath();
+  ctx.fill();
+  ctx.font = `600 ${size}px ${logoFontFamily()}`;
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'alphabetic';
+  ctx.fillText('OpenSidian', x + diamond + size * 0.45, y);
+  ctx.restore();
+}
+
+/** 水印色：次级文字色（--text-faint），取不到则半透明灰。 */
+function logoColor() {
+  const tokens = getComputedStyle(document.body);
+  const faint = tokens.getPropertyValue('--text-faint').trim();
+  if (faint) return faint;
+  const muted = tokens.getPropertyValue('--text-muted').trim();
+  return muted || 'rgba(128, 128, 128, 0.7)';
+}
+
+function logoFontFamily() {
+  return getComputedStyle(document.body).fontFamily || 'sans-serif';
 }
 
 /** 折行绘制文本；超出卡片高度即被裁剪。 */
@@ -313,6 +460,6 @@ function roundRectPath(ctx, x, y, width, height, radius) {
   ctx.lineTo(x + r, y + height);
   ctx.arcTo(x, y + height, x, y + height - r, r);
   ctx.lineTo(x, y + r);
-  ctx.arcTo(x, y, x + r, y, r);
+  ctx.arcTo(x, y + r, x + r, y, r);
   ctx.closePath();
 }

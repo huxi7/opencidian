@@ -3,9 +3,9 @@
  *          宿主提供视图注册、文件创建、命令与功能区。
  * [OUTPUT]: 导出 nameKey 与 create(app)。注册 canvas 视图、四个画布命令与新建功能区入口。
  * [POS]: plugins-core/ 的画布插件入口。视图本体在 views/canvas-view.js（类链 CanvasViewport → CanvasInteractions → CanvasView）；
- *        图片导出实现在 views/canvas-export.js。
+ *        图片导出实现在 views/canvas-export.js，选项弹窗在 views/canvas-export-dialog.js。
  *        命令命名对齐原版：canvas:new-file 在默认新文件位置建空画布并打开；canvas:export-as-image 只在当前叶子是画布时可用，
- *        执行时经保存对话框写出 PNG；canvas:jump-to-group 只在当前叶子是画布且有分组时可用；
+ *        执行时先弹设置弹窗（范围/缩放/水印/隐私），确认后写 PNG，取消不落盘；canvas:jump-to-group 只在当前叶子是画布且有分组时可用；
  *        canvas:convert-to-file 只在单选文本卡片时可用（建 md 后关联边改指文件节点）。
  *        功能区复用新建逻辑；Mod 点击新标签并聚焦。重复加载不新增入口，卸载释放入口、命令与视图注册。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md

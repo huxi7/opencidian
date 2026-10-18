@@ -2,16 +2,19 @@
  * [INPUT]: 独立临时 vault 与 OBS_ACT eval 注入的应用实例。
  * [OUTPUT]: 返回验收断言结果；失败抛出异常，供运行器判定。
  * [POS]: canvas 场景。仅由 run.mjs 在带标记的临时库执行。覆盖新建/编辑落盘/连线/缩放/重开/边跟随/撤销重做/微移/快速设置/转换/只读恢复，
- *        并覆盖图片导出（命令可用性、面板菜单文案、renderCanvasImage 的 dataURL 与 maxSize 上限、非背景像素）与拖动对齐参考线
+ *        并覆盖图片导出（命令可用性、面板菜单文案、导出弹窗四项设置与取消不落盘、确认后按倍率落盘并遵守 4096 上限、
+ *        renderCanvasImage 的 dataURL/maxSize 上限/倍率/视口范围/水印/隐私模式与文字墨迹消失）与拖动对齐参考线
  *        （吸附到对齐值、出现 svg.canvas-snaps 参考线、松手清除、snapToObjects 关闭时不吸附）。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 (async()=>{
-const wait=ms=>new Promise(r=>setTimeout(r,ms));const ok=(b,m)=>{if(!b)throw Error(m)};
+const wait=ms=>new Promise(r=>setTimeout(r,ms));const checks=[];const ok=(b,m)=>{if(!b)throw Error(m);checks.push(m)};
 // 指针事件助手：p 为相对画布中心的 DOM 坐标
 const evt=(target,type,p)=>target.dispatchEvent(new PointerEvent(type,{bubbles:true,isPrimary:true,pointerType:'mouse',pointerId:9,button:0,buttons:type==='pointerup'?0:1,clientX:p.x+reopened.canvasRect.cx,clientY:p.y+reopened.canvasRect.cy}));
-// 统计与左上角背景像素不同的像素数（导出图必须画出内容）
-const countNonBackgroundPixels=async(image)=>{const pic=new Image();pic.src=image.dataURL;await new Promise((r,j)=>{pic.onload=r;pic.onerror=j});const c=document.createElement('canvas');c.width=pic.width;c.height=pic.height;const x=c.getContext('2d');x.drawImage(pic,0,0);const d=x.getImageData(0,0,c.width,c.height).data;const bg=[d[0],d[1],d[2]];let n=0;for(let i=0;i<d.length;i+=4){if(Math.abs(d[i]-bg[0])+Math.abs(d[i+1]-bg[1])+Math.abs(d[i+2]-bg[2])>12)n++}return n};
+// 统计与左上角背景像素差异超过 threshold 的像素数（导出图必须画出内容）
+const countPixels=async(image,threshold)=>{const pic=new Image();pic.src=image.dataURL;await new Promise((r,j)=>{pic.onload=r;pic.onerror=j});const c=document.createElement('canvas');c.width=pic.width;c.height=pic.height;const x=c.getContext('2d');x.drawImage(pic,0,0);const d=x.getImageData(0,0,c.width,c.height).data;const bg=[d[0],d[1],d[2]];let n=0;for(let i=0;i<d.length;i+=4){if(Math.abs(d[i]-bg[0])+Math.abs(d[i+1]-bg[1])+Math.abs(d[i+2]-bg[2])>threshold)n++}return n};
+const countNonBackgroundPixels=image=>countPixels(image,12);
+const countTextInkPixels=image=>countPixels(image,400);
 await app.commands.findCommand('canvas:new-file').callback();await wait(250);
 const v=app.workspace.activeLeaf.view;ok(v.canvasRect.width>0,'canvas measured');
 // ---- 空画布不导出：命令入口在无节点时只提示，不弹保存对话框 ----
@@ -160,6 +163,78 @@ const cappedImage=reopened.renderCanvasImage({maxSize:1024});
 ok(cappedImage.width<=1024&&cappedImage.height<=1024&&cappedImage.width>0,'export size capped by maxSize');
 const drawn=await countNonBackgroundPixels(cappedImage);
 ok(drawn>0,'export image contains drawn pixels');
+// ---- 导出弹窗：范围/缩放/水印/隐私四项设置，取消不落盘 ----
+let saveCalls=0;
+const exportPath=app.vaultPath+'/Export Dialog.png';
+reopened.promptImageSavePath=()=>{saveCalls+=1;return{canceled:false,filePath:exportPath}};
+const openDialog=()=>document.querySelector('.modal.mod-narrow:not(.is-hidden)');
+app.commands.executeCommandById('canvas:export-as-image');
+await wait(180);
+let dialog=openDialog();
+ok(!!dialog,'export command opens the settings dialog');
+ok(/Export|导出/.test(dialog.querySelector('.modal-title').textContent||''),'dialog title is the export action');
+ok(dialog.querySelectorAll('.setting-item').length===4,'dialog has frame/zoom/logo/privacy settings');
+ok((dialog.querySelector('.modal-content .u-muted').textContent||'').includes(reopened.file.basename),'dialog description names the canvas file');
+const frameSelect=dialog.querySelector('.setting-item select.dropdown');
+ok(!!frameSelect&&frameSelect.options.length===2,'frame dropdown offers two ranges');
+ok(frameSelect.value==='full','frame defaults to the full canvas');
+const zoomSlider=dialog.querySelector('.setting-item input.slider');
+ok(!!zoomSlider&&Number(zoomSlider.max)>0&&Number(zoomSlider.min)<0,'zoom slider spans the capture range');
+const toggles=dialog.querySelectorAll('.setting-item .checkbox-container');
+ok(toggles.length===2,'logo and privacy toggles exist');
+ok(toggles[0].classList.contains('is-enabled')&&!toggles[1].classList.contains('is-enabled'),'logo on and privacy off by default');
+const settingDesc=i=>dialog.querySelectorAll('.setting-item')[i].querySelector('.setting-item-description').textContent||'';
+ok(/px x/.test(settingDesc(1)),'zoom setting shows the estimated dimensions');
+frameSelect.value='viewport';
+frameSelect.dispatchEvent(new Event('change',{bubbles:true}));
+await wait(60);
+ok(dialog.querySelectorAll('.setting-item:not(.is-hidden)').length===2,'viewport range hides zoom and logo settings');
+frameSelect.value='full';
+frameSelect.dispatchEvent(new Event('change',{bubbles:true}));
+await wait(60);
+ok(dialog.querySelectorAll('.setting-item:not(.is-hidden)').length===4,'full range restores the hidden settings');
+dialog.querySelector('.modal-close-button').click();
+await wait(250);
+ok(!openDialog(),'dialog closes on cancel');
+ok(saveCalls===0,'cancel produces no output');
+// ---- 面板菜单入口同样弹出设置弹窗 ----
+moreBtn.dispatchEvent(new MouseEvent('click',{bubbles:true,cancelable:true}));
+await wait(80);
+findMenuItems().find(el=>/导出|Export/.test(el.textContent)).dispatchEvent(new MouseEvent('click',{bubbles:true}));
+await wait(180);
+ok(!!openDialog(),'pane menu export opens the settings dialog');
+openDialog().querySelector('.modal-close-button').click();
+await wait(250);
+ok(!openDialog()&&saveCalls===0,'menu-driven cancel produces no output');
+// ---- 确认弹出：滑杆拉到上限，输出按倍率落盘并遵守 4096 上限 ----
+const pending=reopened.generateHDImage();
+await wait(180);
+dialog=openDialog();
+ok(!!dialog,'generateHDImage opens the dialog');
+const confirmSlider=dialog.querySelector('.setting-item input.slider');
+confirmSlider.value=confirmSlider.max;
+confirmSlider.dispatchEvent(new Event('change',{bubbles:true}));
+await wait(60);
+ok(/4,?096px/.test(settingDesc(1)),'estimated dimensions follow the zoom multiplier');
+dialog.querySelector('.modal-button-container .mod-cta').click();
+const exported=await pending;
+await wait(200);
+ok(saveCalls===1,'confirm asks the view for a save path');
+ok(!!exported&&exported.filePath===exportPath,'confirm writes to the chosen path');
+const png=require('fs').readFileSync(exportPath);
+ok(png.slice(1,4).toString()==='PNG','written file is a PNG');
+ok(png.readUInt32BE(16)===4096&&png.readUInt32BE(20)>fullImage.height,'written image respects the 4096 cap and the zoom multiplier');
+// ---- 渲染器选项：倍率、视口范围、水印、隐私模式 ----
+const zoomedImage=reopened.renderCanvasImage({scale:2});
+ok(zoomedImage.width>fullImage.width&&zoomedImage.width<=4096&&zoomedImage.height<=4096,'scale raises output size under the cap');
+const halfImage=reopened.renderCanvasImage({scale:0.5});
+ok(Math.abs(halfImage.width-Math.round(fullImage.width/2))<=1,'scale lowers output size by the multiplier');
+const viewportImage=reopened.renderCanvasImage({frame:'viewport'});
+ok(Math.abs(viewportImage.width-Math.round(reopened.canvasRect.width))<=2&&viewportImage.width<fullImage.width,'viewport frame crops to the visible area');
+const logoImage=reopened.renderCanvasImage({showLogo:true});
+ok(await countNonBackgroundPixels(logoImage)>await countNonBackgroundPixels(fullImage),'logo adds drawn pixels');
+const privacyImage=reopened.renderCanvasImage({privacyMode:true});
+ok(await countTextInkPixels(fullImage)>0&&await countTextInkPixels(privacyImage)===0,'privacy mode replaces text with bars');
 // ---- 拖动对齐参考线 ----
 reopened.options.snapToGrid=false;reopened.options.snapToObjects=true;
 const dragB=(dx,dy)=>{const p={x:gB.x+gB.width/2,y:gB.y+gB.height/2};const a=reopened.domFromPos(p),b=reopened.domFromPos({x:p.x+dx,y:p.y+dy});evt(gB.containerEl,'pointerdown',a);evt(window,'pointermove',b);return b};
@@ -181,5 +256,5 @@ reopened.options.snapToObjects=true;reopened.options.snapToGrid=true;
 await app.workspace.activeLeaf.setViewState({type:'empty',state:{}});await wait(120);
 ok(app.commands.findCommand('canvas:export-as-image').checkCallback(true)===false,'export command unavailable without canvas');
 await app.saveLayout();
-return {pass:true,file:f.path,nodes:4,edges:1,rect:restored.canvasRect,converted:created.path,export:{full:fullImage.width+'x'+fullImage.height,capped:cappedImage.width+'x'+cappedImage.height,pixels:drawn},snapping:{aligned:gA.x,guides:'cleared'}};
+return {pass:true,checks,count:checks.length,file:f.path,nodes:4,edges:1,rect:restored.canvasRect,converted:created.path,export:{full:fullImage.width+'x'+fullImage.height,capped:cappedImage.width+'x'+cappedImage.height,pixels:drawn,dialog:exported.width+'x'+exported.height,viewport:viewportImage.width+'x'+viewportImage.height},snapping:{aligned:gA.x,guides:'cleared'}};
 })()

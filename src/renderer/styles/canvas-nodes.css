@@ -678,3 +678,10 @@ body.is-mobile .canvas-node-resizer {
 .canvas-snaps circle {
   fill: var(--color-accent);
 }
+/* 导出图片弹窗（原版 .modal.mod-narrow 与 .u-muted 次级说明文字；组件样式表不在本批改动范围，规则补在画布段） */
+.modal.mod-narrow {
+  max-width: 400px;
+}
+.modal .u-muted {
+  color: var(--text-muted);
+}

@@ -2,6 +2,7 @@
  * [INPUT]: 依赖 core/i18n.js 的 t；依赖 core/notices.js 的 Notice；依赖 core/ipc.js 的 Desktop；依赖 ./attachments.js 的 saveAttachment/pastedImageBaseName；依赖 @codemirror/language 的 toggleFold/foldAll/unfoldAll；经 app 使用 commands/fileManager/workspace/metadataCache。
  * [OUTPUT]: 导出 registerEditorCommands(app)，注册全部 editor:* 与 markdown:* 命令。
  * [POS]: editor/ 的命令注册层，由 main.js 在 App 构造后调用。命令体只做编辑器级动作或薄转发：editor:download-attachments 门控活动文件为 md 后委托 fileManager.downloadAttachmentsForNote；attach-file 与 paste 的附件落盘共用 attachments.js。
+ *        编辑器解析只有一处 getEditor(app)：先取 workspace.getActiveEditor()（画布卡片正文优先），回落活动叶子视图；宿主带 getMode 且为 preview 时拒绝。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 /* Built-in editor / markdown commands (ported behaviors from the original). */
@@ -11,11 +12,13 @@ import { Desktop } from '../core/ipc.js';
 import { saveAttachment, pastedImageBaseName } from './attachments.js';
 import { toggleFold, foldAll, unfoldAll } from '@codemirror/language';
 
+/** 编辑器解析入口：workspace.activeEditor 优先（画布卡片正文可被 editor:* 命令作用）。 */
 function getEditor(app) {
-  const view = app.workspace.activeLeaf && app.workspace.activeLeaf.view;
-  if (view && view.editor && view.getMode && view.getMode() !== 'preview') return view.editor;
-  if (view && view.editor && !view.getMode) return view.editor;
-  return null;
+  const workspace = app.workspace;
+  const active = workspace && workspace.getActiveEditor ? workspace.getActiveEditor() : null;
+  if (!active || !active.editor) return null;
+  if (active.getMode && active.getMode() === 'preview') return null;
+  return active.editor;
 }
 
 function wrap(editor, before, after = before) {

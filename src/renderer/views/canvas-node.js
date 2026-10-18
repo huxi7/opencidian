@@ -1,12 +1,14 @@
 /**
  * [INPUT]: 依赖 ./canvas-utils.js 的 genId/bboxOf/nearestSide/applyCanvasColor；依赖 ../core/i18n.js 的 t；依赖 ../core/menu.js 的 Menu；依赖 ../core/ipc.js 的 Desktop；依赖 ../core/notices.js 的 Notice；依赖 ../core/modals.js 的 FileNameModal；依赖 ../editor/editor.js 的 Editor；依赖 @codemirror/view 的 placeholder
- * [OUTPUT]: 导出 CanvasNode（基类）、CanvasContentNode、CanvasTextNode、CanvasLinkNode、CanvasGroupNode、CanvasDummyNode；CanvasFileNode 见 canvas-file-node.js
+ * [OUTPUT]: 导出 CanvasNode（基类）、CanvasContentNode、CanvasTextNode、CanvasLinkNode、CanvasDummyNode；CanvasFileNode 见 canvas-file-node.js，CanvasGroupNode 见 canvas-group-node.js
  * [POS]: views/ 画布三件套的节点层。DOM 对齐原版：nodeEl(.canvas-node) > containerEl(.canvas-node-container) > contentEl(.canvas-node-content)
  *        + contentBlockerEl + placeholderEl；resizer（data-resize）与连接点（data-side）挂在 nodeEl 上（原版在 interaction layer，本复刻就近放置，靠 CSS 控制显隐）。
  *        可读缩放与编辑态挂载正文；输入逐次请求防抖保存。几何与事件写回由 canvas-view 统一调度。
  *        文本卡片正文是内嵌的 CM6 实时预览编辑器（原版 P5 + L5），DOM 为 contentEl.markdown-embed > .markdown-embed-content > .markdown-source-view；
  *        编辑器只活在挂载期间，卸载即 destroy；仅编辑态可写，未编辑时被 blocker 挡住指针（卡片照常拖拽/选中）。
  *        文本卡片菜单含编辑与转换为文件（FileNameModal → fileManager.createNewMarkdownFile → 文件节点继承几何）。
+ *        文本卡片聚焦/进入编辑即登记为 workspace 的活动编辑器（getActiveEditorHost 返回自身，形状 { editor, file, containerEl }），
+ *        stopEditing/blur/卸载编辑器/销毁节点时清空；命令层由此让 editor:* 命令作用在卡片正文。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 /* Canvas nodes — mirrors the original E5 / M5 / P5 / L5 / D5 / I5 / F5 classes. */
@@ -147,10 +149,27 @@ export class CanvasNode {
   }
 
   get isFocused() { return this.nodeEl.hasClass('is-focused'); }
-  focus() { this.nodeEl.addClass('is-focused'); this.renderZIndex(); }
-  blur() { this.nodeEl.removeClass('is-focused'); this.setIsEditing(false); this.renderZIndex(); }
+  focus() { this.nodeEl.addClass('is-focused'); this.renderZIndex(); this.registerActiveEditor(); }
+  blur() {
+    this.nodeEl.removeClass('is-focused');
+    this.setIsEditing(false);
+    this.renderZIndex();
+    this.clearActiveEditor();
+  }
   select() { this.nodeEl.addClass('is-selected'); this.renderZIndex(); }
   deselect() { this.nodeEl.removeClass('is-selected'); this.renderZIndex(); }
+
+  /* ---------------------------------------------------- 活动编辑器登记 */
+
+  /**
+   * 命令层要作用的编辑器宿主（原版 workspace.activeEditor 的形状：{ editor, file, containerEl }）。
+   * 基类没有内嵌编辑器，返回 null；文本卡片重写为自身（见 CanvasTextNode.getActiveEditorHost）。
+   */
+  getActiveEditorHost() { return null; }
+
+  registerActiveEditor() { this.app.workspace.setActiveEditor(this.getActiveEditorHost()); }
+
+  clearActiveEditor() { this.app.workspace.unsetActiveEditor(this.getActiveEditorHost()); }
 
   setIsEditing(isEditing) {
     if (this.isEditing === isEditing) return;
@@ -419,6 +438,20 @@ export class CanvasTextNode extends CanvasContentNode {
 
   isEditable() { return true; }
 
+  /* ---------------------------------------------------- 活动编辑器登记 */
+
+  /**
+   * 文本卡片是内嵌编辑器的宿主：卡片被聚焦/进入编辑时登记到工作区，
+   * 命令（editor:*）作用在卡片正文而不是活动叶子；形状对齐原版 activeEditor 的 { editor, file, containerEl }。
+   */
+  getActiveEditorHost() { return this.editor ? this : null; }
+
+  /** 卡片正文视图的读取模式（原版内嵌 markdown 视图的 getMode；卡片正文始终可写）。 */
+  getMode() { return 'source'; }
+
+  /** 卡片正文归属的画布文件（原版内嵌 markdown 视图的 file）。 */
+  get file() { return this.canvas.file; }
+
   /* -------------------------------------------------------------- 正文数据 */
 
   setText(text) {
@@ -498,6 +531,7 @@ export class CanvasTextNode extends CanvasContentNode {
   unmountEditor() {
     const editor = this.editor;
     if (!editor) return;
+    this.clearActiveEditor();   // 宿主要随编辑器一起消失：先摘登记再释放编辑器
     this.editor = null;
     const editorEl = this.editorEl;
     this.editorEl = null;
@@ -548,6 +582,8 @@ export class CanvasTextNode extends CanvasContentNode {
     if (canvas.zoom < canvas.zoomBreakpoint + 0.1) canvas.zoomToBbox(this.getBBox());
     this.setIsEditing(true);
     this.updateBreakpoint(true);
+    // 已聚焦的卡片再次进入编辑时 selectOnly 会提前返回，故在此显式登记活动编辑器
+    this.registerActiveEditor();
     const editor = this.editor;
     if (!editor) return;      // 画布尚未测量尺寸时正文挂不上，编辑态照常保留
     editor.setReadOnly(false);
@@ -577,6 +613,7 @@ export class CanvasTextNode extends CanvasContentNode {
     }
     this.placeholderText = this.text;
     this.renderPlaceholder();
+    this.clearActiveEditor();
     this.canvas.requestSave();
   }
 
@@ -672,101 +709,6 @@ export class CanvasLinkNode extends CanvasContentNode {
   setData(data) {
     super.setData(data);
     if (data.url) this.setUrl(data.url);
-  }
-}
-
-/* --------------------------------------------------------------------------
- * 分组 — 圆角矩形 + 顶部 label（contenteditable），永远铺在底层
- * ------------------------------------------------------------------------ */
-export class CanvasGroupNode extends CanvasNode {
-  constructor(canvas, id) {
-    super(canvas, id);
-    this.isGroup = true;
-    this.label = '';
-    this.nodeEl.addClass('canvas-node-group');
-  }
-
-  initialize() {
-    super.initialize();
-    this.contentEl = this.containerEl.createDiv('canvas-node-content');
-    const labelEl = this.labelEl = this.nodeEl.createDiv('canvas-group-label');
-    labelEl.spellcheck = false;
-    labelEl.addEventListener('pointerdown', (e) => this.onPointerdown(e));
-    labelEl.addEventListener('dblclick', () => this.focusLabel());
-    labelEl.addEventListener('keypress', (e) => {
-      if (!e.isComposing && e.key === 'Enter') { e.preventDefault(); this.blurLabel(); }
-    });
-    labelEl.addEventListener('blur', () => this.blurLabel());
-    this.isContentMounted = true;
-  }
-
-  setLabel(label) {
-    if (this.label === label) return;
-    this.label = label;
-    this.canvas.markDirty(this);
-  }
-
-  focusLabel() {
-    const labelEl = this.labelEl;
-    if (!labelEl || this.canvas.readonly) return;
-    labelEl.show();
-    labelEl.setAttr('contenteditable', 'true');
-    labelEl.focus();
-  }
-
-  blurLabel() {
-    const labelEl = this.labelEl;
-    if (!labelEl) return;
-    labelEl.setAttr('contenteditable', 'false');
-    labelEl.blur();
-    const text = labelEl.getText();
-    if (this.label !== text) {
-      this.setLabel(text);
-      this.canvas.requestSave();
-    } else {
-      labelEl.toggle(!!text);
-      labelEl.setText(text);
-    }
-  }
-
-  blur() {
-    super.blur();
-    this.blurLabel();
-  }
-
-  render() {
-    super.render();
-    if (!this.initialized) return;
-    const labelEl = this.labelEl;
-    if (document.activeElement !== labelEl) {
-      labelEl.toggle(!!this.label);
-      labelEl.setText(this.label);
-    }
-    // 主题色明暗：从 CSS 变量读回 rgb 值，浅色文字配深底
-    let light = false;
-    let dark = false;
-    if (this.color) {
-      const raw = getComputedStyle(this.nodeEl).getPropertyValue('--canvas-color').trim();
-      const m = raw.match(/^(\d+)\s*,\s*(\d+)\s*,\s*(\d+)$/);
-      if (m) {
-        const l = (0.299 * Number(m[1]) + 0.587 * Number(m[2]) + 0.114 * Number(m[3])) / 255;
-        if (l > 0.7) dark = true;
-        else if (l < 0.4) light = true;
-      }
-    }
-    labelEl.toggleClass('mod-foreground-light', light);
-    labelEl.toggleClass('mod-foreground-dark', dark);
-  }
-
-  getData() {
-    const data = { ...super.getData(), type: 'group' };
-    if (this.label) data.label = this.label;
-    return data;
-  }
-
-  setData(data) {
-    super.setData(data);
-    if (data.label && typeof data.label === 'string') this.setLabel(data.label);
   }
 }
 

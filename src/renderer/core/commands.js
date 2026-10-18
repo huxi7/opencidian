@@ -1,7 +1,7 @@
 /**
  * [INPUT]: 依赖 Events 发布命令变化；依赖 Notice 显示执行失败。
  * [OUTPUT]: 导出 Command 与 CommandManager，注册并分派命令。
- * [POS]: 快捷键、菜单和插件共用入口。执行时传 checking=false 与活动视图。
+ * [POS]: 快捷键、菜单和插件共用入口。执行时传 checking=false，编辑器回调传工作区的活动编辑器宿主（画布卡片优先）。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 /* Command manager — registry + execution, matching Obsidian's API. */
@@ -52,21 +52,30 @@ export class CommandManager extends Events {
   }
   findCommand(id) { return this.commands[id]; }
   listCommands() { return Object.values(this.commands); }
+
+  /**
+   * 原版 addCommand 的编辑器解析入口：workspace.activeEditor（画布卡片宿主优先，
+   * 回落到活动叶子的编辑器视图），无编辑器时返回 null。回调第二参即该宿主对象。
+   */
+  activeEditorOf() {
+    const workspace = this.app.workspace;
+    const active = workspace && workspace.getActiveEditor ? workspace.getActiveEditor() : null;
+    return active && active.editor ? active : null;
+  }
+
   executeCommandById(id, ev) {
     const cmd = this.commands[id];
     if (!cmd) return false;
     try {
       if (cmd.checkCallback) return cmd.checkCallback(false) !== false;
       if (cmd.editorCheckCallback) {
-        const view = this.app.workspace.activeLeaf && this.app.workspace.activeLeaf.view;
-        const editor = view && view.editor;
-        if (editor) return cmd.editorCheckCallback(false, editor, view) !== false;
-        return false;
+        const active = this.activeEditorOf();
+        if (!active) return false;
+        return cmd.editorCheckCallback(false, active.editor, active) !== false;
       }
       if (cmd.editorCallback) {
-        const view = this.app.workspace.activeLeaf && this.app.workspace.activeLeaf.view;
-        const editor = view && view.editor;
-        if (editor) { cmd.editorCallback(editor, view); return true; }
+        const active = this.activeEditorOf();
+        if (active) { cmd.editorCallback(active.editor, active); return true; }
         if (cmd.allowNoFile && cmd.callback) { cmd.callback(ev); return true; }
         return false;
       }
