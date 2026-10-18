@@ -21,6 +21,7 @@ import { renderProperties } from '../markdown/properties.js';
 import { Notice } from '../core/notices.js';
 import { normalizePath } from '../core/vault.js';
 import { PromptModal } from '../core/modals.js';
+import { showEditorContextMenu } from '../editor/editor-menu.js';
 
 const SAVE_DELAY = 150;
 
@@ -101,6 +102,11 @@ export class MarkdownView extends View {
     this.editor.onSelectionChange(() => this.app.workspace.trigger('editor-selection-change', this));
     this._bindEditorKeys();
     this._bindInlineTitle();
+    // 原版 onContextMenu：编辑器右键菜单（属性行等组件已 preventDefault 的不再重复弹出）
+    this.editor.cm.dom.addEventListener('contextmenu', (ev) => {
+      if (ev.defaultPrevented) return;
+      showEditorContextMenu(this.app, this.editor, this, ev);
+    });
 
     // ---- reading DOM
     this.readingEl = contentEl.createDiv('markdown-reading-view');
@@ -231,10 +237,11 @@ export class MarkdownView extends View {
 
   async _onExternalModify() {
     if (!this.file || !this.editor) return;
-    // our own write? contents match
     let text = '';
     try { text = await this.app.vault.cachedRead(this.file); } catch (e) { return; }
-    if (text === this.editor.getValue()) return;
+    // 与我们最后一次写盘/加载的内容一致 → 自家写入的迟到通知，绝不回滚正在编辑的文档
+    if (text === this._loadedText) return;
+    if (text === this.editor.getValue()) { this._loadedText = text; return; }
     // file changed on disk
     this._loadedText = text;
     const scroll = this.editor.getScrollInfo();

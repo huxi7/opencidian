@@ -124,7 +124,7 @@ export class Menu {
         itemEl.onclick = (ev) => {
           if (item.submenu) return;
           if (item.callback) item.callback(ev);
-          this.close();
+          this._closeRoot();
         };
         itemEl.onmouseenter = () => {
           this._setSelectedDom(itemEl);
@@ -213,18 +213,25 @@ export class Menu {
         const item = selectable[idx];
         if (item.submenu) { this._openSubmenu(item, item.dom, true); return; }
         if (item.callback) item.callback(ev);
-        this.close();
+        this._closeRoot();
       }
     } else if (ev.key === 'Escape') {
       ev.preventDefault();
       ev.stopPropagation();
-      this.close();
+      this._closeRoot();
     } else if (ev.key === 'ArrowRight') {
       if (idx >= 0 && selectable[idx].submenu) this._openSubmenu(selectable[idx], selectable[idx].dom, true);
     } else if (ev.key === 'ArrowLeft') {
       // 原版 onArrowLeft：子菜单收起回到父菜单
       if (this.parentMenu) { ev.preventDefault(); this.close(); }
     }
+  }
+
+  /** 原版语义：选中项或 Esc 关闭整条菜单链（含所有上层菜单）。 */
+  _closeRoot() {
+    let menu = this;
+    while (menu.parentMenu) menu = menu.parentMenu;
+    menu.close();
   }
 
   close() {

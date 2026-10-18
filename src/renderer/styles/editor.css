@@ -258,6 +258,121 @@
   margin-top: 0;
   margin-bottom: 0;
 }
+/* 原版 app.css 3551-3797：table-editor 单元格、拖拽手柄与加行/加列按钮 */
+.markdown-source-view.mod-cm6 .cm-table-widget tr { height: 1px; }
+.markdown-source-view.mod-cm6 .cm-table-widget th,
+.markdown-source-view.mod-cm6 .cm-table-widget td {
+  height: inherit;
+  min-width: var(--table-column-min-width);
+  cursor: text;
+  overflow: visible;
+  padding: 0;
+  position: relative;
+}
+.markdown-source-view.mod-cm6 .cm-table-widget .table-cell-wrapper {
+  height: 100%;
+  padding: var(--size-2-2) var(--size-4-2);
+}
+/* 原版 app.css 12669-12683：对齐由单元格 align 属性驱动（.markdown-rendered 的 text-align:start 会盖掉属性提示） */
+.markdown-source-view.mod-cm6 .cm-table-widget th[align="left"],
+.markdown-source-view.mod-cm6 .cm-table-widget td[align="left"] { text-align: start; }
+.markdown-source-view.mod-cm6 .cm-table-widget th[align="center"],
+.markdown-source-view.mod-cm6 .cm-table-widget td[align="center"] { text-align: center; }
+.markdown-source-view.mod-cm6 .cm-table-widget th[align="right"],
+.markdown-source-view.mod-cm6 .cm-table-widget td[align="right"] { text-align: end; }
+.markdown-source-view.mod-cm6 .cm-table-widget .table-row-drag-handle,
+.markdown-source-view.mod-cm6 .cm-table-widget .table-col-drag-handle {
+  --icon-size: var(--icon-s);
+  --icon-stroke: var(--icon-s-stroke-width);
+  position: absolute;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: grab;
+  background-color: var(--table-drag-handle-background);
+  color: var(--table-drag-handle-color);
+  touch-action: none;
+  opacity: 0;
+}
+.markdown-source-view.mod-cm6 .cm-table-widget .table-row-drag-handle:active,
+.markdown-source-view.mod-cm6 .cm-table-widget .table-col-drag-handle:active,
+.markdown-source-view.mod-cm6 .cm-table-widget .table-row-drag-handle:hover,
+.markdown-source-view.mod-cm6 .cm-table-widget .table-col-drag-handle:hover {
+  opacity: 1;
+}
+.markdown-source-view.mod-cm6 .cm-table-widget .table-row-drag-handle:active,
+.markdown-source-view.mod-cm6 .cm-table-widget .table-col-drag-handle:active {
+  cursor: grabbing;
+  background-color: var(--table-drag-handle-background-active);
+  color: var(--table-drag-handle-color-active);
+  box-shadow: 0 0 0 var(--table-selection-border-width) var(--table-selection-border-color);
+}
+.markdown-source-view.mod-cm6 .cm-table-widget .table-row-drag-handle *,
+.markdown-source-view.mod-cm6 .cm-table-widget .table-col-drag-handle * {
+  pointer-events: none;
+}
+.markdown-source-view.mod-cm6 .cm-table-widget .table-row-drag-handle {
+  top: 0;
+  inset-inline-end: 100%;
+  width: calc(var(--table-drag-handle-size) - var(--table-selection-border-width));
+  height: 100%;
+  border-start-start-radius: var(--radius-s);
+  border-end-start-radius: var(--radius-s);
+}
+.markdown-source-view.mod-cm6 .cm-table-widget .table-col-drag-handle {
+  inset-block-end: 100%;
+  width: 100%;
+  height: calc(var(--table-drag-handle-size) - var(--table-selection-border-width));
+  border-start-start-radius: var(--radius-s);
+  border-start-end-radius: var(--radius-s);
+}
+.markdown-source-view.mod-cm6 .cm-table-widget .table-row-btn,
+.markdown-source-view.mod-cm6 .cm-table-widget .table-col-btn {
+  --icon-size: var(--icon-s);
+  --icon-stroke: var(--icon-s-stroke-width);
+  position: absolute;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: var(--table-drag-handle-size);
+  width: var(--table-drag-handle-size);
+  background-color: var(--table-add-button-background);
+  border: var(--table-add-button-border-width) solid var(--table-add-button-border-color);
+  color: var(--text-faint);
+  transition: opacity 0s 0.1s;
+  opacity: 0;
+  user-select: none;
+  -webkit-user-select: none;
+}
+@media (hover: hover) {
+  .markdown-source-view.mod-cm6 .cm-table-widget .table-row-btn:hover,
+  .markdown-source-view.mod-cm6 .cm-table-widget .table-col-btn:hover {
+    opacity: 1;
+  }
+}
+.markdown-source-view.mod-cm6 .cm-table-widget .table-row-btn {
+  top: 100%;
+  inset-inline-start: 0;
+  width: 100%;
+  border-top: none;
+  cursor: s-resize;
+}
+.markdown-source-view.mod-cm6 .cm-table-widget .table-col-btn {
+  top: 0;
+  height: 100%;
+  inset-inline-start: 100%;
+  border-inline-start: none;
+  cursor: e-resize;
+}
+/* base.css 的 .svg-icon 固定用 --icon-m；手柄/按钮按原版收紧到 --icon-s */
+.markdown-source-view.mod-cm6 .cm-table-widget .table-row-btn .svg-icon,
+.markdown-source-view.mod-cm6 .cm-table-widget .table-col-btn .svg-icon,
+.markdown-source-view.mod-cm6 .cm-table-widget .table-row-drag-handle .svg-icon,
+.markdown-source-view.mod-cm6 .cm-table-widget .table-col-drag-handle .svg-icon {
+  width: var(--icon-s);
+  height: var(--icon-s);
+  stroke-width: var(--icon-s-stroke-width);
+}
 .markdown-source-view.mod-cm6 .metadata-container { transform: translateX(calc(var(--size-4-1) * -1 * var(--direction, 1))); }
 .cm-hmd-frontmatter { font-size: var(--font-smaller); color: var(--text-muted); }
 

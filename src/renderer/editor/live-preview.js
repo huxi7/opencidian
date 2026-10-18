@@ -1,7 +1,7 @@
 /**
- * [INPUT]: 依赖 CM6 装饰与折叠状态；依赖 reading.js、highlight.js、math.js、properties.js 的块渲染及 metadata.js 的属性解析。
+ * [INPUT]: 依赖 CM6 装饰与折叠状态；依赖 reading.js、highlight.js、math.js、properties.js 的块渲染及 metadata.js 的属性解析；表格块委托 editor/table-widget.js 的 TableWidget。
  * [OUTPUT]: 导出 livePreviewExtension(app, getSourcePath)，返回 [appFacet, sourcePathFacet, fmSourceField, blockLayerField, ViewPlugin]
- * [POS]: editor/ 的实时预览装饰层，由 editor.js 经 _livePreviewCompartment 装载/卸载。行内装饰走 ViewPlugin；块级 widget（属性面板/表格/callout/块级数学/代码块/mermaid）必须走 StateField，因为 CM6 禁止 ViewPlugin 提供 block 装饰。
+ * [POS]: editor/ 的实时预览装饰层，由 editor.js 经 _livePreviewCompartment 装载/卸载。行内装饰走 ViewPlugin；块级 widget（属性面板/表格/callout/块级数学/代码块/mermaid）必须走 StateField，因为 CM6 禁止 ViewPlugin 提供 block 装饰。表格的渲染与行列编辑在 table-widget.js。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 /*
@@ -24,6 +24,7 @@ import { codeLanguageName, highlightCodeElement, cancelCodeHighlight } from '../
 import { renderMath } from '../markdown/math.js';
 import { setIcon } from '../core/icons.js';
 import { tt } from '../core/i18n.js';
+import { TableWidget } from './table-widget.js';
 
 const appFacet = Facet.define({ combine: (values) => values[0] });
 const sourcePathFacet = Facet.define({ combine: (values) => values[0] });
@@ -209,27 +210,6 @@ class MermaidWidget extends WidgetType {
     return wrap;
   }
   ignoreEvent() { return false; }
-}
-
-class TableWidget extends WidgetType {
-  constructor(text, sourcePath) { super(); this.text = text; this.sourcePath = sourcePath || ''; }
-  eq(o) { return o.text === this.text; }
-  toDOM(view) {
-    const app = view.state.facet(appFacet);
-    const wrap = createDiv({ cls: 'cm-embed-block cm-table-widget markdown-rendered' });
-    try {
-      wrap.innerHTML = getMarkdownIt().render(this.text, { app, sourcePath: this.sourcePath, depth: 0 });
-      // original DOM: .cm-table-widget > .table-wrapper > table (drag handles omitted)
-      const tbl = wrap.querySelector('table');
-      if (tbl) {
-        const tableWrapper = createDiv({ cls: 'table-wrapper' });
-        tableWrapper.appendChild(tbl);
-        wrap.appendChild(tableWrapper);
-      }
-    } catch (e) { console.error('table widget render failed', e); wrap.setText(this.text); }
-    if (app) attachMarkdownInteractions(app, wrap, () => this.sourcePath);
-    return wrap;
-  }
 }
 
 class CalloutWidget extends WidgetType {
@@ -453,7 +433,7 @@ function computeBlockLayer(state) {
     if (touched(b.from, b.to) || folded(b.from, b.to)) continue;
     let widget = null;
     if (b.kind === 'math') widget = new MathBlockWidget(b.tex);
-    else if (b.kind === 'table') widget = new TableWidget(doc.sliceString(b.from, b.to), sourcePath);
+    else if (b.kind === 'table') widget = new TableWidget(app, doc.sliceString(b.from, b.to), sourcePath, b.from, b.to);
     else if (b.kind === 'callout') widget = new CalloutWidget(doc.sliceString(b.from, b.to), sourcePath);
     else if (b.kind === 'code') widget = b.lang === 'mermaid' ? new MermaidWidget(b.code) : new CodeBlockWidget(b.lang, b.code);
     if (!widget) continue;

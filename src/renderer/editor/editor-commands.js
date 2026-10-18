@@ -2,6 +2,7 @@
 import { t } from '../core/i18n.js';
 import { Notice } from '../core/notices.js';
 import { Desktop } from '../core/ipc.js';
+import { saveAttachment } from './attachments.js';
 import { toggleFold, foldAll, unfoldAll } from '@codemirror/language';
 
 function getEditor(app) {
@@ -194,6 +195,68 @@ export function registerEditorCommands(app) {
   });
   editorCmd('editor:insert-horizontal-rule', 'Insert horizontal rule', (editor) => {
     editor.replaceSelection('\n---\n');
+  });
+
+  // 原版 editor:set-heading-1..6 与“正文”（菜单项的 checked 由当前标题层级决定）
+  const setHeading = (editor, level) => {
+    eachLine(editor, (line) => {
+      const indent = line.match(/^\s*/)[0];
+      const rest = line.slice(indent.length).replace(/^#{1,6}\s+/, '');
+      if (level === 0) return indent + rest;
+      return indent + '#'.repeat(level) + ' ' + rest;
+    });
+  };
+  for (let level = 1; level <= 6; level += 1) {
+    editorCmd('editor:set-heading-' + level, 'Set as heading ' + level, (e) => setHeading(e, level));
+  }
+  editorCmd('editor:set-heading-0', 'Set as body text', (e) => setHeading(e, 0));
+
+  editorCmd('editor:toggle-blockquote', 'Toggle blockquote', (editor) => {
+    eachLine(editor, (line) => {
+      const m = line.match(/^(\s*)>\s?/);
+      if (m) return m[1] + line.slice(m[0].length);
+      const indent = line.match(/^\s*/)[0];
+      return indent + '> ' + line.slice(indent.length);
+    });
+  });
+
+  editorCmd('editor:clear-formatting', 'Clear formatting', (editor) => {
+    const changes = [];
+    for (const range of editor.listSelections()) {
+      const text = editor.getRange(range.from, range.to);
+      if (!text) continue;
+      const cleaned = text
+        .replace(/\*\*([\s\S]*?)\*\*/g, '$1')
+        .replace(/__([\s\S]*?)__/g, '$1')
+        .replace(/~~([\s\S]*?)~~/g, '$1')
+        .replace(/==([\s\S]*?)==/g, '$1')
+        .replace(/%%([\s\S]*?)%%/g, '$1')
+        .replace(/`([^`]*)`/g, '$1')
+        .replace(/\$([^$\n]*)\$/g, '$1')
+        .replace(/(\*|_)([^*_\n]+)\1/g, '$2');
+      if (cleaned !== text) changes.push({ from: range.from, to: range.to, text: cleaned });
+    }
+    if (changes.length) applyMultiChanges(editor, changes);
+  });
+
+  // 原版 editor:attach-file：选文件 → 复制进库（附件目录）→ 插入嵌入链接
+  editorCmd('editor:attach-file', 'Insert attachment', async (editor) => {
+    let result = null;
+    try { result = Desktop.openDialog({ properties: ['openFile', 'multiSelections'] }); } catch (e) { result = null; }
+    if (!result || result.canceled || !result.filePaths || !result.filePaths.length) return;
+    const fs = require('fs');
+    for (let i = 0; i < result.filePaths.length; i += 1) {
+      const abs = result.filePaths[i];
+      const base = abs.split('/').pop() || 'attachment';
+      const dot = base.lastIndexOf('.');
+      const name = dot > 0 ? base.slice(0, dot) : base;
+      const ext = dot > 0 ? base.slice(dot + 1) : '';
+      let data = null;
+      try { data = fs.readFileSync(abs); } catch (e) { continue; }
+      const file = await saveAttachment(app, name, ext, data, editor.sourcePath || '');
+      const link = '!' + app.fileManager.generateMarkdownLink(file, editor.sourcePath || '', '', '', undefined);
+      editor.replaceSelection(link + (i < result.filePaths.length - 1 ? '\n\n' : ''));
+    }
   });
 
   editorCmd('editor:delete-paragraph', 'Delete paragraph', (editor) => {

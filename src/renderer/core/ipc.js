@@ -70,6 +70,7 @@ export const Desktop = {
   selectFolder: () => ipcInvoke('plugin-select-folder'),
   spellcheckDict: () => ipcSync('spellcheck-dict-list'),
   spellcheckDictRemove: (word) => ipcSync('spellcheck-dict-remove', word),
+  spellcheckAddWord: (word) => ipcSend('spellcheck-add-word', word),
   spellcheckLanguages: () => ipcSync('spellcheck-languages'),
   spellcheckLanguagesSet: (languages) => ipcSync('spellcheck-languages-set', languages),
 };

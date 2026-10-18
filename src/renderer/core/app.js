@@ -107,6 +107,8 @@ export class App extends Events {
     // context menu delegation for spellcheck from main
     ipcOn('context-menu', (ev, params) => {
       this._lastContextMenuParams = params;
+      const waiters = this._contextParamWaiters;
+      if (waiters && waiters.length) waiters.splice(0).forEach((fn) => fn(params));
     });
 
     // OBS_ACT handling (obsidian:// actions)

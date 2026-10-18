@@ -24,6 +24,7 @@ import {
 } from '@codemirror/search';
 import { autocompletion, completionKeymap, closeBrackets, closeBracketsKeymap } from '@codemirror/autocomplete';
 import { livePreviewExtension } from './live-preview.js';
+import { saveAttachment } from './attachments.js';
 import { wikilinkCompletionSource } from './completions.js';
 import { eventToHotkey } from '../core/keymap.js';
 import { markdownEditing, foldingExtensions, unfoldDisabledFolds } from './folding.js';
@@ -223,9 +224,11 @@ export class Editor {
         blur: () => { this._focused = false; },
         focus: () => { this._focused = true; },
         dragover: (event) => {
-          // 文件树拖拽带 text/plain JSON；允许放置以插入链接
+          // 文件树拖拽带 text/plain JSON；系统外部文件拖入带 Files；都允许放置
           const dt = event.dataTransfer;
-          if (dt && dt.types && Array.from(dt.types).includes('text/plain')) { event.preventDefault(); return true; }
+          if (!dt || !dt.types) return false;
+          const types = Array.from(dt.types);
+          if (types.includes('Files') || types.includes('text/plain')) { event.preventDefault(); return true; }
           return false;
         },
         drop: (event, view) => this._handleDrop(event, view),
@@ -233,10 +236,16 @@ export class Editor {
     ];
   }
 
-  /** 文件树拖入编辑器：在落点插入内部链接（原版 drop → 插入 wiki/markdown 链接）。 */
+  /** 文件树拖入编辑器：在落点插入内部链接；系统外部文件：复制进库并插入嵌入（原版 handleDropIntoEditor）。 */
   _handleDrop(event, view) {
     const dt = event.dataTransfer;
     if (!dt) return false;
+    const files = dt.files && dt.files.length ? Array.from(dt.files) : [];
+    if (files.length) {
+      event.preventDefault();
+      this._insertDroppedFiles(files, view, event);
+      return true;
+    }
     let payload = null;
     try { payload = JSON.parse(dt.getData('text/plain')); } catch (e) { payload = null; }
     if (!payload || typeof payload.path !== 'string' || payload.type !== 'file') return false;
@@ -248,6 +257,53 @@ export class Editor {
     const link = this.app.fileManager.generateMarkdownLink(file, this.sourcePath || '', '', '', undefined);
     view.dispatch({ changes: { from, insert: link }, selection: { anchor: from + link.length } });
     return true;
+  }
+
+  /**
+   * 原版 handleDropIntoEditor：外部文件复制进库（附件目录）并插入 `![[…]]`；
+   * 按住 Alt（macOS，其它平台 Ctrl）时直接链接：库内文件 → 内链，库外 → file:// 链接。
+   */
+  async _insertDroppedFiles(files, view, event) {
+    const pos = view.posAtCoords({ x: event.clientX, y: event.clientY });
+    const from = pos == null ? view.state.selection.main.head : pos;
+    const isMac = /mac/i.test(navigator.platform || '');
+    const direct = isMac ? event.altKey : event.ctrlKey;
+    const parts = [];
+    for (let i = 0; i < files.length; i += 1) {
+      const f = files[i];
+      const dot = f.name.lastIndexOf('.');
+      const name = dot > 0 ? f.name.slice(0, dot) : f.name;
+      const ext = dot > 0 ? f.name.slice(dot + 1) : '';
+      let link = null;
+      if (direct) link = this._linkForExternalFile(f);
+      if (!link) {
+        let data = null;
+        try { data = await f.arrayBuffer(); } catch (e) { data = null; }
+        if (data == null) continue;
+        const file = await saveAttachment(this.app, name, ext, data, this.sourcePath);
+        link = '!' + this.app.fileManager.generateMarkdownLink(file, this.sourcePath || '', '', '', undefined);
+      }
+      parts.push(link + (i < files.length - 1 ? '\n\n' : ''));
+    }
+    if (!parts.length) return;
+    const text = parts.join('');
+    view.dispatch({ changes: { from, insert: text }, selection: { anchor: from + text.length } });
+  }
+
+  /** Alt/Ctrl 拖入：解析系统路径；库内文件转内链，库外生成 file:// 链接；无路径返回 null 走复制路径。 */
+  _linkForExternalFile(file) {
+    let abs = '';
+    try {
+      const { webUtils } = require('electron');
+      if (webUtils && typeof webUtils.getPathForFile === 'function') abs = webUtils.getPathForFile(file) || '';
+    } catch (e) { abs = ''; }
+    if (!abs) return null;
+    const adapter = this.app.vault.adapter;
+    const rel = adapter && typeof adapter.toRel === 'function' ? adapter.toRel(abs) : '';
+    const inside = rel ? this.app.vault.getFileByPath(rel) : null;
+    if (inside) return '!' + this.app.fileManager.generateMarkdownLink(inside, this.sourcePath || '', '', '', undefined);
+    const uri = 'file://' + abs.split('/').map((s) => encodeURIComponent(s)).join('/');
+    return '[' + file.name + '](' + uri + ')';
   }
 
   // -------------------------------------------------------------------------

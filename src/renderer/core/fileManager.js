@@ -93,6 +93,9 @@ export class FileManager {
     // linkStyle: 'wiki' | 'markdown' 强制链接格式（更新既有链接时保持原格式）；缺省跟随设置
     const useMarkdown = linkStyle ? linkStyle === 'markdown' : settings.useMarkdownLinks;
     const format = settings.newLinkFormat;
+    // 原版语义：只有 Markdown 笔记省略 .md；附件（png/pdf/…）链接必须保留扩展名
+    const isMd = file.extension === 'md';
+    const displayName = isMd ? file.basename : file.name;
     let path = file.path;
     if (format !== 'absolute' && sourcePath) {
       const sourceDir = sourcePath.split('/').slice(0, -1).join('/');
@@ -101,7 +104,7 @@ export class FileManager {
       const candidates = this.app.metadataCache._basenameIndex ? this.app.metadataCache._basenameIndex.get(key) : null;
       const unique = !candidates || candidates.length <= 1;
       if (format === 'shortest' && unique) {
-        linktext = file.basename;
+        linktext = isMd ? file.basename : file.name;
       } else if (format === 'relative' || (format === 'shortest' && !unique)) {
         let rel = relativePath(sourceDir, path);
         rel = rel.replace(/\.md$/i, '');
@@ -115,12 +118,11 @@ export class FileManager {
     let sub = subpath ? (subpath.startsWith('^') ? '#' + subpath : (subpath.startsWith('#') ? subpath : '#' + subpath)) : '';
     if (useMarkdown && !alias) sub = sub; // markdown uses # section too
     if (useMarkdown) {
-      let url = encodeURI(linktext + (linktext.endsWith('.md') || (format === 'absolute') ? '' : '.md')).replace(/[?#]/g, (c) => c);
-      // keep section after link
-      url = linktext.endsWith('.md') ? linktext : linktext + '.md';
+      const urlText = isMd && !linktext.endsWith('.md') ? linktext + '.md' : linktext;
+      let url = encodeURI(urlText);
       if (sub) url += sub;
       url = url.replace(/ /g, '%20');
-      return alias ? `[${alias}](${url})` : `[${file.basename}](${url})`;
+      return alias ? `[${alias}](${url})` : `[${displayName}](${url})`;
     }
     let inner = linktext + (sub ? '#' + sub.replace(/^#/, '') : '');
     if (alias) inner += '|' + alias;

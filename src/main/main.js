@@ -661,6 +661,11 @@ function setupIpc() {
 
   // 拼写检查词典：列表/移除（Electron 33 的 session.removeWordFromSpellCheckerDictionary 可用，同步清理注册词）
   ipcMain.on('spellcheck-dict-list', (e) => { e.returnValue = readSpellcheckWords(); });
+  ipcMain.on('spellcheck-add-word', (e, word) => {
+    if (!word || typeof word !== 'string') return;
+    addSpellcheckWord(word);
+    try { e.sender.session.addWordToSpellCheckerDictionary(word); } catch (err) { /* ignore */ }
+  });
   ipcMain.on('spellcheck-dict-remove', (e, word) => {
     removeSpellcheckWord(word);
     try {

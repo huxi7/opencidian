@@ -128,3 +128,11 @@ MathJax 独立适配器子代理的41项基础/故障测试见 assets/mathjax/SO
 - `.cm-line` 去掉 2px 水平内边距（修中文文本位置）；`.cm-gutters` 增加 `--file-folding-offset: 24px`。
 - 新增 `scripts/acceptance/editor-layout.js`（21 项）：结构/居中/行位置/设置联动/阅读视图/折叠全关后开行号 gutter 挂载。
 - 回归：editor 113、editor-switch 2、folding-disabled、math、notes 72、sidebar-shell 61、core-ribbon 47、settings-ui 22、page-preview 13。
+
+## 编辑器菜单 + 外部拖入批（2026-10-18）
+
+- 新增 `editor/editor-menu.js`：原版 onContextMenu 结构（拼写建议→链接→剪贴板→链接插入→文本格式→段落设置→插入→复制路径），结束前触发 `editor-menu` 事件；桌面端借主进程 `context-menu` 一次性参数取拼写建议与编辑状态；`menu.js` 选中/Esc 关闭整条菜单链。
+- 新增 `editor/attachments.js`：附件落盘（attachmentFolderPath 四语义、重名序号、二进制写入）。
+- `editor.js` 支持系统外部文件拖入：复制进库 + `![[name.ext]]`；Alt/Ctrl 直链（库内→内链，库外→file://）。命令新增 `editor:attach-file`、`editor:set-heading-1..6/0`、`editor:toggle-blockquote`、`editor:clear-formatting`。
+- 修两个深层 bug：① `generateMarkdownLink` 对附件误删扩展名（图片/附件嵌入全错）；② MarkdownView 外部修改同步把自家写入的迟到通知误判为外部改动并回滚文档（丢编辑）。
+- 新增 `editor-menu` 场景 23 项；回归 editor 113、editor-switch 2、notes 72。
