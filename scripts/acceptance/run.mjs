@@ -57,6 +57,7 @@ delete env.ELECTRON_RUN_AS_NODE;
 const source = fs.readFileSync(path.join(directory, scenario + '.js'), 'utf8');
 const guard = `if (require('fs').realpathSync(app.vaultPath) !== ${JSON.stringify(vault)}) throw Error('错误的验收库');`;
 Object.assign(env, {
+  E2E: '1',   // 验收模式：不抢系统焦点、不进 Dock（main.js 的单一开关）
   OBS_ALLOW_MULTI: '1', OBS_VAULT_PATH: vault,
   OBS_ACT: JSON.stringify({ action: 'eval', js: guard + '\n' + source }),
   OBS_SCREENSHOT: screenshot || '', OBS_SCREENSHOT_DELAY: '2500', OBS_SCREENSHOT_EXIT: '1',

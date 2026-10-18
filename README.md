@@ -76,6 +76,16 @@ OpenSidian 内置**检查更新**（命令面板搜「检查更新」，或启�
 - 也可两者都放：`updateFeed` 指向你的域名，域名侧回源 GitHub。
 - 未配置 `updateFeed` 时**不联网**；`checkUpdates: false` 可关闭后台检查。
 
+## 验收/E2E 模式（不打断你正在做的事）
+
+验收脚本以 `E2E=1` 启动 Electron（`scripts/acceptance/run.mjs` 自动设置）。该开关只改**呈现层**：
+
+- `app.setActivationPolicy('accessory')` + `app.dock.hide()`：不进 Dock、不夺菜单栏、不激活应用；
+- 窗口 `focusable: false` + `showInactive()`：窗口在后台上显示，键盘/系统焦点不跳走；
+- 所有窗口统一走 `defaultWindowOptions` 工厂，`E2E` 是唯一开关；`npm start` 等正常模式行为不变。
+
+所以后台跑全量回归时，你可以正常看视频/学习/干别的活，不会被测试窗口抢焦点。
+
 ## 边界与说明
 
 - 不劫持 `obsidian://` 协议；不读写真实 Obsidian 应用的 userData。

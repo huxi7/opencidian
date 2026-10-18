@@ -28,6 +28,13 @@ const ASSETS_DIR = path.join(APP_ROOT, 'assets');
 const IS_MAC = process.platform === 'darwin';
 const IS_DEV = !app.isPackaged;
 
+// 验收/E2E 模式（run.mjs 设 E2E=1）：不抢系统焦点、不进 Dock、不激活应用。
+// accessory 策略让 show()/窗口出现都不激活应用；只影响呈现层，正常模式行为不变。
+const E2E = process.env.E2E === '1' || process.env.OBS_E2E === '1';
+if (E2E && IS_MAC) {
+  try { app.setActivationPolicy('accessory'); } catch (e) { /* 非 macOS 忽略 */ }
+}
+
 // app:// scheme (same pattern as the original app)
 const SCHEME = 'app';
 const APP_HOST = 'opensidian.app';
@@ -191,6 +198,7 @@ function defaultWindowOptions(id) {
     backgroundColor: '#00000000',
     ...frameWindowOptions(),
     show: false,
+    focusable: !E2E,   // E2E：窗口不可聚焦，事件/渲染照常，但不夺键盘焦点
     webPreferences: {
       contextIsolation: false,
       nodeIntegration: true,
@@ -452,7 +460,7 @@ function streamToWeb(nodeStream) {
 function openVaultWindow(id, focus = true) {
   if (windows[id]) {
     const w = windows[id];
-    if (focus) { if (w.isMinimized()) w.restore(); w.focus(); }
+    if (focus && !E2E) { if (w.isMinimized()) w.restore(); w.focus(); }
     return w;
   }
   const opts = defaultWindowOptions(id);
@@ -467,7 +475,7 @@ function openVaultWindow(id, focus = true) {
     shown = true;
     const saved = getVaultConfig(id);
     if (saved.isMaximized) win.maximize();
-    win.show();
+    if (E2E) win.showInactive(); else win.show();
   };
 
   const saveBounds = () => {
@@ -538,7 +546,7 @@ function openVaultWindow(id, focus = true) {
 function openVaultStarter() {
   if (starterWindow) {
     if (starterWindow.isMinimized()) starterWindow.restore();
-    starterWindow.focus();
+    if (!E2E) starterWindow.focus();
     return starterWindow;
   }
   const win = starterWindow = new BrowserWindow({
@@ -548,7 +556,10 @@ function openVaultStarter() {
     webPreferences: { contextIsolation: false, nodeIntegration: true },
   });
   win.on('closed', () => { starterWindow = null; });
-  win.loadURL(APP_ORIGIN + 'starter.html').then(() => win.show(), () => win.show());
+  win.loadURL(APP_ORIGIN + 'starter.html').then(
+    () => { if (E2E) win.showInactive(); else win.show(); },
+    () => { if (E2E) win.showInactive(); else win.show(); },
+  );
   secCtxWin(win);
   return win;
 }
@@ -844,8 +855,10 @@ if (!gotLock) {
   app.quit();
 } else {
   app.on('second-instance', (event, argv, cwd) => {
-    // focus existing window
-    for (const id in windows) { const w = windows[id]; if (w.isMinimized()) w.restore(); w.focus(); return; }
+    if (!E2E) {
+      // focus existing window
+      for (const id in windows) { const w = windows[id]; if (w.isMinimized()) w.restore(); w.focus(); return; }
+    }
     openVaultStarter();
   });
 
@@ -865,6 +878,7 @@ if (!gotLock) {
   });
 
   app.whenReady().then(() => {
+    if (E2E && IS_MAC && app.dock) { try { app.dock.hide(); } catch (e) { /* ignore */ } }
     registerAppProtocol();
     setupIpc();
     installMenu();
