@@ -1,7 +1,7 @@
 /**
  * [INPUT]: 依赖 ../core/i18n.js 的 tt；依赖 ../core/notices.js 的 Notice；依赖 ../core/icons.js 的 setIcon；依赖 ../editor/attachments.js 的 saveAttachment；依赖 moment。
  * [OUTPUT]: 导出 nameKey、create(app)（命令 audio-recorder:start/stop、功能区切换按钮、录音落盘）。
- * [POS]: plugins-core/ 的录音机插件（原版 id audio-recorder，默认关闭）。功能区按钮先查权限再开/停；两个命令直接开/停并各自带 checkCallback 门。扩展名 m4a 优先、否则 webm，命名 "Recording <YYYYMMDDHHmmss>"，落盘走 saveAttachment；有活动 Markdown 视图时插入嵌入链接，否则在新标签打开。权限查询用 Permissions API 与设备错误映射替代原版 macOS 的 electron systemPreferences（渲染层没有 remote）。
+ * [POS]: plugins-core/ 的录音机插件（原版 id audio-recorder，默认关闭）。功能区按钮先查权限再开/停；两个命令直接开/停并各自带 checkCallback 门。扩展名 m4a 优先、否则 webm（落盘前用 fix-webm-duration 补时长，失败回退原始数据），命名 "Recording <YYYYMMDDHHmmss>"，落盘走 saveAttachment；有活动 Markdown 视图时插入嵌入链接，否则在新标签打开。权限查询用 Permissions API 与设备错误映射替代原版 macOS 的 electron systemPreferences（渲染层没有 remote）。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 /* Core plugin: audio-recorder — record audio notes and save them as attachments. */
@@ -15,6 +15,8 @@ const moment = require('moment');
 export const nameKey = 'plugins.audio-recorder';
 
 const MP4_MIME = 'audio/mp4';
+import fixWebmDuration from 'fix-webm-duration';
+
 const WEBM_MIME = 'audio/webm;codecs="opus"';
 const MIC_ICON = 'lucide-mic';
 
@@ -175,13 +177,13 @@ class AudioRecorder {
     const chunks = [];
     let mimeType = WEBM_MIME;
     this.extension = 'webm';
-    // 原版：支持 audio/mp4 就录 mp4（落 .m4a），否则 webm/opus；为 webm 补时长元数据依赖 fix-webm-duration，本项目未引入。
+    // 原版：支持 audio/mp4 就录 mp4（落 .m4a），否则 webm/opus；webm 在落盘前用 fix-webm-duration 补时长元数据。
     if (typeof MediaRecorder !== 'undefined' && typeof MediaRecorder.isTypeSupported === 'function'
       && MediaRecorder.isTypeSupported(MP4_MIME)) {
       mimeType = MP4_MIME;
       this.extension = 'm4a';
     }
-    const session = { stream, chunks, mimeType, discard: false, recorder: null };
+    const session = { stream, chunks, mimeType, discard: false, recorder: null, startedAt: Date.now() };
     this._session = session;
     const recorder = new MediaRecorder(stream, { mimeType });
     session.recorder = recorder;
@@ -205,7 +207,19 @@ class AudioRecorder {
   }
 
   async finishRecording(session) {
-    const blob = new Blob(session.chunks, { type: session.mimeType });
+    let blob = new Blob(session.chunks, { type: session.mimeType });
+    if (this.extension === 'webm') {
+      // 原版：MediaRecorder 产出的 webm 缺 Duration（播放器进度条异常），落盘前用 fix-webm-duration 补；
+      // 补失败必须回退原始 blob——录音绝不能丢。app.fixWebmDuration 为验收注入点。
+      const durationMs = Math.max(0, Date.now() - (session.startedAt || Date.now()));
+      const fix = (this.app && this.app.fixWebmDuration) || fixWebmDuration;
+      try {
+        const fixed = await fix(blob, durationMs);
+        if (fixed && typeof fixed.arrayBuffer === 'function') blob = fixed;
+      } catch (error) {
+        console.warn('fix-webm-duration failed; saving raw recording', error);
+      }
+    }
     await this.saveRecording(await blob.arrayBuffer());
   }
 

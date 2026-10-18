@@ -240,3 +240,9 @@ MathJax 独立适配器子代理的41项基础/故障测试见 assets/mathjax/SO
 - 动画 1:1：宽度补间缓动改为原版 `--anim-motion-swing`；补齐原版 `y()` 的 toggle 迁移 FLIP（幽灵 oldStyle=offset/宽度收缩、新位 newStyle=offset；140ms；`oldStyle:'none'` 幽灵立即移除）；折叠/展开不再整树重建 DOM（改为类切换），使 FLIP 的旧父容器可用。
 - 内存回归：`workspace-regression` 补 `vault.js` 替身与 `prepend/firstChild`，19/19 通过。
 - 验收：新增 sidebar-chrome 19 项；回归 sidebar 93、sidebar-shell 61、core-ribbon 47、appearance 32。
+
+## 录音机 webm 时长补丁（2026-10-18）
+
+- 原版用 `fix-webm-duration` 重建元数据头补 Duration（MediaRecorder 产出的 webm 缺时长，播放器进度条异常）；我们同样引入该库（MIT，esbuild 打进 bundle）。
+- `audio-recorder.js`：记录会话开始时间，webm 落盘前 `fixWebmDuration(blob, elapsedMs)`；**补失败回退原始 blob（录音绝不丢）**；`app.fixWebmDuration` 为验收注入点。
+- 验收 audio-recorder 65→72（新增：补丁调用与时长、落盘内容来自补丁后 blob、失败回退原始数据）；real-library 在无效 fixture 上抛错走回退的路径也被覆盖。

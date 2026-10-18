@@ -163,6 +163,7 @@
     await wait(200);
     check(/!\[\[Recording \d{14}\.webm\]\]/.test(await app.vault.read(note)), '录音结束向笔记插入嵌入链接');
 
+
     /* -------------------------------------------- 功能区路径：切换与 m4a */
     FakeMediaRecorder.isTypeSupported = (type) => type === 'audio/mp4';
     clearNotices();
@@ -194,6 +195,36 @@
     const created = recordings().filter((file) => !beforeProbe.includes(file));
     check(created.length === 1 && /^Recording \d{14} 1\.webm$/.test(created[0]), '同秒重名追加序号 " 1"');
     check(probes.every((probe) => app.vault.getAbstractFileByPath(probe) !== null), '冲突探针文件未被覆盖');
+
+    /* ------------------------------------ webm 时长补丁：注入断言 + 失败回退 */
+    const fixCalls = [];
+    app.fixWebmDuration = async (blob, durationMs) => {
+      fixCalls.push({ size: blob && blob.size, durationMs });
+      return new Blob([new Uint8Array([9, 9, 9, 9, 9])], { type: 'audio/webm' });
+    };
+    const beforeFix = recordings();
+    pending.push({});
+    ribbonButtons()[0].click();
+    await until(() => recorder.recording === true, '时长补丁录音开始');
+    await wait(80);
+    ribbonButtons()[0].click();
+    await until(() => recordings().length > beforeFix.length, '时长补丁录音落盘');
+    const fixedFile = recordings().find((file) => !beforeFix.includes(file));
+    const fixedBytes = new Uint8Array(await app.vault.readBinary(app.vault.getFileByPath(fixedFile)));
+    check(fixCalls.length === 1 && fixCalls[0].durationMs >= 0, 'webm 落盘前调用 fixWebmDuration 并带上时长');
+    check(fixedBytes.length === 5 && fixedBytes[0] === 9, '落盘内容来自补丁后的 blob');
+
+    app.fixWebmDuration = async () => { throw new Error('stub failure'); };
+    const beforeFallback = recordings();
+    pending.push({});
+    ribbonButtons()[0].click();
+    await until(() => recorder.recording === true, '回退录音开始');
+    ribbonButtons()[0].click();
+    await until(() => recordings().length > beforeFallback.length, '回退录音落盘');
+    const fallbackFile = recordings().find((file) => !beforeFallback.includes(file));
+    const fallbackBytes = new Uint8Array(await app.vault.readBinary(app.vault.getFileByPath(fallbackFile)));
+    check(fallbackBytes.length === 4 && fallbackBytes[0] === 1, '补时长失败时回退保存原始录音数据');
+    delete app.fixWebmDuration;
 
     /* -------------------------------------------------- 设备与权限错误映射 */
     clearNotices();
