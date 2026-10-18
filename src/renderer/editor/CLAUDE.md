@@ -12,6 +12,6 @@ live-preview.js: ViewPlugin。隐藏光标外语法；渲染 checkbox/bullet/图
 table-widget.js: 实时预览表格部件。DOM 为 .cm-table-widget > .table-wrapper > (table.table-editor + .table-row-btn + .table-col-btn)，单元格内含 .table-cell-wrapper，表头行挂 .table-col-drag-handle、首列挂 .table-row-drag-handle（grip 图标，hover 显形）。右键手柄弹 core/menu 的行/列/对齐/排序菜单；增删行列、移动、复制、对齐、排序全部经 parseTableText → serializeTable 改写 Markdown 文本，加号按钮插到末尾行/列，最后一行或列被删除时移除整块表格；点击单元格把光标落到对应源码行，部件让位给原始 Markdown。
 folding.js: 标题与缩进范围按文档缓存。事务过滤禁止语法回退绕过设置。
 completions.js: [[wikilink]] 自动补全(文件建议 + 锚点)。
-editor-commands.js: registerEditorCommands(app)。注册 editor:* 与 markdown:* 命令。含 set-heading-1..6/0（按行改写前缀）、toggle-blockquote、clear-formatting（选区去标记）、attach-file（选文件复制进库并插入嵌入）、paste（剪贴板图片优先，其次纯文本）。
+editor-commands.js: registerEditorCommands(app)。注册 editor:* 与 markdown:* 命令。含 set-heading-1..6/0（按行改写前缀）、toggle-blockquote、clear-formatting（选区去标记）、attach-file（选文件复制进库并插入嵌入）、download-attachments（画廊勾选下载外部图片并改写嵌入/frontmatter 链接）、paste（剪贴板图片优先，其次纯文本）。
 
 [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md

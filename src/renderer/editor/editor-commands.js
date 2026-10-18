@@ -1,3 +1,9 @@
+/**
+ * [INPUT]: 依赖 core/i18n.js 的 t；依赖 core/notices.js 的 Notice；依赖 core/ipc.js 的 Desktop；依赖 ./attachments.js 的 saveAttachment/pastedImageBaseName；依赖 @codemirror/language 的 toggleFold/foldAll/unfoldAll；经 app 使用 commands/fileManager/workspace/metadataCache。
+ * [OUTPUT]: 导出 registerEditorCommands(app)，注册全部 editor:* 与 markdown:* 命令。
+ * [POS]: editor/ 的命令注册层，由 main.js 在 App 构造后调用。命令体只做编辑器级动作或薄转发：editor:download-attachments 门控活动文件为 md 后委托 fileManager.downloadAttachmentsForNote；attach-file 与 paste 的附件落盘共用 attachments.js。
+ * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
+ */
 /* Built-in editor / markdown commands (ported behaviors from the original). */
 import { t } from '../core/i18n.js';
 import { Notice } from '../core/notices.js';
@@ -92,7 +98,16 @@ export function registerEditorCommands(app) {
     const view = app.workspace.activeLeaf && app.workspace.activeLeaf.view;
     if (view && view.save) view.save();
   });
-  add({ id: 'editor:download-attachments', name: 'Download attachments for current file', editorCheckCallback: () => false });
+  add({
+    id: 'editor:download-attachments',
+    name: t('commands.download-attachments') || 'Download attachments for current file',
+    checkCallback: (checking) => {
+      const file = app.workspace.getActiveFile();
+      if (!file || file.extension !== 'md') return false;
+      if (!checking) app.fileManager.downloadAttachmentsForNote(file);
+      return true;
+    },
+  });
 
   editorCmd('editor:undo', 'Undo', (e) => e.undo());
   editorCmd('editor:redo', 'Redo', (e) => e.redo());

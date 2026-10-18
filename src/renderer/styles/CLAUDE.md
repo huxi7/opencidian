@@ -2,7 +2,7 @@
 
 > L2 | 父级: /src/renderer/CLAUDE.md
 
-全部 CSS。加载顺序由 index.html 决定：fonts → tokens → base → layout → components → explorer → editor → markdown → search → properties → graph → settings → canvas → bookmarks → slides。所有颜色/间距/字体一律引用 tokens.css 中的变量，禁止硬编码色值(阴影与罕见例外除外)。
+全部 CSS。加载顺序由 index.html 决定：fonts → tokens → base → layout → components → download-attachments → tree → explorer → editor → markdown → search → properties → graph → settings → canvas → bookmarks → slides。所有颜色/间距/字体一律引用 tokens.css 中的变量，禁止硬编码色值(阴影与罕见例外除外)。
 
 成员清单
 starter.css: 仓库选择窗口布局与文件夹入口。
@@ -14,6 +14,7 @@ base.css: 重置、滚动条(仅 body.styled-scrollbars 下生效，macOS 用系
 layout.css: 外层 workspace-root 与中心 mod-root 分开。只给中心文档应用主背景。
 workspace-sidebar.css: 原版侧栏图标、库信息栏、开关与 macOS 留白。窄栏保留帮助和设置。
 components.css: 菜单、弹窗、建议、通知、悬浮提示、设置外壳与快照历史。原版布局规则保持闭合。通知为右上角固定栈(app.css 7923-7978)，tooltip 含 mod-top/mod-left/mod-right 翻转与 tooltip-arrow(app.css 9324-9445)，建议弹层 .suggestion-container 取 --suggestion-background(app.css 8858-8867)。
+download-attachments.css: 下载附件模态。.modal.mod-scrollable-content(app.css 8168-8184)与 .attachments-gallery/.download-attachment-item(app.css 3248-3312)逐字移植；末尾 .download-attachment-name 是本实现补的可见文件名标签。
 tree.css: .tree-item 体系(collapse-icon 尺寸与旋转、tree-item-self/icon/inner/children/flair)，逐字移植自原版 app.css 7263-7287 与 9446-9591。全部树视图共用。
 explorer.css: .nav-* 文件树层(标题内容、nav-file-tag、拖拽高亮)，被 explorer/outline/tag 面板共用。基础结构来自 tree.css。
 editor.css: CodeMirror 与 live preview(HyperMD-*)、inline-title、media 视图。含原版 file layout（.cm-sizer/.cm-contentContainer 布局、is-readable-line-width 的 --file-line-width 居中、.cm-line padding 0、.cm-gutters folding offset）与阅读视图 sizer 居中。表格段（app.css 3551-3797）含 .table-editor 单元格、table-row/col-btn、table-row/col-drag-handle 与 align 属性驱动的对齐。
@@ -27,7 +28,7 @@ graph.css: 原版图谱颜色探针、筛选控件与折叠面板规则。
 popover.css: page-preview 的 .popover/.hover-popover 尺寸与内容规则（逐字移植 app.css）。
 settings.css: 设置页签完整样式，逐字移植原版 app.css 设置段(vertical-tab 导航/内容、setting-item、mod-toggle、设置组头、hotkey 胶囊、.hotkey-filter 筛选芯片、.input-right-decorator 装饰图标与清除按钮让位、CSS 片段列表、installed-plugins-container、community 免责行 .setting-icon 与 .community-modal-button-container、.mod-trust-folder 宽度)。
 canvas.css: 画布样式入口。按序导入节点规则与连接线规则。
-canvas-nodes.css: 原版画布布局、节点、分组与手柄规则。
+canvas-nodes.css: 原版画布布局、节点、分组与手柄规则。文本卡片编辑器规则逐字移植 app.css 的 .markdown-source-view.mod-inside-iframe 段（原版编辑器跑在铺满卡片的内嵌 iframe，本复刻内联，10vh 换成卡片高度）：scroller 纵向布局 + 0 16px 内边距、::before/::after 上下留白、sizer 不撑满、--file-margins 归零、不挂行宽 class；另承接原版卡片内 callout 的 mix-blend-mode: normal、非编辑态正文不可选中（user-select: none）与卡片内容层的文本字体上下文（导出取该层计算样式）。
 canvas-edges.css: 原版连接线与标签规则、拖动对齐参考线（.canvas-snaps 的 line/circle 取强调色，位于 .canvas-edges 之前），补足本实现编辑控件。
 bookmarks.css: 书签树滚动、操作图标与视图头部收藏状态。
 slides.css: 全窗口演示覆盖层。.slides-container/.slides-close-btn/.collapse-indicator/.controls 段移植自原版 app.css slides 段；deck/section/progress 为翻页渲染新增；容器 position:fixed 覆盖全窗口(对齐原版)，背景走 --background-primary（原版硬编码 #191919 由 reveal 主题覆盖，此处取应用主题色）。

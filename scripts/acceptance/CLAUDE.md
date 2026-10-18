@@ -18,8 +18,10 @@ audio-recorder.js: 录音机插件验收。假 navigator.mediaDevices.getUserMed
 basic-plugins.js: 搜索、文件树、切换器、命令、标签、字数。
 bookmarks.js: 分组、重命名、打开与保存。
 canvas.js: 画布输入、连线、缩放、重开，撤销/重做（键盘+按钮+落盘）与文本卡片转换为文件（校验、几何继承、边改指、撤销恢复）；图片导出（命令可用性、面板菜单文案、renderCanvasImage 的 dataURL/maxSize 上限/非背景像素、空画布拒绝提示）；拖动对齐参考线（吸附对齐值、出现 svg.canvas-snaps 参考线与圆点、松手清除、snapToObjects 关闭时不吸附）。
+canvas-edit.js: 画布文本卡片的内嵌 CM6 实时预览编辑器：挂载即 .cm-editor（无 textarea/预览层）、句柄写正文 → 节点数据与画布 JSON 落盘、实时预览装饰（标题/加粗）与卡片内布局（--file-margins 归零、无行宽上限）、Escape 与 Mod+Enter 退出、单击已聚焦卡片进编辑（原版 hg）、未聚焦（blocker 路径）与聚焦未编辑（正文内）两条拖拽路径、只读画布不可写且切只读立刻退出编辑、缩放断点卸载/重建编辑器、正文编辑进撤销栈、空卡片本地化占位、关闭视图释放编辑器实例与 DOM。
 community.js: 社区插件安全模式：信任模态、受限/启用双布局、CTA 启用、安全模式守卫、setEnable 装卸与配置保留、重启自动加载。
 dialogs.js: 弹窗复开、确认结果与选择器布局。
+download-attachments.js: 外部附件下载。命令门控（md 可用 / txt 与图片等非 md 不可用）、画廊模态结构与命名、取消不落盘、部分勾选只下载勾选项、字节完整性、嵌入与 frontmatter 改写、Notice 计数与无附件提示。stub app.requestUrl，不访问真实网络。
 editor-switch.js: 切换文件先保存，已删除视图再次打开文件可编辑。
 editor.js: 模式、折叠、高亮和滚动。
 editor-layout.js: 行宽布局：sizer/contentContainer 结构、700px 居中、行内标题同列、设置联动、阅读视图居中、折叠全关后开行号 gutter 正常挂载。

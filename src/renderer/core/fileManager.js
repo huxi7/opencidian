@@ -1,6 +1,6 @@
 /**
- * [INPUT]: 依赖 ./vault.js 的 TFile/TFolder/normalizePath/parentPathOf；依赖 ./i18n.js 的 t/tt；依赖 ./vault-utils.js 的 getUniquePath；依赖 ./notices.js 的 Notice；依赖 ./modals.js 的 Modal/confirmDialog
- * [OUTPUT]: 导出 FileManager 类（新建/重命名/删除/移动/附件路径解析/内部链接更新/processFrontMatter）
+ * [INPUT]: 依赖 ./vault.js 的 TFile/TFolder/normalizePath/parentPathOf；依赖 ./i18n.js 的 t/tt；依赖 ./vault-utils.js 的 getUniquePath；依赖 ./notices.js 的 Notice；依赖 ./modals.js 的 Modal/confirmDialog；依赖 ./attachments-downloader.js 的 downloadAttachmentsForNote
+ * [OUTPUT]: 导出 FileManager 类（新建/重命名/删除/移动/附件路径解析/内部链接更新/processFrontMatter/downloadAttachmentsForNote）
  * [POS]: core/ 的文件操作中枢，被 file-explorer、编辑器与命令层调用。重命名流程：先统计受影响链接数（links/files）→ 改磁盘名 → 按 alwaysUpdateLinks 静默更新或弹窗（总是更新/仅此一次/不做更新）→ 最后修 metadataCache；顺序不可颠倒。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
@@ -10,6 +10,7 @@ import { t, tt } from './i18n.js';
 import { getUniquePath } from './vault-utils.js';
 import { Notice } from './notices.js';
 import { Modal, confirmDialog } from './modals.js';
+import { downloadAttachmentsForNote as downloadNoteAttachments } from './attachments-downloader.js';
 
 export class FileManager {
   constructor(app) {
@@ -380,6 +381,11 @@ export class FileManager {
 
   async promptForDeletion(file) {
     return this.deleteFile(file, false);
+  }
+
+  /** 原版 downloadAttachmentsForNote：扫描外部附件 → 下载 → 改写笔记。实现见 core/attachments-downloader.js。 */
+  downloadAttachmentsForNote(file) {
+    return downloadNoteAttachments(this.app, file);
   }
 
   async moveFile(file, folder) {

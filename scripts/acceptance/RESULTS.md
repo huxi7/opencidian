@@ -162,3 +162,9 @@ MathJax 独立适配器子代理的41项基础/故障测试见 assets/mathjax/SO
 - 与原版差异：无 electron.remote → 用 navigator.permissions 降级；无 fix-webm-duration 时长修补；提示走 Notice 而非按钮 tooltip。
 - 验收：audio-recorder 65 项 + restart 7 项（mock getUserMedia/MediaRecorder，双扩展名分支、错误四路径、卸载释放、设置页开关与 core-plugins.json 持久化）；回归 core-ribbon 47、settings-ui 22、settings-plugins 52。
 - 阅读视图笔记/音频/视频/PDF 嵌块补 `data-href` 并接入链接右键菜单（reading-menus 11→13 项）。
+
+## 下载当前文件附件批（2026-10-18）
+
+- `editor:download-attachments` 由瘫痪桩变为完整功能：扫描（正文图片嵌入 + frontmatter 图片 URL，代码块掩码）、画廊勾选模态（复选框默认勾选、缩略图、可见文件名）、逐项下载（data URL 解码 / 远程经 Desktop.requestUrl，文件名走 URL→content-disposition→content-type→Image.jpg 规则）、改写（嵌入 `![[…]]`、frontmatter `[[…]]`）、Notice 计数；取消不落盘不改写。
+- 新增 styles/download-attachments.css（原版 .attachments-gallery 逐字 + 补可见文件名标签）；core/attachments-downloader.js（375 行）。
+- 验收 download-attachments 35 项（stub app.requestUrl，零真实网络）；回归 notes 72、editor 113。

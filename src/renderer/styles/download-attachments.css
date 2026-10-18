@@ -1,0 +1,113 @@
+/* ==========================================================================
+   download-attachments.css — "Download attachments" gallery modal
+   [INPUT]: 模态骨架来自 components.css；颜色与尺寸走 tokens.css 变量。
+   [OUTPUT]: .attachments-gallery / .download-attachment-item 与模态的可滚动内容布局。
+   [POS]: 外部附件下载模态的专属样式。前两段逐字移植原版 app.css（8168-8184 的
+   .modal.mod-scrollable-content 与 3248-3312 的 .attachments-gallery）；末尾的
+   .download-attachment-name 是本实现补的可见文件名标签。
+   [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
+   ========================================================================== */
+
+/* --- scrollable modal content (original: app.css .modal.mod-scrollable-content) --- */
+.modal.mod-scrollable-content {
+  padding: 0;
+  overflow: hidden;
+}
+.modal.mod-scrollable-content .modal-title {
+  padding: var(--size-4-4) var(--size-4-4) 0 var(--size-4-4);
+}
+.modal.mod-scrollable-content .modal-content {
+  padding: 0 var(--size-4-4) var(--size-4-4) var(--size-4-4);
+  overflow: auto;
+}
+.modal.mod-scrollable-content .modal-button-container {
+  margin-top: 0;
+  border-top: var(--border-width) solid var(--background-modifier-border);
+  padding: var(--size-4-4);
+}
+
+/* --- attachment gallery (original: app.css .attachments-gallery) --- */
+.attachments-gallery {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: var(--size-4-1);
+}
+.attachments-gallery .download-attachment-item {
+  --checkbox-marker-color: var(--text-on-accent);
+  --checkbox-size: 1.15rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  aspect-ratio: 1/1;
+  background-color: var(--background-secondary);
+  overflow: hidden;
+  border-radius: var(--radius-s);
+}
+.attachments-gallery .download-attachment-item:before {
+  content: '';
+  position: absolute;
+  box-shadow: inset 0 0 0 1px rgba(var(--mono-rgb-100), 0.2);
+  border-radius: var(--radius-s);
+  height: 100%;
+  width: 100%;
+  top: 0;
+  left: 0;
+  z-index: 1;
+  pointer-events: none;
+  opacity: 0.5;
+  transition: box-shadow var(--anim-duration-superfast) ease-in-out;
+  background: linear-gradient(to top, rgba(0, 0, 0, 0.2), rgba(0, 0, 0, 0) 50%);
+}
+.attachments-gallery .download-attachment-item:hover:before {
+  box-shadow: inset 0 0 0 1px rgba(var(--mono-rgb-100), 0.3);
+}
+.attachments-gallery .download-attachment-item input[type=checkbox] {
+  position: absolute;
+  bottom: var(--size-4-2);
+  inset-inline-end: var(--size-4-2);
+  margin-inline: 0;
+  z-index: 2;
+}
+.attachments-gallery .download-attachment-item input[type=checkbox]:not(:checked) {
+  background-color: var(--background-primary);
+}
+.attachments-gallery .download-attachment-item .download-attachment-embed {
+  overflow: hidden;
+  pointer-events: none;
+  border-radius: var(--radius-s);
+  width: 100%;
+  height: 100%;
+}
+.attachments-gallery .download-attachment-item img,
+.attachments-gallery .download-attachment-item video {
+  object-fit: cover;
+  width: 100%;
+  height: 100%;
+  max-width: 100%;
+  max-height: 100%;
+}
+.attachments-gallery .download-attachment-item video::-webkit-media-controls {
+  display: none;
+}
+.attachments-gallery .download-attachment-item .pdf-toolbar {
+  display: none;
+}
+
+/* --- visible file name label (not in the original 1.12.4 DOM) --- */
+.attachments-gallery .download-attachment-item .download-attachment-name {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  z-index: 2;
+  padding: var(--size-4-1) var(--size-4-2) var(--size-4-2) var(--size-4-2);
+  font-size: var(--font-ui-smaller);
+  color: var(--text-on-accent);
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  pointer-events: none;
+}
