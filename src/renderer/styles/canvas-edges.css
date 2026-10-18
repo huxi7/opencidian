@@ -268,26 +268,11 @@
 .canvas-node.is-selected .canvas-node-connection-point::after,
 .canvas-node:hover .canvas-node-connection-point::after { opacity: 1; }
 
-/* 文本卡片的 textarea 编辑态（替代原版内嵌 CM6 编辑器） */
+/* 文本卡片内容层：编辑器高度链依赖（编辑器本身样式见 canvas-nodes.css） */
 .canvas-node-content.markdown-embed > .markdown-embed-content {
   width: 100%;
   height: 100%;
 }
-.canvas-node-editor {
-  width: 100%;
-  height: 100%;
-  box-sizing: border-box;
-  border: none;
-  outline: none;
-  resize: none;
-  background-color: transparent;
-  color: var(--text-normal);
-  font-family: var(--font-text);
-  font-size: var(--font-text-size);
-  line-height: var(--line-height-normal);
-  padding: var(--size-4-4);
-}
-.canvas-node-editor::placeholder { color: var(--text-faint); }
 
 /* 文件卡片在无法渲染内容时的占位（非 md/图片文件、缺失文件） */
 .canvas-node-content.canvas-file-placeholder {

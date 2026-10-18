@@ -26,7 +26,7 @@ const MAX_SIZE = 4096;
 const PADDING = 100;
 /** 原版箭头多边形顶点（.canvas-edges polygon.canvas-path-end）。 */
 const ARROW_POINTS = [[0, 0], [6.5, 10.4], [-6.5, 10.4]];
-/** 卡片内边距，对齐 .canvas-node-editor 的 --size-4-4。 */
+/** 卡片内边距，对齐卡片编辑器 .cm-scroller 的 --size-4-4。 */
 const CARD_PADDING = 16;
 
 /**
