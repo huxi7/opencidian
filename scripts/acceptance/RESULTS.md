@@ -149,3 +149,9 @@ MathJax 独立适配器子代理的41项基础/故障测试见 assets/mathjax/SO
 - `markdown/reading.js`：阅读视图右键接线（内部链接/外链/图片），图片节点补 `data-href`（库内读二进制、URL/data 走 fetch 复制到剪贴板，失败提示 copy-failed）。
 - `editor/editor-menu.js`：链接区改为委托 workspace 共享处理器（编辑器与阅读视图同一套原版菜单）。
 - 新增 `reading-menus` 场景 11 项；回归 editor-menu 23、notes 72、page-preview 13、sidebar 93、core-views 83、math。
+
+## 块 widget「编辑此区块」批（2026-10-18）
+
+- live-preview：代码块/数学块/Mermaid widget 增加原版 edit-block-button（lucide-code-2、aria-label=编辑这个区块、点击把光标放回块源码并让 widget 让位）；异步渲染完成后挂按钮，避免被 renderMath/renderMermaid 覆盖。
+- editor.css：逐字移植原版 .edit-block-button 规则与 hover 显形。
+- 新增 editor-block-button 场景 11 项；回归 editor 113、math、notes 72、editor-menu 23。

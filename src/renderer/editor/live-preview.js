@@ -158,12 +158,30 @@ class LinkWidget extends WidgetType {
 // ---------------------------------------------------------------------------
 // Block widgets
 // ---------------------------------------------------------------------------
+
+/** 原版 addEditButton：块 widget 右上角"编辑这个区块"，点击把光标放回源码（widget 让位）。 */
+function addEditBlockButton(el, view, from, to) {
+  if (typeof from !== 'number') return null;
+  const btn = el.createDiv('edit-block-button');
+  setIcon(btn, 'lucide-code-2');
+  btn.setAttr('aria-label', tt('editor.menu.label-edit-block', 'Edit this block'));
+  btn.addEventListener('click', (ev) => {
+    ev.preventDefault();
+    ev.stopPropagation();
+    view.dispatch({ selection: { anchor: from }, scrollIntoView: true });
+    view.focus();
+  });
+  return btn;
+}
+
 class MathBlockWidget extends WidgetType {
-  constructor(tex) { super(); this.tex = tex; }
-  eq(o) { return o.tex === this.tex; }
+  constructor(tex, from, to) { super(); this.tex = tex; this.from = from; this.to = to; }
+  eq(o) { return o.tex === this.tex && o.from === this.from && o.to === this.to; }
   toDOM(view) {
     const el = createDiv({ cls: 'math math-block' });
+    // renderMath 异步写入内容：按钮在渲染完成后再挂，避免被覆盖
     renderMath(el, this.tex, true).then(() => {
+      if (!el.querySelector('.edit-block-button')) addEditBlockButton(el, view, this.from, this.to);
       if (view.dom.isConnected) view.requestMeasure();
     });
     return el;
@@ -172,8 +190,8 @@ class MathBlockWidget extends WidgetType {
 
 /** 实时预览代码块 widget：光标不在块内时以 <pre><code> 呈现（对齐阅读视图样式）。 */
 class CodeBlockWidget extends WidgetType {
-  constructor(lang, code) { super(); this.lang = lang; this.code = code; }
-  eq(other) { return other.lang === this.lang && other.code === this.code; }
+  constructor(lang, code, from, to) { super(); this.lang = lang; this.code = code; this.from = from; this.to = to; }
+  eq(other) { return other.lang === this.lang && other.code === this.code && other.from === this.from && other.to === this.to; }
   toDOM(view) {
     const pre = createEl('pre', { cls: 'lp-codeblock' });
     const code = pre.createEl('code', { cls: 'language-' + (this.lang || 'plain') });
@@ -192,6 +210,7 @@ class CodeBlockWidget extends WidgetType {
       ev.stopPropagation();
       try { const p = navigator.clipboard.writeText(this.code); if (p && p.catch) p.catch(() => {}); } catch (e) {}
     };
+    addEditBlockButton(pre, view, this.from, this.to);
     return pre;
   }
   destroy(dom) { cancelCodeHighlight(dom.querySelector('code')); }
@@ -200,13 +219,16 @@ class CodeBlockWidget extends WidgetType {
 
 /** 实时预览 mermaid widget：惰性渲染为 SVG（复用阅读视图的 renderMermaidBlocks）。 */
 class MermaidWidget extends WidgetType {
-  constructor(code) { super(); this.code = code; }
-  eq(other) { return other.code === this.code; }
-  toDOM() {
+  constructor(code, from, to) { super(); this.code = code; this.from = from; this.to = to; }
+  eq(other) { return other.code === this.code && other.from === this.from && other.to === this.to; }
+  toDOM(view) {
     const wrap = createDiv({ cls: 'cm-lp-mermaid' });
     const el = wrap.createDiv({ cls: 'mermaid-source' });
     el.setAttr('data-source', this.code);
-    renderMermaidBlocks(wrap).catch(() => {});
+    // renderMermaidBlocks 异步重建内容：按钮在渲染完成后再挂
+    renderMermaidBlocks(wrap).catch(() => {}).then(() => {
+      if (!wrap.querySelector('.edit-block-button')) addEditBlockButton(wrap, view, this.from, this.to);
+    });
     return wrap;
   }
   ignoreEvent() { return false; }
@@ -432,10 +454,10 @@ function computeBlockLayer(state) {
   for (const b of blocks) {
     if (touched(b.from, b.to) || folded(b.from, b.to)) continue;
     let widget = null;
-    if (b.kind === 'math') widget = new MathBlockWidget(b.tex);
+    if (b.kind === 'math') widget = new MathBlockWidget(b.tex, b.from, b.to);
     else if (b.kind === 'table') widget = new TableWidget(app, doc.sliceString(b.from, b.to), sourcePath, b.from, b.to);
     else if (b.kind === 'callout') widget = new CalloutWidget(doc.sliceString(b.from, b.to), sourcePath);
-    else if (b.kind === 'code') widget = b.lang === 'mermaid' ? new MermaidWidget(b.code) : new CodeBlockWidget(b.lang, b.code);
+    else if (b.kind === 'code') widget = b.lang === 'mermaid' ? new MermaidWidget(b.code, b.from, b.to) : new CodeBlockWidget(b.lang, b.code, b.from, b.to);
     if (!widget) continue;
     for (let n = b.startLine; n <= b.endLine; n++) coveredLines.add(n);
     decorations.push(Decoration.replace({ widget, block: true }).range(b.from, b.to));

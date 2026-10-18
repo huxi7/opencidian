@@ -14,6 +14,7 @@ page-preview.js: 悬停预览：阅读模式 popover、未解析空态、Escape 
 settings-ui.js: 设置页 UI：拼写词典/语言行、默认编辑模式同步、路径建议、忽略文件弹窗、重建缓存按钮、启动时间弹窗。
 settings-plugins.js: 快捷键页状态筛选芯片、按快捷键捕获筛选与 Esc、冲突芯片跳筛选；核心插件页齿轮/快捷键入口显隐与跳转；社区插件卸载确认与目录删除。
 appearance.js: 外观页：主题 (Legacy)、字体管理弹窗（指示/图标/拖拽/持久化）、主题色恢复默认。
+audio-recorder.js: 录音机插件验收。假 navigator.mediaDevices.getUserMedia 与 window.MediaRecorder 驱动：命令门、功能区切换 is-active、webm/m4a 扩展名与同秒重名序号、"Recording <时间戳>" 命名与嵌入链接、权限与设备错误映射（未连接麦克风/访问被拒绝/授权提示）、卸载释放与丢弃未完成录音、设置页开关与 core-plugins.json 持久化、重启读回。不接触真实麦克风。
 basic-plugins.js: 搜索、文件树、切换器、命令、标签、字数。
 bookmarks.js: 分组、重命名、打开与保存。
 canvas.js: 画布输入、连线、缩放、重开，撤销/重做（键盘+按钮+落盘）与文本卡片转换为文件（校验、几何继承、边改指、撤销恢复）；图片导出（命令可用性、面板菜单文案、renderCanvasImage 的 dataURL/maxSize 上限/非背景像素、空画布拒绝提示）；拖动对齐参考线（吸附对齐值、出现 svg.canvas-snaps 参考线与圆点、松手清除、snapToObjects 关闭时不吸附）。

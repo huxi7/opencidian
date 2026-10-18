@@ -243,6 +243,28 @@
   word-break: normal;
 }
 .markdown-source-view.mod-cm6 .cm-embed-block { position: relative; }
+
+/* 原版 app.css：块 widget 的"编辑此区块"按钮（默认隐藏，悬停显形，点击把光标放回源码） */
+.markdown-source-view.mod-cm6 .edit-block-button {
+  padding: var(--size-2-2) var(--size-2-3);
+  position: absolute;
+  top: var(--size-2-2);
+  inset-inline-end: var(--size-2-2);
+  display: flex;
+  opacity: 0;
+  color: var(--text-muted);
+  border-radius: var(--radius-s);
+  cursor: var(--cursor);
+  z-index: 1;
+}
+.markdown-source-view.mod-cm6 .math-block { position: relative; }
+@media (hover: hover) {
+  .markdown-source-view.mod-cm6 .edit-block-button:hover { background-color: var(--background-modifier-hover); }
+  .markdown-source-view.mod-cm6 .cm-embed-block:hover .edit-block-button,
+  .markdown-source-view.mod-cm6 .lp-codeblock:hover .edit-block-button,
+  .markdown-source-view.mod-cm6 .math-block:hover .edit-block-button,
+  .markdown-source-view.mod-cm6 .cm-lp-mermaid:hover .edit-block-button { opacity: 1; }
+}
 .markdown-source-view.mod-cm6 .cm-table-widget {
   --table-drag-handle-size: var(--size-4-4);
   padding: var(--table-drag-handle-size);

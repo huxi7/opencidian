@@ -36,5 +36,6 @@ random-note.js: 漫游笔记插件。命令 random-note + ribbon(dice-glyph) 随
 zk-prefixer.js: 时间戳笔记插件(id zk-prefixer，文案键 plugins.unique-note-creator)。命令 zk-prefixer + ribbon(sheets-in-box)；getUniquePath 冲突按 分/时/日/周/月/年 递增；数据 .obsidian/zk-prefixer.json；settingTab(文件夹/模板/格式样例)。
 workspaces.js: 工作区插件。命令 workspaces:load/save/save-and-load/open-modal + ribbon(lucide-layout)；数据 .obsidian/workspaces.json({workspaces,active}，布局含 mtime)；保存前等待编辑落盘，加载先关闭旧视图，再用 loadLayout+postLayoutLoad；管理弹窗(存/载/删)与 SuggestModal 选择器。
 slides.js: 幻灯片插件。命令 slides:start 把当前 md 交给 SlidesPresentation(views/slides-presentation.js) 全窗口演示；不注册视图类型；包装层暴露 getPresentation()。原版 file-menu 菜单项因本项目无 file-menu 来源而省略。
+audio-recorder.js: 录音机插件(id audio-recorder，默认关闭)。命令 audio-recorder:start 与 audio-recorder:stop，checkCallback 按 recording 门控；功能区按钮 lucide-mic 切换开关，录音时加 is-active。扩展名 audio/mp4 可用时用 m4a，否则 webm/opus。命名 "Recording <YYYYMMDDHHmmss>"，经 editor/attachments.js 的 saveAttachment 落盘，并向活动 Markdown 视图插入嵌入链接。权限查询降级为 Permissions API 与 getUserMedia 错误映射，原版走 macOS systemPreferences。卸载停止录音并丢弃未完成条目。
 
 [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md

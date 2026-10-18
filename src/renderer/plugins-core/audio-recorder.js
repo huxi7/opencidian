@@ -181,9 +181,10 @@ class AudioRecorder {
       mimeType = MP4_MIME;
       this.extension = 'm4a';
     }
-    const session = { stream, chunks, mimeType, discard: false };
+    const session = { stream, chunks, mimeType, discard: false, recorder: null };
     this._session = session;
     const recorder = new MediaRecorder(stream, { mimeType });
+    session.recorder = recorder;
     this.recorder = recorder;
     recorder.addEventListener('dataavailable', (event) => {
       if (event.data && event.data.size > 0) chunks.push(event.data);
@@ -193,7 +194,9 @@ class AudioRecorder {
   }
 
   onRecorderStopped(session) {
-    this.recorder = null;
+    // stop 事件是异步的：只有当前会话的录音器才能清空 this.recorder，
+    // 否则用户在事件到达前启动的下一段录音会被误清，导致无法停止。
+    if (this.recorder === session.recorder) this.recorder = null;
     if (this._session === session) this._session = null;
     for (const track of session.stream.getTracks()) track.stop();
     if (session.discard) return;
