@@ -16,7 +16,7 @@ workspace-sidebar.css: 原版侧栏图标、库信息栏、开关与 macOS 留�
 components.css: 菜单、弹窗、建议、通知、悬浮提示、设置外壳与快照历史。原版布局规则保持闭合。通知为右上角固定栈(app.css 7923-7978)，tooltip 含 mod-top/mod-left/mod-right 翻转与 tooltip-arrow(app.css 9324-9445)，建议弹层 .suggestion-container 取 --suggestion-background(app.css 8858-8867)。
 tree.css: .tree-item 体系(collapse-icon 尺寸与旋转、tree-item-self/icon/inner/children/flair)，逐字移植自原版 app.css 7263-7287 与 9446-9591。全部树视图共用。
 explorer.css: .nav-* 文件树层(标题内容、nav-file-tag、拖拽高亮)，被 explorer/outline/tag 面板共用。基础结构来自 tree.css。
-editor.css: CodeMirror 与 live preview(HyperMD-*)、inline-title、media 视图。含原版 file layout（.cm-sizer/.cm-contentContainer 布局、is-readable-line-width 的 --file-line-width 居中、.cm-line padding 0、.cm-gutters folding offset）与阅读视图 sizer 居中。
+editor.css: CodeMirror 与 live preview(HyperMD-*)、inline-title、media 视图。含原版 file layout（.cm-sizer/.cm-contentContainer 布局、is-readable-line-width 的 --file-line-width 居中、.cm-line padding 0、.cm-gutters folding offset）与阅读视图 sizer 居中。表格段（app.css 3551-3797）含 .table-editor 单元格、table-row/col-btn、table-row/col-drag-handle 与 align 属性驱动的对齐。
 markdown.css: 阅读样式入口，按原顺序导入内容、属性与高亮规则。
 markdown-content.css: 阅读排版、表格、代码、引用与嵌入。
 markdown-properties.css: 属性、标签与内容补充规则。

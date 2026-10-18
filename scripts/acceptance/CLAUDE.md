@@ -36,6 +36,7 @@ recovery.js: 快照、恢复、工作区与幻灯片的分阶段验收。覆盖�
 settings-restart.js: 重启核对四类设置。
 settings-write.js: 写入四类用户设置。
 sidebar.js: 反链、大纲、精确跳转与监听释放。
+table-widget.js: 实时预览表格部件：加行/加列按钮、行列拖拽手柄右键菜单、对齐写回、排序、点击单元格进入源码；菜单标题断言同时接受中英文案。
 vault-hidden.js: 文件监听排除隐藏路径。
 
 [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md

@@ -96,6 +96,7 @@
         clientX: Math.round(rect.left + rect.width / 2), clientY: Math.round(rect.top + rect.height / 2),
       }));
       await wait(() => document.querySelector('.menu'), label);
+      await delay(40);
       return document.querySelector('.menu');
     };
     const menuText = () => {
@@ -226,9 +227,10 @@
     await clickMenuItem(T.duplicateCol);
     check(columnCount() === 3, '「复制列」列数 +1');
     check(bodyRows().every((row) => row[0] === row[1]), '「复制列」复制原列内容');
-    await openMenu(colHandle(2), '列手柄右键打开菜单');
+    await openMenu(colHandle(1), '列手柄右键打开菜单');
     await clickMenuItem(T.deleteCol);
     check(columnCount() === 2, '「删除列」列数回落');
+    check(tableRows()[0].join(',') === '名称,值', '「删除列」移除被点击的列');
 
     // ---- 菜单 Esc 关闭 ----
     await openMenu(colHandle(0), '列手柄右键打开菜单');
@@ -242,7 +244,8 @@
     cell.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
     await delay(80);
     check(!widget(), '点击单元格后部件让位给原始 Markdown');
-    check(cm.contentDOM.textContent.replace(/\s+/g, '').includes('|名称|值|'), '源码行可见且内容未丢失');
+    const rawNeedle = tableLines()[0].replace(/\s+/g, '');
+    check(cm.contentDOM.textContent.replace(/\s+/g, '').includes(rawNeedle), '源码行可见：' + rawNeedle);
     check(view.editor.getValue().split('\n').length === alignedText.split('\n').length, '行列编辑不改变文档行数');
     check(view.editor.getValue().includes('# 排序') && view.editor.getValue().includes('tail'), '表格外的文本未受影响');
     view.editor.setSelection(0);
