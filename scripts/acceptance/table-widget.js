@@ -80,8 +80,7 @@
     const tableRows = () => tableLines().map((line) => line.trim().replace(/^\||\|$/g, '').split('|').map((cell) => cell.trim()));
     const bodyRows = () => tableRows().slice(2);
     const columnCount = () => (tableRows()[0] || []).length;
-    const rowButton = () => widget().querySelector('.table-row-btn');
-    const colButton = () => widget().querySelector('.table-col-btn');
+    const rowButton = () => widget().querySelector('.table-row-btn');    const colButton = () => widget().querySelector('.table-col-btn');
     const colHandle = (index) => widget().querySelectorAll('thead th')[index].querySelector('.table-col-drag-handle');
     const rowHandle = (index) => widget().querySelectorAll('tbody tr')[index].querySelector('td .table-row-drag-handle');
 
@@ -143,6 +142,8 @@
     await delay(80);
     check(tableRows().length === 5, '点击加行按钮后表格行数 +1');
     check(columnCount() === 2, '加行后列数不变');
+    check(bodyRows()[2].join(',') === ',', '加行按钮把空行插在表体末尾');
+    check(bodyRows()[0].join(',') === 'b,2' && bodyRows()[1].join(',') === 'a,1', '加行不改动既有行');
 
     // ---- 加列按钮：每行多一个 | 段 ----
     colButton().click();
@@ -150,6 +151,8 @@
     check(tableRows().length === 5, '加列后行数不变');
     check(columnCount() === 3, '加列后列数 +1');
     check(tableLines().every((line) => (line.match(/\|/g) || []).length === 4), '加列后每行多一个 | 段');
+    check(tableRows()[0].join(',') === '名称,值,', '加列把空列插在最右侧');
+    check(bodyRows()[0].join(',') === 'b,2,', '加列不改动既有单元格');
 
     // ---- 行菜单：新增 / 移动 / 复制 / 删除 ----
     await closeMenus();
@@ -167,10 +170,13 @@
 
     await openMenu(rowHandle(0), '行手柄右键打开菜单');
     await clickMenuItem(T.rowDown);
-    check(bodyRows()[0][0] === '' && bodyRows()[1][0] === 'b', '「向下移动行」改写行序');
+    const afterDown = bodyRows().map((row) => row.join('/')).join(' ; ');
+    check(bodyRows()[0][0] === '' && bodyRows()[1][0] === 'b', '「向下移动行」改写行序：' + afterDown);
     await openMenu(rowHandle(1), '行手柄右键打开菜单');
     await clickMenuItem(T.duplicateRow);
-    check(bodyRows().length === 3 && bodyRows().filter((row) => row[0] === 'b').length === 2, '「复制行」产生重复行');
+    const afterDuplicate = bodyRows().map((row) => row.join('/')).join(' ; ');
+    check(bodyRows().length === 3 && bodyRows().filter((row) => row[0] === 'b').length === 2,
+      '「复制行」产生重复行：' + afterDuplicate);
 
     // ---- 对齐与排序：换一条干净的笔记 ----
     const alignedText = [

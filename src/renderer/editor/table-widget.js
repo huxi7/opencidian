@@ -206,9 +206,9 @@ export class TableWidget extends WidgetType {
       }
     }
     this.buildAddButton(wrapper, 'table-row-btn', t('table.action-row-after'),
-      () => this.insertRow(view, model.rows.length, 0));
+      () => this.insertRow(view, model.rows.length));
     this.buildAddButton(wrapper, 'table-col-btn', t('table.action-column-after'),
-      () => this.insertColumn(view, 0, model.alignments.length, null));
+      () => this.insertColumn(view, model.alignments.length, null));
     if (this.app) attachMarkdownInteractions(this.app, container, () => this.sourcePath);
     return container;
   }
@@ -313,9 +313,9 @@ export class TableWidget extends WidgetType {
     this.addMenuGroups(menu, [
       [
         { section: 'table-add', icon: 'lucide-panel-left-close', title: t('table.action-column-before'),
-          onClick: () => this.insertColumn(view, cell.row, cell.col, align) },
+          onClick: () => this.insertColumn(view, cell.col, align) },
         { section: 'table-add', icon: 'lucide-panel-right-close', title: t('table.action-column-after'),
-          onClick: () => this.insertColumn(view, cell.row, cell.col + 1, align) },
+          onClick: () => this.insertColumn(view, cell.col + 1, align) },
       ],
       [
         cell.col > 0 ? { section: 'table-move', icon: 'lucide-arrow-left', title: t('table.action-column-left'),

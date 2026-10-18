@@ -5,7 +5,7 @@
 核心插件。每个文件导出一个模块对象 `{ nameKey?, create(app) }`；create 返回 `{ onload, onunload, registerCommands?, deregister? }`。插件 id 必须与 settings.corePlugins 的键一致，并登记到 core/plugins-registry.js。
 
 成员清单
-file-explorer.js: 文件树视图(type file-explorer)。排序/折叠/右键菜单/拖拽移动/inline 重命名/新建文件与文件夹命令。拖拽移动失败经 tt('plugins.file-explorer.msg-error-move-failed', …) 提示（locale 目前无该键，落到中文兜底）。
+file-explorer.js: 文件树视图(type file-explorer)。排序/折叠/右键菜单/拖拽移动/inline 重命名/新建文件与文件夹命令。拖拽移动失败经 tt('plugins.file-explorer.msg-error-move-failed', …) 提示（locale 目前无该键，落到中文兜底）。 系统外部文件拖入：文件夹标题/根区域复制进库（getAvailableAttachmentPath 去重）。
 command-palette.js: 命令面板与 terminal 功能区入口。启停对称注册和撤销。
 switcher.js: 快速切换器与 file-search 功能区入口。复用 switcher:open，禁用删除按钮和命令。
 backlink.js: 反链分节、上下文与筛选。折叠跨重绘保留；关闭释放全部事件与计时器。

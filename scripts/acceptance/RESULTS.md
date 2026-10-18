@@ -136,3 +136,9 @@ MathJax 独立适配器子代理的41项基础/故障测试见 assets/mathjax/SO
 - `editor.js` 支持系统外部文件拖入：复制进库 + `![[name.ext]]`；Alt/Ctrl 直链（库内→内链，库外→file://）。命令新增 `editor:attach-file`、`editor:set-heading-1..6/0`、`editor:toggle-blockquote`、`editor:clear-formatting`。
 - 修两个深层 bug：① `generateMarkdownLink` 对附件误删扩展名（图片/附件嵌入全错）；② MarkdownView 外部修改同步把自家写入的迟到通知误判为外部改动并回滚文档（丢编辑）。
 - 新增 `editor-menu` 场景 23 项；回归 editor 113、editor-switch 2、notes 72。
+
+## 粘贴图片 + 文件树外部拖入批（2026-10-18）
+
+- `editor.js` 拦截带图片的 paste（File / HTML data URL），落盘 `Pasted image <YYYYMMDDHHmmss>.png|jpg` 并插入嵌入；文本粘贴交回 CM6。`editor:paste` 命令同序（剪贴板图片优先）。
+- 文件树：系统外部文件拖到文件夹标题或根区域 → 复制进库（重名序号），不插链接。
+- 新增 `editor-paste` 场景 7 项；回归 editor 113、editor-menu 23、basic-plugins 6、sidebar 93、sidebar-shell 61、notes 72。

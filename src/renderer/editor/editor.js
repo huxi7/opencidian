@@ -24,7 +24,7 @@ import {
 } from '@codemirror/search';
 import { autocompletion, completionKeymap, closeBrackets, closeBracketsKeymap } from '@codemirror/autocomplete';
 import { livePreviewExtension } from './live-preview.js';
-import { saveAttachment } from './attachments.js';
+import { saveAttachment, pastedImageBaseName } from './attachments.js';
 import { wikilinkCompletionSource } from './completions.js';
 import { eventToHotkey } from '../core/keymap.js';
 import { markdownEditing, foldingExtensions, unfoldDisabledFolds } from './folding.js';
@@ -112,6 +112,38 @@ const markdownHighlightDark = HighlightStyle.define([
 // ---------------------------------------------------------------------------
 // Editor
 // ---------------------------------------------------------------------------
+/** 从剪贴板数据挑选图片：文件优先，其次 HTML 里的 data URL（原版同序）。 */
+function pickClipboardImage(dt) {
+  const files = dt.files ? Array.from(dt.files) : [];
+  const direct = files.find((f) => /^image\//.test(f.type || ''));
+  if (direct) return { kind: 'file', file: direct };
+  const items = dt.items ? Array.from(dt.items) : [];
+  for (const it of items) {
+    if (it.kind === 'file' && /^image\//.test(it.type || '')) {
+      const f = it.getAsFile();
+      if (f) return { kind: 'file', file: f };
+    }
+  }
+  let html = '';
+  try { html = dt.getData('text/html') || ''; } catch (e) { html = ''; }
+  const m = html.match(/src="(data:image\/(png|jpeg|jpg|gif|webp|bmp);base64,[^"]+)"/i);
+  if (m) return { kind: 'dataurl', dataUrl: m[1], ext: m[2].toLowerCase() === 'jpeg' ? 'jpg' : m[2].toLowerCase() };
+  return null;
+}
+
+async function readClipboardImage(picked) {
+  if (picked.kind === 'file') {
+    const type = (picked.file.type || '').toLowerCase();
+    const ext = type === 'image/jpeg' ? 'jpg' : ((type.split('/')[1] || 'png').replace('svg+xml', 'svg'));
+    return { bytes: new Uint8Array(await picked.file.arrayBuffer()), ext };
+  }
+  const b64 = picked.dataUrl.split(',')[1] || '';
+  const bin = atob(b64);
+  const bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i += 1) bytes[i] = bin.charCodeAt(i);
+  return { bytes, ext: picked.ext };
+}
+
 export class Editor {
   constructor(containerEl, app, options = {}) {
     this.app = app;
@@ -232,6 +264,7 @@ export class Editor {
           return false;
         },
         drop: (event, view) => this._handleDrop(event, view),
+        paste: (event) => this._handlePaste(event),
       }),
     ];
   }
@@ -257,6 +290,28 @@ export class Editor {
     const link = this.app.fileManager.generateMarkdownLink(file, this.sourcePath || '', '', '', undefined);
     view.dispatch({ changes: { from, insert: link }, selection: { anchor: from + link.length } });
     return true;
+  }
+
+  /**
+   * 原版粘贴：剪贴板图片（截图 / 复制的图片 / HTML data URL）落盘为
+   * 'Pasted image <时间戳>.png' 并插入嵌入；纯文本粘贴交回 CM6。
+   */
+  _handlePaste(event) {
+    const dt = event.clipboardData;
+    if (!dt) return false;
+    const picked = pickClipboardImage(dt);
+    if (!picked) return false;
+    event.preventDefault();
+    this._insertClipboardImage(picked);
+    return true;
+  }
+
+  async _insertClipboardImage(picked) {
+    const { bytes, ext } = await readClipboardImage(picked).catch(() => ({ bytes: null, ext: 'png' }));
+    if (!bytes) return;
+    const file = await saveAttachment(this.app, pastedImageBaseName(), ext, bytes, this.sourcePath);
+    const link = '!' + this.app.fileManager.generateMarkdownLink(file, this.sourcePath || '', '', '', undefined);
+    this.replaceSelection(link);
   }
 
   /**

@@ -2,7 +2,7 @@
 import { t } from '../core/i18n.js';
 import { Notice } from '../core/notices.js';
 import { Desktop } from '../core/ipc.js';
-import { saveAttachment } from './attachments.js';
+import { saveAttachment, pastedImageBaseName } from './attachments.js';
 import { toggleFold, foldAll, unfoldAll } from '@codemirror/language';
 
 function getEditor(app) {
@@ -99,6 +99,20 @@ export function registerEditorCommands(app) {
   editorCmd('editor:select-all', 'Select all', (e) => e.setSelection({ line: 0, ch: 0 }, { line: e.lastLine(), ch: e.getLine(e.lastLine()).length }));
   editorCmd('editor:copy', 'Copy', () => { document.execCommand('copy'); });
   editorCmd('editor:paste', 'Paste', async () => {
+    // 剪贴板图片优先（原版：截图/图片 → "Pasted image <时间戳>" 落盘 + 嵌入）
+    try {
+      const items = await navigator.clipboard.read();
+      for (const item of items) {
+        const type = item.types.find((tp) => tp.startsWith('image/'));
+        if (!type) continue;
+        const blob = await item.getType(type);
+        const ext = type === 'image/jpeg' ? 'jpg' : type.split('/')[1];
+        const file = await saveAttachment(app, pastedImageBaseName(), ext, await blob.arrayBuffer(), (getEditor(app) || {}).sourcePath || '');
+        const link = '!' + app.fileManager.generateMarkdownLink(file, (getEditor(app) || {}).sourcePath || '', '', '', undefined);
+        const e = getEditor(app); if (e) e.replaceSelection(link);
+        return;
+      }
+    } catch (err) { /* 无图片或权限 → 文本路径 */ }
     try { const text = await navigator.clipboard.readText(); const e = getEditor(app); if (e) e.replaceSelection(text); } catch (err) {}
   });
   editorCmd('editor:cut', 'Cut', async () => {

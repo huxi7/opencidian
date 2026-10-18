@@ -30,6 +30,13 @@ export function getAvailableAttachmentPath(app, folder, name, ext) {
   return build(' ' + Date.now());
 }
 
+/** 原版命名：'Pasted image <YYYYMMDDHHmmss>'（saveAttachment 时再拼扩展名）。 */
+export function pastedImageBaseName() {
+  const d = new Date();
+  const p = (n) => String(n).padStart(2, '0');
+  return 'Pasted image ' + d.getFullYear() + p(d.getMonth() + 1) + p(d.getDate()) + p(d.getHours()) + p(d.getMinutes()) + p(d.getSeconds());
+}
+
 /**
  * 写入附件并返回 TFile。
  * @param {any} app

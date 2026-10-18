@@ -10,6 +10,7 @@ import { t, tt } from '../core/i18n.js';
 import { setIcon } from '../core/icons.js';
 import { Menu } from '../core/menu.js';
 import { Notice } from '../core/notices.js';
+import { getAvailableAttachmentPath } from '../editor/attachments.js';
 import { PromptModal, confirmDialog } from '../core/modals.js';
 import { GenericSuggester } from '../core/suggest.js';
 import { TFile, TFolder, normalizePath, parentPathOf } from '../core/vault.js';
@@ -102,6 +103,19 @@ export class FileExplorerView extends View {
     if (this._sortOrder !== 'alphabetical') sortBtn.addClass('is-active');
 
     this.treeEl = container.createDiv('nav-tree');
+    // 根区域：系统外部文件拖到空白处 → 复制进库根目录
+    this.treeEl.addEventListener('dragover', (ev) => {
+      const types = ev.dataTransfer ? Array.from(ev.dataTransfer.types || []) : [];
+      if (this._draggingItem || !types.includes('Files')) return;
+      ev.preventDefault();
+      ev.dataTransfer.dropEffect = 'copy';
+    });
+    this.treeEl.addEventListener('drop', async (ev) => {
+      const files = ev.dataTransfer && ev.dataTransfer.files ? Array.from(ev.dataTransfer.files) : [];
+      if (this._draggingItem || !files.length) return;
+      ev.preventDefault();
+      await this._importExternalFiles(files, '/');
+    });
     this.render();
 
     // events
@@ -270,6 +284,14 @@ export class FileExplorerView extends View {
 
   _setupDrop(titleEl, folder, folderEl) {
     titleEl.addEventListener('dragover', (ev) => {
+      // 系统外部文件（Files）：允许放置到该文件夹
+      const types = ev.dataTransfer ? Array.from(ev.dataTransfer.types || []) : [];
+      if (!this._draggingItem && types.includes('Files')) {
+        ev.preventDefault();
+        ev.dataTransfer.dropEffect = 'copy';
+        folderEl.addClass('is-being-dragged-over');
+        return;
+      }
       if (!this._draggingItem) return;
       const item = this._draggingItem;
       if (item === folder) return;
@@ -286,6 +308,8 @@ export class FileExplorerView extends View {
       ev.preventDefault();
       ev.stopPropagation();
       folderEl.removeClass('is-being-dragged-over');
+      const files = ev.dataTransfer && ev.dataTransfer.files ? Array.from(ev.dataTransfer.files) : [];
+      if (!this._draggingItem && files.length) { await this._importExternalFiles(files, folder.path); return; }
       const item = this._draggingItem;
       if (!item) return;
       const newPath = normalizePath((folder.path === '/' ? '' : folder.path + '/') + item.name);
@@ -293,6 +317,19 @@ export class FileExplorerView extends View {
       const ok = await this.app.fileManager.renameFile(item, newPath);
       if (!ok) new Notice(tt('plugins.file-explorer.msg-error-move-failed', `无法移动“${item.name}”`));
     });
+  }
+
+  /** 系统外部文件拖入文件夹/根：复制进库（不插入链接，原版文件树行为）。 */
+  async _importExternalFiles(files, folderPath) {
+    for (const f of files) {
+      let bytes = null;
+      try { bytes = new Uint8Array(await f.arrayBuffer()); } catch (e) { continue; }
+      const dot = f.name.lastIndexOf('.');
+      const name = dot > 0 ? f.name.slice(0, dot) : f.name;
+      const ext = dot > 0 ? f.name.slice(dot + 1) : '';
+      const path = getAvailableAttachmentPath(this.app, folderPath === '/' ? '' : folderPath, name, ext);
+      try { await this.app.vault.createBinary(path, bytes); } catch (e) { /* 失败跳过 */ }
+    }
   }
 
   // -------------------------------------------------------------------------
