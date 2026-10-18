@@ -197,3 +197,22 @@ MathJax 独立适配器子代理的41项基础/故障测试见 assets/mathjax/SO
 - 共享内核 `graph-force.js`（worker 与本地回退同一份数学）；`graph-sim-worker.js` 新入口（dist/graph-sim-worker.js）；门面三级回退（app:// 直载 → fetch+Blob → 本地线程）。
 - 验收 graph-worker 55 项（协议逐字段对照、三级回退、SAB 注入、钉住/解钉、力参数、销毁幂等、本地后端全链路、双视图独立 worker）；回归 graph 72、core-ribbon 47、sidebar-shell 61。
 - 与原版差异：物理内核不复刻 WASM（行为级对齐，常量与参数一致）；未跨源隔离环境自动走 transfer；替补 worker 重发镜像状态（原版无此路径）。
+
+## 图谱力学内核常量对齐核验（REA 证据，2026-10-18）
+
+- 证据：`ev_69f236a37d7a2b53e3e3767963585c25fa268947f4f9c986d4480b468f9a1458`（provider `REA WABT artifact adapter wabt@1.0.42`，authority `shipped-artifact`）。原版 `sim.js` 内嵌 WASM（3322 字节，零 imports，导出 `init/complete/visitCharge/visitCollide/manyBody/simulate/memset/memory`）。
+- 原版调用点（sim.js JS 侧）：`simulate(0, n, m, alpha, centerStrength, linkStrength, linkDistance, charge, 0.9, 0.5)` + `complete(0, n, 0.6)`；JS 回退实现（同文件）显式构造：`manyBody.strength(() => -1000).distanceMin(30)`、`collide.radius(60).strength(.5)`。
+- 常量比对表（原版 ↔ `plugins-core/graph-force.js`）：
+
+| 参数 | 原版 | 本实现 | |
+|---|---|---|---|
+| 斥力 charge | -1000 | -1000 | ✓ |
+| distanceMin | 30 | 30 | ✓ |
+| Barnes-Hut θ | 0.9（θ²=0.81） | 0.81 | ✓ |
+| 碰撞半径 / 强度 | 60 / 0.5 | 60 / 0.5 | ✓ |
+| 连线距离 / 强度 | 250 / 1（÷min(两端度数)） | 250 / 1（同） | ✓ |
+| 向心力 | 0.1 | 0.1 | ✓ |
+| 速度衰减 | 0.6（`complete(...,0.6)`） | 0.6 | ✓ |
+| alpha 衰减 | `1-0.001^(1/300)`，alpha<0.001 停 | 同 | ✓ |
+
+- 结论：参数与公式为**行为级 1:1**（原版 WASM 与其自带 JS d3 回退同源；本实现即按该 d3 语义重写）。未复刻位级 WASM 二进制（法律与收益原因，见 AGENT-STATE“REA 自动使用政策”）。
