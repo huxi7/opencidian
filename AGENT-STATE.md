@@ -422,6 +422,13 @@ node --experimental-vm-modules src/renderer/core/workspace-regression.js
 - ✅ 文档合并已提交 `9ffcb4b`（七份 CLAUDE.md + editor-race 20 项 + AGENT-STATE）。
 - ✅ **终版全量回归 53/53 通过、0 失败**：主循环 44/44（41 场景 + graph-perf×3）、链式 10/10（persist/community/recovery/audio/settings 双连）、内存回归 19/19。记录见 RESULTS.md；日志 `/tmp/opensidian-terminal-regression.log` 与 `-b.log`。
 - ⏳ 剩余手点项：真机麦克风、打包版冷启动冒烟之外的签名/公证（无证书）、像素级视觉验收（用户豁免）。
+
+## 用户 UI 反馈二轮（2026-10-18 深夜）
+
+- ①顶栏收起态颜色断层：根因已取证——`::before` 用 transparent（原版 `var(--titlebar-background)`）、收起态 ribbon 未换 `--ribbon-background-collapsed`（246 灰 vs 编辑区 255 白＝断层）、焦点联动与 mod-top 变量链未串齐。**代理 B 修复中**（原版行号与像素实测已随任务下发）。
+- ②主编辑区触摸板缩放：**已修提交 `279779b`**（setVisualZoomLevelLimits(1,1) + 快速调整字体大小默认关 + ctrl+wheel 恒 preventDefault + zoom-lock 11 项）。
+- ③画布"一塌糊涂"：**代理 A 全面体检修复中**（probe-canvas 截图诊断 → 对照原版 → 新建 canvas-ui 断言锁）。
+- 纪律：两代理禁改 CLAUDE.md、禁 commit；文档与提交由主会话收口（含验收日志与截图复核）。
 - 已知纪律：子代理曾被免费网关限流（Forbidden/ConnectionRefused）；失败即续跑原会话或主会话接手。
 
 ## 验收纪律（2026-10-18 增补）
