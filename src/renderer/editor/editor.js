@@ -1,6 +1,6 @@
 /**
  * [INPUT]: 依赖 CM6、folding.js 折叠策略、live-preview.js 装饰与 markdown/highlight.js 语义颜色。
- * [OUTPUT]: 导出 Editor、EditorState、EditorView、ViewPlugin；Editor.setFolding 热切换标题与缩进折叠。
+ * [OUTPUT]: 导出 Editor、EditorState、EditorView、ViewPlugin；Editor.setFolding 热切换标题与缩进折叠；Editor.setValue 整弹重建 state（撤销栈不跨文档边界）。
  * [POS]: editor/ 的 CM6 包装层。构造原版 file layout DOM（.cm-sizer/.cm-contentContainer）。独立 Compartment 保留文档与撤销栈；位置采用零基 {line, ch}。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
@@ -239,7 +239,7 @@ export class Editor {
       this._livePreviewCompartment.of(livePreviewExtension(app, () => this.sourcePath)),
       this._lineNumbersCompartment.of((app.settings && app.settings.appSettings.showLineNumber) ? [lineNumbers(), highlightActiveLineGutter()] : []),
       this._wrapCompartment.of(EditorView.lineWrapping),
-      this._extCompartment.of([]),
+      this._extCompartment.of(this._extensions),
       this._readonlyCompartment.of(EditorView.editable.of(!this.options.readOnly)),
       EditorView.updateListener.of((update) => {
         if (update.docChanged) {
@@ -386,7 +386,16 @@ export class Editor {
   getValue() { return this.cm.state.doc.toString(); }
 
   setValue(content) {
-    this.cm.dispatch({ changes: { from: 0, to: this.cm.state.doc.length, insert: content } });
+    const insert = typeof content === 'string' ? content : content == null ? '' : String(content);
+    // 撤销栈不跨文档边界：装载/整文档替换必须重建历史。
+    // 否则一次 Mod+Z 会撤消"装入"本身（空文档被自动保存写盘），
+    // 且切文件后会把上一文件编辑的逆操作打进当前文件。
+    // history() 是模块级 StateField（compartment 重配清不掉），故整弹重建 state。
+    const extensions = this._baseExtensions();
+    this.cm.setState(EditorState.create({ doc: insert, extensions }));
+    // setState 不派发事务：手动通知订阅者（markdown-view / 画布卡片靠它同步数据），
+    // 保持与旧 dispatch 时代相同的观察语义，只是不再入撤销栈。
+    this._emitChange(null);
   }
 
   getLine(line) {

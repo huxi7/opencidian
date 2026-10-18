@@ -1,7 +1,7 @@
 /**
  * [INPUT]: 独立临时 vault 与 OBS_ACT eval 注入的应用实例。
- * [OUTPUT]: 返回切文件竞态断言；失败抛出异常，供运行器判定。
- * [POS]: editor-race 场景。用挂起的 cachedRead 确定性复现"迟到回声打进另一个文件"的跨文件内容损坏，并钉住防线。
+ * [OUTPUT]: 返回切文件竞态与撤销栈边界断言；失败抛出异常，供运行器判定。
+ * [POS]: editor-race 场景。用挂起的 cachedRead 复现"迟到回声打进另一个文件"的跨文件内容损坏；并钉住撤销栈不跨文档边界（装载的 setValue 不得入历史，否则打开即撤消会清空文档并落盘）。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 (async()=>{
@@ -61,5 +61,46 @@ try {
 } finally {
   app.vault.cachedRead=origRead;
 }
+// ---------------------------------------------------------------------------
+// 撤销栈不跨文档边界：setValue 装载不得把整文档替换压进历史。
+// 缺陷现场：打开文档后一次撤消 = 撤消"装入"本身 → 空文档被自动保存写盘（数据丢失）。
+// ---------------------------------------------------------------------------
+const C=await app.vault.create('Race-C-'+Date.now()+'.md','# C\n\nCCC\n');
+await app.workspace.openFile(C);
+await wait(250);
+const viewC=app.workspace.activeLeaf.view;
+check(viewC.file&&viewC.file.path===C.path,'C 已打开');
+check(viewC.editor.getValue().includes('CCC'),'C 内容已就绪');
+
+viewC.editor.undo();
+await wait(200);
+check(viewC.editor.getValue().includes('CCC'),'打开后一次撤消不清空文档 :: '+JSON.stringify(viewC.editor.getValue().slice(0,40)));
+await wait(250);
+const cText=await app.vault.read(C);
+check(cText.includes('CCC'),'C 未被自动保存写空 :: '+JSON.stringify(cText.slice(0,40)));
+
+// 正常用户编辑历史仍可用（不得伤及撤销）
+viewC.editor.replaceRange(' C-EDIT',{line:0,ch:0});
+await wait(60);
+check(viewC.editor.getValue().includes('C-EDIT'),'C 已产生用户编辑');
+viewC.editor.undo();
+await wait(120);
+check(!viewC.editor.getValue().includes('C-EDIT'),'用户编辑可被正常撤消');
+
+// 切文件后撤消不得把旧文件文本带进新文件
+const D=await app.vault.create('Race-D-'+Date.now()+'.md','# D\n\nDDD\n');
+viewC.editor.replaceRange(' C-DIRTY',{line:0,ch:0});
+await wait(60);
+await viewC.setState({file:D.path});
+await wait(300);
+check(viewC.file&&viewC.file.path===D.path,'已切到 D');
+check(viewC.editor.getValue().includes('DDD'),'D 内容已就绪');
+viewC.editor.undo();
+await wait(250);
+check(!viewC.editor.getValue().includes('C-DIRTY'),'撤消未把 C 的编辑带进 D :: '+JSON.stringify(viewC.editor.getValue().slice(0,40)));
+check(viewC.editor.getValue().includes('DDD'),'D 内容保持完整');
+const dText=await app.vault.read(D);
+check(dText.includes('DDD')&&!dText.includes('C-DIRTY'),'D 磁盘内容未被污染');
+
 return {pass:true,checks};
 })()
