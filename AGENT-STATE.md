@@ -417,6 +417,13 @@ node --experimental-vm-modules src/renderer/core/workspace-regression.js
 - 新派：文件树多选+键盘导航（`ses_eb198e7adffedyTuRX3nfrJlCs`）、堆叠标签页（`ses_eb198e7adffd4TdjhPhiUwbRTX`）。
 - 主会话已排队：canvas 批 build+canvas-edit+canvas+editor+core-ribbon+sidebar-shell 验证（日志 `/tmp/verify-canvas-b.log`）。
 
+## 验收纪律（2026-10-18 增补）
+
+- **禁止 `npx electron .` 直连探针**：会弹窗口（或卡死）。调试一律 `node scripts/acceptance/run.mjs <场景> --no-screenshot`（内置隐形 E2E）。
+- `with-lock.sh` 的环境变量必须写进引号内：`sh scripts/with-lock.sh 'VAR=1 cmd'`；孤立赋值会被防呆直接拒绝（exit 2）。
+- 代理被杀可能留下**僵尸锁**（`${TMPDIR}/opensidian-build.lock`）：确认无持有者（所有 with-lock 都在 sleep）后 `rmdir` 即可；否则全员卡 30 分钟。
+- 主会话集成顺序：代理完成 → 清僵尸锁/残留探针 → with-lock 串行 build+场景 → 显式路径提交。
+
 ## E2E 模式（2026-10-18 定稿）
 
 - `E2E=1`（run.mjs 注入）：`setActivationPolicy('accessory')` + `dock.hide()` + `showInactive()` + `focusable:false` + `opacity:0` + `setIgnoreMouseEvents(true)` → 测试窗口完全不可见、不抢键盘/焦点、不夺菜单栏、不遮挡界面。
