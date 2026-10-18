@@ -124,6 +124,13 @@ body:not(.is-phone) .workspace-leaf.mod-active .tree-item-self.has-focus {
 body:not(.is-phone) .workspace-leaf.mod-active .tree-item-self.has-focus:focus-within {
   box-shadow: 0 0 0 2px var(--interactive-accent);
 }
+/* 本复刻的 workspace-leaf 不带 mod-active（layout.css 不写该状态），键盘焦点环改由文件树容器焦点驱动；原版 9533-9537 语义不变 */
+body:not(.is-phone) .nav-files-container:focus .tree-item-self.has-focus {
+  box-shadow: 0 0 0 2px var(--background-modifier-border-focus);
+}
+body:not(.is-phone) .nav-files-container:focus .tree-item-self.has-focus:focus-within {
+  box-shadow: 0 0 0 2px var(--interactive-accent);
+}
 .tree-item-self .tree-item-icon {
   position: absolute;
   margin-inline-start: calc(-1 * var(--size-4-5));

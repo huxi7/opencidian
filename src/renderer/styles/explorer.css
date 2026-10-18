@@ -27,6 +27,8 @@
   overscroll-behavior: contain;
   -webkit-user-select: none;
   user-select: none;
+  /* 容器为键盘导航持有 DOM 焦点；焦点指示由 .tree-item-self.has-focus 承担（原版无容器轮廓） */
+  outline: none;
 }
 
 /* nav tree — the base structure comes from tree.css (.tree-item-self, .tree-item-icon,

@@ -1,7 +1,8 @@
 /**
- * [INPUT]: 依赖 ../core/view.js 的 View；依赖 ../core/i18n.js 的 t/tt；依赖 ../core/icons.js 的 setIcon；依赖 ../core/menu.js 的 Menu；依赖 ../core/notices.js 的 Notice；依赖 ../core/modals.js 的 PromptModal/confirmDialog；依赖 ../core/suggest.js 的 GenericSuggester；依赖 ../core/vault.js 的 TFile/TFolder/normalizePath/parentPathOf
+ * [INPUT]: 依赖 ../core/view.js 的 View；依赖 ../core/i18n.js 的 t/tt；依赖 ../core/icons.js 的 setIcon；依赖 ../core/menu.js 的 Menu；依赖 ../core/notices.js 的 Notice；依赖 ../core/vault.js 的 TFile/TFolder/normalizePath/parentPathOf；依赖 ../editor/attachments.js 的 getAvailableAttachmentPath；依赖 ../core/keymap.js 的 IS_MAC；依赖 ./file-explorer-selection.js 的 FileTreeSelection/isModEvent；依赖 ./file-explorer-multi.js 的多选批量操作
  * [OUTPUT]: 导出 FileExplorerView 与插件注册（左侧栏 'file-explorer' 视图）
  * [POS]: plugins-core/ 的导航面板。DOM 逐字对齐原版：tree-item nav-folder > tree-item-self nav-folder-title.is-clickable > (tree-item-icon.collapse-icon[+right-triangle] + tree-item-inner nav-folder-title-content)。折叠状态同时写在 nav-folder 与 collapse-icon 上（原版 _L() 语义）。文件标题显示去扩展名 basename，非 md 文件追加 nav-file-tag。
+ *        选择集与键盘由 FileTreeSelection 持有（Alt 切换 / Shift 范围 / 方向键 / Delete），本文件只提供 DOM 与动作（打开、折叠、重命名、删除、拖动、菜单）。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 /* Core plugin: file-explorer — navigation pane with the vault tree. */
@@ -11,10 +12,13 @@ import { setIcon } from '../core/icons.js';
 import { Menu } from '../core/menu.js';
 import { Notice } from '../core/notices.js';
 import { getAvailableAttachmentPath } from '../editor/attachments.js';
-import { PromptModal, confirmDialog } from '../core/modals.js';
-import { GenericSuggester } from '../core/suggest.js';
 import { TFile, TFolder, normalizePath, parentPathOf } from '../core/vault.js';
 import { IS_MAC } from '../core/keymap.js';
+import { FileTreeSelection, isModEvent } from './file-explorer-selection.js';
+import {
+  chooseMoveTarget, deleteItemsSequentially, dragGhostTitle,
+  dragPayloadFor, movableItems, moveItemsToFolder, showMultiSelectionMenu,
+} from './file-explorer-multi.js';
 
 export const nameKey = 'plugins.file-explorer';
 
@@ -72,6 +76,8 @@ export class FileExplorerView extends View {
     this._activePath = null;
     this._refs = [];
     this._rerenderQueued = false;
+    this._selection = new FileTreeSelection(this);
+    this._draggingItems = null;
   }
   getViewType() { return 'file-explorer'; }
   getDisplayText() { return t('plugins.file-explorer.name') || 'Files'; }
@@ -103,6 +109,27 @@ export class FileExplorerView extends View {
     if (this._sortOrder !== 'alphabetical') sortBtn.addClass('is-active');
 
     this.treeEl = container.createDiv('nav-tree');
+    // 键盘导航：容器本身可聚焦（原版走 scope + focusedItem，本复刻用 DOM 焦点等价）
+    container.setAttr('tabindex', '0');
+    container.addEventListener('mousedown', (ev) => {
+      if (ev.button !== 0) return;
+      const target = ev.target;
+      if (target && target.closest && target.closest('.nav-rename-input')) return;
+      this._focusContainer();
+    });
+    container.addEventListener('keydown', (ev) => {
+      if (ev.defaultPrevented) return;
+      if (!this._selection.handleKeyDown(ev)) return;
+      ev.preventDefault();
+      ev.stopPropagation();
+    });
+    // 空白处点击清空选择集（原版 a2 构造函数里的 containerEl click 语义）
+    container.addEventListener('click', (ev) => {
+      if (ev.target.closest('.nav-file-title, .nav-folder-title')) return;
+      if (ev.target.closest('.nav-buttons-container')) return;
+      this._selection.clear();
+      this._selection.setFocus(null, false);
+    });
     // 根区域：系统外部文件拖到空白处 → 复制进库根目录
     this.treeEl.addEventListener('dragover', (ev) => {
       const types = ev.dataTransfer ? Array.from(ev.dataTransfer.types || []) : [];
@@ -124,13 +151,15 @@ export class FileExplorerView extends View {
       this.app.vault.on('create', debouncedRender),
       this.app.vault.on('delete', debouncedRender),
       this.app.vault.on('rename', debouncedRender),
-      this.app.workspace.on('file-open', () => this.setActivePath(this.app.workspace.getActiveFile() ? this.app.workspace.getActiveFile().path : null)),
+      this.app.workspace.on('file-open', () => this._onFileOpen()),
       this.app.workspace.on('active-leaf-change', () => this.setActivePath(this.app.workspace.getActiveFile() ? this.app.workspace.getActiveFile().path : null)),
     ];
     // context menu on empty tree area
     container.addEventListener('contextmenu', (ev) => {
       if (ev.target.closest('.nav-file-title, .nav-folder-title')) return;
       ev.preventDefault();
+      this._selection.clear();
+      this._selection.setFocus(null, false);
       this._showRootMenu(ev, this.app.vault.getRoot());
     });
     // keyboard
@@ -166,6 +195,7 @@ export class FileExplorerView extends View {
     const children = rootEl.createDiv('tree-item-children nav-folder-children');
     this._renderChildren(root, children);
     if (this.treeEl.parentElement) this.treeEl.parentElement.scrollTop = scrollTop;
+    this._selection.apply();
   }
 
   _renderChildren(folder, container) {
@@ -202,14 +232,12 @@ export class FileExplorerView extends View {
 
     const toggle = (ev) => {
       ev.stopPropagation();
-      const isCollapsed = this._collapsed.has(folder.path);
-      if (isCollapsed) this._collapsed.delete(folder.path);
-      else this._collapsed.add(folder.path);
-      this.render();
+      this._toggleFolder(folder.path);
     };
     icon.onclick = toggle;
     title.onclick = (ev) => {
       if (ev.target.closest('.collapse-icon')) return;
+      if (this._selection.handleItemSelection(ev, folder)) return;
       toggle(ev);
     };
     title.oncontextmenu = (ev) => {
@@ -241,11 +269,11 @@ export class FileExplorerView extends View {
     if (!this._isVisibleFile(file)) el.addClass('is-unsupported');
 
     title.onclick = (ev) => {
-      const newLeaf = (ev.metaKey || ev.ctrlKey) ? 'tab' : false;
-      this.app.workspace.openFile(file, { newLeaf });
+      if (this._selection.handleItemSelection(ev, file)) return;
+      this._openFileFromTree(ev, file);
     };
     title.onauxclick = (ev) => {
-      if (ev.button === 1) { ev.preventDefault(); this.app.workspace.openFile(file, { newLeaf: 'tab' }); }
+      if (ev.button === 1) { ev.preventDefault(); this._selection.handleItemSelection(ev, file); this._openFileFromTree(ev, file); }
     };
     title.oncontextmenu = (ev) => {
       ev.preventDefault();
@@ -256,20 +284,35 @@ export class FileExplorerView extends View {
     this._setupDrag(title, file);
   }
 
+  /** 原版 file onSelfClick 的打开分支：Mod → 新标签页（Mod+Alt → 新标签组）。 */
+  _openFileFromTree(ev, file) {
+    const event = isModEvent(ev);
+    const newLeaf = event === 'tab' ? 'tab' : (event ? 'split' : false);
+    this.app.workspace.openFile(file, { newLeaf });
+  }
+
   // -------------------------------------------------------------------------
   // Drag & drop
   // -------------------------------------------------------------------------
   _setupDrag(el, item) {
     el.addEventListener('dragstart', (ev) => {
-      ev.dataTransfer.setData('text/plain', JSON.stringify({ path: item.path, type: item instanceof TFolder ? 'folder' : 'file' }));
+      const multi = dragPayloadFor(this._selection, item);
+      const payload = multi || { path: item.path, type: item instanceof TFolder ? 'folder' : 'file' };
+      ev.dataTransfer.setData('text/plain', JSON.stringify(payload));
       ev.dataTransfer.effectAllowed = 'move';
       el.addClass('is-being-dragged');
       this._draggingItem = item;
-      // 原版 drag-ghost：图标 + 名称，随指针显示
+      this._draggingItems = multi ? this._selection.items() : null;
+      // 原版 drag-ghost：图标 + 名称（多选为文件/文件夹计数），随指针显示
       try {
         const ghost = createDiv('drag-ghost');
-        setIcon(ghost.createDiv('drag-ghost-icon'), item instanceof TFolder ? 'folder' : 'file-text');
-        ghost.createDiv('drag-ghost-title').setText(item.name);
+        if (multi) {
+          setIcon(ghost.createDiv('drag-ghost-icon'), 'files');
+          ghost.createDiv('drag-ghost-title').setText(dragGhostTitle(this._draggingItems));
+        } else {
+          setIcon(ghost.createDiv('drag-ghost-icon'), item instanceof TFolder ? 'folder' : 'file-text');
+          ghost.createDiv('drag-ghost-title').setText(item.name);
+        }
         document.body.appendChild(ghost);
         if (ev.dataTransfer.setDragImage) ev.dataTransfer.setDragImage(ghost, 12, 12);
         requestAnimationFrame(() => ghost.detach());
@@ -278,6 +321,7 @@ export class FileExplorerView extends View {
     el.addEventListener('dragend', () => {
       el.removeClass('is-being-dragged');
       this._draggingItem = null;
+      this._draggingItems = null;
       this.treeEl.findAll('.is-being-dragged-over').forEach((e) => e.removeClass('is-being-dragged-over'));
     });
   }
@@ -293,10 +337,7 @@ export class FileExplorerView extends View {
         return;
       }
       if (!this._draggingItem) return;
-      const item = this._draggingItem;
-      if (item === folder) return;
-      if (item instanceof TFolder && folder.path.startsWith(item.path + '/')) return;
-      if (parentPathOf(item.path) === folder.path) return;
+      if (!movableItems(this._draggingItems || [this._draggingItem], folder).length) return;
       ev.preventDefault();
       ev.dataTransfer.dropEffect = 'move';
       folderEl.addClass('is-being-dragged-over');
@@ -310,12 +351,9 @@ export class FileExplorerView extends View {
       folderEl.removeClass('is-being-dragged-over');
       const files = ev.dataTransfer && ev.dataTransfer.files ? Array.from(ev.dataTransfer.files) : [];
       if (!this._draggingItem && files.length) { await this._importExternalFiles(files, folder.path); return; }
-      const item = this._draggingItem;
-      if (!item) return;
-      const newPath = normalizePath((folder.path === '/' ? '' : folder.path + '/') + item.name);
-      if (newPath === item.path) return;
-      const ok = await this.app.fileManager.renameFile(item, newPath);
-      if (!ok) new Notice(tt('plugins.file-explorer.msg-error-move-failed', `无法移动“${item.name}”`));
+      if (!this._draggingItem) return;
+      // 多选拖动：整个选择集作为载荷（原版 f$ 语义），单选沿用 renameFile
+      await moveItemsToFolder(this, this._draggingItems || [this._draggingItem], folder);
     });
   }
 
@@ -341,12 +379,19 @@ export class FileExplorerView extends View {
     this.treeEl.findAll('.nav-file-title.is-active, .nav-folder-title.is-active').forEach((el) => el.removeClass('is-active'));
     if (!path) return;
     if (reveal === true && path) this._expandTo(path);
-    const el = this.treeEl.querySelector(`.nav-file-title[data-path="${cssAttr(path)}"]`) ||
-      this.treeEl.querySelector(`.nav-folder-title[data-path="${cssAttr(path)}"]`);
+    const el = this._titleEl(path);
     if (el) {
       el.addClass('is-active');
       if (reveal) el.scrollIntoView({ block: 'nearest' });
     }
+  }
+
+  /** 原版 x8.onFileOpen：活动文件不是键盘焦点项时清空选择集，再更新 is-active。 */
+  _onFileOpen() {
+    const file = this.app.workspace.getActiveFile();
+    const path = file ? file.path : null;
+    if (path !== this._selection.focusPath) this._selection.clear();
+    this.setActivePath(path);
   }
 
   _expandTo(path) {
@@ -379,6 +424,12 @@ export class FileExplorerView extends View {
   }
 
   _showFileMenu(ev, file) {
+    // 原版：右键项属于多选（≥2）时菜单作用于整个选择集
+    if (this._selection.size > 1 && this._selection.has(file.path)) {
+      showMultiSelectionMenu(this, ev, file);
+      return;
+    }
+    this._selection.setFocus(file.path, false);
     const menu = new Menu(this.app);
     menu.addItem((i) => i.setTitle(t('interface.menu.open-in-new-tab') || 'Open in new tab').setIcon('file').onClick(() => this.app.workspace.openFile(file, { newLeaf: 'tab' })));
     menu.addItem((i) => i.setTitle(t('interface.menu.open-to-the-right') || 'Open to the right').setIcon('separator-vertical').onClick(() => this.app.workspace.openFile(file, { newLeaf: 'split' })));
@@ -400,10 +451,18 @@ export class FileExplorerView extends View {
     menu.addItem((i) => i.setTitle('Show in system explorer').setIcon('folder-open').onClick(() => {
       require('../core/ipc.js').Desktop.showItemInFolder(this.app.vault.adapter.toAbs(file.path));
     }));
+    const titleEl = this._titleEl(file.path);
+    if (titleEl) menu.setParentElement(titleEl);
     menu.showAtMouseEvent(ev);
   }
 
   _showFolderMenu(ev, folder) {
+    // 原版：多选菜单与文件共用（右键项属于选择集时作用于整个选择集）
+    if (this._selection.size > 1 && this._selection.has(folder.path)) {
+      showMultiSelectionMenu(this, ev, folder);
+      return;
+    }
+    this._selection.setFocus(folder.path, false);
     const menu = new Menu(this.app);
     menu.addItem((i) => i.setTitle(t('plugins.file-explorer.action-new-note') || 'New note').setIcon('file-plus').onClick(() => {
       this._newNoteIn(folder);
@@ -434,6 +493,8 @@ export class FileExplorerView extends View {
       this._collapsed.clear();
       this.render();
     }));
+    const titleEl = this._titleEl(folder.path);
+    if (titleEl) menu.setParentElement(titleEl);
     menu.showAtMouseEvent(ev);
   }
 
@@ -485,7 +546,8 @@ export class FileExplorerView extends View {
     return this._newFolderIn(folder);
   }
 
-  async _newFolderIn(folder) {
+  /** 建文件夹（唯一名 + 渲染），调用方决定是否进入重命名。 */
+  async _createFolderIn(folder) {
     let name = 'Untitled';
     const existing = new Set(folder.children.map((c) => c.name));
     if (existing.has(name)) {
@@ -494,6 +556,11 @@ export class FileExplorerView extends View {
     const path = normalizePath((folder.path === '/' ? '' : folder.path + '/') + name);
     const created = await this.app.vault.createFolder(path);
     this.render();
+    return created;
+  }
+
+  async _newFolderIn(folder) {
+    const created = await this._createFolderIn(folder);
     setTimeout(() => this.startRename(created), 30);
     return created;
   }
@@ -540,24 +607,98 @@ export class FileExplorerView extends View {
   }
 
   async promptMove(item) {
-    const folders = [this.app.vault.getRoot()];
-    const collect = (f) => { for (const c of f.children) if (c instanceof TFolder) { folders.push(c); collect(c); } };
-    collect(this.app.vault.getRoot());
-    const options = folders.filter((f) => f.path !== parentPathOf(item.path) && !(item instanceof TFolder && f.path.startsWith(item.path))).map((f) => ({ label: f.path === '/' ? '/' : f.path, folder: f }));
-    const chosen = await new Promise((resolve) => {
-      const m = new GenericSuggester(this.app, options, {
-        placeholder: t('plugins.file-explorer.action-move-file') || 'Move file to...',
-        onChoose: resolve,
-      });
-      m.open();
-      m.onClose = () => resolve(null);
-    });
+    const chosen = await chooseMoveTarget(this, [item]);
     if (!chosen) return;
     const newPath = normalizePath((chosen.folder.path === '/' ? '' : chosen.folder.path + '/') + item.name);
     const ok = item instanceof TFolder
       ? await this.app.fileManager.renameFolder(item, newPath)
       : await this.app.fileManager.renameFile(item, newPath);
     if (!ok) new Notice(tt('plugins.file-explorer.msg-error-move-file-failed', '无法移动文件。'));
+  }
+
+  // -------------------------------------------------------------------------
+  // Multi-selection actions (keyboard / menu / drag fall through to these)
+  // -------------------------------------------------------------------------
+  _itemByPath(path) { return this.app.vault.getAbstractFileByPath(path) || null; }
+
+  _titleEl(path) {
+    if (!this.treeEl) return null;
+    const attr = `data-path="${cssAttr(path)}"`;
+    return this.treeEl.querySelector(`.nav-file-title[${attr}]`) || this.treeEl.querySelector(`.nav-folder-title[${attr}]`);
+  }
+
+  /** 原版 S8.selectItem 的门：showUnsupportedFiles 关闭时不受支持的文件不可选中。 */
+  _isSelectablePath(path) {
+    const item = this._itemByPath(path);
+    return !!item && !(item instanceof TFile && !this._isVisibleFile(item));
+  }
+
+  /** 键盘导航需要容器持有 DOM 焦点（原版靠 scope 栈，不依赖焦点元素）。 */
+  _focusContainer() {
+    if (!this.container || document.activeElement === this.container) return;
+    const active = document.activeElement;
+    if (active && active.closest && active.closest('.nav-rename-input')) return;
+    try { this.container.focus({ preventScroll: true }); } catch (e) { this.container.focus(); }
+  }
+
+  _toggleFolder(path) {
+    if (this._collapsed.has(path)) this._collapsed.delete(path);
+    else this._collapsed.add(path);
+    this.render();
+  }
+
+  _setCollapsed(path, collapsed) {
+    if (collapsed) this._collapsed.add(path); else this._collapsed.delete(path);
+    this.render();
+  }
+
+  /** 原版 setCollapseAll：折叠/展开全部文件夹。 */
+  _setCollapsedAll(collapsed) {
+    const walk = (folder) => {
+      for (const child of folder.children) {
+        if (!(child instanceof TFolder)) continue;
+        if (collapsed) this._collapsed.add(child.path); else this._collapsed.delete(child.path);
+        walk(child);
+      }
+    };
+    walk(this.app.vault.getRoot());
+    this.render();
+  }
+
+  /** 原版 onKeyOpen → focusedItem.onSelfClick：文件打开，文件夹折叠切换。 */
+  _activateFocused() {
+    const item = this._selection.focusPath ? this._itemByPath(this._selection.focusPath) : null;
+    if (item instanceof TFolder) this._toggleFolder(item.path);
+    else if (item) this._openFromKeyboard(item);
+  }
+
+  /** 键盘打开（Mod+方向键 / Mod+Enter / Space）：打开后把焦点还给树，便于继续移动。 */
+  async _openFromKeyboard(file) {
+    if (!(file instanceof TFile)) return;
+    await this.app.workspace.openFile(file);
+    this._focusContainer();
+  }
+
+  /** 原版 Mod+方向键的非文件夹判定：焦点项是文件才打开。 */
+  _openFocusedFile() {
+    const item = this._selection.focusPath ? this._itemByPath(this._selection.focusPath) : null;
+    if (item instanceof TFile) this._openFromKeyboard(item);
+  }
+
+  /** 原版 onKeyRename / handleRenameFocusedItem：根目录不可重命名。 */
+  _renameFocused() {
+    const item = this._selection.focusPath ? this._itemByPath(this._selection.focusPath) : null;
+    if (item && !(item instanceof TFolder && item.isRoot())) this.startRename(item);
+  }
+
+  /** 原版 onDeleteSelectedFiles：选择集优先，空集时退到焦点项。 */
+  _deleteSelected() {
+    const items = this._selection.items();
+    if (!items.length) {
+      const focused = this._selection.focusPath ? this._itemByPath(this._selection.focusPath) : null;
+      if (focused) items.push(focused);
+    }
+    return deleteItemsSequentially(this, items);
   }
 }
 
