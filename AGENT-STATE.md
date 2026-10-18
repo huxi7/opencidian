@@ -410,6 +410,13 @@ node --experimental-vm-modules src/renderer/core/workspace-regression.js
 已完成补充（组件批，`0c8dbe9`）：
 - 全局 tooltip（`core/tooltip.js`，1000ms 延迟/100ms 宽限/上下左右/翻转/抑制原生 title）、Notice 右上角+4000ms+hover 暂停+收拢动画、Suggest clear 按钮/PageUp/PageDown/Ctrl+p/n/auxclick；dialogs 场景扩到 7 项。同时把 file-explorer 移动失败的英文硬编码改成 locale 键（zh/en 同步）。
 
+## 在跑/待集成（2026-10-18 晚）
+
+- 画布批（代理完成，待主会话验证+提交）：`workspace.activeEditor`（`getActiveEditor/setActiveEditor/unsetActiveEditor` + 属性访问器，画布卡片宿主优先、回落活动叶子）、导出弹窗（范围/缩放/水印/隐私，13 个原版 locale 键，4096 上限，视口模式隐藏缩放与水印）、超限文件拆分（canvas-node 729 / canvas-view 750 / canvas-controls 78 / canvas-export-dialog 110）。首轮：canvas-edit 75、canvas 93、editor 113、core-ribbon 47、sidebar-shell 61。
+- 表格剩余项代理仍在跑（单元格菜单/删行补空行/触屏手柄）。
+- 新派：文件树多选+键盘导航（`ses_eb198e7adffedyTuRX3nfrJlCs`）、堆叠标签页（`ses_eb198e7adffd4TdjhPhiUwbRTX`）。
+- 主会话已排队：canvas 批 build+canvas-edit+canvas+editor+core-ribbon+sidebar-shell 验证（日志 `/tmp/verify-canvas-b.log`）。
+
 ## E2E 模式（2026-10-18 定稿）
 
 - `E2E=1`（run.mjs 注入）：`setActivationPolicy('accessory')` + `dock.hide()` + `showInactive()` + `focusable:false` + `opacity:0` + `setIgnoreMouseEvents(true)` → 测试窗口完全不可见、不抢键盘/焦点、不夺菜单栏、不遮挡界面。
