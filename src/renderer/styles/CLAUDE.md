@@ -11,15 +11,15 @@ tokens.css: 设计变量入口。按序导入 foundation 与 interface，保持�
 tokens-foundation.css: 字重与前半全局变量。保留原版规则顺序。
 tokens-interface.css: 后半全局变量、明暗主题与字体族。
 base.css: 重置、滚动条(仅 body.styled-scrollbars 下生效，macOS 用系统 overlay 滚动条，逐字移植原版)、输入/按钮/开关/滑块基础样式、clickable-icon、.is-hidden。
-layout.css: 外层 workspace-root 与中心 mod-root 分开。只给中心文档应用主背景。
+layout.css: 外层 workspace-root 与中心 mod-root 分开。只给中心文档应用主背景。含原版堆叠标签页段(app.css 6506-6590)：头竖排(writing-mode)、tab-container 横向滑动、pane 宽度区间。
 workspace-sidebar.css: 原版侧栏图标、库信息栏、开关与 macOS 留白。窄栏保留帮助和设置。
 components.css: 菜单、弹窗、建议、通知、悬浮提示、设置外壳与快照历史。原版布局规则保持闭合。通知为右上角固定栈(app.css 7923-7978)，tooltip 含 mod-top/mod-left/mod-right 翻转与 tooltip-arrow(app.css 9324-9445)，建议弹层 .suggestion-container 取 --suggestion-background(app.css 8858-8867)。
 download-attachments.css: 下载附件模态。.modal.mod-scrollable-content(app.css 8168-8184)与 .attachments-gallery/.download-attachment-item(app.css 3248-3312)逐字移植；末尾 .download-attachment-name 是本实现补的可见文件名标签。
-tree.css: .tree-item 体系(collapse-icon 尺寸与旋转、tree-item-self/icon/inner/children/flair)，逐字移植自原版 app.css 7263-7287 与 9446-9591。全部树视图共用。
-explorer.css: .nav-* 文件树层(标题内容、nav-file-tag、拖拽高亮)，被 explorer/outline/tag 面板共用。基础结构来自 tree.css。
-editor.css: CodeMirror 与 live preview(HyperMD-*)、inline-title、media 视图。含原版 file layout（.cm-sizer/.cm-contentContainer 布局、is-readable-line-width 的 --file-line-width 居中、.cm-line padding 0、.cm-gutters folding offset）与阅读视图 sizer 居中。表格段（app.css 3551-3797）含 .table-editor 单元格、table-row/col-btn、table-row/col-drag-handle 与 align 属性驱动的对齐，另移植单元格选区覆盖层（is-selected 与 start/end/top/bottom 边框，app.css 3586-3607/3769-3805）、拖拽落点线 .table-drag-target（app.css 12821-12836）与 is-dragging 手柄显隐；.table-cell-editor 是本实现的单元格编辑 textarea（mod-editing 隐藏渲染内容）。
+tree.css: .tree-item 体系(collapse-icon 尺寸与旋转、tree-item-self/icon/inner/children/flair)，逐字移植自原版 app.css 7263-7287 与 9446-9591。全部树视图共用。键盘焦点环除原版 mod-active 规则外，另挂 .nav-files-container:focus 兜底（本复刻的 workspace-leaf 不写 mod-active）。
+explorer.css: .nav-* 文件树层(标题内容、nav-file-tag、拖拽高亮、容器 outline:none)，被 explorer/outline/tag 面板共用。基础结构来自 tree.css。
+editor.css: CodeMirror 与 live preview(HyperMD-*)、inline-title、media 视图。含原版 file layout（.cm-sizer/.cm-contentContainer 布局、is-readable-line-width 的 --file-line-width 居中、.cm-line padding 0、.cm-gutters folding offset）与阅读视图 sizer 居中。图片段取原版 .cm-line .image-embed（inline-flex、加成内容宽、position:relative）与其 .image-wrapper 规则，实时预览的内嵌图片因此能按 img 的 width/height 渲染。表格段（app.css 3551-3797）含 .table-editor 单元格、table-row/col-btn、table-row/col-drag-handle 与 align 属性驱动的对齐，另移植单元格选区覆盖层（is-selected 与 start/end/top/bottom 边框，app.css 3586-3607/3769-3805）、拖拽落点线 .table-drag-target（app.css 12821-12836）与 is-dragging 手柄显隐；.table-cell-editor 是本实现的单元格编辑 textarea（mod-editing 隐藏渲染内容）；表格段末尾按 app.css 3725-3740 补触屏门控：body.is-touch（部件按 (hover: none) 探测）下非激活行列手柄 display:none、编辑中的行/列手柄与授权后的加行/加列按钮常显，桌面保持 hover 显形。
 markdown.css: 阅读样式入口，按原顺序导入内容、属性与高亮规则。
-markdown-content.css: 阅读排版、表格、代码、引用与嵌入。
+markdown-content.css: 阅读排版、表格、代码、引用与嵌入。图片段取原版 .image-embed（宽高由内容决定、右下 3px 内边距）与 .image-wrapper 规则，尺寸语法只在 img 上写 width/height，无尺寸语法时保持原始宽度。
 markdown-properties.css: 属性、标签与内容补充规则。
 markdown-highlight.css: 阅读、实时预览与源码共用原版 token 色彩。
 search.css: 搜索面板、backlinks、outline、tag pane 的专属样式。树基础结构来自 tree.css。
@@ -28,7 +28,7 @@ graph.css: 原版图谱颜色探针、筛选控件与折叠面板规则。
 popover.css: page-preview 的 .popover/.hover-popover 尺寸与内容规则（逐字移植 app.css）。
 settings.css: 设置页签完整样式，逐字移植原版 app.css 设置段(vertical-tab 导航/内容、setting-item、mod-toggle、设置组头、hotkey 胶囊、.hotkey-filter 筛选芯片、.input-right-decorator 装饰图标与清除按钮让位、CSS 片段列表、installed-plugins-container、community 免责行 .setting-icon 与 .community-modal-button-container、.mod-trust-folder 宽度)。
 canvas.css: 画布样式入口。按序导入节点规则与连接线规则。
-canvas-nodes.css: 原版画布布局、节点、分组与手柄规则。文本卡片编辑器规则逐字移植 app.css 的 .markdown-source-view.mod-inside-iframe 段（原版编辑器跑在铺满卡片的内嵌 iframe，本复刻内联，10vh 换成卡片高度）：scroller 纵向布局 + 0 16px 内边距、::before/::after 上下留白、sizer 不撑满、--file-margins 归零、不挂行宽 class；另承接原版卡片内 callout 的 mix-blend-mode: normal、非编辑态正文不可选中（user-select: none）与卡片内容层的文本字体上下文（导出取该层计算样式）。
+canvas-nodes.css: 原版画布布局、节点、分组与手柄规则。文本卡片编辑器规则逐字移植 app.css 的 .markdown-source-view.mod-inside-iframe 段（原版编辑器跑在铺满卡片的内嵌 iframe，本复刻内联，10vh 换成卡片高度）：scroller 纵向布局 + 0 16px 内边距、::before/::after 上下留白、sizer 不撑满、--file-margins 归零、不挂行宽 class；另承接原版卡片内 callout 的 mix-blend-mode: normal、非编辑态正文不可选中（user-select: none）与卡片内容层的文本字体上下文（导出取该层计算样式）。末尾补导出弹窗用到的原版类 .modal.mod-narrow(宽度 400px) 与 .u-muted(次级说明文字，仅弹窗内)。
 canvas-edges.css: 原版连接线与标签规则、拖动对齐参考线（.canvas-snaps 的 line/circle 取强调色，位于 .canvas-edges 之前），补足本实现编辑控件。
 bookmarks.css: 书签树滚动、操作图标与视图头部收藏状态。
 slides.css: 全窗口演示覆盖层。.slides-container/.slides-close-btn/.collapse-indicator/.controls 段移植自原版 app.css slides 段；deck/section/progress 为翻页渲染新增；容器 position:fixed 覆盖全窗口(对齐原版)，背景走 --background-primary（原版硬编码 #191919 由 reveal 主题覆盖，此处取应用主题色）。

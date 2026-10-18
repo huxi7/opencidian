@@ -231,8 +231,8 @@ function addResetSizeItem(app, menu, img, holder) {
       const inner = locateInnerRange(editor, holder, innerText);
       if (!inner) return;
       // 走编辑器事务：撤销栈与自动保存链路与原版一致。
-      // isolateHistory：装载文件时 Editor.setValue 会往历史里压一次整文档替换，
-      // 不切分组的话这次删除会被并进同一组，undo 会整体清空文档。
+      // isolateHistory：把这次改写与相邻编辑切成分组，undo 只回退这一格属性，
+      // 不会把前后编辑一起吞掉（装载用的 Editor.setValue 已重建历史、不入栈）。
       editor.cm.dispatch({
         changes: { from: inner.from + span.start, to: inner.from + span.end, insert: '' },
         annotations: [isolateHistory.of('before')],

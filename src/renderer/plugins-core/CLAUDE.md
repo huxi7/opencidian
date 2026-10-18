@@ -5,7 +5,9 @@
 核心插件。每个文件导出一个模块对象 `{ nameKey?, create(app) }`；create 返回 `{ onload, onunload, registerCommands?, deregister? }`。插件 id 必须与 settings.corePlugins 的键一致，并登记到 core/plugins-registry.js。
 
 成员清单
-file-explorer.js: 文件树视图(type file-explorer)。排序/折叠/右键菜单/拖拽移动/inline 重命名/新建文件与文件夹命令。拖拽移动失败经 tt('plugins.file-explorer.msg-error-move-failed', …) 提示（locale 目前无该键，落到中文兜底）。 系统外部文件拖入：文件夹标题/根区域复制进库（getAvailableAttachmentPath 去重）。
+file-explorer.js: 文件树视图(type file-explorer)。排序/折叠/右键菜单/拖拽移动/inline 重命名/新建文件与文件夹命令。拖拽移动失败经 tt('plugins.file-explorer.msg-error-move-failed', …) 提示（locale 目前无该键，落到中文兜底）。 系统外部文件拖入：文件夹标题/根区域复制进库（getAvailableAttachmentPath 去重）。多选：选择集/键盘/批量操作分别委派 file-explorer-selection.js 与 file-explorer-multi.js；容器 tabindex=0 持有 DOM 焦点，空白点击与右键清空选择，拖动载荷载入选择集，菜单对选择集生效。
+file-explorer-selection.js: 文件树选择层。原版 a2 的 selectedDoms/focusedItem/activeDom 三元组按 path 保存（每次重绘重建 DOM），Alt 切换选择、Shift 按可见顺序范围选择、点击已打开项只聚焦；键盘等价 initializeKeyboardNav（↑/↓/Shift/Mod、←/→、Enter=mac 重命名、Mod+Enter/Space 打开、F2、Delete 与 mac Mod+Backspace），Home/End 原版未注册故不实现。
+file-explorer-multi.js: 文件树批量操作层。原版 x8.dragFiles 的多选拖动载荷（text/plain JSON 增加 items，保留单项 path/type 供编辑器插入链接）、onFileContextMenu 多选分支（新建文件夹含选中项 / 移动 N 项到… / 删除）、onDeleteSelectedFiles 顺序删除、f$ 移动、v$ 顶层项去重。
 command-palette.js: 命令面板与 terminal 功能区入口。启停对称注册和撤销。
 switcher.js: 快速切换器与 file-search 功能区入口。复用 switcher:open，禁用删除按钮和命令。
 backlink.js: 反链分节、上下文与筛选。折叠跨重绘保留；关闭释放全部事件与计时器。
@@ -17,7 +19,7 @@ global-search.js: 全局搜索视图(type search)。关键词/正则/大小写�
 editor-status.js: 状态栏视图状态图标与切换菜单(Reading/Source/Live Preview，tooltip，mod-clickable)。
 page-preview.js: 内部链接悬停预览 popover。五类来源(editor/preview/search/tab-header/graph)可配 Mod 门控，未解析链接空态，设置写 page-preview.json。graph 来源由 GraphEngine 经 workspace 的 hover-link 事件请求（无目标元素，按鼠标坐标定位），插件持有 parent.hoverPopover 句柄供引擎撤销悬停。
 word-count.js: 状态栏字数统计(中英混排规则)，点击弹详情。
-canvas.js: 注册画布视图、四个命令与新建功能区按钮。canvas:new-file 建空画布；canvas:export-as-image 仅在当前叶子是画布时可用（执行时渲染后弹保存对话框写 PNG）；canvas:jump-to-group 仅在画布含分组时可用；canvas:convert-to-file 仅在单选文本卡片时可用。Mod 点击新标签并聚焦，禁用撤销按钮与注册。
+canvas.js: 注册画布视图、四个命令与新建功能区按钮。canvas:new-file 建空画布；canvas:export-as-image 仅在当前叶子是画布时可用（先弹设置弹窗：范围/缩放/水印/隐私，确认后渲染并弹保存对话框写 PNG，取消不落盘）；canvas:jump-to-group 仅在画布含分组时可用；canvas:convert-to-file 仅在单选文本卡片时可用。Mod 点击新标签并聚焦，禁用撤销按钮与注册。
 bookmarks.js: 持久化文件、目录、搜索与分组书签。目录改名同步子路径。
 daily-notes.js: 串行创建日期笔记与嵌套目录。模板变量及 createMarkdownNote 供其余笔记插件复用。
 templates.js: 模板功能区执行已有插入命令。展开变量、合并属性；属性函数供重组复用。
