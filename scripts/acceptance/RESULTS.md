@@ -190,3 +190,10 @@ MathJax 独立适配器子代理的41项基础/故障测试见 assets/mathjax/SO
 - 修复：`_onExternalModify` 记住发起读取时的文件路径，读毕路径不一致即丢弃；`save()` 写盘期间切文件则不更新 `_loadedText`。
 - 新增 `editor-race` 场景 9 项（挂起 cachedRead 确定性复现）；**变异测试**：撤掉路径守卫必失败（`迟到内容未打进 B :: "# A\n\nAAA dirty\n"`），恢复后通过。
 - 回归：table-widget 76、table-interaction 97、editor 113、editor-switch 2、notes 72 全过。
+
+## 图谱力学 worker 批（2026-10-18）
+
+- 协议 1:1：`{nodes,links,alpha,run}` / `{forces,alpha,run}` / 拖拽 `{alphaTarget,forceNode}` 与解钉、`alpha` 仅抬高、SAB+末尾 Uint32 版本守卫 / transfer 双通道、`ignore` 探测、60fps 循环与 `alphaDecay = 1-0.001^(1/300)`。
+- 共享内核 `graph-force.js`（worker 与本地回退同一份数学）；`graph-sim-worker.js` 新入口（dist/graph-sim-worker.js）；门面三级回退（app:// 直载 → fetch+Blob → 本地线程）。
+- 验收 graph-worker 55 项（协议逐字段对照、三级回退、SAB 注入、钉住/解钉、力参数、销毁幂等、本地后端全链路、双视图独立 worker）；回归 graph 72、core-ribbon 47、sidebar-shell 61。
+- 与原版差异：物理内核不复刻 WASM（行为级对齐，常量与参数一致）；未跨源隔离环境自动走 transfer；替补 worker 重发镜像状态（原版无此路径）。

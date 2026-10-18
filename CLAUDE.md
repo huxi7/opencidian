@@ -11,7 +11,7 @@ src/ - 全部源码 (2 子目录)
 scripts/ - esbuild 构建与隔离 Electron 验收 (acceptance/)
 assets/ - 图标表、字体与官方 MathJax 离线资源
 _analysis/ - 原版解包产物 (app.asar/obsidian.asar)，只读参考资料
-dist/ - esbuild 输出 (renderer.js, starter.js)
+dist/ - esbuild 输出 (renderer.js, starter.js, graph-sim-worker.js)
 </directory>
 
 <config>
