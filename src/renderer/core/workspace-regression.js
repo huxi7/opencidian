@@ -40,6 +40,13 @@ class ElementStub {
     child.parentElement = this;
     return child;
   }
+  get firstChild() { return this.children[0] || null; }
+  prepend(child) {
+    child.detach();
+    this.children.unshift(child);
+    child.parentElement = this;
+    return child;
+  }
   insertBefore(child, ref) {
     if (child === ref) return child;
     child.detach();
@@ -136,6 +143,19 @@ async function harness(settings = {}) {
     'notices.js': { Notice: class { constructor(text) { notices.push(text); } } },
     'menu.js': { Menu: MenuStub },
     'ipc.js': { Desktop: { setTitle() {} }, ipcOn() {} },
+    // vault.js 需要 Node require（fs/chokidar），内存回归只用到路径归一化
+    'vault.js': {
+      normalizePath: (value) => {
+        if (!value) return '/';
+        const parts = [];
+        for (const part of String(value).replace(/\\/g, '/').split('/')) {
+          if (!part || part === '.') continue;
+          if (part === '..') { parts.pop(); continue; }
+          parts.push(part);
+        }
+        return parts.join('/');
+      },
+    },
   };
   function load(filename) {
     if (modules.has(filename)) return modules.get(filename);

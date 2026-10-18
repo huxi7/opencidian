@@ -474,7 +474,8 @@ export class Workspace extends Events {
     const split = side === 'left' ? this.leftSplit : this.rightSplit;
     if (!split.collapsed) return;
     split.collapsed = false;
-    this.render();
+    if (split.containerEl) split.containerEl.removeClass('is-sidedock-collapsed', 'is-collapsed');
+    workspaceRenderer.updateSidebarChrome(this);   // 迁移 toggle（FLIP 幽灵动画需要旧父容器仍在 DOM）
     const target = Math.max(180, split.size || 300);
     this._animateSidebar(split, 0, target, () => {
       if (split.containerEl) {
@@ -491,8 +492,11 @@ export class Workspace extends Events {
     if (split.collapsed) return;
     const from = split.containerEl ? split.containerEl.offsetWidth : (split.size || 300);
     split.collapsed = true;
+    // 原版：类切换后立即迁移 toggle（FLIP 与宽度动画并行）并淡出分隔条
+    workspaceRenderer.updateSidebarChrome(this);
     this._animateSidebar(split, from, 0, () => {
-      if (split.collapsed) this.render();
+      // 原版：宽度动画结束后 hide()（不改 DOM 结构）；我们用同语义的类，避免重建 DOM 丢掉 toggle
+      if (split.collapsed && split.containerEl) split.containerEl.addClass('is-sidedock-collapsed', 'is-collapsed');
       this._updateLeafSizes();
       this.trigger('layout-change');
     });
@@ -508,7 +512,7 @@ export class Workspace extends Events {
     if (!el || typeof el.animate !== 'function') { after && after(); return; }
     const anim = el.animate(
       [{ flexBasis: from + 'px', width: from + 'px' }, { flexBasis: to + 'px', width: to + 'px' }],
-      { duration: 140, easing: 'cubic-bezier(0.25, 1, 0.5, 1)', fill: 'both' }
+      { duration: 140, easing: 'cubic-bezier(0, 0.55, 0.45, 1)', fill: 'both' }  // 原版 DD：--anim-motion-swing
     );
     this._sidebarAnim = anim;
     anim.onfinish = () => {

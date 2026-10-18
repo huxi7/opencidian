@@ -112,12 +112,21 @@ function installWindowState() {
 export function render(workspace) {
   const rootEl = workspace._getRootEl();
   rootEl.empty();
+  workspace._dividerHandles = {};   // 重建 DOM：旧引用作废
   for (let i = 0; i < workspace.rootSplit.children.length; i++) {
     const child = workspace.rootSplit.children[i];
     const el = workspace._renderNode(child);
     rootEl.appendChild(el);
     if (i < workspace.rootSplit.children.length - 1) {
       const handle = workspace._createResizeHandle(workspace.rootSplit, i, 'vertical');
+      // 侧栏边界的分隔条：左邻是左栏 → 'left'；右邻是右栏 → 'right'；
+      // 折叠时淡出并禁用指针（原版折叠整个 split 时分隔条随之消失；我们是 flex 兄弟节点，必须显式处理）
+      const nextChild = workspace.rootSplit.children[i + 1];
+      const dividerSide = child.side === 'left' ? 'left' : (nextChild && nextChild.side === 'right' ? 'right' : null);
+      if (dividerSide) {
+        handle.setAttr('data-divider-side', dividerSide);
+        workspace._dividerHandles[dividerSide] = handle;
+      }
       rootEl.appendChild(handle);
     }
   }
@@ -598,8 +607,62 @@ export function refreshHeaderVisibility(workspace) {
   workspace.containerEl.findAll('.view-header').forEach((el) => el.toggleClass('is-hidden', !show));
 }
 
+/** 原版 DD：{duration:140, fn:--anim-motion-swing}（cubic-bezier(0,0.55,0.45,1)）。 */
+const TOGGLE_ANIM = { duration: 140, easing: 'cubic-bezier(0, 0.55, 0.45, 1)' };
+
+const togglePadLeft = (el) => {
+  try { const v = parseInt(getComputedStyle(el).paddingLeft, 10); return Number.isFinite(v) ? v : 0; }
+  catch (e) { return 0; }
+};
+
+/**
+ * 原版 y()：toggle 迁移的 FLIP 动画。
+ * oldStyle='offset' → 克隆幽灵从 newPad 滑到 -w（并补 left 偏移）；'none' → 直接消失；'' → 不动画。
+ * newStyle='offset' → 新位置的按钮从 -(w+oldPad) 滑入；'' → 不动画。
+ */
+function moveToggle(toggle, target, opts = {}) {
+  if (!toggle || !target || toggle.parentElement === target) return;
+  const { prepend = false, oldStyle = '', newStyle = '' } = opts;
+  const parent = toggle.parentElement;
+  const width = toggle.offsetWidth;
+  const oldPad = parent ? togglePadLeft(parent) : 0;
+  const newPad = togglePadLeft(target);
+  const drop = (el) => { try { el.remove(); } catch (e) { /* ignore */ } };
+  // 宿主可能没有动画/克隆能力（内存 DOM 回归）：退化为纯迁移
+  const canAnimate = typeof toggle.animate === 'function' && typeof toggle.cloneNode === 'function';
+  if (parent && oldStyle !== '' && canAnimate) {
+    const ghost = toggle.cloneNode(true);
+    toggle.replaceWith(ghost);
+    if (oldStyle === 'offset') {
+      ghost.animate(
+        [{ marginLeft: newPad + 'px', left: '0px' }, { marginLeft: -width + 'px', left: -oldPad + 'px' }],
+        TOGGLE_ANIM,
+      ).finished.then(() => drop(ghost)).catch(() => drop(ghost));
+    } else if (oldStyle !== 'none') {
+      ghost.style.overflow = 'hidden';
+      ghost.animate([{ width: width + 'px' }, { width: '0px' }], TOGGLE_ANIM)
+        .finished.then(() => drop(ghost)).catch(() => drop(ghost));
+    } else {
+      drop(ghost);   // 原版 'none'：幽灵配空动画立即完成并移除
+    }
+  }
+  if (prepend) target.prepend(toggle); else target.appendChild(toggle);
+  if (parent && newStyle !== '' && typeof toggle.animate === 'function') {
+    if (newStyle === 'offset') {
+      toggle.animate(
+        [{ marginLeft: -(width + oldPad) + 'px', left: -oldPad + 'px' }, { marginLeft: '0px', left: '0px' }],
+        TOGGLE_ANIM,
+      );
+    } else if (newStyle !== 'none') {
+      toggle.style.overflow = 'hidden';
+      toggle.animate([{ width: '0px' }, { width: width + 'px' }], TOGGLE_ANIM)
+        .finished.then(() => { toggle.style.overflow = ''; }).catch(() => { toggle.style.overflow = ''; });
+    }
+  }
+}
+
 /** 左栏收起后开关移至中心标题栏，底部操作保留在功能区。 */
-function updateSidebarChrome(workspace) {
+export function updateSidebarChrome(workspace) {
   const centerTabs = [];
   const collect = node => {
     if (node instanceof WorkspaceTabs) centerTabs.push(node);
@@ -628,11 +691,32 @@ function updateSidebarChrome(workspace) {
     const title = split.collapsed ? tt('interface.sidebar-expand', '展开') : tt('interface.sidebar-collapse', '收起');
     toggle.setAttr('aria-label', title); toggle.setAttr('title', title);
     toggle.setAttr('aria-expanded', String(!split.collapsed));
-    if (target?._headersOuter) {
-      if (side === 'left' && workspace.leftSplit.collapsed) target._headersOuter.insertBefore(toggle, target._headersOuter.firstChild);
-      else target._headersOuter.appendChild(toggle);
+    if (side === 'left') {
+      // 原版：macOS hidden 标题栏或 ribbon 隐藏时走 FLIP 迁移；否则开关常驻功能区顶部
+      const body = document.body;
+      const macHidden = body.hasClass('mod-macos') && body.hasClass('is-hidden-frameless');
+      const useFlip = !body.hasClass('show-ribbon') || macHidden;
+      if (!useFlip && workspace.ribbonEl) {
+        moveToggle(toggle, workspace.ribbonEl, { prepend: true });
+      } else if (target?._headersOuter) {
+        if (workspace.leftSplit.collapsed) moveToggle(toggle, target._headersOuter, { prepend: true, oldStyle: 'none', newStyle: 'offset' });
+        else moveToggle(toggle, target._headersOuter, { oldStyle: 'offset', newStyle: '' });
+      }
+    } else if (target?._headersOuter) {
+      if (workspace.rightSplit.collapsed) moveToggle(toggle, target._headersOuter, { oldStyle: 'none', newStyle: '' });
+      else moveToggle(toggle, target._headersOuter, { newStyle: '' });
     }
   }
+  // 折叠侧的分隔条淡出（原版 r.style.opacity：0/1；否则 1px 线会横穿标题栏红绿灯区）
+  const dividers = workspace._dividerHandles || {};
+  const applyDivider = (el, collapsed) => {
+    if (!el) return;
+    el.style.opacity = collapsed ? '0' : '1';
+    // 原版折叠后分隔条随 hidden split 一起不可交互；我们挂在根分割上，显式禁用指针
+    el.style.pointerEvents = collapsed ? 'none' : '';
+  };
+  applyDivider(dividers.left, workspace.leftSplit.collapsed);
+  applyDivider(dividers.right, workspace.rightSplit.collapsed);
   if (left?.containerEl) left.containerEl.addClass('mod-top-left-space');
   if (right?.containerEl) right.containerEl.addClass('mod-top-right-space');
   if (!workspace._ribbonSettingsFallback) {

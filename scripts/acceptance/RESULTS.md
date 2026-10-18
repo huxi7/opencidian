@@ -232,3 +232,11 @@ MathJax 独立适配器子代理的41项基础/故障测试见 assets/mathjax/SO
 - 命令 `app:check-updates`；启动后 5s 静默检查（仅当配置了 updateFeed 且 checkUpdates≠false）。
 - 顺手修 `i18n.tt()`：兜底文案现在也做 `{{name}}` 插值（此前 fallback 里的占位符原样输出）。
 - 验收 update-check 7 项（stub requestUrl 零真实网络：未配置不联网/新版本+按钮/已最新无按钮/失败提示/静态 JSON）；回归 settings-ui、core-views、editor-menu、notes。
+
+## 侧栏收展动画与顶栏穿模修复（2026-10-18）
+
+- 顶栏穿模根因：折叠侧的分隔条（`workspace-leaf-resize-handle`）是根分割的 flex 兄弟节点，左栏 `display:none` 后它仍留在 x=44、**1px 竖线全高**，正好穿过最小化按钮（红绿灯 x≈19..73）。
+- 修复：根分割边界分隔条打 `data-divider-side`，折叠时 `opacity:0` + `pointer-events:none`（对齐原版 `r.style.opacity=0` 与折叠 split 隐藏后的不可交互）。
+- 动画 1:1：宽度补间缓动改为原版 `--anim-motion-swing`；补齐原版 `y()` 的 toggle 迁移 FLIP（幽灵 oldStyle=offset/宽度收缩、新位 newStyle=offset；140ms；`oldStyle:'none'` 幽灵立即移除）；折叠/展开不再整树重建 DOM（改为类切换），使 FLIP 的旧父容器可用。
+- 内存回归：`workspace-regression` 补 `vault.js` 替身与 `prepend/firstChild`，19/19 通过。
+- 验收：新增 sidebar-chrome 19 项；回归 sidebar 93、sidebar-shell 61、core-ribbon 47、appearance 32。
