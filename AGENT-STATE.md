@@ -416,8 +416,10 @@ node --experimental-vm-modules src/renderer/core/workspace-regression.js
 - ✅ 表格剩余项已提交 `f187e36`（单元格菜单/删行补空行/触屏手柄；table-interaction 178、table-widget 76、editor 113）。
 - ✅ 堆叠标签页已提交 `d792b8b`（stacked-tabs 49 + sidebar-shell 61、core-ribbon 47、editor-switch 2、notes 72；顺手修复标签条拖拽重排从未注册的既有 bug）。
 - ✅ 文件树多选与键盘导航已提交 `57173de`（file-explorer-selection/multi 新模块；file-explorer-multi 80、sidebar 93、sidebar-shell 61、basic-plugins 6。根因：原版 vault.exists 在本复刻不存在，改用 getAbstractFileByPath）。
-- 🟡 在跑：画布多选/框选/对齐/分布/分组（canvas-selection/arrange）；编辑器图片尺寸语法 + 重置大小 + 嵌入菜单（image-size）。
-- ⏳ 待办：共享 CLAUDE.md 文档合并、42 场景终版全量回归、交付报告。
+- ✅ 图片尺寸批已提交 `35af226`（source-text.js 新模块、阅读/LP 尺寸语法、重置大小；image-size 36 + editor 113、notes 72、reading-menus 13）。
+- ✅ 数据丢失级修复已提交 `8921eb4`：Editor.setValue 整弹重建 state（撤销栈不跨文档边界）；修复前「打开笔记后一次 Mod+Z 清空文档并落盘」，editor-race 9→20 已钉死（含切文件撤消污染防护）。
+- 🟡 在跑：画布多选/框选/对齐/分布/分组（canvas-selection/arrange）。
+- ⏳ 待办：共享 CLAUDE.md 文档合并（含 editor/CLAUDE.md 补 setValue 语义行）、42 场景终版全量回归、交付报告。
 - 已知纪律：子代理曾被免费网关限流（Forbidden/ConnectionRefused）；失败即续跑原会话或主会话接手。
 
 ## 验收纪律（2026-10-18 增补）
