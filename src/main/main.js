@@ -198,7 +198,8 @@ function defaultWindowOptions(id) {
     backgroundColor: '#00000000',
     ...frameWindowOptions(),
     show: false,
-    focusable: !E2E,   // E2E：窗口不可聚焦，事件/渲染照常，但不夺键盘焦点
+    focusable: !E2E,        // E2E：窗口不可聚焦，事件/渲染照常，但不夺键盘焦点
+    ...(E2E ? { opacity: 0 } : {}),   // E2E：整窗透明，测试全程不可见（渲染与截图不受影响）
     webPreferences: {
       contextIsolation: false,
       nodeIntegration: true,
@@ -465,6 +466,10 @@ function openVaultWindow(id, focus = true) {
   }
   const opts = defaultWindowOptions(id);
   const win = new BrowserWindow(opts);
+  if (E2E) {
+    try { win.setIgnoreMouseEvents(true, { forward: true }); } catch (e) { /* ignore */ }
+    try { win.setOpacity(0); } catch (e) { /* ignore */ }
+  }
   if (!IS_MAC) { const icon = customIconPath(); if (icon) { try { win.setIcon(icon); } catch (e) {} } }
   windows[id] = win;
   win.vaultId = id;

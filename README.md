@@ -81,7 +81,7 @@ OpenSidian 内置**检查更新**（命令面板搜「检查更新」，或启�
 验收脚本以 `E2E=1` 启动 Electron（`scripts/acceptance/run.mjs` 自动设置）。该开关只改**呈现层**：
 
 - `app.setActivationPolicy('accessory')` + `app.dock.hide()`：不进 Dock、不夺菜单栏、不激活应用；
-- 窗口 `focusable: false` + `showInactive()`：窗口在后台上显示，键盘/系统焦点不跳走；
+- 窗口 `focusable: false` + `showInactive()` + **`opacity: 0`（整窗透明）+ 忽略鼠标**：测试窗口完全不可见、键盘/系统焦点不跳走、不遮挡任何界面；
 - 所有窗口统一走 `defaultWindowOptions` 工厂，`E2E` 是唯一开关；`npm start` 等正常模式行为不变。
 
 所以后台跑全量回归时，你可以正常看视频/学习/干别的活，不会被测试窗口抢焦点。
