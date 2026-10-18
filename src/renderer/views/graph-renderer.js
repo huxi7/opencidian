@@ -1,7 +1,9 @@
 /**
- * [INPUT]: 依赖 ForceSim、共享几何与颜色工具及浏览器 Canvas。
+ * [INPUT]: 依赖 ForceSim（worker/本地门面）、共享几何与颜色工具及浏览器 Canvas。
  * [OUTPUT]: 导出 GraphRenderer；绘制节点与连线，承接缩放、平移和拖拽。
- * [POS]: 图谱渲染层；拥有模拟器、画布监听与 ResizeObserver，销毁时统一释放。
+ * [POS]: 图谱渲染层；拥有模拟器、画布监听与 ResizeObserver，销毁时终止模拟器（含 worker）。
+ *        力学在 worker 运行时由 sim.onUpdate → changed() 驱动重绘；本地回退才在帧回调里 tick()。
+ *        每帧把 sim.nodeById 的坐标拷进节点，钉住的节点以自身 fx/fy 为准。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 import { ForceSim } from '../plugins-core/graph-simulation.js';
@@ -112,6 +114,8 @@ export class GraphRenderer {
     this.renderTimer = null;
     this.frameTime = 0;
     this.sim = new ForceSim();
+    /* 收到新位置 → 重绘（worker 后端由消息驱动；本地后端靠帧回调 tick） */
+    this.sim.onUpdate = () => this.changed();
     this.onNodeClick = null;
     this.onNodeRightClick = null;
     this.onNodeHover = null;
@@ -155,7 +159,7 @@ export class GraphRenderer {
     if (this.renderTimer) window.cancelAnimationFrame(this.renderTimer);
     this.renderTimer = null;
     this.renderCallback = null;
-    this.sim = new ForceSim();
+    this.sim.destroy();
     this.nodes = []; this.links = []; this.nodeLookup = {};
     this.canvasEl.remove();
   }

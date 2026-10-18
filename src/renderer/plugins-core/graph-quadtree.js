@@ -1,9 +1,9 @@
 /**
  * [INPUT]: 无依赖。
  * [OUTPUT]: 导出 QuadNode、buildQuadtree(nodes, xOf, yOf)、visitAfter。
- * [POS]: 图谱力学的空间索引（对齐原版 d3-quadtree 的访问语义，供 graph-simulation 的 Barnes-Hut 斥力与半径裁剪碰撞使用）。
+ * [POS]: 图谱力学的空间索引（对齐原版 d3-quadtree 的访问语义，供 graph-force.js 的 Barnes-Hut 斥力与半径裁剪碰撞使用）。
  *        包围盒随节点携带；重合点存为叶子上的 next 链（d3 语义），超过 40 层仍未分离时并入链，杜绝退化坐标导致的无限细分。
- *        受力遍历在 graph-simulation 内联为复用栈，本模块只提供建树与聚合遍历。
+ *        受力遍历在 graph-force.js 内联为复用栈；本模块只提供建树与聚合遍历。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 /* Minimal quadtree for graph force simulation (d3-quadtree-compatible traversal). */

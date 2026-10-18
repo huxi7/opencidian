@@ -1,267 +1,290 @@
 /**
- * [INPUT]: 依赖 ./graph-quadtree.js 的 buildQuadtree 与 visitAfter（空间索引与聚合遍历）。
- * [OUTPUT]: 导出 ForceSim；支持差量换图、节点固定、释放与逐帧积分。
- * [POS]: 图谱力学计算；渲染器拥有实例。斥力为 Barnes-Hut 四叉树近似（theta²=0.81），碰撞按四叉树包围盒裁剪半径 120 的候选对，
- *        两者共用同一棵树（tick 内位置不变）。受力遍历内联为复用栈，避免逐点闭包分配。
- *        参数对齐原版 d3-force：manyBody strength=-1000/distanceMin=30、collide radius=60/strength=.5。
+ * [INPUT]: 依赖 ./graph-force.js 的 ForceKernel 与 ALPHA_START/ALPHA_MIN；依赖浏览器 Worker/fetch/Blob/URL API。
+ * [OUTPUT]: 导出 ForceSim 与 GRAPH_WORKER_URL。
+ * [POS]: 图谱力学的线程门面（原版渲染端 TQ 内 worker 交互的对应物）。worker 后端把原版 sim.js 协议发给 Worker：
+ *        app:// 直载 → 失败退 fetch + Blob URL（原版 Rz 手法）→ 再失败退本地线程，物理交给共享内核 graph-force.js。
+ *        对外方法名与旧实现一致（setData/setForceNode/setForces/run/tick/finished/nodeById），graph-renderer 只新增 onUpdate 与 destroy 接线。
+ *        位置在收到 worker 结果时写入 nodeById 并回调；SAB 用 buffer 末尾 Uint32 版本守卫，transfer 的 ArrayBuffer 应用后清空结果。
+ *        更换 worker（直载失败或运行中崩溃）时重发镜像状态（nodes/links/钉住/力参数），避免替补 worker 空图。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
-import { buildQuadtree, visitAfter } from './graph-quadtree.js';
+import { ForceKernel, ALPHA_START, ALPHA_MIN } from './graph-force.js';
 
-const ALPHA_DECAY = 1 - Math.pow(0.001, 1 / 300); // 原版 B
-const VELOCITY_DECAY = 0.6;                       // 原版 complete(..., 0.6)
-const REPEL_DISTANCE_MIN = 30;                    // 原版 distanceMin(30)
-const COLLIDE_RADIUS = 60;                        // 原版 radius(60)
-const COLLIDE_STRENGTH = 0.5;                     // 原版 strength(.5)
-const jiggle = () => 1e-6 * (Math.random() - 0.5);
+export const GRAPH_WORKER_URL = 'app://opensidian.app/dist/graph-sim-worker.js';
+const WORKER_NAME = 'Graph Worker';   // 原版 new Worker("/sim.js", { name: "Graph Worker" })
+const IDLE_MS = 250;                  // worker 后端沉降判定：连续静默超过该时长即视为停摆
 
 export class ForceSim {
-  constructor() {
-    this.nodes = [];              // {id,x,y,vx,vy,fx,fy}
-    this.nodeById = new Map();
-    this.links = [];              // {source,target}
-    this.alpha = 1;
-    this.alphaTarget = 0;
-    this.centerStrength = 0.1;
-    this.repelStrength = -1000;
-    this.linkStrength = 1;
-    this.linkDistance = 250;
-    this.structureDirty = false;
-  }
-
-  /**
-   * 原版 worker 的 setData 消息（{nodes:{id:[x,y]},links,alpha:.3,run:true}）。
-   * nodeRefs 是渲染器算好初始位置的节点 [{id,x,y}]；已有节点保留自身坐标与速度。
-   */
-  setData(nodeRefs, links) {
-    const next = [];
-    for (const ref of nodeRefs) {
-      let node = this.nodeById.get(ref.id);
-      if (!node) {
-        node = { id: ref.id, x: ref.x, y: ref.y, vx: 0, vy: 0, fx: null, fy: null, index: 0 };
-        this.nodeById.set(ref.id, node);
-      }
-      next.push(node);
-    }
-    const alive = new Set(nodeRefs.map((ref) => ref.id));
-    for (const id of Array.from(this.nodeById.keys())) if (!alive.has(id)) this.nodeById.delete(id);
-    this.nodes = next;
-    // 碰撞的配对去重需要稳定索引（d3 的 node.index）
-    for (let i = 0; i < next.length; i += 1) next[i].index = i;
-    const byId = this.nodeById;
-    this.links = links.map(([s, t2]) => ({ source: byId.get(s), target: byId.get(t2) }))
-      .filter((link) => link.source && link.target);
-    // 拓扑改变时计数；逐帧对每条边重扫全图会产生 O(E²) 开销。
-    this.linkCounts = new Map();
-    for (const { source, target } of this.links) {
-      this.linkCounts.set(source, (this.linkCounts.get(source) || 0) + 1);
-      if (target !== source) this.linkCounts.set(target, (this.linkCounts.get(target) || 0) + 1);
-    }
-    this.structureDirty = true;
-    this.run();
-  }
-
-  /* 原版 forceNode 消息：拖拽时钉住节点；x/y 传 null 解除钉住，alphaTarget 传 0 停止加速 */
-  setForceNode(id, x, y, alpha, alphaTarget) {
-    const node = this.nodeById.get(id);
-    if (!node) return;
-    node.fx = x;
-    node.fy = y;
-    if (alpha !== undefined && this.alpha < alpha) this.alpha = alpha;
-    if (alphaTarget !== undefined) this.alphaTarget = alphaTarget;
-  }
-
-  setForces(forces) {
-    if (forces.centerStrength !== undefined) this.centerStrength = forces.centerStrength;
-    if (forces.linkStrength !== undefined) this.linkStrength = forces.linkStrength;
-    if (forces.linkDistance !== undefined) this.linkDistance = forces.linkDistance;
-    if (forces.repelStrength !== undefined) {
-      /* 原版：|repel| < 1 时钳到 -1，避免零斥力 */
-      this.repelStrength = Math.abs(forces.repelStrength) < 1 ? -1 : -forces.repelStrength;
-    }
-    this.run();
-  }
-
-  /* 原版 run 消息：只抬高 alpha，不重置 */
-  run() {
-    if (this.alpha < 0.3) this.alpha = 0.3;
-  }
-
-  get finished() {
-    return this.alpha <= 0.001 && this.alphaTarget === 0;
-  }
-
-  tick() {
-    this.alpha += (this.alphaTarget - this.alpha) * ALPHA_DECAY;
-    const alpha = this.alpha;
-    const nodes = this.nodes;
-    for (const node of nodes) {
-      /* 向心力（原版 forceX/forceY，strength = centerStrength，目标原点） */
-      node.vx += (0 - node.x) * this.centerStrength * alpha;
-      node.vy += (0 - node.y) * this.centerStrength * alpha;
-    }
-    for (const link of this.links) {
-      /* 弹簧（原版 q：strength 默认 1/min(出度,入度)，带 bias 与 jiggle） */
-      const source = link.source;
-      const target = link.target;
-      const countSource = this._linkCount(source);
-      const countTarget = this._linkCount(target);
-      const strength = this.linkStrength / Math.min(countSource, countTarget);
-      let dx = target.x + target.vx - source.x - source.vx;
-      let dy = target.y + target.vy - source.y - source.vy;
-      let distance = Math.sqrt(dx * dx + dy * dy);
-      if (distance === 0) { dx = jiggle(); dy = jiggle(); distance = Math.sqrt(dx * dx + dy * dy); }
-      const scale = ((distance - this.linkDistance) / distance) * alpha * strength;
-      dx *= scale;
-      dy *= scale;
-      const bias = countSource / (countSource + countTarget);
-      target.vx -= dx * bias;
-      target.vy -= dy * bias;
-      source.vx += dx * (1 - bias);
-      source.vy += dy * (1 - bias);
-    }
-    const minDist2 = REPEL_DISTANCE_MIN * REPEL_DISTANCE_MIN;
-    /* 斥力与碰撞共用同一棵四叉树：tick 内节点位置未变 */
-    const tree = buildQuadtree(nodes);
-    if (tree) {
-      this._accumulateRepulsion(tree);
-      this._applyRepulsion(tree, nodes, alpha);
-      this._applyCollision(tree, nodes);
-    }
-    for (const node of nodes) {
-      /* 积分（原版 complete）：先速度衰减 0.6 再位移；fx/fy 钉住的节点直接落位 */
-      if (node.fx === null) { node.vx *= VELOCITY_DECAY; node.x += node.vx; }
-      else { node.x = node.fx; node.vx = 0; }
-      if (node.fy === null) { node.vy *= VELOCITY_DECAY; node.y += node.vy; }
-      else { node.y = node.fy; node.vy = 0; }
-    }
-    return this.alpha;
-  }
-
-  _linkCount(node) {
-    return this.linkCounts?.get(node) || 1;
+  constructor(options = {}) {
+    this.kernel = new ForceKernel();
+    this.nodeById = this.kernel.nodeById;
+    this.backend = 'local';           // 'worker' | 'local'（worker 创建期间先置 'worker'，失败回退改回）
+    this.worker = null;               // Worker 实例；终止/回退后为 null
+    this.workerActive = false;
+    this.workerShared = false;        // worker 的 SAB 探测消息（shared 非空即支持）
+    this.fallbackReason = '';         // 回退原因（验收与报告用）
+    this.destroyed = false;
+    this.localTicks = 0;              // 主线程实际跑的物理帧数（worker 后端保持 0）
+    this.onUpdate = null;             // 收到新位置后触发（渲染端接 changed()）
+    this.workerResults = null;        // 最近一次位置消息（版本守卫与诊断用）
+    this.pendingMessages = [];        // worker 就绪前排队的消息
+    this.attempts = 0;
+    this.attachedOnce = false;        // 是否已挂过 worker（决定替补 worker 是否重发镜像状态）
+    this.lastActivity = 0;
+    if (!options.forceLocal) this.startWorker();
   }
 
   /* --------------------------------------------------------------------------
-   * Barnes-Hut 斥力 / 四叉树碰撞（对齐原版 d3-force 的 accumulate / apply）
+   * worker 生命周期（原版 Bz / Rz 的复刻）
    * ------------------------------------------------------------------------ */
 
-  /** 自底向上聚合强度与质心（d3 manyBody.accumulate）。 */
-  _accumulateRepulsion(tree) {
-    const strength = this.repelStrength;
-    visitAfter(tree, (quad) => {
-      if (quad.children) {
-        let value = 0;
-        let weight = 0;
-        let x = 0;
-        let y = 0;
-        for (const child of quad.children) {
-          const c = Math.abs(child.value);
-          if (!c) continue;
-          value += child.value;
-          weight += c;
-          x += c * child.massX;
-          y += c * child.massY;
-        }
-        quad.value = value;
-        if (weight) { quad.massX = x / weight; quad.massY = y / weight; }
-        return;
-      }
-      if (quad.data) {
-        let value = 0;
-        for (let q = quad; q; q = q.next) value += strength;
-        quad.value = value;
-        quad.massX = quad.dataX;
-        quad.massY = quad.dataY;
-      } else {
-        quad.value = 0;
-      }
+  /** 直载 app:// 脚本；抛错则改走 fetch + Blob。创建期间 backend 先置 'worker'（此时消息排队）。 */
+  startWorker() {
+    this.backend = 'worker';
+    this.attempts += 1;
+    let worker = null;
+    try {
+      worker = new Worker(GRAPH_WORKER_URL, { name: WORKER_NAME });
+    } catch (error) {
+      worker = null;
+    }
+    if (worker) this.attachWorker(worker);
+    else this.loadWorkerFromSource();
+  }
+
+  /** 原版 Rz：取回脚本文本，用 Blob URL 起 worker。 */
+  loadWorkerFromSource() {
+    fetch(GRAPH_WORKER_URL)
+      .then((response) => {
+        if (!response.ok) throw new Error('HTTP ' + response.status);
+        return response.text();
+      })
+      .then((text) => {
+        if (this.destroyed) return;
+        this.attempts += 1;
+        const url = URL.createObjectURL(new Blob([text], { type: 'text/javascript' }));
+        this.attachWorker(new Worker(url, { name: WORKER_NAME }));
+      })
+      .catch(() => { if (!this.destroyed) this.useLocal('worker 脚本不可用'); });
+  }
+
+  attachWorker(worker) {
+    this.worker = worker;
+    this.workerActive = true;
+    this.backend = 'worker';
+    worker.onmessage = (event) => this.onWorkerMessage(event.data);
+    worker.onerror = () => { if (this.worker === worker) this.workerFailed('worker 运行时错误'); };
+    /* 替补 worker（直载失败或崩溃后换 Blob）拿不到历史消息：重发镜像状态，避免换 worker 后图谱静止 */
+    if (this.attachedOnce && this.kernel.nodes.length) this.resendState(worker);
+    this.attachedOnce = true;
+    const queued = this.pendingMessages;
+    this.pendingMessages = [];
+    for (const message of queued) worker.postMessage(message);
+    this.noteActivity();
+  }
+
+  /** 镜像状态重发：nodes/links/钉住节点/力参数。只用于 worker 更换（原版没有这条路径）。 */
+  resendState(worker) {
+    const kernel = this.kernel;
+    const nodes = {};
+    for (const node of kernel.nodes) nodes[node.id] = [node.x, node.y];
+    const links = kernel.links.map((link) => [link.source.id, link.target.id]);
+    worker.postMessage({ nodes, links, alpha: ALPHA_START, run: true });
+    for (const node of kernel.nodes) {
+      if (node.fx !== null || node.fy !== null) worker.postMessage({ forceNode: { id: node.id, x: node.fx, y: node.fy } });
+    }
+    worker.postMessage({
+      forces: {
+        centerStrength: kernel.centerStrength,
+        repelStrength: -kernel.repelStrength,
+        linkStrength: kernel.linkStrength,
+        linkDistance: kernel.linkDistance,
+      },
+      alpha: ALPHA_START,
+      run: true,
     });
   }
 
-  /** 逐点受力（d3 manyBody.apply；theta² = 0.81，距离过近按 distanceMin 钳制）。内联栈遍历，避免逐点闭包分配。 */
-  _applyRepulsion(tree, nodes, alpha) {
-    const theta2 = 0.81;
-    const minDist2 = REPEL_DISTANCE_MIN * REPEL_DISTANCE_MIN;
-    const strength = this.repelStrength;
-    const stack = this._scratch || (this._scratch = []);
-    for (const node of nodes) {
-      stack.length = 0;
-      stack.push(tree);
-      while (stack.length) {
-        const quad = stack.pop();
-        if (!quad.value) continue;
-        const w = quad.x1 - quad.x0;
-        let x = quad.massX - node.x;
-        let y = quad.massY - node.y;
-        let l = x * x + y * y;
-        if (w * w / theta2 < l) {
-          /* 足够远：整块按聚合质心施加 */
-          if (x === 0) { x = jiggle(); l += x * x; }
-          if (y === 0) { y = jiggle(); l += y * y; }
-          if (l < minDist2) l = Math.sqrt(minDist2 * l);
-          node.vx += x * quad.value * alpha / l;
-          node.vy += y * quad.value * alpha / l;
-          continue;
-        }
-        if (quad.children) {
-          for (const child of quad.children) stack.push(child);
-          continue;
-        }
-        /* 叶子：逐点施加（重合链共用同一坐标） */
-        if (quad.data === node && !quad.next) continue;
-        if (quad.data !== node || quad.next) {
-          if (x === 0) { x = jiggle(); l += x * x; }
-          if (y === 0) { y = jiggle(); l += y * y; }
-          if (l < minDist2) l = Math.sqrt(minDist2 * l);
-        }
-        for (let q = quad; q; q = q.next) {
-          if (q.data !== node) {
-            const f = strength * alpha / l;
-            node.vx += x * f;
-            node.vy += y * f;
-          }
-        }
-      }
-    }
+  /** worker 失败：直载失败还有一次 Blob 机会，否则退回本地线程（图谱不因 worker 失败中断）。 */
+  workerFailed(reason) {
+    const worker = this.worker;
+    this.worker = null;
+    this.workerActive = false;
+    if (worker) { try { worker.terminate(); } catch (error) { /* 已停止 */ } }
+    if (this.attempts < 2) this.loadWorkerFromSource();
+    else this.useLocal(reason);
   }
 
-  /** 半径碰撞（d3 collide：半径一致，配对权重 0.5，包围盒裁剪半径 120）。内联栈遍历。 */
-  _applyCollision(tree, nodes) {
-    const radius = COLLIDE_RADIUS;
-    const reach = radius * 2;
-    const reach2 = reach * reach;
-    const share = (radius * radius) / (radius * radius + radius * radius);
-    const stack = this._scratch2 || (this._scratch2 = []);
-    for (const node of nodes) {
-      const xi = node.x + node.vx;
-      const yi = node.y + node.vy;
-      stack.length = 0;
-      stack.push(tree);
-      while (stack.length) {
-        const quad = stack.pop();
-        if (quad.data) {
-          if (quad.data.index > node.index) {
-            let x = xi - quad.data.x - quad.data.vx;
-            let y = yi - quad.data.y - quad.data.vy;
-            let l = x * x + y * y;
-            if (l < reach2) {
-              if (l === 0) { x = jiggle(); y = jiggle(); l = x * x + y * y; }
-              const scale = (reach - Math.sqrt(l)) / Math.sqrt(l) * COLLIDE_STRENGTH;
-              x *= scale;
-              y *= scale;
-              node.vx += x * share;
-              node.vy += y * share;
-              quad.data.vx -= x * (1 - share);
-              quad.data.vy -= y * (1 - share);
-            }
-          }
-          continue;
-        }
-        if (quad.x0 > xi + reach || quad.x1 < xi - reach || quad.y0 > yi + reach || quad.y1 < yi - reach) continue;
-        if (!quad.children) continue;
-        for (const child of quad.children) stack.push(child);
+  /** 本地回退：终止 worker，物理改由渲染回调驱动 tick()。镜像状态已一致，无需搬运。 */
+  useLocal(reason) {
+    if (this.destroyed) return;
+    if (reason) this.fallbackReason = reason;
+    this.backend = 'local';
+    this.workerActive = false;
+    this.pendingMessages = [];
+    this.workerResults = null;
+    const worker = this.worker;
+    this.worker = null;
+    if (worker) { try { worker.terminate(); } catch (error) { /* 已停止 */ } }
+    if (this.onUpdate) this.onUpdate(); // 唤醒渲染循环：本地后端接下来由 tick 推进
+  }
+
+  /** 发送消息；worker 未就绪时排队（视图打开时 setData 可能早于 worker 创建完成）。 */
+  send(message) {
+    if (this.destroyed) return;
+    if (this.workerActive && this.worker) {
+      try {
+        this.worker.postMessage(message);
+      } catch (error) {
+        this.workerFailed('worker 消息发送失败');
       }
+      return;
     }
+    if (this.backend === 'worker') this.pendingMessages.push(message);
+  }
+
+  noteActivity() {
+    this.lastActivity = performance.now();
+  }
+
+  /* --------------------------------------------------------------------------
+   * worker → 渲染端
+   * ------------------------------------------------------------------------ */
+
+  /** ignore 是 SAB 探测消息；其余是位置帧。冻结（alpha 归零）时既不写坐标也不回调。 */
+  onWorkerMessage(data) {
+    if (this.destroyed || !data) return;
+    if (data.ignore) { this.workerShared = !!data.shared; return; }
+    if (!data.buffer) return;
+    this.workerResults = data;
+    this.noteActivity();
+    if (this.frozen) return;
+    if (!this.applyResult(data)) return;
+    if (this.onUpdate) this.onUpdate();
+  }
+
+  /**
+   * 应用位置缓冲区（原版渲染回调里的消费逻辑）：
+   * SAB 用 buffer 末尾 Uint32 版本号守卫，与消息携带的 v 相同即跳过；transfer 的 ArrayBuffer 应用后清空。
+   */
+  applyResult(data) {
+    const buffer = data.buffer;
+    if (buffer instanceof ArrayBuffer) {
+      this.workerResults = null;
+    } else {
+      const version = new Uint32Array(buffer, buffer.byteLength - 4, 1);
+      if (version[0] === data.v) return false;
+      data.v = version[0];
+    }
+    const positions = new Float32Array(buffer);
+    const ids = data.id;
+    for (let i = 0; i < ids.length; i += 1) {
+      const node = this.kernel.nodeById.get(ids[i]);
+      if (!node) continue;
+      node.x = positions[2 * i];
+      node.y = positions[2 * i + 1];
+      if (node.fx) node.x = node.fx;
+      if (node.fy) node.y = node.fy;
+    }
+    return true;
+  }
+
+  /* --------------------------------------------------------------------------
+   * 发送侧 API（方法名与旧实现一致）
+   * ------------------------------------------------------------------------ */
+
+  /** 原版渲染端 setData：{nodes:{id:[x,y]},links,alpha:.3,run:true}。已有节点传 false（保留 worker 自身坐标与速度），新节点才带初值。 */
+  setData(nodeRefs, links) {
+    if (this.destroyed) return;
+    const nodes = {};
+    for (const ref of nodeRefs) nodes[ref.id] = this.kernel.nodeById.has(ref.id) ? false : [ref.x, ref.y];
+    const pairs = links.map((pair) => [pair[0], pair[1]]);
+    this.kernel.setNodes(nodes);
+    this.kernel.setLinks(pairs);
+    this.kernel.raiseAlpha(ALPHA_START);
+    this.send({ nodes, links: pairs, alpha: ALPHA_START, run: true });
+    this.noteActivity();
+  }
+
+  /** 原版拖拽：{alpha:.3,alphaTarget:.3,run:true,forceNode}；解钉是 {alphaTarget:0,forceNode:{x:null,y:null}}。 */
+  setForceNode(id, x, y, alpha, alphaTarget) {
+    if (this.destroyed) return;
+    this.kernel.forceNode(id, x, y);
+    if (alpha !== undefined) this.kernel.raiseAlpha(alpha);
+    if (alphaTarget !== undefined) this.kernel.setAlphaTarget(alphaTarget);
+    const message = { forceNode: { id, x, y } };
+    if (alpha !== undefined) { message.alpha = alpha; message.run = true; }
+    if (alphaTarget !== undefined) message.alphaTarget = alphaTarget;
+    this.send(message);
+    if (alpha !== undefined) this.noteActivity();
+  }
+
+  /** 原版 setForces：{forces,alpha:.3,run:true}。 */
+  setForces(forces) {
+    if (this.destroyed) return;
+    this.kernel.setForces(forces);
+    this.kernel.raiseAlpha(ALPHA_START);
+    this.send({ forces, alpha: ALPHA_START, run: true });
+    this.noteActivity();
+  }
+
+  /** 原版 run 消息的语义：worker 侧只做唤醒，这里同时抬高镜像 alpha。 */
+  run() {
+    if (this.destroyed) return;
+    this.kernel.raiseAlpha(ALPHA_START);
+    this.send({ alpha: ALPHA_START, run: true });
+    this.noteActivity();
+  }
+
+  /* --------------------------------------------------------------------------
+   * 状态（alpha/力参数是内核字段的直通；graph.js 直接写 alpha 冻结模拟）
+   * ------------------------------------------------------------------------ */
+
+  get alpha() { return this.kernel.alpha; }
+  set alpha(value) { this.kernel.alpha = value; }
+  get alphaTarget() { return this.kernel.alphaTarget; }
+  set alphaTarget(value) { this.kernel.alphaTarget = value; }
+  get centerStrength() { return this.kernel.centerStrength; }
+  set centerStrength(value) { this.kernel.centerStrength = value; }
+  get repelStrength() { return this.kernel.repelStrength; }
+  set repelStrength(value) { this.kernel.repelStrength = value; }
+  get linkStrength() { return this.kernel.linkStrength; }
+  set linkStrength(value) { this.kernel.linkStrength = value; }
+  get linkDistance() { return this.kernel.linkDistance; }
+  set linkDistance(value) { this.kernel.linkDistance = value; }
+
+  /** alpha 已低且没有加速目标：主线程冻结（不写坐标、不回调）。 */
+  get frozen() {
+    return this.kernel.alpha <= ALPHA_MIN && this.kernel.alphaTarget === 0;
+  }
+
+  /**
+   * 沉降完成：本地后端看内核 alpha；worker 后端看「最近 ~250ms 无新位置且无加速目标」
+   * （worker 只在 alpha > .001 时发布位置，静默即停摆）。
+   */
+  get finished() {
+    if (this.destroyed) return true;
+    if (this.backend === 'local') return this.kernel.finished;
+    return this.kernel.alphaTarget === 0 && performance.now() - this.lastActivity > IDLE_MS;
+  }
+
+  /** 本地后端推进一帧（由渲染回调驱动）；worker 后端为 no-op（worker 自己跑循环）。 */
+  tick() {
+    if (this.destroyed || this.backend !== 'local') return undefined;
+    this.localTicks += 1;
+    return this.kernel.tick();
+  }
+
+  /** 终止 worker、清结果、置 destroyed。重复调用安全。 */
+  destroy() {
+    if (this.destroyed) return;
+    this.destroyed = true;
+    this.onUpdate = null;
+    this.workerResults = null;
+    this.pendingMessages = [];
+    this.workerActive = false;
+    const worker = this.worker;
+    this.worker = null;
+    if (worker) { try { worker.terminate(); } catch (error) { /* 已停止 */ } }
   }
 }

@@ -27,7 +27,9 @@ graph-engine.js: 协调查询、元数据变化、图谱选项、悬停预览与
 graph-controls.js: 筛选、颜色、显示与力学控件。变更交给引擎。颜色组顺序即优先色顺序，按住颜色圆点拖动重排。
 graph-data.js: 根据 Vault 清单构图。计算局部邻域和孤立节点。
 graph-query.js: 文件、正文、路径与标签查询。供筛选及颜色组复用。
-graph-simulation.js: 节点力学模拟（对齐原版 d3-force 参数）。斥力为 Barnes-Hut 四叉树近似（theta²=0.81），碰撞按包围盒裁剪半径 120 的候选对；受力遍历内联为复用栈。拓扑变化时缓存节点度数。
+graph-simulation.js: 图谱力学的线程门面（对外方法名与旧实现一致）。worker 后端按原版 sim.js 协议发消息：app:// 直载 Worker → fetch + Blob URL（原版 Rz 手法）→ 本地线程三级回退；worker 更换（直载失败或崩溃）时重发镜像状态。收到位置写 nodeById（尊重 fx/fy）后回调 onUpdate，SAB 用末尾 Uint32 版本守卫、transfer 的 ArrayBuffer 应用后清空。镜像 alpha 只跟随命令抬高（graph.js 直接写 alpha=0 冻结模拟）；worker 后端 finished = 静默 250ms 且 alphaTarget=0，tick() 为 no-op（localTicks 计主线程物理帧数）。
+graph-force.js: 力学内核（Worker 与本地回退共用同一份数学）。持节点表/连线/力参数与 alpha，提供原版 onmessage 语义的 setNodes/setLinks/forceNode/setForces/raiseAlpha/setAlphaTarget 与单帧 tick。默认 charge -1000、linkDistance 250、linkStrength 1、centerStrength .1、速度衰减 .6。
+graph-sim-worker.js: 力学 Worker 脚本（esbuild → dist/graph-sim-worker.js，iife）。60fps setTimeout 循环：alpha 衰减 → 物理 → 发布位置；SharedArrayBuffer + 末尾 Uint32 版本号自增（不可用则 transfer ArrayBuffer）；启动时发 ignore+shared 探测消息；无节点停摆，run 唤醒。
 graph-quadtree.js: 力学空间索引。buildQuadtree/visitAfter；重合点存 next 链；供 Barnes-Hut 斥力与半径碰撞共用同一棵树。
 graph-options.js: 默认选项和 graph.json 读写，供视图与引擎共用。
 graph-utils.js: 无状态颜色、插值、矩形与键盘常量。

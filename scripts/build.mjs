@@ -1,7 +1,8 @@
 /**
- * [INPUT]: esbuild、Node fs 与 renderer 入口。
- * [OUTPUT]: dist/renderer.js、dist/starter.js；支持 watch 增量构建。
+ * [INPUT]: esbuild、Node fs 与 renderer 入口（main.js/starter.js/图谱 worker）。
+ * [OUTPUT]: dist/renderer.js、dist/starter.js、dist/graph-sim-worker.js；支持 watch 增量构建。
  * [POS]: 打包入口。MathJax 静态资源由 app 协议直接读取 assets/mathjax。
+ *        graph-sim-worker.js 是独立 Worker 脚本（iife），由 app:// 协议直载或 fetch + Blob 回退加载。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 import esbuild from 'esbuild';
@@ -34,6 +35,7 @@ const common = {
 const targets = [
   { in: 'src/renderer/main.js', out: 'dist/renderer.js' },
   { in: 'src/renderer/starter.js', out: 'dist/starter.js' },
+  { in: 'src/renderer/plugins-core/graph-sim-worker.js', out: 'dist/graph-sim-worker.js' },
 ];
 
 fs.mkdirSync('dist', { recursive: true });
