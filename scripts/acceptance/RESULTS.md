@@ -161,3 +161,4 @@ MathJax 独立适配器子代理的41项基础/故障测试见 assets/mathjax/SO
 - `plugins-core/audio-recorder.js`：功能区麦克风按钮（开始/结束切换、is-active）、`audio-recorder:start/stop` 命令（checkCallback 语义照原版）、权限/设备错误映射 locale 文案、MediaRecorder 落盘 `Recording <YYYYMMDDHHmmss>.webm|m4a` 到附件目录并插入嵌入；无状态栏项（原版证据）；卸载停止录音并释放轨道。
 - 与原版差异：无 electron.remote → 用 navigator.permissions 降级；无 fix-webm-duration 时长修补；提示走 Notice 而非按钮 tooltip。
 - 验收：audio-recorder 65 项 + restart 7 项（mock getUserMedia/MediaRecorder，双扩展名分支、错误四路径、卸载释放、设置页开关与 core-plugins.json 持久化）；回归 core-ribbon 47、settings-ui 22、settings-plugins 52。
+- 阅读视图笔记/音频/视频/PDF 嵌块补 `data-href` 并接入链接右键菜单（reading-menus 11→13 项）。

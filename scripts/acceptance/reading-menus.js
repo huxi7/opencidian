@@ -17,7 +17,7 @@ const closeMenu=async()=>{document.body.dispatchEvent(new MouseEvent('mousedown'
 
 await app.vault.createBinary('pic.png',new Uint8Array([137,80,78,71,13,10,26,10,1,2,3,4]));
 await app.vault.create('MenuTarget.md','# 目标\n');
-const a=await app.vault.create('MenuSource.md','# 源\n\n[[MenuTarget]]\n\n[官网](https://example.com)\n\n![[pic.png]]\n\n[[不存在]]\n');
+const a=await app.vault.create('MenuSource.md','# 源\n\n[[MenuTarget]]\n\n![[MenuTarget]]\n\n[官网](https://example.com)\n\n![[pic.png]]\n\n[[不存在]]\n');
 await app.workspace.openFile(a);
 const view=app.workspace.activeLeaf.view;
 await view.setState({file:a.path,mode:'preview'});
@@ -52,6 +52,14 @@ check(has('复制图片')||has('Copy image'),'图片含复制图片');
 clickItem('复制图片');
 await wait(200);
 check(!document.querySelector('body > .menu'),'点击后菜单关闭且无异常');
+
+// ---------------------------------------------------------- 笔记嵌块
+const noteEmbed=view.readingEl.querySelector('.internal-embed.markdown-embed[data-href="MenuTarget.md"]');
+check(!!noteEmbed,'笔记嵌块已渲染且带 data-href');
+rightClick(noteEmbed);
+await until(()=>!!document.querySelector('body > .menu'),'嵌块菜单',2500);
+check(has('在新标签页中打开')||has('Open in new tab'),'嵌块含链接菜单项');
+await closeMenu();
 
 // ---------------------------------------------------------- 未解析链接
 const missing=[...view.readingEl.querySelectorAll('a.internal-link')].find((el)=>el.getAttr('data-href')==='不存在');

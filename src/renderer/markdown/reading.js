@@ -430,13 +430,13 @@ function renderEmbed(env, target, subpath, alias) {
     return `<span class="internal-embed image-embed is-loaded" data-href="${escapeAttr(file.path)}"><img src="${escapeAttr(url)}" alt="${escapeAttr(alias || file.basename)}"></span>`;
   }
   if (AUDIO_EXTS.includes(ext)) {
-    return `<span class="internal-embed audio-embed is-loaded"><audio controls src="${escapeAttr(url)}"></audio></span>`;
+    return `<span class="internal-embed audio-embed is-loaded" data-href="${escapeAttr(file.path)}"><audio controls src="${escapeAttr(url)}"></audio></span>`;
   }
   if (VIDEO_EXTS.includes(ext)) {
-    return `<span class="internal-embed video-embed is-loaded"><video controls src="${escapeAttr(url)}"></video></span>`;
+    return `<span class="internal-embed video-embed is-loaded" data-href="${escapeAttr(file.path)}"><video controls src="${escapeAttr(url)}"></video></span>`;
   }
   if (ext === 'pdf') {
-    return `<span class="internal-embed pdf-embed is-loaded"><iframe src="${escapeAttr(url)}" width="100%" height="480"></iframe></span>`;
+    return `<span class="internal-embed pdf-embed is-loaded" data-href="${escapeAttr(file.path)}"><iframe src="${escapeAttr(url)}" width="100%" height="480"></iframe></span>`;
   }
   if (ext === 'md') {
     const depth = (env.depth || 0) + 1;
@@ -446,7 +446,7 @@ function renderEmbed(env, target, subpath, alias) {
     // nested content is rendered asynchronously by the caller's post-process step
     const id = 'embed-' + Math.random().toString(36).slice(2);
     pendingEmbeds.push({ id, path: file.path, subpath, depth });
-    return `<span class="internal-embed markdown-embed is-loaded" data-embed-id="${id}">` +
+    return `<span class="internal-embed markdown-embed is-loaded" data-embed-id="${id}" data-href="${escapeAttr(file.path)}">` +
       `<span class="markdown-embed-title">${escapeHtml(file.basename)}</span>` +
       `<span class="markdown-embed-content markdown-rendered" data-embed-mount="${id}">…</span></span>`;
   }
@@ -687,6 +687,15 @@ export function attachMarkdownInteractions(app, container, getSourcePath) {
       ev.preventDefault();
       const menu = new Menu(app);
       app.workspace.handleLinkContextMenu(menu, link.getAttr('data-href'), sourcePath, ev);
+      menu.showAtMouseEvent(ev);
+      return;
+    }
+    // 笔记/音频/视频/PDF 嵌块：原版同样挂链接菜单
+    const embed = target.closest('.internal-embed[data-href]:not(.image-embed)');
+    if (embed) {
+      ev.preventDefault();
+      const menu = new Menu(app);
+      app.workspace.handleLinkContextMenu(menu, embed.getAttr('data-href'), sourcePath, ev);
       menu.showAtMouseEvent(ev);
       return;
     }
