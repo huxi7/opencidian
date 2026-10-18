@@ -419,8 +419,9 @@ node --experimental-vm-modules src/renderer/core/workspace-regression.js
 - ✅ 图片尺寸批已提交 `35af226`（source-text.js 新模块、阅读/LP 尺寸语法、重置大小；image-size 36 + editor 113、notes 72、reading-menus 13）。
 - ✅ 数据丢失级修复已提交 `8921eb4`：Editor.setValue 整弹重建 state（撤销栈不跨文档边界）；修复前「打开笔记后一次 Mod+Z 清空文档并落盘」，editor-race 9→20 已钉死（含切文件撤消污染防护）。
 - ✅ 画布多选批已提交 `d1569d5`（canvas-selection 72 + canvas 95、canvas-edit 77、core-ribbon 47；原版无「置顶/置底/取消分组」，未杜撰）。
-- 🟡 终版全量回归进行中：`/tmp/opensidian-terminal-regression.log`（41 常规场景 + graph-perf×3 + community/recovery/audio-recorder/settings 重启链）。
-- ⏳ 待办：回归结果写入 RESULTS、终版交付报告。
+- ✅ 文档合并已提交 `9ffcb4b`（七份 CLAUDE.md + editor-race 20 项 + AGENT-STATE）。
+- ✅ **终版全量回归 53/53 通过、0 失败**：主循环 44/44（41 场景 + graph-perf×3）、链式 10/10（persist/community/recovery/audio/settings 双连）、内存回归 19/19。记录见 RESULTS.md；日志 `/tmp/opensidian-terminal-regression.log` 与 `-b.log`。
+- ⏳ 剩余手点项：真机麦克风、打包版冷启动冒烟之外的签名/公证（无证书）、像素级视觉验收（用户豁免）。
 - 已知纪律：子代理曾被免费网关限流（Forbidden/ConnectionRefused）；失败即续跑原会话或主会话接手。
 
 ## 验收纪律（2026-10-18 增补）

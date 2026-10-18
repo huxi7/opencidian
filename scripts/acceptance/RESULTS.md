@@ -265,3 +265,36 @@ MathJax 独立适配器子代理的41项基础/故障测试见 assets/mathjax/SO
 - `table-format.js`：无选区单元格右键的 clipboard + 文本格式子菜单（basic/advanced/danger 三段）；`table-widget` 追加 Row/Column/Sort 子菜单并订阅 `editor-menu` 追加到原位编辑菜单末尾。
 - 删首/末行补空行（相邻行有正文才补，避免连续空行）、触屏手柄常显（`body.is-touch` 门控 + `mod-active-row-handle`）、剪贴板同进程兜底。
 - 验收 table-interaction 97→178、table-widget 76、editor 113。
+
+## 终版全量回归（2026-10-18 深夜 · 隐形 E2E · 53/53 通过、0 失败）
+
+- 主循环 41 场景（各自独立临时库）+ graph-perf 100/1000/5000：**44/44 通过**。日志 `/tmp/opensidian-terminal-regression.log`。
+- 链式补跑 10 次（同库两连）：graph-persist-write→read、community 19→restart 3、recovery 84→restart 45、audio-recorder 72→restart 7、settings-write→settings-restart：**10/10 通过**。日志 `/tmp/opensidian-terminal-regression-b.log`。
+- 内存回归 `node --experimental-vm-modules src/renderer/core/workspace-regression.js`：**19/19**。
+- 断言总量 ≈1730（主循环 ≈1500 + 重启链 230 + persist 对与内存回归）。
+- 本轮新增场景：file-explorer-multi 80、stacked-tabs 49、canvas-selection 72、image-size 36、editor-race 9→20。
+
+| 场景 | 断言 | 场景 | 断言 |
+|---|---|---|---|
+| editor | 113 | canvas | 95 |
+| sidebar | 93 | recovery | 84 |
+| core-views | 83 | file-explorer-multi | 80 |
+| canvas-edit | 77 | table-widget | 76 |
+| canvas-selection | 72 | notes | 72 |
+| graph | 72 | audio-recorder | 72 |
+| sidebar-shell | 61 | graph-worker | 55 |
+| settings-plugins | 52 | stacked-tabs | 49 |
+| core-ribbon | 47 | recovery restart | 45 |
+| image-size | 36 | download-attachments | 35 |
+| appearance | 32 | editor-layout / editor-menu | 23 / 23 |
+| settings-ui | 22 | editor-race | 20 |
+| sidebar-chrome | 19 | community | 19 |
+| page-preview | 16 | reading-menus | 13 |
+| editor-block-button | 11 | dialogs / editor-paste / update-check | 7 / 7 / 7 |
+| audio-recorder restart | 7 | basic-plugins / e2e-focus | 6 / 6 |
+| graph-perf ×3 | 4+4+4 | community restart | 3 |
+| editor-switch | 2 | bookmarks / folding-disabled / math / notes-settings / settings-write / settings-restart / vault-hidden / graph-persist-read / graph-persist-write | 通过（无计数） |
+
+- 链式场景调用协议：`--vault` 必须含 `.obs-copy-acceptance-fixture` 标记（run.mjs 防呆）；recovery 首次还需 `.obs-copy-recovery-fixture` 与 `.obsidian/file-recovery.json`；两连必须同库，否则被判失败。
+- 全部运行 `--no-screenshot` + E2E 隐形呈现层（不抢焦点、不进 Dock、窗口不可见）；日志零 `TypeError|act failed|unhandledrejection|ReferenceError`。
+- 本轮收口的新增功能：堆叠标签页、文件树多选/键盘导航、图片尺寸语法与重置大小、画布多选/框选/对齐/分布/分组、编辑器撤销栈跨文档边界修复（数据丢失级）。
