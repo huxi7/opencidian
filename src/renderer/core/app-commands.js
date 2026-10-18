@@ -1,7 +1,7 @@
 /**
- * [INPUT]: 命令注册、Workspace、设置宿主与桌面 IPC。
- * [OUTPUT]: 注册导航、设置、窗口及文档标签命令。
- * [POS]: 用户命令层。关闭与固定标签命令只作用于中心文档。
+ * [INPUT]: 命令注册、Workspace、WorkspaceTabs、设置宿主与桌面 IPC。
+ * [OUTPUT]: 注册导航、设置、窗口及文档标签命令（含 workspace:toggle-stacked-tabs）。
+ * [POS]: 用户命令层。关闭与固定标签命令只作用于中心文档；堆叠命令作用于当前中心标签组。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 /*
@@ -13,6 +13,7 @@ import { ipcSend } from './ipc.js';
 import { Notice } from './notices.js';
 import { Modal } from './modals.js';
 import { checkForUpdates } from './update-check.js';
+import { WorkspaceTabs } from './workspace-model.js';
 
 export function registerAppCommands(app) {
   const add = (spec) => app.commands.addCommand(spec);
@@ -219,6 +220,21 @@ export function registerAppCommands(app) {
       const st = leaf.view && leaf.view.getState ? leaf.view.getState() : null;
       await newLeaf.setViewState(st && st.file ? { type: leaf.view.getViewType(), state: { file: st.file, mode: st.mode } } : { type: 'empty' });
       app.workspace.setActiveLeaf(newLeaf, { focus: true });
+    },
+  });
+
+  add({
+    id: 'workspace:toggle-stacked-tabs',
+    name: t('commands.toggle-stacked-tabs') || 'Toggle stacked tabs',
+    icon: 'lucide-layers',
+    checkCallback: (checking) => {
+      const leaf = app.workspace.activeLeaf;
+      const tabs = leaf && leaf.parent;
+      if (!(tabs instanceof WorkspaceTabs)) return false;
+      // 原版：根分割为左/右栏时命令不可用（侧栏标签不堆叠）
+      if (app.workspace._sideOf(tabs) !== 'center') return false;
+      if (!checking) tabs.setStacked(!tabs.isStacked);
+      return true;
     },
   });
 

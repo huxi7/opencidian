@@ -4,9 +4,11 @@
  * [POS]: 侧栏只创建固定工具图标，库信息栏独立于标签树。由 Workspace 委托渲染。首参 workspace 提供树状态与交互入口。
  * 视图 _rootEl 只迁移不重建；节点类型统一由 workspace-model 导入。
  * 分割方向保持 vertical 横排、horizontal 纵排。
+ * 标签组的叶子挂在 .workspace-tab-container（原版 tabsContainerEl）；堆叠态的头叶排布与滑动布局由模型按状态落位。
+ * mount 时装载 stacked 键的序列化装饰器（layout JSON 组装在 workspace.js）。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
-import { WorkspaceSplit, WorkspaceTabs, WorkspaceLeaf } from './workspace-model.js';
+import { WorkspaceSplit, WorkspaceTabs, WorkspaceLeaf, installStackedSerialization } from './workspace-model.js';
 import { t, tt } from './i18n.js';
 import { createVaultProfile } from './workspace-profile.js';
 import { Desktop, ipcOn } from './ipc.js';
@@ -14,6 +16,7 @@ import { setIcon } from './icons.js';
 
 export function mount(workspace, container) {
   workspace.containerEl = container;
+  installStackedSerialization(workspace);
   container.addClass('workspace');
   // platform state classes, mirroring the original body classes
   container.addClass('is-frameless');
@@ -187,6 +190,7 @@ export function _renderTabs(workspace, tabs) {
   const el = createDiv('workspace-tabs');
   el._tabs = tabs;
   tabs.containerEl = el;
+  el.toggleClass('mod-stacked', !!tabs.isStacked);   // 原版：堆叠状态落在容器类上
   const side = workspace._sideOf(tabs);
   const isRoot = side === 'center';
   if (isRoot) el.addClass('mod-root');
@@ -211,6 +215,16 @@ export function _renderTabs(workspace, tabs) {
     });
   }
 
+  // 原版 VD.tabsContainerEl：叶子宿主；堆叠态下标签头也排进来，随容器横向滚动
+  const tabContainer = el.createDiv('workspace-tab-container');
+  tabs._tabContainerEl = tabContainer;
+  tabContainer.addEventListener('scroll', () => tabs.onContainerScroll(), { passive: true });
+  if (typeof ResizeObserver === 'function') {
+    if (tabs._slidingObserver) tabs._slidingObserver.disconnect();
+    tabs._slidingObserver = new ResizeObserver(() => tabs.updateSlidingTabs());
+    tabs._slidingObserver.observe(tabContainer);
+  }
+
   if (isRoot) {
     const newTabBtn = headersOuter.createDiv('workspace-tab-header-new-tab clickable-icon');
     newTabBtn.setAttr('aria-label', tt('menu-items.new-tab', '新标签页'));
@@ -223,14 +237,16 @@ export function _renderTabs(workspace, tabs) {
     const tabListBtn = headersOuter.createDiv('workspace-tab-header-tab-list clickable-icon');
     tabListBtn.setAttr('aria-label', tt('interface.menu.tab-list', '标签页列表'));
     setIcon(tabListBtn, 'lucide-chevron-down');
-    tabListBtn.onclick = (ev) => { ev.stopPropagation(); workspace._showTabListMenu(ev, tabs); };
-    tabListBtn.oncontextmenu = (ev) => { ev.preventDefault(); ev.stopPropagation(); workspace._showTabListMenu(ev, tabs); };
+    // 原版 VD：标签列表菜单由标签组自己弹出（含堆叠/取消堆叠项）
+    const showMenu = (ev) => { ev.preventDefault(); ev.stopPropagation(); tabs.showTabListMenu(ev, tabListBtn); };
+    tabListBtn.onclick = showMenu;
+    tabListBtn.oncontextmenu = showMenu;
   }
 
   for (const leaf of tabs.children) {
     const header = workspace._createTabHeader(leaf);
     headersInner.appendChild(header);
-    el.appendChild(workspace._renderLeaf(leaf));
+    tabContainer.appendChild(workspace._renderLeaf(leaf));
     leaf.updateTabHeader();
   }
   workspace._syncTabsVisibility(tabs);
@@ -324,7 +340,8 @@ export function _ensureLeafDom(workspace, leaf) {
     return;
   }
   const el = workspace._renderLeaf(leaf);
-  parentTabs.containerEl.appendChild(el);
+  const host = parentTabs._tabContainerEl || parentTabs.containerEl;
+  host.appendChild(el);
   // ensure tab header exists
   if (!leaf._tabHeaderEl) {
     const header = workspace._createTabHeader(leaf);
@@ -351,6 +368,7 @@ export function _createTabHeader(workspace, leaf) {
   }
   header._leaf = leaf;
   leaf._tabHeaderEl = header;
+  leaf._dragHost = null;   // 拖拽绑定在标签头落位后进行（updateTabDisplay）：宿主随堆叠态变化
   header.setAttr('draggable', String(isDocument));
   header.setAttr('role', 'tab');
   header.setAttr('tabindex', '0');
@@ -374,33 +392,30 @@ export function _createTabHeader(workspace, leaf) {
     ev.preventDefault(); ev.stopPropagation();
     if (workspace.canCloseLeaf(leaf)) workspace._showTabContextMenu(ev, leaf);
   };
-  if (isDocument) workspace._setupTabDrag(header, leaf);
   return header;
 }
 
 export function _syncTabsHeaders(workspace, tabs) {
   const inner = tabs._headersInner;
   if (!inner) return;
-  // remove headers of removed leaves
-  for (const h of Array.from(inner.children)) {
-    if (h._leaf && !tabs.children.includes(h._leaf)) h.detach();
-  }
-  tabs.children.forEach((leaf, i) => {
-    let h = leaf._tabHeaderEl;
-    if (!h) h = workspace._createTabHeader(leaf);
-    if (h.parentElement !== inner) {
-      const ref = inner.children[i] || null;
-      inner.insertBefore(h, ref);
-    } else if (inner.children[i] !== h) {
-      inner.insertBefore(h, inner.children[i] || null);
+  // remove headers of removed leaves（堆叠态的头在 tab-container 里，两处都要清）
+  const containers = [inner, tabs._tabContainerEl].filter(Boolean);
+  for (const container of containers) {
+    for (const h of Array.from(container.children)) {
+      if (h._leaf && !tabs.children.includes(h._leaf)) h.detach();
     }
+  }
+  // 落位交给 updateTabDisplay（堆叠态头要排进 tab-container）
+  tabs.children.forEach((leaf) => {
+    if (!leaf._tabHeaderEl) { leaf._tabHeaderEl = workspace._createTabHeader(leaf); leaf._dragHost = null; }
   });
 }
 
 export function _syncTabsVisibility(workspace, tabs) {
   for (const leaf of tabs.children) {
     const isActive = tabs.activeLeaf === leaf;
-    if (leaf._leafEl) leaf._leafEl.toggle(isActive);
+    // 原版：堆叠态下所有 pane 都显示（横向滑动可见），非堆叠态只显示活动 pane
+    if (leaf._leafEl) leaf._leafEl.toggle(!!tabs.isStacked || isActive);
     if (leaf._tabHeaderEl) {
       leaf._tabHeaderEl.toggleClass('is-active', isActive);
       leaf._tabHeaderEl.setAttr('aria-selected', String(isActive));
@@ -408,6 +423,7 @@ export function _syncTabsVisibility(workspace, tabs) {
       syncPinnedStatus(workspace, leaf, leaf._tabHeaderEl);
     }
   }
+  tabs.updateTabDisplay();
 }
 
 /** 原版：pinned 标签显示 workspace-tab-header-status-icon.mod-pinned（lucide-pin，点击取消固定）且隐藏关闭钮。 */
