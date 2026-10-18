@@ -410,12 +410,14 @@ node --experimental-vm-modules src/renderer/core/workspace-regression.js
 已完成补充（组件批，`0c8dbe9`）：
 - 全局 tooltip（`core/tooltip.js`，1000ms 延迟/100ms 宽限/上下左右/翻转/抑制原生 title）、Notice 右上角+4000ms+hover 暂停+收拢动画、Suggest clear 按钮/PageUp/PageDown/Ctrl+p/n/auxclick；dialogs 场景扩到 7 项。同时把 file-explorer 移动失败的英文硬编码改成 locale 键（zh/en 同步）。
 
-## 在跑/待集成（2026-10-18 晚）
+## 在跑/待集成（2026-10-18 深夜）
 
-- 画布批（代理完成，待主会话验证+提交）：`workspace.activeEditor`（`getActiveEditor/setActiveEditor/unsetActiveEditor` + 属性访问器，画布卡片宿主优先、回落活动叶子）、导出弹窗（范围/缩放/水印/隐私，13 个原版 locale 键，4096 上限，视口模式隐藏缩放与水印）、超限文件拆分（canvas-node 729 / canvas-view 750 / canvas-controls 78 / canvas-export-dialog 110）。首轮：canvas-edit 75、canvas 93、editor 113、core-ribbon 47、sidebar-shell 61。
-- 表格剩余项代理仍在跑（单元格菜单/删行补空行/触屏手柄）。
-- 新派：文件树多选+键盘导航（`ses_eb198e7adffedyTuRX3nfrJlCs`）、堆叠标签页（`ses_eb198e7adffd4TdjhPhiUwbRTX`）。
-- 主会话已排队：canvas 批 build+canvas-edit+canvas+editor+core-ribbon+sidebar-shell 验证（日志 `/tmp/verify-canvas-b.log`）。
+- ✅ 画布批已提交 `bbcfc57`+`e299200`（activeEditor + 导出弹窗 + 超限拆分；canvas-edit 77、canvas 95、editor 113、core-ribbon 47、sidebar-shell 61）。
+- ✅ 表格剩余项已提交 `f187e36`（单元格菜单/删行补空行/触屏手柄；table-interaction 178、table-widget 76、editor 113）。
+- 🟡 文件树多选（原会话续跑）：实现已落盘，`file-explorer-multi` 首跑失败于 `vault.exists is not a function` + Delete 确认框；已把失败现场发给代理修复。
+- 🟡 堆叠标签页（原会话续跑）：在途改动（workspace-model/renderer、app-commands、layout.css、stacked-tabs.js），待自检+五场景验收。
+- 🟡 新派：画布多选/框选/对齐/分布/分组（canvas-selection）；编辑器图片尺寸语法 + 重置大小 + 嵌入菜单（image-size）。
+- 已知纪律：子代理曾被免费网关限流（Forbidden/ConnectionRefused）；失败即续跑原会话或主会话接手。
 
 ## 验收纪律（2026-10-18 增补）
 

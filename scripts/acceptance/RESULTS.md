@@ -252,3 +252,16 @@ MathJax 独立适配器子代理的41项基础/故障测试见 assets/mathjax/SO
 - 原版行为：已悬停在链接上（未按 Mod 不弹），此时按下 Mod **补弹**预览、松开 Mod 收起。
 - 实现：记录 hoverAnchor（链接）与 pendingHoverLink（图谱等 hover-link 来源）；keydown Mod → 立即弹出（图谱用最后指针坐标）；keyup Mod → 门控来源的预览收起。
 - 验收 page-preview 13→16（悬停不弹仅挂起 / 按 Mod 补弹 / 松开收起）。
+
+## 画布 activeEditor + 导出弹窗批（2026-10-18）
+
+- `workspace.getActiveEditor/setActiveEditor/unsetActiveEditor` + `activeEditor` 属性：画布卡片宿主优先、回落活动叶子；`commands.js`/`editor-commands.js` 各只改解析入口。
+- 导出弹窗：范围（全部/当前部分）、缩放、水印、隐私模式（13 个原版 locale 键；视口模式隐藏缩放与水印）；canvas-export 支持 frame/scale/showLogo/privacyMode 与尺寸预估。
+- 超限拆分：canvas-controls / canvas-export-dialog / canvas-group-node（canvas-node 729、canvas-view 750）。
+- 验收 canvas-edit 77、canvas 95、editor 113、core-ribbon 47、sidebar-shell 61。
+
+## 表格剩余项批（2026-10-18）
+
+- `table-format.js`：无选区单元格右键的 clipboard + 文本格式子菜单（basic/advanced/danger 三段）；`table-widget` 追加 Row/Column/Sort 子菜单并订阅 `editor-menu` 追加到原位编辑菜单末尾。
+- 删首/末行补空行（相邻行有正文才补，避免连续空行）、触屏手柄常显（`body.is-touch` 门控 + `mod-active-row-handle`）、剪贴板同进程兜底。
+- 验收 table-interaction 97→178、table-widget 76、editor 113。
