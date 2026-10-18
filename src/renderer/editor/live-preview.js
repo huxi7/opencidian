@@ -1,7 +1,7 @@
 /**
- * [INPUT]: 依赖 CM6 装饰与折叠状态；依赖 reading.js、highlight.js、math.js、properties.js 的块渲染及 metadata.js 的属性解析；表格块委托 editor/table-widget.js 的 TableWidget。
+ * [INPUT]: 依赖 CM6 装饰与折叠状态；依赖 reading.js、highlight.js、math.js、properties.js 的块渲染及 metadata.js 的属性解析；图片尺寸语法来自 markdown/source-text.js；表格块委托 editor/table-widget.js 的 TableWidget。
  * [OUTPUT]: 导出 livePreviewExtension(app, getSourcePath)，返回 [appFacet, sourcePathFacet, fmSourceField, blockLayerField, ViewPlugin]
- * [POS]: editor/ 的实时预览装饰层，由 editor.js 经 _livePreviewCompartment 装载/卸载。行内装饰走 ViewPlugin；块级 widget（属性面板/表格/callout/块级数学/代码块/mermaid）必须走 StateField，因为 CM6 禁止 ViewPlugin 提供 block 装饰。表格的渲染与行列编辑在 table-widget.js。
+ * [POS]: editor/ 的实时预览装饰层，由 editor.js 经 _livePreviewCompartment 装载/卸载。行内装饰走 ViewPlugin；块级 widget（属性面板/表格/callout/块级数学/代码块/mermaid）必须走 StateField，因为 CM6 禁止 ViewPlugin 提供 block 装饰。表格的渲染与行列编辑在 table-widget.js。内嵌图片的 `|300` / `|300x200` 尺寸语法走 markdown/source-text.js 的解析，落成 .image-wrapper > img 的 width/height 属性。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 /*
@@ -18,6 +18,7 @@ import { RangeSet, Facet, StateField, StateEffect } from '@codemirror/state';
 import { foldedRanges } from '@codemirror/language';
 import { Desktop } from '../core/ipc.js';
 import { getMarkdownIt, attachMarkdownInteractions, renderMermaidBlocks, renderMarkdown, stripFrontmatter } from '../markdown/reading.js';
+import { splitImageSize, splitEmbedSize } from '../markdown/source-text.js';
 import { buildMetadataContainer } from '../markdown/properties.js';
 import { parseFrontmatterText } from '../core/metadata.js';
 import { codeLanguageName, highlightCodeElement, cancelCodeHighlight } from '../markdown/highlight.js';
@@ -58,17 +59,30 @@ class BulletWidget extends WidgetType {
   }
 }
 
+/** 图片部件：尺寸语法写进 img 的 width/height，无高度参数时高度按原始比例。 */
 class ImageWidget extends WidgetType {
-  constructor(src, alt) { super(); this.src = src; this.alt = alt; }
-  eq(other) { return other.src === this.src && other.alt === this.alt; }
+  constructor(src, alt, width, height) {
+    super();
+    this.src = src; this.alt = alt; this.width = width || 0; this.height = height || 0;
+  }
+  eq(other) {
+    return other.src === this.src && other.alt === this.alt
+      && other.width === this.width && other.height === this.height;
+  }
   toDOM() {
     const wrap = createDiv({ cls: 'image-embed' });
-    const img = wrap.createEl('img', { cls: 'cm-inline-image' });
+    const img = wrap.createDiv({ cls: 'image-wrapper' }).createEl('img', { cls: 'cm-inline-image' });
     img.src = this.src;
     img.alt = this.alt || '';
+    if (this.width > 0) img.width = this.width;
+    if (this.height > 0) img.height = this.height;
     return wrap;
   }
   ignoreEvent() { return false; }
+}
+
+function imageWidget(src, alt, size) {
+  return new ImageWidget(src, alt, size ? size.x : 0, size ? size.y : 0);
 }
 
 class MathWidget extends WidgetType {
@@ -643,14 +657,15 @@ function resolveImageSrc(app, url, sourcePath) {
 const IMAGE_EXTS = ['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'bmp', 'avif'];
 
 function applyInline(decorations, app, line, text, lineStart, sourcePath, touches) {
-  // images: ![alt](url)
+  // images: ![alt](url) — 竖线后的宽度/宽高与阅读视图同一套解析
   let m;
   const imgRe = /!\[([^\]]*)\]\(([^()\s]+)(?:\s+"[^"]*")?\)/g;
   while ((m = imgRe.exec(text))) {
     const from = lineStart + m.index, to = from + m[0].length;
     if (touches(from, to)) continue;
     const src = resolveImageSrc(app, m[2], sourcePath);
-    decorations.push(Decoration.replace({ widget: new ImageWidget(src, m[1]) }).range(from, to));
+    const split = splitImageSize(m[1]);
+    decorations.push(Decoration.replace({ widget: imageWidget(src, split.text, split.size) }).range(from, to));
   }
 
   // inline math $...$
@@ -717,7 +732,8 @@ function applyInline(decorations, app, line, text, lineStart, sourcePath, touche
       const file = dest && app.vault.getFileByPath(dest);
       if (file && IMAGE_EXTS.includes(file.extension)) {
         const src = app.vault.adapter.getResourcePath(file.path);
-        decorations.push(Decoration.replace({ widget: new ImageWidget(src, alias || file.basename) }).range(from, to));
+        const split = splitEmbedSize(alias);
+        decorations.push(Decoration.replace({ widget: imageWidget(src, split.text || file.basename, split.size) }).range(from, to));
         continue;
       }
     }

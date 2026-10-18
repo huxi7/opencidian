@@ -208,9 +208,20 @@
 .cm-wikilink.cm-wikilink-embed { color: var(--link-color); }
 .cm-url, .cm-external-link { color: var(--link-external-color); cursor: var(--cursor-link, pointer); }
 .cm-hr { color: var(--text-faint); letter-spacing: 2px; }
-.cm-inline-image img, .cm-inline-image .internal-embed img { max-width: 100%; border-radius: var(--image-radius, var(--radius-s)); }
-.cm-inline-image img { display: block; }
-.cm-inline-image { padding-block: var(--size-4-1); }
+/* 原版 app.css：.cm-line .image-embed（实时预览内嵌图片，尺寸语法落 img 的 width/height） */
+.markdown-source-view.mod-cm6 .cm-line .image-embed {
+  position: relative;
+  display: inline-flex;
+  width: fit-content;
+  padding-bottom: 3px;
+  padding-inline-end: 3px;
+}
+.markdown-source-view.mod-cm6 .cm-line .image-embed .image-wrapper { display: inline-flex; position: relative; }
+.markdown-source-view.mod-cm6 .cm-line .image-embed .image-wrapper img:not([width]) { width: 100%; }
+.markdown-source-view.mod-cm6 img.cm-inline-image {
+  max-width: 100%;
+  border-radius: var(--image-radius, var(--radius-s));
+}
 .cm-inline-math { font-family: var(--font-text); }
 /* 原版 app.css：.code-block-flair（实时预览代码块右上角语言/复制） */
 .markdown-source-view.mod-cm6 .code-block-flair {

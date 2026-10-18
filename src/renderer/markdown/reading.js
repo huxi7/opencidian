@@ -1,7 +1,7 @@
 /**
- * [INPUT]: 依赖 markdown-it、footnote/task-lists、Desktop、图标和 vault 路径；代码块委托 highlight.js，公式委托 math.js。
- * [OUTPUT]: 导出 getMarkdownIt、renderMarkdown、attachMarkdownInteractions、stripFrontmatter、scrollToSubpath、resolvePath、resolveFileUrl、parseFrontmatterText 之外的 escapeHtml
- * [POS]: markdown/ 的阅读视图渲染器，被 markdown-view.js（阅读模式）与 live-preview.js（块级 widget 内嵌 HTML）共同调用。callout 渲染为 div.callout（原版 DOM 非 blockquote），核心规则挂在 core.ruler 的 inline 之后。
+ * [INPUT]: 依赖 markdown-it、footnote/task-lists、Desktop、图标和 vault 路径；代码块委托 highlight.js，公式委托 math.js；转义、frontmatter 剥离与图片尺寸语法来自 source-text.js。
+ * [OUTPUT]: 导出 getMarkdownIt、renderMarkdown、attachMarkdownInteractions、stripFrontmatter、scrollToSubpath、resolvePath、resolveFileUrl 与 escapeHtml
+ * [POS]: markdown/ 的阅读视图渲染器，被 markdown-view.js（阅读模式）与 live-preview.js（块级 widget 内嵌 HTML）共同调用。callout 渲染为 div.callout（原版 DOM 非 blockquote）。图片尺寸语法 `|300` / `|300x200` 由 source-text.js 解析，这里负责落成 img 的 width/height 与 .image-wrapper 结构；带尺寸的图片另外带 data-source-* 区间提示，图片右键交给 source-text.js 的 fillImageContextMenu。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 /*
@@ -15,10 +15,13 @@ import { Desktop } from '../core/ipc.js';
 import { createIcon, setIcon } from '../core/icons.js';
 import { tt } from '../core/i18n.js';
 import { Menu } from '../core/menu.js';
-import { Notice } from '../core/notices.js';
 import { normalizePath, parentPathOf } from '../core/vault.js';
 import { codeLanguageName, highlightCodeBlocks } from './highlight.js';
 import { renderMathBlocks } from './math.js';
+import {
+  escapeAttr, escapeHtml, fillImageContextMenu, installSourceOffsets, sizeAttrText,
+  sourceRangeAttrs, splitEmbedSize, splitImageSize, stripFrontmatter,
+} from './source-text.js';
 
 const IMAGE_EXTS = ['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'bmp', 'avif'];
 const AUDIO_EXTS = ['mp3', 'wav', 'm4a', 'ogg', '3gp', 'flac', 'opus'];
@@ -45,6 +48,7 @@ export function getMarkdownIt() {
   installMath(md);
   installTags(md);
   installCallouts(md);
+  installSourceOffsets(md);
 
   // external links get a class; internal file links get handled later
   const defaultLinkOpen = md.renderer.rules.link_open || ((tokens, idx, options, env, self) => self.renderToken(tokens, idx, options));
@@ -71,14 +75,16 @@ export function getMarkdownIt() {
   md.renderer.rules.image = (tokens, idx, options, env, self) => {
     const token = tokens[idx];
     const src = token.attrGet('src') || '';
-    const alt = token.content || '';
+    const split = splitImageSize(token.content || '');
     let resolved = src;
     if (!/^(https?|data|app):/i.test(src)) {
       resolved = resolveFileUrl(env.app, decodeURIComponent(src), env.sourcePath) || src;
     }
     const cls = /\.(png|jpe?g|gif|webp|svg|bmp|avif)$/i.test(src) ? 'internal-embed image-embed' : '';
+    const attrs = sourceRangeAttrs(env, token, token.content || '');
     // data-href：右键"复制图片"用原始目标（路径或 URL）解析
-    return `<span class="${cls}" data-href="${escapeAttr(src)}"><img src="${escapeAttr(resolved)}" alt="${escapeAttr(alt)}" class="cm-inline-image"></span>`;
+    return `<span class="${cls}" data-href="${escapeAttr(src)}"${attrs}>` +
+      `<span class="image-wrapper"><img src="${escapeAttr(resolved)}" alt="${escapeAttr(split.text)}" class="cm-inline-image"${sizeAttrText(split.size)}></span></span>`;
   };
 
   // ---- 围栏代码块：Mermaid 独立渲染，其余共用 Lezer 高亮 ---------------------
@@ -94,13 +100,6 @@ export function getMarkdownIt() {
 
   mdInstance = md;
   return md;
-}
-
-function escapeHtml(s) {
-  return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-}
-function escapeAttr(s) {
-  return escapeHtml(s).replace(/"/g, '&quot;');
 }
 
 // ---------------------------------------------------------------------------
@@ -139,7 +138,7 @@ function installWikilinks(md) {
     if (hashIdx >= 0) { subpath = target.slice(hashIdx + 1); target = target.slice(0, hashIdx); }
     const display = alias || subpath || target || inner;
     if (embed) {
-      return renderEmbed(env, target, subpath, alias);
+      return renderEmbed(env, target, subpath, alias, token, inner);
     }
     const destPath = resolvePath(env, target);
     const cls = 'internal-link' + (destPath ? '' : ' is-unresolved');
@@ -416,7 +415,7 @@ export function resolveFileUrl(app, target, sourcePath) {
   return null;
 }
 
-function renderEmbed(env, target, subpath, alias) {
+function renderEmbed(env, target, subpath, alias, token, inner) {
   const app = env.app;
   if (!app) return `<span>${escapeHtml(target)}</span>`;
   const dest = app.metadataCache.getFirstLinkpathDest(target, env.sourcePath, true);
@@ -427,7 +426,10 @@ function renderEmbed(env, target, subpath, alias) {
   const ext = file.extension;
   const url = app.vault.adapter.getResourcePath(file.path);
   if (IMAGE_EXTS.includes(ext)) {
-    return `<span class="internal-embed image-embed is-loaded" data-href="${escapeAttr(file.path)}"><img src="${escapeAttr(url)}" alt="${escapeAttr(alias || file.basename)}"></span>`;
+    const split = splitEmbedSize(alias);
+    const size = sizeAttrText(split.size);
+    return `<span class="internal-embed image-embed is-loaded" data-href="${escapeAttr(file.path)}"${sourceRangeAttrs(env, token, inner || '')}>` +
+      `<span class="image-wrapper"><img src="${escapeAttr(url)}" alt="${escapeAttr(split.text || file.basename)}"${size}></span></span>`;
   }
   if (AUDIO_EXTS.includes(ext)) {
     return `<span class="internal-embed audio-embed is-loaded" data-href="${escapeAttr(file.path)}"><audio controls src="${escapeAttr(url)}"></audio></span>`;
@@ -541,15 +543,6 @@ function addCodeBlockCopyButtons(el) {
     };
     pre.appendChild(button);
   }
-}
-
-export function stripFrontmatter(text) {
-  const lines = text.split('\n');
-  if (lines[0] === undefined || lines[0].trim() !== '---') return text;
-  for (let i = 1; i < lines.length; i++) {
-    if (lines[i].trim() === '---' || lines[i].trim() === '...') return lines.slice(i + 1).join('\n');
-  }
-  return text;
 }
 
 function annotateHeadings(el) {
@@ -668,7 +661,7 @@ export function attachMarkdownInteractions(app, container, getSourcePath) {
     }
   });
 
-  // 原版阅读视图右键：内部链接 / 外部链接 / 图片（复制图片）
+  // 原版阅读视图右键：内部链接 / 外部链接 / 图片（复制图片 + 重置大小 + 删除图片）
   container.addEventListener('contextmenu', (ev) => {
     const target = ev.target;
     if (!target || !target.closest) return;
@@ -676,9 +669,8 @@ export function attachMarkdownInteractions(app, container, getSourcePath) {
     const img = target.closest('.internal-embed.image-embed img, img.cm-inline-image');
     if (img) {
       ev.preventDefault();
-      const holder = img.closest('[data-href]');
       const menu = new Menu(app);
-      addImageContextMenu(app, menu, holder ? holder.getAttr('data-href') : '', sourcePath);
+      fillImageContextMenu(app, menu, img, sourcePath, ev);
       menu.showAtMouseEvent(ev);
       return;
     }
@@ -709,40 +701,6 @@ export function attachMarkdownInteractions(app, container, getSourcePath) {
   });
 }
 
-/** 原版图片右键菜单（阅读视图部分）：复制图片（库内文件读二进制，URL/data 走 fetch）。 */
-function addImageContextMenu(app, menu, href, sourcePath) {
-  menu.addItem((i) => i.setSection('image').setTitle(tt('interface.menu.copy-image') || 'Copy image').setIcon('lucide-copy')
-    .onClick(async () => {
-      try {
-        let bytes = null;
-        let type = 'image/png';
-        const dest = href ? app.metadataCache.getFirstLinkpathDest(href, sourcePath || '') : null;
-        const file = dest && dest.path ? dest : (dest ? app.vault.getFileByPath(dest) : null);
-        if (file) {
-          bytes = await app.vault.readBinary(file);
-          type = mimeForExtension(file.extension) || type;
-        } else if (href && /^(data:|https?:|app:|blob:)/i.test(href)) {
-          const res = await fetch(href);
-          const blob = await res.blob();
-          bytes = new Uint8Array(await blob.arrayBuffer());
-          if (blob.type) type = blob.type;
-        }
-        if (!bytes) throw new Error('no image');
-        await navigator.clipboard.write([new ClipboardItem({ [type]: new Blob([bytes], { type }) })]);
-      } catch (e) {
-        new Notice(tt('interface.copy-failed') || 'Failed to copy');
-      }
-    }));
-}
-
-function mimeForExtension(ext) {
-  const map = {
-    png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif',
-    webp: 'image/webp', bmp: 'image/bmp', svg: 'image/svg+xml', avif: 'image/avif',
-  };
-  return map[String(ext || '').toLowerCase()] || '';
-}
-
 function openTagSearch(app, tag) {
   const leaf = app.workspace.getLeavesOfType('search')[0];
   if (leaf) {
@@ -753,4 +711,4 @@ function openTagSearch(app, tag) {
   }
 }
 
-export { escapeHtml };
+export { escapeHtml, stripFrontmatter };

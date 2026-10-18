@@ -128,6 +128,10 @@
 /* images & media */
 .markdown-rendered img { max-width: 100%; border-radius: var(--image-radius, var(--radius-s)); }
 .markdown-rendered .image-embed { display: inline-flex; max-width: 100%; }
+/* 原版 app.css：图片容器宽高由内容决定，尺寸语法落在 .image-wrapper > img 上 */
+.markdown-rendered .image-embed { width: fit-content; padding-bottom: 3px; padding-inline-end: 3px; }
+.markdown-rendered .image-embed .image-wrapper { display: flex; position: relative; }
+.markdown-rendered .image-embed .image-wrapper img:not([width]) { width: 100%; }
 .markdown-rendered p > .image-embed { display: flex; }
 .markdown-rendered span.internal-embed { display: inline-flex; }
 .markdown-rendered .internal-embed.media-embed { display: flex; justify-content: center; }
