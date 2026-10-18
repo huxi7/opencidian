@@ -1,6 +1,6 @@
 /**
  * [INPUT]: 无外部依赖。纯函数：矩形几何、贝塞尔路径、JSON Canvas 配色解析、元素矩形测量。
- * [OUTPUT]: 导出 genId、bboxOf、unionBBox、expandBBox、boxesIntersect、containsBox、sidePoint、offsetPoint、bezierFor、bezierPoint、nearestSide、SIDE_ROTATION、parseCanvasColor、applyCanvasColor、clamp、rectOf、rectFromPos、distanceToBox、MultiMap。
+ * [OUTPUT]: 导出 genId、bboxOf、unionBBox、expandBBox、boxesIntersect、containsBox、sidePoint、offsetPoint、bezierFor、bezierPoint、nearestSide、SIDE_ROTATION、parseCanvasColor、applyCanvasColor、clamp、rectOf、rectFromBBox、rectFromPos、distanceToBox、MultiMap。
  * [POS]: views/ 画布四件套（canvas-viewport / canvas-interactions / canvas-node / canvas-edge）的共享几何与配色层。公式逐字复刻原版 B5/V5/z5/R5/N3：边从节点边中点出发，控制点沿边法线偏移 clamp(距离/2, 70, 150)。不持有状态。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
@@ -159,6 +159,11 @@ export function rectOf(el) {
     cx: left + width / 2, cy: top + height / 2,
     minX: -width / 2, minY: -height / 2, maxX: width / 2, maxY: height / 2,
   };
+}
+
+/** 元素 bbox 折成矩形（原版 f3）。 */
+export function rectFromBBox(box) {
+  return { x: box.minX, y: box.minY, width: box.maxX - box.minX, height: box.maxY - box.minY };
 }
 
 /** 原版 w3：把锚点 + 尺寸 + 方位折成矩形。 */

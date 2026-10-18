@@ -1,14 +1,17 @@
 /**
- * [INPUT]: 依赖 ./canvas-interactions.js 的 CanvasInteractions（类链基类）；依赖 ../core/i18n.js 的 t；依赖 ../core/icons.js 的 setIcon；依赖 ../core/notices.js 的 Notice；依赖 ../core/ipc.js 的 Desktop；
+ * [INPUT]: 依赖 ./canvas-interactions.js 的 CanvasInteractions（类链基类）；依赖 ../core/i18n.js 的 t；依赖 ../core/icons.js 的 setIcon；依赖 ../core/notices.js 的 Notice；依赖 ../core/ipc.js 的 Desktop；依赖 ../core/keymap.js 的 IS_MAC；
  *          依赖 ./canvas-utils.js 的 genId、boxesIntersect、expandBBox、nearestSide、rectFromPos、distanceToBox、rectOf、MultiMap；
  *          依赖 ./canvas-node.js 的 CanvasNode/CanvasTextNode/CanvasLinkNode/CanvasDummyNode；依赖 ./canvas-group-node.js 的 CanvasGroupNode；依赖 ./canvas-file-node.js 的 CanvasFileNode；依赖 ./canvas-edge.js 的 CanvasEdge；
  *          依赖 ./canvas-menu.js 的 FileSuggestModal/LinkSuggestModal/JumpToGroupModal/installCanvasViewActions；
- *          依赖 ./canvas-controls.js 的 buildCardMenu/buildControls（建卡菜单与控件组的 DOM 构建）；依赖 ./canvas-export.js 的 renderCanvasImage/exportCanvasImage
+ *          依赖 ./canvas-controls.js 的 buildCardMenu/buildControls（建卡菜单与控件组的 DOM 构建）；依赖 ./canvas-arrange.js 的 buildCanvasMenu（选择浮动工具条与多选包围盒）；依赖 ./canvas-export.js 的 renderCanvasImage/exportCanvasImage
  * [OUTPUT]: 导出 CanvasView 类（含 renderCanvasImage 渲染入口、generateHDImage 导出入口与 promptImageSavePath 保存对话框入口）
  * [POS]: views/ 画布类链的末端：View → CanvasViewport（视口）→ CanvasInteractions（交互）→ CanvasView（装配与调度）。持有 .canvas-wrapper DOM、节点/边集合、选择集合、JSON Canvas 读写。
  *        ResizeObserver 在挂载后更新视口。节点与边几何分层；数据防抖 500ms 写回，关闭时 flush。
  *        vault modify 的外部修改重载磁盘内容并保留视口；自身写入用 _writing 标记排除，避免覆盖在途编辑。
  *        撤销/重做历史（上限 100）与写盘共用一个 requestSave；控件组含快速设置（对齐网格/对齐物体/只读）与撤销/重做。
+ *        选择：selection 的改动统一走 updateSelection（先拍旧集合、置 selectionChanged），帧尾 applySelectionDiff 处理焦点/高亮进出，
+ *        1↔多选切换不会留下「既聚焦又选中」的中间态；浮动工具条 this.menu 由帧尾按变化重绘，拖动期间隐藏。
+ *        getData 按 z 升序写出节点（原版 g5），importData 读到较低 z 时重新置顶，两者共同决定文件顺序即堆叠顺序；cloneData 为克隆拖动换新 id。
  *        只读标记按原版 localDataManager 存 localStorage('canvas-<路径>')，重命名迁移、删除清理；切换只读时逐节点通知正文（onReadonlyChange）。
  *        导出图片：绘制在 canvas-export.js，选项弹窗在 canvas-export-dialog.js；本类只提供 renderCanvasImage（可测试）、generateHDImage（命令/面板菜单入口）
  *        与 promptImageSavePath（保存对话框，验收场景替换它即可跳过原生对话框）。
@@ -19,6 +22,7 @@ import { CanvasInteractions } from './canvas-interactions.js';
 import { CanvasHistory } from './canvas-history.js';
 import { t } from '../core/i18n.js';
 import { setIcon } from '../core/icons.js';
+import { IS_MAC } from '../core/keymap.js';
 import { Notice } from '../core/notices.js';
 import { Desktop } from '../core/ipc.js';
 import { debounce } from '../core/events.js';
@@ -34,6 +38,7 @@ import { loadCanvasLocalData, saveCanvasLocalData, migrateCanvasLocalData, dropC
 import { CanvasEdge } from './canvas-edge.js';
 import { FileSuggestModal, LinkSuggestModal, JumpToGroupModal, installCanvasViewActions } from './canvas-menu.js';
 import { buildCardMenu, buildControls } from './canvas-controls.js';
+import { buildCanvasMenu } from './canvas-arrange.js';
 import { renderCanvasImage, exportCanvasImage } from './canvas-export.js';
 
 const SAVE_DELAY = 500;
@@ -60,6 +65,9 @@ export class CanvasView extends CanvasInteractions {
     this.edgeFrom = new MultiMap();
     this.edgeTo = new MultiMap();
     this.selection = new Set();
+    this.staleSelection = null;
+    this.selectionChanged = false;
+    this.menu = null;
     this.zIndexCounter = 1;
     this.x = 0; this.y = 0; this.zoom = 0; this.scale = 1;
     this.tx = 0; this.ty = 0; this.tZoom = 0;
@@ -157,6 +165,9 @@ export class CanvasView extends CanvasInteractions {
     this.nodes.clear();
     this.edges.clear();
     this.selection.clear();
+    this.staleSelection = null;
+    this.selectionChanged = false;
+    if (this.menu) this.menu.detach();
     this.data = {};
     this.history.clear();
     this.requestPushHistory.cancel();
@@ -188,12 +199,11 @@ export class CanvasView extends CanvasInteractions {
 
     buildCardMenu(this);
     buildControls(this);
+    this.menu = buildCanvasMenu(this);
 
     const canvasEl = this.canvasEl = wrapperEl.createDiv('canvas');
     this.edgeContainerEl = canvasEl.createSvg('svg', { cls: 'canvas-edges' });
     this.edgeEndContainerEl = canvasEl.createSvg('svg', { cls: 'canvas-edges' });
-    this.selectionEl = canvasEl.createDiv('canvas-selection');
-    this.selectionEl.hide();
 
     wrapperEl.addEventListener('keydown', (e) => this.onKeydown(e));
     wrapperEl.addEventListener('pointerdown', (e) => this.onPointerdown(e));
@@ -208,22 +218,24 @@ export class CanvasView extends CanvasInteractions {
   getData() {
     const nodes = [];
     const edges = [];
-    for (const node of this.nodes.values()) nodes.push(node.getData());
+    // 原版 g5：节点按 z 升序写出，文件里的顺序即堆叠顺序
+    for (const node of Array.from(this.nodes.values()).sort((a, b) => a.zIndex - b.zIndex)) nodes.push(node.getData());
     for (const edge of this.edges.values()) edges.push(edge.getData());
     return { ...this.data, nodes, edges };
   }
 
-  getSelectionData() {
+  getSelectionData(elements) {
+    const selected = new Set(elements || this.selection);
     const nodes = [];
     const edges = [];
     const selectedEdges = new Set();
-    for (const el of this.selection) {
+    for (const el of Array.from(selected).sort((a, b) => a.zIndex - b.zIndex)) {
       if (!(el instanceof CanvasNode)) continue;
       nodes.push(el.getData());
       for (const edge of this.getEdgesForNode(el)) selectedEdges.add(edge);
     }
     for (const edge of selectedEdges) {
-      if (this.selection.has(edge.from.node) && this.selection.has(edge.to.node)) edges.push(edge.getData());
+      if (selected.has(edge.from.node) && selected.has(edge.to.node)) edges.push(edge.getData());
     }
     return { nodes, edges };
   }
@@ -237,11 +249,15 @@ export class CanvasView extends CanvasInteractions {
     this.pushHistory(data);
   }
 
-  /** 原版 importData：按 id 复用节点与边；prune=true 时移除数据中已不存在的项（不清历史/视口）。 */
+  /**
+   * 原版 importData：按 id 复用节点与边；prune=true 时移除数据中已不存在的项（不清历史/视口）。
+   * 返回本次数据覆盖的节点集合（原版返回该集合，供粘贴/克隆后就地选中）。
+   */
   importData(data, prune) {
     const nodes = Array.isArray(data.nodes) ? data.nodes : [];
     const edges = Array.isArray(data.edges) ? data.edges : [];
     const keptNodes = new Set();
+    let maxZ = 0;
     for (const nodeData of nodes) {
       if (!nodeData || !nodeData.id) continue;
       let node = this.nodes.get(nodeData.id);
@@ -257,6 +273,9 @@ export class CanvasView extends CanvasInteractions {
       node.setData(nodeData);
       node.attach();
       node.render();
+      // 原版：z 低于前一个的节点重新置顶，保证文件顺序与堆叠顺序一致
+      if (node.zIndex < maxZ) node.updateZIndex();
+      maxZ = node.zIndex;
       keptNodes.add(node);
     }
     if (prune) {
@@ -298,6 +317,7 @@ export class CanvasView extends CanvasInteractions {
       }
     }
     if (!this.nodes.size) this.createPlaceholder();
+    return keptNodes;
   }
 
   createPlaceholder() {
@@ -321,7 +341,28 @@ export class CanvasView extends CanvasInteractions {
     const cssZ = String(z + 1);
     if (this.cardMenuEl) this.cardMenuEl.style.zIndex = cssZ;
     if (this.canvasControlsEl) this.canvasControlsEl.style.zIndex = cssZ;
+    if (this.menu) this.menu.updateZIndex(z + 3);
     return z;
+  }
+
+  /** 原版 canSnap：macOS 按住 Ctrl、其他平台按住 Alt 时临时关闭吸附与参考线。 */
+  canSnap(e) { return IS_MAC ? !e.ctrlKey : !e.altKey; }
+
+  /** 原版 cloneData：深拷贝选中数据并为节点/边换新 id，可整体平移。 */
+  cloneData(data, offset) {
+    const map = {};
+    for (const node of data.nodes) {
+      const oldId = node.id;
+      node.id = genId();
+      map[oldId] = node.id;
+      if (offset) { node.x += offset.x; node.y += offset.y; }
+    }
+    for (const edge of data.edges) {
+      edge.fromNode = map[edge.fromNode] || '';
+      edge.toNode = map[edge.toNode] || '';
+      edge.id = genId();
+    }
+    return data;
   }
 
   addNode(node, attach = true) {
@@ -485,65 +526,7 @@ export class CanvasView extends CanvasInteractions {
     modal.open();
   }
 
-  /* -------------------------------------------------------------- 选择 */
-
-  select(el) {
-    if (this.selection.has(el)) return;
-    const wasSingle = this.selection.size === 1;
-    this.selection.add(el);
-    if (wasSingle) el.focus(); else el.select();
-    this.requestFrame();
-  }
-
-  deselect(el) {
-    if (!this.selection.has(el)) return;
-    const wasSingle = this.selection.size === 1;
-    this.selection.delete(el);
-    if (wasSingle) el.blur(); else el.deselect();
-    this.requestFrame();
-  }
-
-  toggleSelect(el) {
-    if (this.selection.has(el)) this.deselect(el);
-    else this.select(el);
-  }
-
-  selectOnly(el) {
-    if (this.selection.size === 1 && this.selection.has(el)) return;
-    const old = Array.from(this.selection);
-    this.selection.clear();
-    this.selection.add(el);
-    for (const other of old) {
-      if (other === el) continue;
-      if (old.length === 1) other.blur();
-      else other.deselect();
-    }
-    el.focus();
-    this.requestFrame();
-  }
-
-  selectAll(elements) {
-    const next = elements ? new Set(elements) : new Set(this.nodes.values());
-    for (const el of Array.from(this.selection)) if (!next.has(el)) this.deselect(el);
-    for (const el of next) this.select(el);
-    this.requestFrame();
-  }
-
-  deselectAll() {
-    if (!this.selection.size) return;
-    for (const el of Array.from(this.selection)) this.deselect(el);
-    this.requestFrame();
-  }
-
-  deleteSelection() {
-    if (this.readonly) return;
-    for (const el of Array.from(this.selection)) {
-      if (el instanceof CanvasNode) this.removeNode(el);
-      else if (el instanceof CanvasEdge) this.removeEdge(el);
-    }
-    this.deselectAll();
-    this.requestSave();
-  }
+  /* ------------------------------------------------------------ 只读模式 */
 
   /** 只读模式（原版 setReadonly）：更新快速设置按钮的图标与提示，供快速设置菜单切换。 */
   setReadonly(readonly) {
@@ -556,6 +539,7 @@ export class CanvasView extends CanvasInteractions {
         : t('plugins.canvas.label-canvas-settings'));
     }
     this.wrapperEl.toggleClass('mod-readonly', readonly);
+    if (this.menu) this.menu.render(true);
     for (const node of this.nodes.values()) node.onReadonlyChange?.(readonly);
   }
 

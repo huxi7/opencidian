@@ -1,17 +1,22 @@
 /**
- * [INPUT]: 依赖 ./canvas-viewport.js 的 CanvasViewport（类链基类）；依赖 ./canvas-node.js 的 CanvasNode（instanceof 判定）；依赖 ./canvas-utils.js 的 clamp、containsBox、unionBBox、expandBBox、bboxOf；依赖 ../core/menu.js 的 Menu；依赖 ../core/i18n.js 的 t；依赖 ./canvas-menu.js 的 showCreationMenu、showQuickSettingsMenu
- * [OUTPUT]: 导出 CanvasInteractions 类（指针/键盘/拖拽/框选/滚轮/右键菜单）与 startDrag、suppressClick 两个拖拽原语。
+ * [INPUT]: 依赖 ./canvas-viewport.js 的 CanvasViewport（类链基类）；依赖 ./canvas-node.js 的 CanvasNode（instanceof 判定）；依赖 ./canvas-utils.js 的 clamp、containsBox、unionBBox、expandBBox、bboxOf、rectFromBBox；依赖 ./canvas-selection.js 的 CanvasSelectionBox；依赖 ../core/menu.js 的 Menu；依赖 ../core/keymap.js 的 IS_MAC；依赖 ../core/i18n.js 的 t；依赖 ./canvas-menu.js 的 showCreationMenu、showQuickSettingsMenu
+ * [OUTPUT]: 导出 CanvasInteractions 类（选择集合语义：select/deselect/toggleSelect/selectOnly/selectAll/deselectAll、updateSelection/applySelectionDiff、deleteSelection；指针/键盘/拖拽/框选/滚轮/右键菜单）与 startDrag、suppressClick 两个拖拽原语。
  * [POS]: views/ 画布类链的第三层：View → CanvasViewport → CanvasInteractions → CanvasView。所有画布指针语义（阈值 5px 才成拖拽、拖到视口边缘 30px 自动平移、拖拽后吞掉一次 click）集中于此；
+ *        选择集合也归本层：改动一律走 updateSelection（先拍旧集合、置 selectionChanged），帧尾由 applySelectionDiff 统一处理焦点/高亮进出。
  *        CanvasView 只负责装配 DOM 与调度，节点/边自身不注册窗口级监听。startDrag 是原版 wg 的等价物：超过 threshold 后调用一次 factory，cleanup 先于 end/cancel。
  *        拖动选中集合时逐帧调用 viewport 的 getSnapping：吸附位移与参考线都由该层产出，drag 结束由 handleDragWithPan 的 cleanup 摘除参考线。
+ *        按 mac Alt / 其他平台 Ctrl 拖动改为克隆：原件归位、替身跟着指针走，松手时 cloneData + importData 生成新节点并选中；拖动途中按下/松开该键即时切换（keydown/keyup 经 startDrag 转给 drag）。
+ *        canSnap 为假（mac Ctrl / 其他 Alt）时不吸附也不画参考线。框选用 CanvasSelectionBox 画矩形，分组需被完整包含；按住 Mod 松手时按 defaultModDragBehavior 建卡或弹建卡菜单。
  *        键盘含 Esc/Delete、Mod+A、Mod+Z/Mod+Shift+Z/Mod+Y、Shift+1/2，以及方向键微移选中节点（Shift 为 5 倍、对齐网格时吸附网格线）。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 /* Canvas pointer + keyboard interactions (class chain layer 3). */
 import { CanvasViewport } from './canvas-viewport.js';
 import { CanvasNode } from './canvas-node.js';
-import { clamp, containsBox, unionBBox, expandBBox, bboxOf } from './canvas-utils.js';
+import { CanvasSelectionBox } from './canvas-selection.js';
+import { clamp, containsBox, unionBBox, expandBBox, bboxOf, rectFromBBox } from './canvas-utils.js';
 import { Menu } from '../core/menu.js';
+import { IS_MAC } from '../core/keymap.js';
 import { t } from '../core/i18n.js';
 import { showCreationMenu, showQuickSettingsMenu } from './canvas-menu.js';
 
@@ -224,10 +229,86 @@ export class CanvasInteractions extends CanvasViewport {
     }), 0);
   }
 
+  /* -------------------------------------------------------------- 选择 */
+
+  /**
+   * 原版 updateSelection：改动前先拍下旧集合，焦点/高亮差异留到帧尾统一应用（applySelectionDiff），
+   * 这样 1↔多选切换不会出现「已聚焦又被选中」的中间态。
+   */
+  updateSelection(mutate) {
+    if (!this.staleSelection) this.staleSelection = Array.from(this.selection);
+    mutate(this.selection);
+    this.selectionChanged = true;
+    this.requestFrame();
+  }
+
+  select(el) { if (!this.selection.has(el)) this.updateSelection((set) => set.add(el)); }
+
+  deselect(el) { if (this.selection.has(el)) this.updateSelection((set) => set.delete(el)); }
+
+  toggleSelect(el) {
+    this.updateSelection((set) => { if (set.has(el)) set.delete(el); else set.add(el); });
+  }
+
+  selectOnly(el) {
+    if (this.selection.size === 1 && this.selection.has(el)) return;
+    this.updateSelection((set) => { set.clear(); set.add(el); });
+  }
+
+  selectAll(elements) {
+    this.updateSelection((set) => {
+      if (elements) { set.clear(); for (const el of elements) set.add(el); }
+      else for (const node of this.nodes.values()) set.add(node);
+    });
+  }
+
+  deselectAll() { if (this.selection.size) this.updateSelection((set) => set.clear()); }
+
+  /** 帧尾应用选择差异（原版 renderFrame 对 staleSelection 的处理）：返回是否发生可见变化。 */
+  applySelectionDiff() {
+    const stale = this.staleSelection;
+    if (!stale) return this.selectionChanged;
+    const selection = this.selection;
+    const oldSet = new Set(stale);
+    let changed = this.selectionChanged;
+    for (const el of stale) {
+      if (selection.has(el)) continue;
+      if (stale.length === 1) el.blur();
+      else el.deselect();
+      changed = true;
+    }
+    for (const el of Array.from(selection)) {
+      if (oldSet.has(el)) {
+        if (stale.length === 1 && selection.size > 1) { el.blur(); el.select(); changed = true; }
+        else if (stale.length > 1 && selection.size === 1) { el.deselect(); el.focus(); changed = true; }
+      } else {
+        if (selection.size === 1) el.focus();
+        else el.select();
+        changed = true;
+      }
+    }
+    this.staleSelection = null;
+    this.selectionChanged = false;
+    return changed;
+  }
+
+  deleteSelection() {
+    if (this.readonly) return;
+    for (const el of Array.from(this.selection)) {
+      if (el instanceof CanvasNode) this.removeNode(el);
+      else if (el instanceof CanvasEdge) this.removeEdge(el);
+    }
+    this.deselectAll();
+    this.requestSave();
+  }
+
   setDragging(isDragging) {
     if (this.isDragging === isDragging) return;
     this.isDragging = isDragging;
     this.wrapperEl.toggleClass('is-dragging', isDragging);
+    // 拖动起止都要重绘浮动工具条（拖动中隐藏，松手恢复）
+    this.selectionChanged = true;
+    this.requestFrame();
   }
 
   /* -------------------------------------------------------------- 背景 */
@@ -255,6 +336,14 @@ export class CanvasInteractions extends CanvasViewport {
     const menu = new Menu(this.app);
     showCreationMenu(this, menu, pos);
     menu.addSeparator();
+    if (this.history.canUndo()) {
+      menu.addItem((item) => item.setSection('history').setTitle(t('setting.mobile-toolbar.option-undo')).setIcon('lucide-undo-2')
+        .onClick(() => this.undo()));
+    }
+    if (this.history.canRedo()) {
+      menu.addItem((item) => item.setSection('history').setTitle(t('setting.mobile-toolbar.option-redo')).setIcon('lucide-redo-2')
+        .onClick(() => this.redo()));
+    }
     showQuickSettingsMenu(this, menu);
     menu.showAtMouseEvent(e);
   }
@@ -325,7 +414,7 @@ export class CanvasInteractions extends CanvasViewport {
     }), 0);
   }
 
-  /** 拖动选中节点（分组会带上内部节点）。 */
+  /** 拖动选中节点（分组会带上内部节点；mac 按住 Alt / 其他平台按住 Ctrl 改为克隆整组）。 */
   handleSelectionDrag(e, nodeEl, node) {
     if (this.readonly) return;
     const start = this.posFromEvt(e);
@@ -336,55 +425,120 @@ export class CanvasInteractions extends CanvasViewport {
       items.add(el);
       if (el.isGroup) for (const child of this.getContainingNodes(el.getBBox())) items.add(child);
     }
-    const list = Array.from(items);
+    const originals = Array.from(items);
     const origin = new Map();
-    for (const item of list) {
+    for (const item of originals) {
       origin.set(item, { x: item.x, y: item.y });
       item.nodeEl.addClass('is-dragging');
       item.updateZIndex();
     }
-    // 对齐候选：剔除被拖节点；拖动分组时只与其它分组对齐（原版 getSnapping 的候选筛选）
-    const draggedGroups = list.filter((item) => item.isGroup).length > 0;
-    const candidates = [];
-    for (const other of this.nodes.values()) {
-      if (items.has(other) || !!other.isGroup !== draggedGroups) continue;
-      candidates.push(other.getBBox());
-    }
+    // 拖动中按住克隆键：原件归位，替身跟着指针走；松开则原件回到替身位置（原版 d()）
+    let dragged = originals;
+    let clones = null;
+    const setCloneMode = (ev) => {
+      const cloneKey = IS_MAC ? ev.altKey : ev.ctrlKey;
+      if (cloneKey && !clones) {
+        clones = [];
+        dragged = clones;
+        for (const item of originals) {
+          const from = origin.get(item);
+          const dummy = this.createDummyNode();
+          clones.push(dummy);
+          origin.set(dummy, from);
+          dummy.x = item.x;
+          dummy.y = item.y;
+          dummy.width = item.width;
+          dummy.height = item.height;
+          dummy.render();
+          dummy.nodeEl.addClass('is-dragging');
+          item.moveTo(from);
+        }
+      } else if (!cloneKey && clones) {
+        for (let i = 0; i < originals.length; i++) {
+          originals[i].moveTo({ x: clones[i].x, y: clones[i].y });
+          clones[i].detach();
+        }
+        clones = null;
+        dragged = originals;
+      }
+    };
     const boxAt = (item, dx, dy) => {
       const from = origin.get(item);
       return bboxOf({ x: from.x + dx, y: from.y + dy, width: item.width, height: item.height });
     };
+    /** 拖动位移 + 吸附（原版 m()）：Shift 锁轴、canSnap 为假时只认同轴完全对齐。 */
+    const deltaFor = (ev) => {
+      const pos = this.posFromEvt(ev);
+      const delta = { x: pos.x - start.x, y: pos.y - start.y };
+      if (ev.shiftKey) { if (Math.abs(delta.x) > Math.abs(delta.y)) delta.y = 0; else delta.x = 0; }
+      if (!this.canSnap(ev)) return delta;
+      const draggedGroups = dragged.filter((item) => item.isGroup);
+      let source = dragged;
+      if (draggedGroups.length === 1) source = draggedGroups;
+      else if (draggedGroups.length > 1) {
+        // 被其他被拖分组完整包含的分组不参与吸附（原版 c()）
+        source = draggedGroups.filter((group) => {
+          const box = group.getBBox();
+          return !draggedGroups.some((other) => {
+            if (other === group) return false;
+            const otherBox = other.getBBox();
+            const same = otherBox.minX === box.minX && otherBox.minY === box.minY
+              && otherBox.maxX === box.maxX && otherBox.maxY === box.maxY;
+            return !same && containsBox(otherBox, box);
+          });
+        });
+      }
+      const draggedSet = new Set(dragged);
+      const boxes = source.map((item) => boxAt(item, delta.x, delta.y));
+      const candidates = [];
+      for (const other of this.nodes.values()) {
+        if (draggedSet.has(other) || (draggedGroups.length > 0) !== !!other.isGroup) continue;
+        candidates.push(other.getBBox());
+      }
+      const snap = this.getSnapping(boxes, candidates, delta.x !== 0, delta.y !== 0);
+      return { x: delta.x + snap.x, y: delta.y + snap.y };
+    };
     this.handleDragWithPan(e, {
       move: (ev) => {
-        const pos = this.posFromEvt(ev);
-        let dx = pos.x - start.x;
-        let dy = pos.y - start.y;
-        if (ev.shiftKey) { if (Math.abs(dx) > Math.abs(dy)) dy = 0; else dx = 0; }
         this.clearSnapPoints();
-        const snap = this.getSnapping(list.map((item) => boxAt(item, dx, dy)), candidates, dx !== 0, dy !== 0);
-        dx += snap.x;
-        dy += snap.y;
-        for (const item of list) {
+        setCloneMode(ev);
+        const delta = deltaFor(ev);
+        for (const item of dragged) {
           const from = origin.get(item);
-          item.moveTo({ x: from.x + dx, y: from.y + dy });
+          item.moveTo({ x: from.x + delta.x, y: from.y + delta.y });
         }
       },
-      end: () => {
-        for (const item of list) item.nodeEl.removeClass('is-dragging');
+      end: (ev) => {
+        for (const item of originals) item.nodeEl.removeClass('is-dragging');
+        if (clones) {
+          const delta = deltaFor(ev);
+          const copy = this.cloneData(this.getSelectionData(items), delta);
+          const created = this.importData(copy, false);
+          this.clearSnapPoints();
+          this.selectAll(created);
+        }
         this.setDragging(false);
         this.requestSave();
       },
       cancel: () => {
-        for (const item of list) { item.moveTo(origin.get(item)); item.nodeEl.removeClass('is-dragging'); }
+        for (const item of originals) { item.moveTo(origin.get(item)); item.nodeEl.removeClass('is-dragging'); }
       },
-      cleanup: () => { if (nodeEl) suppressClick(nodeEl); },
+      cleanup: () => {
+        if (clones) for (const clone of clones) clone.detach();
+        if (nodeEl) suppressClick(nodeEl);
+      },
+      keydown: (ev) => setCloneMode(ev),
+      keyup: (ev) => setCloneMode(ev),
     });
   }
 
-  /** 背景框选。分组需被完整包含才算命中；shift 与已有选择异或。 */
+  /**
+   * 背景框选（原版 handleDragToSelect）：拖动时挂 .canvas-selection 矩形，分组需被完整包含才算命中，
+   * Shift 与已有选择异或；收尾按住 Mod 时按 defaultModDragBehavior 建卡或弹建卡菜单。
+   */
   handleDragToSelect(e, shift, prev) {
     const start = this.posFromEvt(e);
-    const selectionEl = this.selectionEl;
+    const marquee = new CanvasSelectionBox(this);
     this.handleDragWithPan(e, {
       move: (ev) => {
         const pos = this.posFromEvt(ev);
@@ -394,9 +548,7 @@ export class CanvasInteractions extends CanvasViewport {
           maxX: Math.max(start.x, pos.x),
           maxY: Math.max(start.y, pos.y),
         };
-        selectionEl.style.transform = `translate(${box.minX}px, ${box.minY}px)`;
-        selectionEl.setCssStyles({ width: `${box.maxX - box.minX}px`, height: `${box.maxY - box.minY}px` });
-        selectionEl.show();
+        marquee.update(box);
         const hits = this.getIntersectingNodes(box).filter((node) => !node.isGroup || containsBox(box, node.getBBox()));
         let next = new Set(hits);
         if (shift) {
@@ -408,9 +560,46 @@ export class CanvasInteractions extends CanvasViewport {
         }
         this.selectAll(next);
       },
-      end: () => { selectionEl.hide(); suppressClick(this.wrapperEl); },
-      cancel: () => { this.selectAll(prev); selectionEl.hide(); },
+      end: (ev) => {
+        this.finishDragToSelect(marquee, ev);
+        suppressClick(this.wrapperEl);
+      },
+      cancel: () => { this.selectAll(prev); marquee.hide(); },
     });
+  }
+
+  /** 框选收尾（原版 end）：未按 Mod 收起框；按 Mod 时按 defaultModDragBehavior 用框的尺寸建卡或弹建卡菜单。 */
+  finishDragToSelect(marquee, ev) {
+    const isMod = IS_MAC ? ev.metaKey : ev.ctrlKey;
+    if (!isMod) { marquee.hide(); return; }
+    const rect = rectFromBBox(marquee.bbox);
+    const closeOnDone = { onChoose: () => marquee.hide(), onCancel: () => marquee.hide() };
+    switch (this.options.defaultModDragBehavior) {
+      case 'card':
+        this.createTextNode({ pos: rect, size: rect });
+        marquee.hide();
+        break;
+      case 'note':
+        this.promptAddFileNode({ pos: rect, size: rect, ...closeOnDone });
+        break;
+      case 'media':
+        this.promptAddFileNode({ pos: rect, size: rect, media: true, ...closeOnDone });
+        break;
+      case 'webpage':
+        this.promptAddLinkNode({ pos: rect, size: rect, ...closeOnDone });
+        break;
+      case 'group':
+        this.createGroupNode({ pos: rect, size: rect });
+        marquee.hide();
+        break;
+      default: {
+        const menu = new Menu(this.app);
+        showCreationMenu(this, menu, rect, rect);
+        menu.showAtMouseEvent(ev);
+        // 本复刻的 Menu.showAtPosition 会先 close() 且不清 onHide，故在显示之后再挂关闭回调
+        menu.onHide = () => marquee.hide();
+      }
+    }
   }
 
   /** 卡片菜单拖动建卡：先拖一个虚影，落点再创建。 */

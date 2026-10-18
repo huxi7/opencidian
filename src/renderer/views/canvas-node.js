@@ -1,8 +1,9 @@
 /**
- * [INPUT]: 依赖 ./canvas-utils.js 的 genId/bboxOf/nearestSide/applyCanvasColor；依赖 ../core/i18n.js 的 t；依赖 ../core/menu.js 的 Menu；依赖 ../core/ipc.js 的 Desktop；依赖 ../core/notices.js 的 Notice；依赖 ../core/modals.js 的 FileNameModal；依赖 ../editor/editor.js 的 Editor；依赖 @codemirror/view 的 placeholder
+ * [INPUT]: 依赖 ./canvas-utils.js 的 genId/bboxOf/nearestSide/applyCanvasColor/parseCanvasColor；依赖 ../core/i18n.js 的 t；依赖 ../core/menu.js 的 Menu；依赖 ../core/ipc.js 的 Desktop；依赖 ../core/notices.js 的 Notice；依赖 ../core/modals.js 的 FileNameModal；依赖 ../editor/editor.js 的 Editor；依赖 @codemirror/view 的 placeholder
  * [OUTPUT]: 导出 CanvasNode（基类）、CanvasContentNode、CanvasTextNode、CanvasLinkNode、CanvasDummyNode；CanvasFileNode 见 canvas-file-node.js，CanvasGroupNode 见 canvas-group-node.js
  * [POS]: views/ 画布三件套的节点层。DOM 对齐原版：nodeEl(.canvas-node) > containerEl(.canvas-node-container) > contentEl(.canvas-node-content)
  *        + contentBlockerEl + placeholderEl；resizer（data-resize）与连接点（data-side）挂在 nodeEl 上（原版在 interaction layer，本复刻就近放置，靠 CSS 控制显隐）。
+ *        setColor 把自定义色归一化为 "r,g,b" 后交给帧渲染或立即重绘，供选择浮动工具条的取色器调用。
  *        可读缩放与编辑态挂载正文；输入逐次请求防抖保存。几何与事件写回由 canvas-view 统一调度。
  *        文本卡片正文是内嵌的 CM6 实时预览编辑器（原版 P5 + L5），DOM 为 contentEl.markdown-embed > .markdown-embed-content > .markdown-source-view；
  *        编辑器只活在挂载期间，卸载即 destroy；仅编辑态可写，未编辑时被 blocker 挡住指针（卡片照常拖拽/选中）。
@@ -13,7 +14,7 @@
  */
 /* Canvas nodes — mirrors the original E5 / M5 / P5 / L5 / D5 / I5 / F5 classes. */
 import { placeholder as cmPlaceholder } from '@codemirror/view';
-import { genId, bboxOf, applyCanvasColor } from './canvas-utils.js';
+import { genId, bboxOf, applyCanvasColor, parseCanvasColor } from './canvas-utils.js';
 import { t } from '../core/i18n.js';
 import { Menu } from '../core/menu.js';
 import { Desktop } from '../core/ipc.js';
@@ -146,6 +147,17 @@ export class CanvasNode {
       this.nodeEl.style.zIndex = String(z);
       this.renderedZIndex = z;
     }
+  }
+
+  /** 原版 setColor：自定义色按 R3 归一化为 "r,g,b"；immediate 为真立刻重绘，否则交给帧渲染（拖动取色器时用）。 */
+  setColor(color, immediate) {
+    const raw = String(color || '').trim();
+    const rgb = /^\s*\d+\s*,\s*\d+\s*,\s*\d+\s*$/.test(raw) ? null : parseCanvasColor(raw);
+    const next = rgb ? `${rgb.r},${rgb.g},${rgb.b}` : raw;
+    if (this.color === next) return;
+    this.color = next;
+    if (immediate) this.render();
+    else this.canvas.markDirty(this);
   }
 
   get isFocused() { return this.nodeEl.hasClass('is-focused'); }
@@ -326,7 +338,6 @@ export class CanvasNode {
     const menu = new Menu(this.app);
     let handled = false;
     const cleanup = () => { window.setTimeout(() => { if (!handled) canvas.removeEdge(edge); handled = false; }, 50); };
-    menu.onHide(cleanup);
     const attach = (node) => {
       handled = true;
       edge.update(from, { side: to.side, node, end: 'arrow' });
@@ -345,6 +356,8 @@ export class CanvasNode {
       }));
     this.app.workspace.trigger('canvas:node-connection-drop-menu', menu, this, edge);
     menu.showAtMouseEvent(e);
+    // 本复刻的 Menu.showAtPosition 会先 close() 且不清 onHide，关闭回调须在显示之后再挂
+    menu.onHide = cleanup;
   }
 
   /* ---------------------------------------------------------------- 数据 */

@@ -2,9 +2,11 @@
  * [INPUT]: 依赖 ../core/view.js 的 View（类链基类）；依赖 ./canvas-utils.js 的 clamp、unionBBox、expandBBox、rectOf
  * [OUTPUT]: 导出 CanvasViewport 类，供 canvas-interactions.js 继承。含视口状态机（x,y 为视口中心世界坐标，zoom=log2(scale)）、
  *           坐标换算（posFromDom/domFromPos 等）、requestFrame/renderFrame 动画帧、markViewportChanged/markMoved/markDirty 标记，
- *           以及物体对齐（getSnapping/renderSnapPoints/clearSnapPoints/endSnapPointRendering，参考线画在 svg.canvas-snaps）。
+ *           以及物体对齐（getSnapping/renderSnapPoints/clearSnapPoints/endSnapPointRendering，参考线画在 svg.canvas-snaps）；
+ *           并导出吸附点工具 uniqueSnapPoints（原版 A3）与 findSnapMatches（原版 L3），供多选包围盒缩放复用。
  * [POS]: views/ 画布类链的第二层：View → CanvasViewport → CanvasInteractions → CanvasView。所有画布子视图共享这一层视口语义；
- *        节点/边通过 markMoved 请求重绘；帧内先把移动节点的关联边一并加入重绘集合（边坐标由节点推导），再统一 render。缩放夹在边界内并刷新正文挂载，停止后释放动画帧。
+ *        节点/边通过 markMoved 请求重绘；帧内先把移动节点的关联边一并加入重绘集合（边坐标由节点推导），再统一 render。
+ *        帧尾调用 applySelectionDiff 应用选择差异，并在选择/视口/被选元素发生变化时重绘浮动工具条（原版 menu.render）。缩放夹在边界内并刷新正文挂载，停止后释放动画帧。
  *        吸附取「4 角 + 中心」共 5 点（原版 D3），逐轴找最近对齐值（原版 L3）；snapToObjects=false 时不吸附、不画参考线。
  *        候选节点取全部节点而非原版的视口内节点（本复刻不做视口虚拟化），分组只与分组对齐。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
@@ -193,7 +195,12 @@ export class CanvasViewport extends View {
 
   markViewportChanged() { this.viewportChanged = true; this.requestFrame(); }
   markMoved(el) { this.moved.add(el); this.requestFrame(); }
-  markDirty(el) { this.dirty.add(el); this.requestFrame(); }
+  /** 原版 markDirty：被选中的元素变脏时标记选择变化，帧尾据此重绘浮动工具条（例如取色器实时改色）。 */
+  markDirty(el) {
+    this.dirty.add(el);
+    if (this.selection.has(el)) this.selectionChanged = true;
+    this.requestFrame();
+  }
 
   requestFrame(frameStart) {
     if (this.frame) return;
@@ -211,6 +218,7 @@ export class CanvasViewport extends View {
 
   /** 原版动画帧：指数平滑趋近 tx/ty/tZoom，随后刷新视口 DOM 并重绘标记过的节点与边。 */
   renderFrame(dt, now) {
+    const viewportWasChanged = this.viewportChanged;
     let ease = 1 - Math.pow(SMOOTHING, dt);
     if (this.finishViewportAnimation) { ease = 1; this.finishViewportAnimation = false; }
     if (this.viewportChanged) {
@@ -272,13 +280,19 @@ export class CanvasViewport extends View {
         }
       }
     }
-    for (const el of Array.from(this.moved)) {
+    const movedEls = new Set(this.moved);
+    for (const el of movedEls) {
       this.moved.delete(el);
       if (el.isAttached) el.render();
     }
     for (const el of Array.from(this.dirty)) {
       this.dirty.delete(el);
       if (el.isAttached) el.render();
+    }
+    // 原版帧尾：先应用选择差异（1↔多选的焦点/高亮切换），再让浮动工具条按需重绘。
+    const selectionChanged = this.applySelectionDiff();
+    if (this.menu && (selectionChanged || viewportWasChanged || Array.from(this.selection).some((el) => movedEls.has(el)))) {
+      this.menu.render(selectionChanged);
     }
   }
 
@@ -312,7 +326,7 @@ function boxSnapPoints(box) {
 }
 
 /** 原版 A3：合并全部点，按 x/y 排序后按坐标去重。 */
-function uniqueSnapPoints(boxes) {
+export function uniqueSnapPoints(boxes) {
   const all = [];
   for (const box of boxes) all.push(...boxSnapPoints(box));
   all.sort((a, b) => (a.x !== b.x ? a.x - b.x : a.y - b.y));
@@ -330,7 +344,7 @@ function uniqueSnapPoints(boxes) {
  * 原版 L3：在单轴上为 src 的每个坐标找 dest 中最近的坐标，取绝对差最小且在 dist 内的位移，
  * 返回该位移下的全部点对（src 是移动前的点，dest 是对齐目标点）。
  */
-function findSnapMatches(src, dest, dist, axis) {
+export function findSnapMatches(src, dest, dist, axis) {
   if (!src.length || !dest.length) return null;
   const valueOf = (p) => (axis === 'x' ? p.x : p.y);
   const sortedSrc = src.slice().sort((a, b) => valueOf(a) - valueOf(b));
