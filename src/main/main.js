@@ -28,9 +28,10 @@ const ASSETS_DIR = path.join(APP_ROOT, 'assets');
 const IS_MAC = process.platform === 'darwin';
 const IS_DEV = !app.isPackaged;
 
-// 验收/E2E 模式（run.mjs 设 E2E=1）：不抢系统焦点、不进 Dock、不激活应用。
+// 验收/E2E 模式（run.mjs 设 E2E=1）：不抢系统焦点、不进 Dock、不激活应用、整窗不可见。
+// 只要带 OBS_ACT（验收 eval 载荷）也自动进入 E2E——防止脚本/代理绕过 run.mjs 直连探针时弹窗。
 // accessory 策略让 show()/窗口出现都不激活应用；只影响呈现层，正常模式行为不变。
-const E2E = process.env.E2E === '1' || process.env.OBS_E2E === '1';
+const E2E = process.env.E2E === '1' || process.env.OBS_E2E === '1' || !!process.env.OBS_ACT;
 if (E2E && IS_MAC) {
   try { app.setActivationPolicy('accessory'); } catch (e) { /* 非 macOS 忽略 */ }
 }

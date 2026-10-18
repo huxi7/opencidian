@@ -78,7 +78,7 @@ OpenSidian 内置**检查更新**（命令面板搜「检查更新」，或启�
 
 ## 验收/E2E 模式（不打断你正在做的事）
 
-验收脚本以 `E2E=1` 启动 Electron（`scripts/acceptance/run.mjs` 自动设置）。该开关只改**呈现层**：
+验收脚本以 `E2E=1` 启动 Electron（`scripts/acceptance/run.mjs` 自动设置）；带 `OBS_ACT` 的直连探针也会自动进入该模式（防止绕过运行器时弹窗）。该开关只改**呈现层**：
 
 - `app.setActivationPolicy('accessory')` + `app.dock.hide()`：不进 Dock、不夺菜单栏、不激活应用；
 - 窗口 `focusable: false` + `showInactive()` + **`opacity: 0`（整窗透明）+ 忽略鼠标**：测试窗口完全不可见、键盘/系统焦点不跳走、不遮挡任何界面；
