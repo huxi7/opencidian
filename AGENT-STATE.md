@@ -411,10 +411,11 @@ node --experimental-vm-modules src/renderer/core/workspace-regression.js
 - 全局 tooltip（`core/tooltip.js`，1000ms 延迟/100ms 宽限/上下左右/翻转/抑制原生 title）、Notice 右上角+4000ms+hover 暂停+收拢动画、Suggest clear 按钮/PageUp/PageDown/Ctrl+p/n/auxclick；dialogs 场景扩到 7 项。同时把 file-explorer 移动失败的英文硬编码改成 locale 键（zh/en 同步）。
 
 未完成/已知缺口（后续）：
-- 画布：CM6 卡片编辑、空间索引/视口虚拟化未做；canvas-view.js 796 行，下批拆分控件/更多菜单装配。
+- 画布：CM6 卡片编辑已完成（canvas-edit 58 项）；**空间索引/视口虚拟化仍未做**；卡片内编辑命令（Mod+B 等）no-op（需 workspace.activeEditor 语义）；canvas-node.js/canvas-view.js 787~797 行贴顶。
 - 图谱：力学 worker 化未做（5000 节点约 77fps）；触屏拖拽重排未移植；"已悬停时再按 Mod"的延迟监听未做（既有缺口）。
-- 编辑器：表格/嵌入右键菜单、链接路径 tooltip、图片尺寸语法未逐项核对；系统外部文件拖入（复制为附件）未做（文件树内部拖入已支持）。
-- 核心插件：audio-recorder 已实现（功能区按钮 + start/stop 命令 + 权限降级 + webm/m4a 落盘；mock 验收 65 + restart 7，**真机麦克风仍需手点一次**）；slash-command/webviewer/bases/markdown-importer/publish/sync 按约定跳过。
-- 第三方插件页：捐赠按钮未做（市场未接入）；快捷键录制仍为弹窗（原版行内等待 chip）。
-- 无 macOS 分发包/签名/自动更新；README 许可证待定（LICENSE 未加）。
+- 表格：手柄拖拽重排、单元格矩形选择、Tab 换格、单元格原位置编辑未做（其余已齐）。
+- 编辑器/阅读：链接路径 tooltip、图片尺寸语法未逐项核对；卡片内命令 no-op（见画布行）。
+- 核心插件：slash-command/webviewer/bases/markdown-importer/publish/sync 按约定跳过；audio-recorder 真机麦克风仍需手点一次。
+- 第三方插件页：捐赠按钮未做（市场未接入）。
+- 系统级：无 macOS 分发包/签名/自动更新（LICENSE 已定 MIT）。
 - 未做像素级视觉验收（用户要求停截图）：只保证 DOM/逻辑/计算样式与回归。
