@@ -383,6 +383,14 @@ node --experimental-vm-modules src/renderer/core/workspace-regression.js
 - `402c786` 缺失核心插件：出链面板 + 属性视图（all-properties/file-properties/命令/状态栏计数），core-views 77 项。
 - `add712a` 出链面板补 Unlinked mentions 分节（计数/上下文/Link 按钮），core-views 83 项。
 - `2990964` 图谱批：颜色圆点拖拽排序（原版 TJ）+ 节点悬停 hover-link → page-preview（graph 来源默认 Mod、坐标定位）+ 力参数整链；graph 72 项 ×3。
+- `3da01c1` 编辑器右键菜单（拼写/链接/剪贴板/文本格式/段落/插入/复制路径 + editor-menu 事件）+ `editor:attach-file`/`set-heading-*`/`clear-formatting`/`toggle-blockquote`；修复 generateMarkdownLink 附件丢扩展名、外部修改同步回滚迟到通知两个深层 bug。
+- `865a781` 粘贴图片（截图/HTML data URL → Pasted image <时间戳>）+ 文件树外部文件拖入。
+- `107a7f6` 表格批收尾（表格加行/列按钮、行列手柄与行列/排序/对齐菜单已随 3da01c1/865a781 入库）；with-lock 注释修正。
+- `621ce9d` 阅读视图链接/图片右键菜单（workspace.handleLinkContextMenu/handleExternalLinkContextMenu 共享）+ LICENSE(MIT) + README 同步。
+- `a213fb1` 块 widget「编辑此区块」（代码/数学/Mermaid 的 edit-block-button）。
+- 新增场景：community→…、editor-menu 23、editor-paste 7、reading-menus 11、editor-block-button 11、table-widget 76。
+- 在跑的子代理：录音机核心插件（ses_eb328abdaffeT3OIcwe8F1vxhQ）、画布文本卡 CM6（ses_eb328402effeLiTwrVYsuf5t7i）、下载当前文件附件（ses_eb318f09cffeTK5M3uXLngNN5C）。
+- 待办（代理结束后）：core/CLAUDE.md、styles/CLAUDE.md、scripts/acceptance/CLAUDE.md 的并行文档合并；表格手柄拖拽重排/单元格选择/Tab 换格；图谱 worker；electron-builder 分发包（LICENSE 已定 MIT）。
 - `4c4fcc2` 社区插件安全模式：双布局/信任模态/setEnable 语义 + community 场景（run 19 + restart 3）。
 - `ab44cba` shell 手感批：drag-ghost、drop overlay、侧栏 140ms 补间、标签列表按钮/Close all/Close after、pin、关闭钮容器查询、窗口状态与红绿灯、非 mac 三按钮、状态栏双段、空标签、titlebar 镜像；sidebar-shell 61 项。
 - `8cf232a` 设置与窗口 IPC：拼写词典/语言 IPC + 启动恢复、启动耗时弹窗、窗口状态通道。
