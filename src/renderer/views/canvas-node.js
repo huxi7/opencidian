@@ -1,21 +1,23 @@
 /**
- * [INPUT]: 依赖 ./canvas-utils.js 的 genId/bboxOf/nearestSide/applyCanvasColor；依赖 ../core/i18n.js 的 t；依赖 ../core/icons.js 的 setIcon；依赖 ../core/menu.js 的 Menu；依赖 ../core/notices.js 的 Notice；依赖 ../core/ipc.js 的 Desktop；依赖 ../markdown/reading.js 的 renderMarkdown
+ * [INPUT]: 依赖 ./canvas-utils.js 的 genId/bboxOf/nearestSide/applyCanvasColor；依赖 ../core/i18n.js 的 t；依赖 ../core/menu.js 的 Menu；依赖 ../core/ipc.js 的 Desktop；依赖 ../core/notices.js 的 Notice；依赖 ../core/modals.js 的 FileNameModal；依赖 ../editor/editor.js 的 Editor；依赖 @codemirror/view 的 placeholder
  * [OUTPUT]: 导出 CanvasNode（基类）、CanvasContentNode、CanvasTextNode、CanvasLinkNode、CanvasGroupNode、CanvasDummyNode；CanvasFileNode 见 canvas-file-node.js
  * [POS]: views/ 画布三件套的节点层。DOM 对齐原版：nodeEl(.canvas-node) > containerEl(.canvas-node-container) > contentEl(.canvas-node-content)
  *        + contentBlockerEl + placeholderEl；resizer（data-resize）与连接点（data-side）挂在 nodeEl 上（原版在 interaction layer，本复刻就近放置，靠 CSS 控制显隐）。
  *        可读缩放与编辑态挂载正文；输入逐次请求防抖保存。几何与事件写回由 canvas-view 统一调度。
+ *        文本卡片正文是内嵌的 CM6 实时预览编辑器（原版 P5 + L5），DOM 为 contentEl.markdown-embed > .markdown-embed-content > .markdown-source-view；
+ *        编辑器只活在挂载期间，卸载即 destroy；仅编辑态可写，未编辑时被 blocker 挡住指针（卡片照常拖拽/选中）。
  *        文本卡片菜单含编辑与转换为文件（FileNameModal → fileManager.createNewMarkdownFile → 文件节点继承几何）。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
-/* Canvas nodes — mirrors the original E5 / M5 / P5 / D5 / I5 / F5 classes. */
+/* Canvas nodes — mirrors the original E5 / M5 / P5 / L5 / D5 / I5 / F5 classes. */
+import { placeholder as cmPlaceholder } from '@codemirror/view';
 import { genId, bboxOf, applyCanvasColor } from './canvas-utils.js';
 import { t } from '../core/i18n.js';
-import { setIcon } from '../core/icons.js';
 import { Menu } from '../core/menu.js';
 import { Desktop } from '../core/ipc.js';
 import { Notice } from '../core/notices.js';
 import { FileNameModal } from '../core/modals.js';
-import { renderMarkdown } from '../markdown/reading.js';
+import { Editor } from '../editor/editor.js';
 
 const RESIZE_SIDES = ['top', 'right', 'bottom', 'left', 'topright', 'bottomright', 'bottomleft', 'topleft'];
 const CONNECT_SIDES = ['top', 'right', 'bottom', 'left'];
@@ -181,7 +183,7 @@ export class CanvasNode {
 
   onPointerdown(e) {
     if (!e.isPrimary || e.button !== 0 || this.isEditing || e.pointerType !== 'mouse' || this.canvas.readonly) return;
-    if (e.target instanceof Element && e.target.closest('button, input, .canvas-node-editor, .canvas-group-label[contenteditable="true"]')) return;
+    if (e.target instanceof Element && e.target.closest('button, input, .canvas-group-label[contenteditable="true"]')) return;
     this.canvas.handleSelectionDrag(e, this.nodeEl, this);
   }
 
@@ -377,140 +379,222 @@ export class CanvasContentNode extends CanvasNode {
     this.placeholderEl.setText(text.length > 100 ? text.slice(0, 100) + '…' : text);
   }
 
-  /** 双击内容区进入编辑（文本节点重写）。 */
+  /** 原版 n(e)：落点在这些交互控件上时不进入编辑（按钮、输入框、折叠指示器、属性面板）。 */
+  isInteractiveTarget(e) {
+    const target = e.target;
+    if (!(target instanceof Element)) return false;
+    return !!target.closest('button, input, .collapse-indicator, .interactive-child, .metadata-container');
+  }
+
+  /** 双击内容区进入编辑（文本节点重写为内嵌编辑器）。 */
   initializeEditing() {
-    const guard = (e) => {
-      if (e.target instanceof Element && e.target.closest('button, input, .collapse-indicator, .interactive-child, .canvas-node-editor')) return true;
-      return false;
-    };
     this.containerEl.addEventListener('dblclick', (e) => {
-      if (e.defaultPrevented || guard(e)) return;
+      if (e.defaultPrevented || this.isInteractiveTarget(e)) return;
       this.startEditing();
     });
     this.contentEl.addEventListener('dblclick', (e) => {
-      if (e.defaultPrevented || guard(e)) return;
+      if (e.defaultPrevented || this.isInteractiveTarget(e)) return;
       this.startEditing();
     });
   }
 }
 
 /* --------------------------------------------------------------------------
- * 文本卡片 — 展示用 markdown 渲染，编辑用 textarea（替代原版内嵌 CM6）
+ * 文本卡片 — 正文是内嵌的 CM6 实时预览编辑器（原版 P5 + L5：卡片正文就是一个 markdown 视图）
  * ------------------------------------------------------------------------ */
 export class CanvasTextNode extends CanvasContentNode {
   constructor(canvas, id) {
     super(canvas, id);
     this.text = '';
-    this._renderToken = 0;
-    this._renderedText = null;
-    this._renderedSource = null;
+    this.editor = null;      // Editor：只活在挂载期间，卸载/销毁即释放
+    this.editorEl = null;    // 原版 wZ.editorEl：.markdown-embed-content，编辑器宿主
+    this.sourceEl = null;    // .markdown-source-view.cm-s-obsidian.mod-cm6，实时预览装饰的锚点
   }
 
   initialize() {
     super.initialize();
     this.contentEl.addClass('markdown-embed');
-    this.embedContent = this.contentEl.createDiv('markdown-embed-content');
-    this.previewEl = this.embedContent.createDiv('markdown-preview-view markdown-rendered');
-    this.previewSizerEl = this.previewEl.createDiv('markdown-preview-sizer');
     this.initializeEditing();
   }
 
   isEditable() { return true; }
 
+  /* -------------------------------------------------------------- 正文数据 */
+
   setText(text) {
+    text = typeof text === 'string' ? text : '';
     if (this.text === text) return;
     this.text = text;
     this.placeholderText = text;
     this.renderPlaceholder();
-    this.renderText();
+    this.setEditorValue(text);
     this.canvas.markDirty(this);
-  }
-
-  /** 异步渲染；按 文本+来源 缓存，避免拖动时逐帧重排 markdown。token 防止旧渲染覆盖新文本。 */
-  renderText() {
-    const sourcePath = this.canvas.view.file ? this.canvas.view.file.path : '';
-    if (!this.isContentMounted || this.isEditing) return;
-    if (this._renderedText === this.text && this._renderedSource === sourcePath) return;
-    const token = ++this._renderToken;
-    this._renderedText = this.text;
-    this._renderedSource = sourcePath;
-    renderMarkdown(this.app, this.text || '', this.previewSizerEl, sourcePath)
-      .then(() => { if (token !== this._renderToken) return; })
-      .catch((e) => { this._renderedText = null; console.error('canvas text render failed', e); });
-  }
-
-  mountContent() {
-    super.mountContent();
-    this.renderText();
-  }
-
-  startEditing() {
-    const canvas = this.canvas;
-    if (canvas.readonly || this.isEditing) return;
-    canvas.selectOnly(this);
-    if (canvas.zoom < canvas.zoomBreakpoint + 0.1) canvas.zoomToBbox(this.getBBox());
-    this.setIsEditing(true);
-    this.updateBreakpoint(true);
-    this.placeholderEl.detach();
-    this.previewEl.hide();
-    const editor = this.editorEl = this.embedContent.createEl('textarea', {
-      cls: 'canvas-node-editor',
-      attr: { placeholder: t('plugins.canvas.prompt-add-text'), spellcheck: 'false' },
-    });
-    editor.value = this.text;
-    editor.focus();
-    editor.addEventListener('blur', () => this.stopEditing());
-    editor.addEventListener('keydown', (e) => {
-      if (e.key === 'Escape') { e.preventDefault(); this.stopEditing(true); }
-      if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); this.stopEditing(); }
-    });
-    editor.addEventListener('input', () => {
-      this.text = editor.value;
-      this.placeholderText = this.text;
-      this.canvas.markDirty(this);
-      this.canvas.requestSave();
-    });
-  }
-
-  stopEditing(cancelled) {
-    if (!this.isEditing) return;
-    const editor = this.editorEl;
-    this.setIsEditing(false);
-    this.canvas.markMoved(this);
-    if (editor) {
-      if (!cancelled) this.text = editor.value;
-      editor.detach();
-      this.editorEl = null;
-    }
-    this.previewEl.show();
-    this.placeholderText = this.text;
-    this.renderPlaceholder();
-    this.renderText();
-    this.canvas.requestSave();
-  }
-
-  blur() {
-    this.stopEditing();
-    super.blur();
-  }
-
-  render() {
-    super.render();
-    if (!this.initialized) return;
-    this.renderPlaceholder();
-    this.renderText();
   }
 
   getData() { return { ...super.getData(), type: 'text', text: this.text }; }
 
   setData(data) {
     super.setData(data);
-    if (data.text !== undefined) {
-      this.text = data.text || '';
-      this.placeholderText = this.text;
-      this.renderPlaceholder();
+    if (typeof data.text === 'string') {
+      this.setText(data.text);
       this.canvas.markDirty(this);
     }
+  }
+
+  /** 编辑器正文变化：写入 this.text，落盘与撤销条目沿用画布的防抖链路。 */
+  onEditorChange() {
+    if (!this.editor) return;
+    const text = this.editor.getValue();
+    if (this.text === text) return;
+    this.text = text;
+    this.placeholderText = text;
+    this.renderPlaceholder();
+    this.canvas.markDirty(this);
+    this.canvas.requestSave();
+  }
+
+  /** 程序化写正文（导入/撤销重做/外部重载）：this.text 已先行更新，编辑器回写不会重复入栈。 */
+  setEditorValue(text) {
+    if (!this.editor || this.editor.getValue() === text) return;
+    this.editor.setValue(text);
+  }
+
+  /* -------------------------------------------------------- 编辑器生命周期 */
+
+  mountContent() {
+    super.mountContent();
+    if (this.isContentMounted) this.mountEditor();
+  }
+
+  unmountContent() {
+    super.unmountContent();
+    this.unmountEditor();
+  }
+
+  destroy() {
+    this.unmountEditor();
+    super.destroy();
+  }
+
+  mountEditor() {
+    if (this.editor) return;
+    const editorEl = this.editorEl = this.contentEl.createDiv('markdown-embed-content');
+    const sourceEl = this.sourceEl = editorEl.createDiv('markdown-source-view cm-s-obsidian mod-cm6');
+    const hostEl = sourceEl.createDiv('cm-editor-host');
+    // 未进入编辑态前不可写：原版未编辑的卡片是阅读视图，不接受输入
+    const editor = this.editor = new Editor(hostEl, this.app, { doc: this.text, readOnly: true });
+    editor.sourcePath = this.canvas.file ? this.canvas.file.path : '';
+    editor.cm.dom.setAttr('data-editor-mode', 'source');
+    editor.onChange(() => this.onEditorChange());
+    editor.addExtensions(cmPlaceholder(t('plugins.canvas.prompt-add-text')));
+    editorEl.addEventListener('keydown', (e) => this.onEditorKeydown(e), true);
+    const live = this.app.settings.appSettings.livePreview !== false;
+    sourceEl.toggleClass('is-live-preview', live);
+    sourceEl.toggleClass('is-source-mode', !live);
+    editor.setLivePreview(live);
+    this.installEditorHandle(editorEl);
+  }
+
+  unmountEditor() {
+    const editor = this.editor;
+    if (!editor) return;
+    this.editor = null;
+    const editorEl = this.editorEl;
+    this.editorEl = null;
+    this.sourceEl = null;
+    editor.destroy();
+    if (editorEl) editorEl.detach();
+  }
+
+  /** 兼容旧编辑面板句柄：历史上 editorEl 是 textarea（.value 即正文），现有画布自动化仍按该约定读写正文。 */
+  installEditorHandle(editorEl) {
+    Object.defineProperty(editorEl, 'value', {
+      configurable: true,
+      get: () => (this.editor ? this.editor.getValue() : this.text),
+      set: (v) => {
+        if (this.editor) this.editor.setValue(typeof v === 'string' ? v : String(v == null ? '' : v));
+        else this.setText(v);
+      },
+    });
+  }
+
+  /* ---------------------------------------------------------------- 编辑态 */
+
+  /** 原版 T5：双击进编辑，单击已聚焦的卡片同样进编辑（原版 hg）。 */
+  initializeEditing() {
+    super.initializeEditing();
+    this.contentEl.addEventListener('click', (e) => this.onContentClick(e));
+  }
+
+  onContentClick(e) {
+    if (e.defaultPrevented || e.detail > 1 || e.shiftKey) return;
+    if (this.isEditing || this.canvas.readonly || this.isInteractiveTarget(e)) return;
+    const active = document.activeElement;
+    if (active instanceof Element && active.closest('button, input')) return;
+    // 原版 hg：正文里已有文字选区时不进编辑（用户在选择文本）
+    const selection = window.getSelection();
+    if (selection && !selection.isCollapsed && selection.anchorNode && this.contentEl.contains(selection.anchorNode)) return;
+    const pos = { x: e.clientX, y: e.clientY };
+    window.setTimeout(() => {
+      if (this.destroyed || this.isEditing) return;
+      this.startEditing(pos);
+    }, 10);
+  }
+
+  startEditing(pos) {
+    const canvas = this.canvas;
+    if (canvas.readonly || this.isEditing) return;
+    canvas.selectOnly(this);
+    if (canvas.zoom < canvas.zoomBreakpoint + 0.1) canvas.zoomToBbox(this.getBBox());
+    this.setIsEditing(true);
+    this.updateBreakpoint(true);
+    const editor = this.editor;
+    if (!editor) return;      // 画布尚未测量尺寸时正文挂不上，编辑态照常保留
+    editor.setReadOnly(false);
+    editor.focus();
+    if (pos) this.placeCursor(editor, pos);
+  }
+
+  /** 原版 showEditor(pos)：把光标落到点击位置。 */
+  placeCursor(editor, pos) {
+    window.setTimeout(() => {
+      if (this.editor !== editor || !this.isEditing || this.destroyed) return;
+      let offset = null;
+      try { offset = editor.cm.posAtCoords({ x: pos.x, y: pos.y }); } catch (e) { offset = null; }
+      if (offset == null) return;
+      editor.setSelection(editor.offsetToPos(offset));
+    }, 0);
+  }
+
+  /** 原版 T5.blur：回到未编辑态（阅读态）。事件本身由画布的指针/键盘逻辑触发。 */
+  stopEditing() {
+    if (!this.isEditing) return;
+    this.setIsEditing(false);
+    this.canvas.markMoved(this);
+    if (this.editor) {
+      this.editor.setReadOnly(true);
+      this.editor.blur();
+    }
+    this.placeholderText = this.text;
+    this.renderPlaceholder();
+    this.canvas.requestSave();
+  }
+
+  /** 画布切到只读：正在编辑的卡片立即退回阅读态（无编辑器挂载时无需处理）。 */
+  onReadonlyChange(readonly) {
+    if (readonly && this.isEditing) this.stopEditing();
+  }
+
+  /** 编辑器内的退出键。Escape 不阻止冒泡也不阻止默认：画布收到后取消选中，blocker 随之恢复显示。 */
+  onEditorKeydown(e) {
+    if (e.isComposing) return;
+    if (e.key === 'Escape') { this.stopEditing(); return; }
+    if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); this.stopEditing(); }
+  }
+
+  blur() {
+    this.stopEditing();
+    super.blur();
   }
 
   /** 文本卡片菜单追加编辑与转换为文件（原版 P5.showMenu）。 */

@@ -479,6 +479,11 @@ body:not(.is-ios) .canvas-wrapper.mod-animating .canvas-group-label {
 .canvas-node-content.markdown-embed {
   border: none;
   padding: 0;
+  /* 原版 .markdown-preview-view 的字体上下文：文本卡片正文在编辑器内，内容层保持同一字体来源，
+     画布导出取内容层的计算样式（views/canvas-export.js 的 styleSource）。 */
+  font-family: var(--font-text);
+  font-size: var(--font-text-size);
+  color: var(--text-normal);
 }
 .canvas-node-content.markdown-embed .inline-title {
   cursor: text;
@@ -486,31 +491,38 @@ body:not(.is-ios) .canvas-wrapper.mod-animating .canvas-group-label {
 .canvas-node-content.markdown-embed > .markdown-embed-link {
   display: none;
 }
-.canvas-node-content.markdown-embed > .markdown-embed-content > .markdown-preview-view {
-  padding: 0 var(--size-4-4);
-  display: flex;
+/* 文本卡片编辑器（原版 app.css 11075-11090：.markdown-source-view.mod-inside-iframe）。
+   原版把卡片编辑器跑在铺满卡片的内嵌 iframe 里，故量到的是 10vh；本复刻内联渲染，
+   等价换成卡片高度，规则内容与顺序保持逐字一致。 */
+.canvas-node-content.markdown-embed > .markdown-embed-content > .markdown-source-view.mod-cm6 {
+  --file-margins: 0;
+}
+.canvas-node-content.markdown-embed > .markdown-embed-content > .markdown-source-view.mod-cm6 > .cm-editor-host > .cm-editor > .cm-scroller {
   flex-direction: column;
+  padding: 0 var(--size-4-4);
 }
-.canvas-wrapper:not(.mod-readonly) .canvas-node-content.markdown-embed > .markdown-embed-content > .markdown-preview-view {
-  user-select: none;
-  -webkit-user-select: none;
-}
-.canvas-node-content.markdown-embed > .markdown-embed-content > .markdown-preview-view::before,
-.canvas-node-content.markdown-embed > .markdown-embed-content > .markdown-preview-view::after {
+.canvas-node-content.markdown-embed > .markdown-embed-content > .markdown-source-view.mod-cm6 > .cm-editor-host > .cm-editor > .cm-scroller::before,
+.canvas-node-content.markdown-embed > .markdown-embed-content > .markdown-source-view.mod-cm6 > .cm-editor-host > .cm-editor > .cm-scroller::after {
   content: " ";
   display: block;
   min-height: min(calc(var(--canvas-node-height) * 0.1 - 3px), var(--size-4-4));
   max-height: var(--size-4-4);
   flex: 1 1 0;
 }
-.canvas-node-content.markdown-embed > .markdown-embed-content > .markdown-preview-view > .markdown-preview-sizer {
+.canvas-node-content.markdown-embed > .markdown-embed-content > .markdown-source-view.mod-cm6 > .cm-editor-host > .cm-editor > .cm-scroller > .cm-sizer {
+  min-height: unset;
   flex: 1 0 0;
 }
-.canvas-node-content.markdown-embed > .markdown-embed-content > .markdown-preview-view .callout {
+/* 原版 .canvas-node-content.markdown-embed … .callout：卡片内的 callout 不做混合叠加，
+   本复刻的正文在编辑器内，选择器按现有 DOM 承接。 */
+.canvas-node-content.markdown-embed .callout {
   mix-blend-mode: normal;
 }
-.is-focused .canvas-node-content.markdown-embed > .markdown-embed-content > .markdown-preview-view {
-  transform: translateZ(0);
+/* 原版未编辑的卡片是阅读视图，非只读画布下不可选中正文（.canvas-node-content.markdown-embed … .markdown-preview-view 的 user-select: none）。
+   本复刻正文在编辑器内，按未编辑态承接；编辑态放开，交回 CM6 的选区。 */
+.canvas-wrapper:not(.mod-readonly) .canvas-node:not(.is-editing) .canvas-node-content.markdown-embed .cm-editor {
+  user-select: none;
+  -webkit-user-select: none;
 }
 .canvas-node.is-themed .canvas-node-content {
   background-color: rgba(var(--canvas-color), 0.07);
