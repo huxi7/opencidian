@@ -132,11 +132,12 @@ export class App extends Events {
     this._applyTheme();
     this.settings.on('change', () => this._applyTheme());
 
-    // Ctrl+滚轮快速调整字体大小（baseFontSizeAction）
+    // 触摸板捏合 / Ctrl+滚轮：仅"快速调整字体大小"开启时改字号（外观页开关，默认关）。
+    // 任何情况下都吞掉默认行为：整页视觉缩放必须锁死（主进程 setVisualZoomLevelLimits(1,1) 兜底）。
     window.addEventListener('wheel', (ev) => {
       if (!ev.ctrlKey) return;
-      if (this.settings.config.baseFontSizeAction === false) return;
       ev.preventDefault();
+      if (this.settings.config.baseFontSizeAction !== true) return;
       const delta = ev.deltaY < 0 ? 1 : -1;
       const current = this.settings.config.baseFontSize || 16;
       const next = Math.min(30, Math.max(10, current + delta));

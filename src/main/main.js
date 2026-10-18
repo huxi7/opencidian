@@ -226,6 +226,9 @@ function defaultWindowOptions(id) {
 }
 
 function secCtxWin(win) {
+  // 触摸板缩放锁：整页视觉缩放（捏合）必须不存在——Obsidian 的界面只走外观设置里的离散缩放级别。
+  // "快速调整字体大小"（Ctrl+滚轮/捏合改字号，外观页可关）由渲染层 wheel 监听处理。
+  try { win.webContents.setVisualZoomLevelLimits(1, 1).catch(() => {}); } catch (e) { /* ignore */ }
   // window-wide context menu behavior (spellcheck / custom)
   const wc = win.webContents;
   wc.on('context-menu', (event, params) => {

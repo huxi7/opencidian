@@ -209,7 +209,7 @@ export class AppearanceTab extends SettingTab {
     fonts.addSetting((s) => s
       .setName(tt('setting.appearance.option-font-size-action', '快速调整字体大小'))
       .setDesc(tt('setting.appearance.option-font-size-action-description', '开启后可通过 Ctrl 与鼠标滚轮（或使用触摸板手势）快速调整字体大小。'))
-      .addToggle((tog) => tog.setValue(app.settings.appearance.baseFontSizeAction !== false).onChange((v) => app.settings.updateAppearance({ baseFontSizeAction: v }))));
+      .addToggle((tog) => tog.setValue(app.settings.appearance.baseFontSizeAction === true).onChange((v) => app.settings.updateAppearance({ baseFontSizeAction: v }))));
 
     /* ---------------------------------------------------------- 高级（桌面） */
     const electron = electronModule();

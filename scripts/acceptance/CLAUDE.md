@@ -51,5 +51,6 @@ sidebar.js: 反链、大纲、精确跳转与监听释放。
 table-interaction.js: 实时预览表格交互：手柄拖拽重排（真实 PointerEvent、.table-drag-target 落点线、Esc 取消）、单元格矩形选区与选区菜单（剪贴板/对齐/清空/删除）、Tab 换格（末格加行、首格上方插行）、单元格原位编辑（blur 提交/Enter 下移/Esc 取消/IME 挂起）；无选区单元格菜单（剪贴板/文本格式/Row/Column/Sort 的排列与子菜单动作、复制粘贴往返）、删首/末行的块间空行（紧贴补、已隔空行不叠加）、原位编辑菜单追加表格子菜单、触屏手柄常显的 CSS 门控与桌面 hover 规则。
 table-widget.js: 实时预览表格部件：加行/加列按钮、行列拖拽手柄右键菜单、对齐写回、排序、点击单元格进入源码；菜单标题断言同时接受中英文案。
 vault-hidden.js: 文件监听排除隐藏路径。
+zoom-lock.js: 触摸板缩放锁。默认捏合/Ctrl+滚轮不改字号且默认行为被吞（preventDefault）、开关开启后 ±1 与 10/30 上下限、非 ctrl 滚轮无感、webFrame zoomFactor 与 visualViewport.scale 恒 1（整页视觉缩放不存在）。
 
 [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md

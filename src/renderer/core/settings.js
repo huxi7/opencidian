@@ -72,7 +72,7 @@ export const DEFAULT_APPEARANCE_SETTINGS = {
   interfaceFontFamily: '',
   monospaceFontFamily: '',
   baseFontSize: 16,
-  baseFontSizeAction: true,
+  baseFontSizeAction: false,
   slidingSidebar: true,
   floatingNavigation: true,
   autoFullScreen: true,
