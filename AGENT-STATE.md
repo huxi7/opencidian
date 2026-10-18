@@ -389,7 +389,7 @@ node --experimental-vm-modules src/renderer/core/workspace-regression.js
 - `621ce9d` 阅读视图链接/图片右键菜单（workspace.handleLinkContextMenu/handleExternalLinkContextMenu 共享）+ LICENSE(MIT) + README 同步。
 - `a213fb1` 块 widget「编辑此区块」（代码/数学/Mermaid 的 edit-block-button）。
 - 新增场景：community→…、editor-menu 23、editor-paste 7、reading-menus 11、editor-block-button 11、table-widget 76。
-- 在跑的子代理：录音机核心插件（ses_eb328abdaffeT3OIcwe8F1vxhQ）、画布文本卡 CM6（ses_eb328402effeLiTwrVYsuf5t7i）、下载当前文件附件（ses_eb318f09cffeTK5M3uXLngNN5C）。
+- 录音机核心插件完成（代码随 621ce9d/a213fb1 入库，复跑 65+7+回归全过）；仍有两个子代理在跑：画布文本卡 CM6（ses_eb328402effeLiTwrVYsuf5t7i）、下载当前文件附件（ses_eb318f09cffeTK5M3uXLngNN5C）。
 - 待办（代理结束后）：core/CLAUDE.md、styles/CLAUDE.md、scripts/acceptance/CLAUDE.md 的并行文档合并；表格手柄拖拽重排/单元格选择/Tab 换格；图谱 worker；electron-builder 分发包（LICENSE 已定 MIT）。
 - `4c4fcc2` 社区插件安全模式：双布局/信任模态/setEnable 语义 + community 场景（run 19 + restart 3）。
 - `ab44cba` shell 手感批：drag-ghost、drop overlay、侧栏 140ms 补间、标签列表按钮/Close all/Close after、pin、关闭钮容器查询、窗口状态与红绿灯、非 mac 三按钮、状态栏双段、空标签、titlebar 镜像；sidebar-shell 61 项。
@@ -414,7 +414,7 @@ node --experimental-vm-modules src/renderer/core/workspace-regression.js
 - 画布：CM6 卡片编辑、空间索引/视口虚拟化未做；canvas-view.js 796 行，下批拆分控件/更多菜单装配。
 - 图谱：力学 worker 化未做（5000 节点约 77fps）；触屏拖拽重排未移植；"已悬停时再按 Mod"的延迟监听未做（既有缺口）。
 - 编辑器：表格/嵌入右键菜单、链接路径 tooltip、图片尺寸语法未逐项核对；系统外部文件拖入（复制为附件）未做（文件树内部拖入已支持）。
-- 核心插件：audio-recorder 未实现（需要麦克风权限，无头验收不可测）；slash-command/webviewer/bases/markdown-importer/publish/sync 按约定跳过。
+- 核心插件：audio-recorder 已实现（功能区按钮 + start/stop 命令 + 权限降级 + webm/m4a 落盘；mock 验收 65 + restart 7，**真机麦克风仍需手点一次**）；slash-command/webviewer/bases/markdown-importer/publish/sync 按约定跳过。
 - 第三方插件页：捐赠按钮未做（市场未接入）；快捷键录制仍为弹窗（原版行内等待 chip）。
 - 无 macOS 分发包/签名/自动更新；README 许可证待定（LICENSE 未加）。
 - 未做像素级视觉验收（用户要求停截图）：只保证 DOM/逻辑/计算样式与回归。

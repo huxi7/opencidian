@@ -155,3 +155,9 @@ MathJax 独立适配器子代理的41项基础/故障测试见 assets/mathjax/SO
 - live-preview：代码块/数学块/Mermaid widget 增加原版 edit-block-button（lucide-code-2、aria-label=编辑这个区块、点击把光标放回块源码并让 widget 让位）；异步渲染完成后挂按钮，避免被 renderMath/renderMermaid 覆盖。
 - editor.css：逐字移植原版 .edit-block-button 规则与 hover 显形。
 - 新增 editor-block-button 场景 11 项；回归 editor 113、math、notes 72、editor-menu 23。
+
+## 录音机核心插件批（2026-10-18）
+
+- `plugins-core/audio-recorder.js`：功能区麦克风按钮（开始/结束切换、is-active）、`audio-recorder:start/stop` 命令（checkCallback 语义照原版）、权限/设备错误映射 locale 文案、MediaRecorder 落盘 `Recording <YYYYMMDDHHmmss>.webm|m4a` 到附件目录并插入嵌入；无状态栏项（原版证据）；卸载停止录音并释放轨道。
+- 与原版差异：无 electron.remote → 用 navigator.permissions 降级；无 fix-webm-duration 时长修补；提示走 Notice 而非按钮 tooltip。
+- 验收：audio-recorder 65 项 + restart 7 项（mock getUserMedia/MediaRecorder，双扩展名分支、错误四路径、卸载释放、设置页开关与 core-plugins.json 持久化）；回归 core-ribbon 47、settings-ui 22、settings-plugins 52。
