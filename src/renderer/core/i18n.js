@@ -61,8 +61,12 @@ export function t(key, vars) {
 export function tt(key, fallback, vars) {
   const value = t(key, vars);
   const last = key.split('.').pop();
-  if (value === null || value === undefined || value === last) return fallback !== undefined ? fallback : last;
-  return value;
+  let str = (value === null || value === undefined || value === last) ? (fallback !== undefined ? fallback : last) : value;
+  // 兜底文案同样支持 {{name}} 插值（缺键时 t() 返回键名，vars 不会应用到 fallback）
+  if (vars && typeof str === 'string') {
+    str = str.replace(/\{\{([^}]+)\}\}/g, (m, name) => (vars[name] !== undefined ? String(vars[name]) : m));
+  }
+  return str;
 }
 
 // Convenience localizer factory like i18next's fixed-T

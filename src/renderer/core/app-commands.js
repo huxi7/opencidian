@@ -12,6 +12,7 @@ import { t } from './i18n.js';
 import { ipcSend } from './ipc.js';
 import { Notice } from './notices.js';
 import { Modal } from './modals.js';
+import { checkForUpdates } from './update-check.js';
 
 export function registerAppCommands(app) {
   const add = (spec) => app.commands.addCommand(spec);
@@ -240,6 +241,14 @@ export function registerAppCommands(app) {
     id: 'workspace:move-to-new-window',
     name: t('interface.menu.move-to-new-window') || 'Move to new window',
     callback: () => new Notice('Opening new windows is not supported in this replica.', 3000),
+  });
+
+  // 检查更新（只提示 + 打开下载页；配置 updateFeed 后才联网）
+  add({
+    id: 'app:check-updates',
+    name: t('setting.appearance.button-check-for-updates') || 'Check for updates',
+    icon: 'refresh-cw',
+    callback: () => { checkForUpdates(app, { silent: false }); },
   });
 
   // Theme toggle (handy, matches community expectation)

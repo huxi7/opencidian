@@ -61,6 +61,21 @@ node scripts/smoke-packaged.mjs   # 打包版冒烟（真实启动 + 建文件 +
 - 应用图标由 `scripts/make-app-icon.py` 生成（原创几何设计），可自行替换 `build/icon.icns`。
 - 正式对外分发需 Apple 开发者证书：移除 `identity: null` 并配置签名/公证。
 
+## 检查更新（非静默）
+
+OpenSidian 内置**检查更新**（命令面板搜「检查更新」，或启动时后台静默检查）——只做"发现新版本 → 提示 + 打开下载页"，**不静默安装**（macOS 静默更新要求代码签名）。
+
+更新源是**任意静态地址**，在库里写入设置即可（`.obsidian/app.json`）：
+
+```json
+{ "updateFeed": "https://api.github.com/repos/<你的账号>/<仓库>/releases/latest", "checkUpdates": true }
+```
+
+- **GitHub Releases**：最省事，但中国大陆访问不稳定（时好时坏、下载慢）。
+- **国内静态托管**（阿里云 OSS / 腾讯 COS / Cloudflare R2 等）：把 `{ "version": "1.2.3", "url": "下载页或安装包地址" }` 丢成一个静态 JSON，`updateFeed` 指过去即可。**不需要服务器与用户同地区**，只要该域名在用户网络可达。
+- 也可两者都放：`updateFeed` 指向你的域名，域名侧回源 GitHub。
+- 未配置 `updateFeed` 时**不联网**；`checkUpdates: false` 可关闭后台检查。
+
 ## 边界与说明
 
 - 不劫持 `obsidian://` 协议；不读写真实 Obsidian 应用的 userData。

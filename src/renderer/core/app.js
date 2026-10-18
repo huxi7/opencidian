@@ -19,6 +19,7 @@ import { CommandManager } from './commands.js';
 import { Keymap, HotkeyManager } from './keymap.js';
 import { Settings } from './settings.js';
 import { Desktop, ipcOn, ipcSync } from './ipc.js';
+import { checkForUpdates } from './update-check.js';
 import { detectLanguage, setLanguage, t, getNouns } from './i18n.js';
 import { Notice } from './notices.js';
 import { PluginManager } from './plugins.js';
@@ -141,6 +142,13 @@ export class App extends Events {
       const next = Math.min(30, Math.max(10, current + delta));
       if (next !== current) this.settings.updateAppearance({ baseFontSize: next });
     }, { passive: false });
+
+    // 后台检查更新：仅在配置了 updateFeed 且未显式关闭时联网；失败静默（打包分发用）
+    if (this.settings.appSettings.updateFeed && this.settings.appSettings.checkUpdates !== false) {
+      setTimeout(() => {
+        try { checkForUpdates(this, { silent: true }).catch(() => {}); } catch (e) { /* ignore */ }
+      }, 5000);
+    }
 
     // 启动打开行为（openBehavior：上次文件/新笔记/日记/指定文件）
     await this._runOpeningBehavior();

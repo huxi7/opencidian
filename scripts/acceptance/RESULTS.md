@@ -225,3 +225,10 @@ MathJax 独立适配器子代理的41项基础/故障测试见 assets/mathjax/SO
   - 中心力 `.strength(.1)` 目标原点 ×alpha ✓；弹簧：预测位置 `x+vx`、`bias=count(vk)/(count(v)+count(k))`、距离 250、strength `1/min(度数)`、iterations=1 ✓；斥力：θ²=0.81、`distanceMin²=30²` 钳制、`value*alpha/l`、自节点排除 ✓；碰撞：半径 60、strength .5、预测位置、**不乘 alpha**、面积比权重 `r²/(r_s²+r_n²)`、包围盒裁剪 `s+cell.r`、`index>` 去重、iterations=1 ✓；积分 `vx*=.6; x+=vx` + `fx/fy` 钉住 ✓；alpha 衰减 `1-0.001^(1/300)`、`>0.001` 继续 ✓。
   - **本批修正的 4 处偏差**：① jiggle 由 `Math.random` 改为原版确定性 LCG（seed=1，逐位同序列）；② 弹簧逐分量补零 jiggle；③ 自环度数计两次；④ 碰撞逐分量补零（累加 jiggle²）。
 - 回归：graph-worker 55、graph 72、core-ribbon 47 全绿。
+
+## 检查更新批（2026-10-18）
+
+- `core/update-check.js`：静态更新源检查（GitHub Release `{tag_name,html_url}` 或自建 `{version,url}`），semver 比较，新版本 → Notice + 「更新」按钮打开下载页；未配置 updateFeed 不联网；失败/已最新按 silent 区分提示。
+- 命令 `app:check-updates`；启动后 5s 静默检查（仅当配置了 updateFeed 且 checkUpdates≠false）。
+- 顺手修 `i18n.tt()`：兜底文案现在也做 `{{name}}` 插值（此前 fallback 里的占位符原样输出）。
+- 验收 update-check 7 项（stub requestUrl 零真实网络：未配置不联网/新版本+按钮/已最新无按钮/失败提示/静态 JSON）；回归 settings-ui、core-views、editor-menu、notes。
