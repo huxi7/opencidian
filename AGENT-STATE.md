@@ -441,7 +441,8 @@ node --experimental-vm-modules src/renderer/core/workspace-regression.js
 - 断言锁：editor 113→131、dialogs 7→8，全绿；截图复核（probe-ui search/palette）。
 - ✅ 代理 T（tokens 全量对齐）完成入库 `645ac7a`：3 组真缺口补齐（zoom-factor/titlebar-height/safe-area 六项）+ theme-tokens.js 717 项断言锁（906 项变量比对、变异测试反证）；主会话独立复跑 theme-tokens 717 / appearance 32 / graph 72 / core-views 83 全绿。
 - ✅ 画布批（代理 A）完成入库 `217d1a3`：12 类原版对照缺陷 + canvas-ui 107 项断言锁（canvas 95 / canvas-edit 77 / canvas-selection 72 / editor-block-button 11 / core-ribbon 47 复跑全绿）；浅深实拍复核；`.canvas-audit/` 已清。
-- 🟡 代理 R（阅读视图排版）续跑中：markdown-content.css + markdown/reading.js 在途、probe-reading.js 已建、reading-ui.js 开始在建；待做 reading-ui 收口与七场景回归。
+- ✅ 代理 R（阅读视图排版）完成入库 `52b675d`：20 类原版对照修复（标题阶梯/段落/首末块/链接三色/标签/列表+任务 mask/引用/callout/代码/表格/hr/脚注/图片/音视频/嵌块/附件占位/progress）+ reading-ui 212 项断言锁；文件拆分守规（markdown-content 700 / markdown 175）；主会话独立复跑 reading-ui 212 / reading-menus 13 / notes 72 / editor 131 / image-size 36 / page-preview 16 / math 全绿；浅深实拍已复核。
+- 🔄 终版全量回归运行中：`/private/var/folders/…/T/opencode/full-regression.sh`（42 主场景 + 5 链式两连 + graph-perf ×3 + 内存回归），日志 `…/ui-deep-regression.log`。通过后 → 重打分发（dmg/zip）+ smoke-packaged + 交付报告。
 - 诊断探针（untracked）：probe-ui / probe-canvas / probe-reading / probe-topbar；交付前定去留。
 
 ## 验收纪律（2026-10-18 增补）
