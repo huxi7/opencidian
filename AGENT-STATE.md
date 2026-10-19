@@ -427,9 +427,21 @@ node --experimental-vm-modules src/renderer/core/workspace-regression.js
 
 - ✅ ①顶栏收起态颜色断层：**已修提交 `4f29584`**（根因三层：焦点联动断裂 / 收起态 ribbon 未换 `--ribbon-background-collapsed` / resize-handle 残留 1px；`syncTopTabs` + `updateSidebarChrome` 唯一出口；sidebar-chrome 19→35 计算样式锁）。主会话独立像素复核：浅色 `252|246→全条252`、深色 `54|38→全条54`、ribbon `246→255`/`38→30` 并入编辑区。横向回归 stacked-tabs 49、e2e-focus 6、内存 19/19。
 - ✅ ②主编辑区触摸板缩放：**已修提交 `279779b`**（setVisualZoomLevelLimits(1,1) + 快速调整字体大小默认关 + ctrl+wheel 恒 preventDefault + zoom-lock 11 项）。
-- 🟡 ③画布"一塌糊涂"：代理 A 第三次续跑中（8 文件约 490 行在途 + canvas-help.js；待做：canvas-ui 断言锁、.canvas-audit 清理、截图报告）。
+- 🟡 ③画布"一塌糊涂"：代理 A 第四次续跑中（canvas-arrange/controls/file-node/interactions/menu/node/view/viewport.js + canvas-edges.css 在途 + 新增 canvas-help.js；待做：canvas-ui 断言锁、.canvas-audit 清理、截图报告）。
 - 纪律：代理禁改 CLAUDE.md、禁 commit；文档与提交由主会话收口（含验收日志与截图复核）。
 - 已知纪律：子代理曾被免费网关限流（Forbidden/ConnectionRefused）；失败即续跑原会话或主会话接手。
+
+## 用户 UI 反馈三轮：1:1 深挖（2026-10-19 上午）
+
+- 主会话巡检（probe-ui 截图 + 原版 app.css 逐条对照）：设置模态 90vw×85vh=1033×658 ✓、nav 底色 `--modal-sidebar-background`=primary ✓、菜单 `--menu-background`=secondary ✓、搜索/图谱结构 ✓；抓出四处实锤偏差并**修复提交 `1ea1e2b`**：
+  - LP 无序列表圆点整片缺失（widget 空 span + 无 `.list-bullet` CSS；原版 12114/12164 `:after` 画 0.3em 圆点）→ 补 `.list-bullet` 移植 + `--list-padding-inline-start` 缩进变量。
+  - 任务行残留 `- ` 原文、无缩进位、已勾无划线 → silent 记号 widget（只留缩进位）+ `cm-task-checked` 类。
+  - 折叠箭头常亮 → 原版 7236-7259 默认 `opacity:0`，悬停/已折叠才现。
+  - 命令面板热键折行 → `.suggestion-item.mod-complex` 结构（标题进内容列、热键同行靠右）+ `suggestion-hotkey` 字号内边距（原版 9003-9060）。
+- 断言锁：editor 113→131、dialogs 7→8，全绿；截图复核（probe-ui search/palette）。
+- 🟡 代理 T（tokens 全量对齐）续跑中：tokens-foundation/interface.css 已改 + theme-tokens.js（340 项逐条、期望值带 app.css 行号）已建，待构建验证与四场景回归。
+- 🟡 代理 R（阅读视图排版）续跑中：markdown-content.css + markdown/reading.js 在途、probe-reading.js 已建；待做 reading-ui.js 与七场景回归。
+- 诊断探针（untracked）：probe-ui / probe-canvas / probe-reading / probe-topbar；交付前定去留。
 
 ## 验收纪律（2026-10-18 增补）
 

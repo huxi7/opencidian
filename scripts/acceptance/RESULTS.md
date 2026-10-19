@@ -298,3 +298,10 @@ MathJax 独立适配器子代理的41项基础/故障测试见 assets/mathjax/SO
 - 链式场景调用协议：`--vault` 必须含 `.obs-copy-acceptance-fixture` 标记（run.mjs 防呆）；recovery 首次还需 `.obs-copy-recovery-fixture` 与 `.obsidian/file-recovery.json`；两连必须同库，否则被判失败。
 - 全部运行 `--no-screenshot` + E2E 隐形呈现层（不抢焦点、不进 Dock、窗口不可见）；日志零 `TypeError|act failed|unhandledrejection|ReferenceError`。
 - 本轮收口的新增功能：堆叠标签页、文件树多选/键盘导航、图片尺寸语法与重置大小、画布多选/框选/对齐/分布/分组、编辑器撤销栈跨文档边界修复（数据丢失级）。
+
+## UI 深挖批（2026-10-19 上午）：LP 记号 + 命令面板 `1ea1e2b`
+
+- 修复：LP 无序列表圆点整片缺失（widget 空 span、无 `.list-bullet` CSS；原版 app.css 12114/12164 `:after` 画 0.3em 圆点）；任务行残留 `- ` 原文、无缩进位、已勾无划线（silent 记号 widget 只留缩进位 + `cm-task-checked`）；列表缩进未接原版 `--list-padding-inline-start`（12105-12112）；折叠箭头常亮（原版 7236-7259 默认 `opacity:0`、悬停/已折叠才现）；命令面板热键折行（缺 `.suggestion-item.mod-complex`，原版 9003-9060 热键与标题同行靠右）。
+- 验收：**editor 113→131、dialogs 7→8**，全绿；截图复核 probe-ui `search`/`palette`。
+- 顺带查明：CM6 foldGutter 首个 gutterElement 是 `initialSpacer`（`visibility:hidden` 的折叠态假记号），非真折叠——断言按语义排除。
+- 巡检结论（计算样式对照原版）：设置模态 90vw×85vh → 1033×658 ✓、nav 底色（`--modal-sidebar-background`=primary）✓、菜单底色（`--menu-background`=secondary）✓、搜索/图谱结构 ✓。
