@@ -442,7 +442,9 @@ node --experimental-vm-modules src/renderer/core/workspace-regression.js
 - ✅ 代理 T（tokens 全量对齐）完成入库 `645ac7a`：3 组真缺口补齐（zoom-factor/titlebar-height/safe-area 六项）+ theme-tokens.js 717 项断言锁（906 项变量比对、变异测试反证）；主会话独立复跑 theme-tokens 717 / appearance 32 / graph 72 / core-views 83 全绿。
 - ✅ 画布批（代理 A）完成入库 `217d1a3`：12 类原版对照缺陷 + canvas-ui 107 项断言锁（canvas 95 / canvas-edit 77 / canvas-selection 72 / editor-block-button 11 / core-ribbon 47 复跑全绿）；浅深实拍复核；`.canvas-audit/` 已清。
 - ✅ 代理 R（阅读视图排版）完成入库 `52b675d`：20 类原版对照修复（标题阶梯/段落/首末块/链接三色/标签/列表+任务 mask/引用/callout/代码/表格/hr/脚注/图片/音视频/嵌块/附件占位/progress）+ reading-ui 212 项断言锁；文件拆分守规（markdown-content 700 / markdown 175）；主会话独立复跑 reading-ui 212 / reading-menus 13 / notes 72 / editor 131 / image-size 36 / page-preview 16 / math 全绿；浅深实拍已复核。
-- 🔄 终版全量回归运行中：`/private/var/folders/…/T/opencode/full-regression.sh`（42 主场景 + 5 链式两连 + graph-perf ×3 + 内存回归），日志 `…/ui-deep-regression.log`。通过后 → 重打分发（dmg/zip）+ smoke-packaged + 交付报告。
+- ✅ 终版全量回归 **56/56 通过、0 失败**（42 主场景 + 5 链式两连 + graph-perf ×3 + 内存 19/19；断言 ≈2700；50 份日志零 `TypeError|ReferenceError|act failed|unhandledrejection|SyntaxError`）。日志 `…/T/opencode/ui-deep-regression.log`。
+- ✅ 分发重打：`release/OpenSidian-1.0.0-arm64.dmg` 与 `-mac.zip`（各 114M，未签名 identity=null）；`smoke-packaged` 通过（bootMs 3713，协议/建文件/打开文件四项）。
+- 待拍板：探针 `probe-{topbar,canvas,reading,ui}.js` 去留（当前 untracked）；仓库目录名 `opencidian` vs 品牌 OpenSidian/开曜；LICENSE 是否维持 MIT。
 - 诊断探针（untracked）：probe-ui / probe-canvas / probe-reading / probe-topbar；交付前定去留。
 
 ## 验收纪律（2026-10-18 增补）
