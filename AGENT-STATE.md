@@ -425,10 +425,10 @@ node --experimental-vm-modules src/renderer/core/workspace-regression.js
 
 ## 用户 UI 反馈二轮（2026-10-18 深夜）
 
-- ①顶栏收起态颜色断层：根因已取证——`::before` 用 transparent（原版 `var(--titlebar-background)`）、收起态 ribbon 未换 `--ribbon-background-collapsed`（246 灰 vs 编辑区 255 白＝断层）、焦点联动与 mod-top 变量链未串齐。**代理 B 修复中**（原版行号与像素实测已随任务下发）。
-- ②主编辑区触摸板缩放：**已修提交 `279779b`**（setVisualZoomLevelLimits(1,1) + 快速调整字体大小默认关 + ctrl+wheel 恒 preventDefault + zoom-lock 11 项）。
-- ③画布"一塌糊涂"：**代理 A 全面体检修复中**（probe-canvas 截图诊断 → 对照原版 → 新建 canvas-ui 断言锁）。
-- 纪律：两代理禁改 CLAUDE.md、禁 commit；文档与提交由主会话收口（含验收日志与截图复核）。
+- ✅ ①顶栏收起态颜色断层：**已修提交 `4f29584`**（根因三层：焦点联动断裂 / 收起态 ribbon 未换 `--ribbon-background-collapsed` / resize-handle 残留 1px；`syncTopTabs` + `updateSidebarChrome` 唯一出口；sidebar-chrome 19→35 计算样式锁）。主会话独立像素复核：浅色 `252|246→全条252`、深色 `54|38→全条54`、ribbon `246→255`/`38→30` 并入编辑区。横向回归 stacked-tabs 49、e2e-focus 6、内存 19/19。
+- ✅ ②主编辑区触摸板缩放：**已修提交 `279779b`**（setVisualZoomLevelLimits(1,1) + 快速调整字体大小默认关 + ctrl+wheel 恒 preventDefault + zoom-lock 11 项）。
+- 🟡 ③画布"一塌糊涂"：代理 A 第三次续跑中（8 文件约 490 行在途 + canvas-help.js；待做：canvas-ui 断言锁、.canvas-audit 清理、截图报告）。
+- 纪律：代理禁改 CLAUDE.md、禁 commit；文档与提交由主会话收口（含验收日志与截图复核）。
 - 已知纪律：子代理曾被免费网关限流（Forbidden/ConnectionRefused）；失败即续跑原会话或主会话接手。
 
 ## 验收纪律（2026-10-18 增补）
