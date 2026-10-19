@@ -444,7 +444,7 @@ node --experimental-vm-modules src/renderer/core/workspace-regression.js
 - ✅ 代理 R（阅读视图排版）完成入库 `52b675d`：20 类原版对照修复（标题阶梯/段落/首末块/链接三色/标签/列表+任务 mask/引用/callout/代码/表格/hr/脚注/图片/音视频/嵌块/附件占位/progress）+ reading-ui 212 项断言锁；文件拆分守规（markdown-content 700 / markdown 175）；主会话独立复跑 reading-ui 212 / reading-menus 13 / notes 72 / editor 131 / image-size 36 / page-preview 16 / math 全绿；浅深实拍已复核。
 - ✅ 终版全量回归 **56/56 通过、0 失败**（42 主场景 + 5 链式两连 + graph-perf ×3 + 内存 19/19；断言 ≈2700；50 份日志零 `TypeError|ReferenceError|act failed|unhandledrejection|SyntaxError`）。日志 `…/T/opencode/ui-deep-regression.log`。
 - ✅ 分发重打：`release/OpenSidian-1.0.0-arm64.dmg` 与 `-mac.zip`（各 114M，未签名 identity=null）；`smoke-packaged` 通过（bootMs 3713，协议/建文件/打开文件四项）。
-- 待拍板：探针 `probe-{topbar,canvas,reading,ui}.js` 去留（当前 untracked）；仓库目录名 `opencidian` vs 品牌 OpenSidian/开曜；LICENSE 是否维持 MIT。
+- 已拍板（2026-10-19 哥定）：① LICENSE 保持 **MIT**（`package.json` 补 `"license": "MIT"`、README 同步）；② 更新策略停在 **A 档**（启动静默检查 + 提示 + 打开下载页，不自动安装）；③ 仓库名保持小写 `opencidian`；④ 品牌 **OpenSidian/开曜**（O+S 联排大写，推荐保留）；⑤ 探针 `probe-*` 入库为截图诊断工具。
 - 诊断探针（untracked）：probe-ui / probe-canvas / probe-reading / probe-topbar；交付前定去留。
 
 ## 验收纪律（2026-10-18 增补）

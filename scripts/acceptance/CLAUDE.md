@@ -55,5 +55,10 @@ table-widget.js: 实时预览表格部件：加行/加列按钮、行列拖拽�
 theme-tokens.js: 主题设计变量逐条对齐（340 项、浅/深各一遍、期望值带 app.css 行号）：断言语义解析值（颜色 sRGB、h1-h6 px、calc 折叠）、令牌消费实证（safe-area → padding）、派生色（accent 系）、原版缺口一致性（深色 --shadow-edges 失效）；附色块对照面板渲染。
 vault-hidden.js: 文件监听排除隐藏路径。
 zoom-lock.js: 触摸板缩放锁。默认捏合/Ctrl+滚轮不改字号且默认行为被吞（preventDefault）、开关开启后 ±1 与 10/30 上下限、非 ctrl 滚轮无感、webFrame zoomFactor 与 visualViewport.scale 恒 1（整页视觉缩放不存在）。
+probe-topbar.js / probe-canvas.js / probe-reading.js / probe-ui.js: 截图诊断探针（非断言锁，用于 UI 巡检与前后对比取证，结果 PNG 路径见场景 JSON）：
+- probe-topbar：`--screen "collapsed+focused+dark"` 等九态令牌（OBS_SIDEBAR_VIEW）。
+- probe-canvas：`PROBE_SCENE=board|dark|empty|states|menus`。
+- probe-reading：`--screen "light|dark[:scrollTop]"`。
+- probe-ui：`--screen settings|palette|menu|graph|search`。
 
 [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md

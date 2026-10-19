@@ -2,6 +2,7 @@
   "name": "opensidian",
   "productName": "OpenSidian",
   "version": "1.0.0",
+  "license": "MIT",
   "description": "OpenSidian — an independent, open-source replication of the Obsidian desktop app",
   "main": "src/main/main.js",
   "private": true,

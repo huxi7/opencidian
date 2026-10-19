@@ -94,4 +94,4 @@ OpenSidian 内置**检查更新**（命令面板搜「检查更新」，或启�
 
 ## 许可证
 
-MIT License（见 LICENSE）。如需改为 AGPL-3.0 等其它许可证，替换 LICENSE 文件并同步本段即可。
+MIT License（见 LICENSE）。
