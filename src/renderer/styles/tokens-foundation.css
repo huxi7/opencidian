@@ -447,3 +447,13 @@ body {
   --nav-item-color-selected: var(--text-normal);
   --nav-item-color-highlighted: var(--text-accent);
 }
+/* Safe areas — 原版 app.css 17741-17747。桌面端 env() 不可解析，
+   声明保持原版字面值：引用处的失效行为与原版一致。 */
+:root {
+  --safe-area-inset-top: env(safe-area-inset-top);
+  --safe-area-inset-bottom: env(safe-area-inset-bottom);
+  --safe-area-inset-left: env(safe-area-inset-left);
+  --safe-area-inset-right: env(safe-area-inset-right);
+  --preferred-text-scale: env(preferred-text-scale);
+  --keyboard-height: 0px;
+}

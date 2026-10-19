@@ -305,3 +305,14 @@ MathJax 独立适配器子代理的41项基础/故障测试见 assets/mathjax/SO
 - 验收：**editor 113→131、dialogs 7→8**，全绿；截图复核 probe-ui `search`/`palette`。
 - 顺带查明：CM6 foldGutter 首个 gutterElement 是 `initialSpacer`（`visibility:hidden` 的折叠态假记号），非真折叠——断言按语义排除。
 - 巡检结论（计算样式对照原版）：设置模态 90vw×85vh → 1033×658 ✓、nav 底色（`--modal-sidebar-background`=primary）✓、菜单底色（`--menu-background`=secondary）✓、搜索/图谱结构 ✓。
+- 探针补充：`probe-ui`（UI 面巡检截图）用于 1:1 深挖取证，非永久场景。
+
+## 主题 token 全量对齐批（2026-10-19 上午）
+
+- 原版 `body`(2020-3059)/`.theme-light`(2866)/`.theme-dark`(2913)/`:root`(2001-2019)/`.mod-macos`(2970) 共 **906 项变量声明**；逐字比对后 **888 项一致**，真缺口 3 组已补：
+  - `--zoom-factor: 1`、`--titlebar-height: 30px`（app.css 3958-3960 独立 body 块；前者原仅运行期内联）。
+  - `--safe-area-inset-*` / `--preferred-text-scale` / `--keyboard-height`（app.css 17741-17747）：此前缺失使 `properties.css`/`search.css` 的 `max(var(--safe-area-inset-bottom), var(--size-4-8))` 整条失效；补齐后桌面端 `env()=0` → padding 32px，与原版一致（已固化消费实证断言）。
+- 永久验收 `scripts/acceptance/theme-tokens.js`（528 行）：**717 项断言全绿**；变异测试反证非空（改 `--text-muted` + 删 `--titlebar-height` → 报 32 项失败）。
+- 不覆盖并有据：pdf.js 内部 12 项（无 PDF 阅读器）、运行时内联（accent/font/zoom）、组件级同名（pill/canvas-color，body 级断言最终值）、原版自身缺口（深色 `--shadow-edges`）照搬不修、`@media print` 两处。
+- 复跑：theme-tokens 717 ✓、appearance 32 ✓、graph 72 ✓、reading-menus 13 ✓、settings-ui 22 ✓、sidebar 93 ✓、core-views 83 ✓、sidebar-shell 61 ✓。
+- 截图：`…/opencode/theme-token-shots/theme-tokens-panel.png`（面板"差异 0 项"）。

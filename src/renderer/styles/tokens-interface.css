@@ -424,6 +424,9 @@ body {
   --interactive-accent-hsl: var(--color-accent-hsl);
   --interactive-accent: var(--color-accent-1);
   --interactive-accent-hover: var(--color-accent-2);
+  /* Window frame — 原版 app.css 3958-3960 的独立 body 块 */
+  --zoom-factor: 1;
+  --titlebar-height: 30px;
 }
 .theme-light,
 .theme-dark {
