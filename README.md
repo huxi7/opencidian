@@ -89,7 +89,7 @@ OpenSidian 内置**检查更新**（命令面板搜「检查更新」，或启�
 ## 边界与说明
 
 - 不劫持 `obsidian://` 协议；不读写真实 Obsidian 应用的 userData。
-- 社区插件市场未接入；第三方插件运行逻辑保留，默认保持安全模式。
+- 不加载第三方插件：仅内置核心插件（`.obsidian/core-plugins.json` 开关生效）。
 - 本项目与 Obsidian（Dynalist Inc.）无关联，未获其背书。「Obsidian」是其权利人的商标。
 
 ## 许可证

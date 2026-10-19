@@ -335,6 +335,12 @@ body {
   --h4-variant: normal;
   --h5-variant: normal;
   --h6-variant: normal;
+  /* Hotkeys（原版 app.css:2363-2367，紧随标题令牌、位于水平线令牌之前） */
+  --hotkey-radius: 2em;
+  --hotkey-corner-shape: round;
+  --hotkey-font-size: var(--font-ui-smaller);
+  --hotkey-font: var(--font-interface);
+  --hotkey-background: var(--background-modifier-hover);
   /* Horizontal rules */
   --hr-color: var(--background-modifier-border);
   --hr-thickness: 2px;
@@ -343,12 +349,12 @@ body {
   --icon-stroke: var(--icon-m-stroke-width);
   --icon-xs: 14px;
   --icon-s: 16px;
-  --icon-m: 18px;
+  --icon-m: 16px;
   --icon-l: 18px;
   --icon-xl: 32px;
   --icon-xs-stroke-width: 2px;
   --icon-s-stroke-width: 2px;
-  --icon-m-stroke-width: 1.75px;
+  --icon-m-stroke-width: 2px;
   --icon-l-stroke-width: 1.75px;
   --icon-xl-stroke-width: 1.25px;
   --icon-color: var(--text-muted);

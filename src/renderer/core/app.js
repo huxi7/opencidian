@@ -1,13 +1,12 @@
 /**
  * [INPUT]: Vault、Settings、MetadataCache、Workspace、命令、插件与桌面 IPC。
  * [OUTPUT]: 导出 App，装配启动、外观、事件与布局保存。
- * [POS]: 应用组合根。新建和修改进入元数据解析，启动修复固定侧栏入口。
+ * [POS]: 应用组合根。新建和修改进入元数据解析，启动修复固定侧栏入口。isSettingsWindow（1.14.4 设置独立窗口）只跳过看门狗/后台索引/布局加载，其余状态照常装配。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 /*
  * App — wires together vault, workspace, metadata cache, commands, plugins.
- * The public shape follows Obsidian's documented plugin API so community
- * plugins have a chance of running.
+ * The public shape follows Obsidian's documented API surface.
  */
 import { Events } from './events.js';
 import { Vault, FileSystemAdapter, TFile, TFolder, normalizePath } from './vault.js';
@@ -41,6 +40,8 @@ export class App extends Events {
     this.plugins = null;
     this.vaultId = null;
     this.vaultPath = null;
+    // 设置独立窗口（1.14.4 popout）：入口 main.js 依 location.hash 设置；为真时跳过看门狗/后台索引/布局加载
+    this.isSettingsWindow = false;
   }
 
   async initialize() {
@@ -72,7 +73,7 @@ export class App extends Events {
     this.vault = new Vault(new FileSystemAdapter(this.vaultPath));
     globalThis.__electronTrash = async (p) => Desktop.trash(p);
     await this.vault.initialize();
-    this.vault.watch();
+    if (!this.isSettingsWindow) this.vault.watch();
 
     this.metadataCache = new MetadataCache(this);
     this.fileManager = new FileManager(this);
@@ -120,13 +121,14 @@ export class App extends Events {
     window.OBS_ACT = (act) => this._handleObsAct(act);
 
     // background metadata scan
-    this.metadataCache.initialize().catch((e) => console.error(e));
+    if (!this.isSettingsWindow) this.metadataCache.initialize().catch((e) => console.error(e));
 
     // plugins
     await this.plugins.initialize();
 
-    // load workspace layout
-    await this._loadWorkspace();
+    // load workspace layout（设置窗口不加载布局/视图，工作区 DOM 仅作 API 占位）
+    if (this.isSettingsWindow) this.workspace._sidebarReady = true;
+    else await this._loadWorkspace();
 
     // theme
     this._applyTheme();
@@ -251,6 +253,7 @@ export class App extends Events {
 
   /** 启动打开行为：对齐原版 runOpeningBehavior（openBehavior 存 app.json）。 */
   async _runOpeningBehavior() {
+    if (this.isSettingsWindow) return;   // 设置窗口不打开任何文件
     const behavior = this.settings.appSettings.openBehavior || '';
     if (window.OBS_ACT && window.OBS_ACT.action) return;
     try {

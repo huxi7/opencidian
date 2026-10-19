@@ -1,6 +1,6 @@
 /**
  * [INPUT]: 独立临时 vault 与 OBS_ACT eval 注入的应用实例；状态用 --screen <state>（OBS_SIDEBAR_VIEW）切换；截图由 dev-hooks 在 2500ms 捕获。
- * [OUTPUT]: 多 UI 面（settings/palette/menu/graph/search）截图诊断与结构计数（console.log PROBE-UI）。
+ * [OUTPUT]: 多 UI 面（settings/palette/menu/filetree-menu/graph/search）截图诊断与结构计数（console.log PROBE-UI）；--phase dark 出深色同款。
  * [POS]: scripts/acceptance 的 UI 巡检诊断场景（1:1 深挖配套；非断言锁，可复用）。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
@@ -10,7 +10,9 @@ const check=(ok,m)=>{if(!ok)throw Error('✗ '+m);checks.push(m);};
 const wait=ms=>new Promise(r=>setTimeout(r,ms));
 const state=process.env.OBS_SIDEBAR_VIEW||'settings';
 
-app.settings.updateAppearance({theme:'moonstone'});
+// 浅色=moonstone（默认）；深色用 --phase dark 切换（同一场景两色截图复用）
+const darkTheme=process.env.OBS_NOTES_STAGE==='dark';
+app.settings.updateAppearance({theme:darkTheme?'obsidian':'moonstone'});
 await wait(150);
 const f=await app.vault.create('UI-'+Date.now()+'.md','# 标题\n\n正文 **粗体** 与 [[链接目标]] 与 #标签\n\n- 列表项一\n- 列表项二\n- [ ] 任务一\n- [x] 任务二已完成\n\n1. 有序一\n2. 有序二\n\n> 引用\n\n```js\nconst a = 1;\n```\n');
 await app.workspace.openFile(f);
@@ -53,6 +55,19 @@ if(state==='settings'){
   info.menu=menu?{w:Math.round(menu.getBoundingClientRect().width),bg:getComputedStyle(menu).backgroundColor,radius:getComputedStyle(menu).borderRadius,shadow:getComputedStyle(menu).boxShadow.slice(0,60)}:null;
   info.menuItem=item?{h:Math.round(item.getBoundingClientRect().height),padding:getComputedStyle(item).padding,color:getComputedStyle(item).color}:null;
   info.menuItemCount=document.querySelectorAll('.menu-item').length;
+}else if(state==='filetree-menu'){
+  // 文件树文件右键菜单（1.14 分节：open/action/info.copy/system/danger）
+  const titleEl=document.querySelector('.nav-file-title[data-path="'+f.path+'"]');
+  check(!!titleEl,'文件树文件行存在');
+  const r=titleEl.getBoundingClientRect();
+  titleEl.dispatchEvent(new MouseEvent('contextmenu',{bubbles:true,cancelable:true,button:2,clientX:r.left+8,clientY:r.top+8}));
+  await wait(250);
+  const menu=document.querySelector('.menu');
+  check(!!menu,'文件树右键菜单已开');
+  const items=[...document.querySelectorAll('.menu-item-title')].map(el=>el.textContent);
+  info.menuTitles=items;
+  info.menuSeparators=document.querySelectorAll('.menu-separator').length;
+  info.menu=menu?{w:Math.round(menu.getBoundingClientRect().width),bg:getComputedStyle(menu).backgroundColor}:null;
 }else if(state==='graph'){
   const leaf=app.workspace.getLeaf(true);
   await leaf.setViewState({type:'graph',state:{}});

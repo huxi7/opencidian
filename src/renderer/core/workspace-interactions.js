@@ -1,5 +1,5 @@
 /**
- * [INPUT]: 依赖 i18n、Menu 与 Notice；首参 workspace 提供叶子与分割操作。
+ * [INPUT]: 依赖 i18n 与 Menu；首参 workspace 提供叶子与分割操作。
  * [OUTPUT]: 导出新标签、标签菜单、拖拽绑定与落点判定函数。
  * [POS]: 仅中心文档标签响应关闭、拆分与拖拽。侧栏图标保持固定入口。
  * 不持有独立状态，不导入 Workspace；拖拽继续使用宿主的 _dragData。
@@ -7,7 +7,6 @@
  */
 import { t } from './i18n.js';
 import { Menu } from './menu.js';
-import { Notice } from './notices.js';
 import { setIcon } from './icons.js';
 
 export function _onNewTab(workspace, tabs) {
@@ -18,46 +17,61 @@ export function _onNewTab(workspace, tabs) {
   return leaf;
 }
 
+/**
+ * 标签页右键菜单。逐条对应 1.14 WorkspaceLeaf.onOpenTabHeaderMenu：
+ * 分节表 title/close/pane/open/action/find/info/info.copy/view/view.linked/system/danger；
+ * close 组来自 View.onTabMenu（关闭 / 关闭其他 / 关闭右侧 / 全部关闭），pane 组来自 ItemView.onTabMenu（锁定）；
+ * 视图自带项经 view.onTabMenu / view.onPaneMenu(menu, 'tab-header') 追加，随后触发 leaf-menu 供插件扩展。
+ * popout 新窗口项（moveToNewWindow）由原版 canPopoutWindow 门控，本项目暂无窗口能力，故意缺失。
+ */
 export function _showTabContextMenu(workspace, ev, leaf) {
   if (!workspace.canCloseLeaf(leaf)) return;
   const menu = new Menu(workspace.app);
-  const isPinned = leaf.pinned;
-  menu.addItem((item) => item.setTitle(isPinned ? (t('interface.menu.unpin') || 'Unpin') : (t('interface.menu.pin') || 'Pin')).setIcon('pin').onClick(() => { leaf.pinned = !leaf.pinned; workspace._syncAllTabs(); }));
-  menu.addSeparator();
-  menu.addItem((item) => item.setTitle(t('menu-items.close-tab') || 'Close').setIcon('x').onClick(() => leaf.detach()));
-  menu.addItem((item) => item.setTitle(t('interface.menu.close-others') || 'Close others').onClick(() => {
-    const tabs = leaf.parent;
-    if (tabs) for (const l of [...tabs.children]) if (l !== leaf && !l.pinned) l.detach();
-  }));
-  const after = leaf.parent ? leaf.parent.children.slice(leaf.parent.children.indexOf(leaf) + 1).filter((l) => !l.pinned) : [];
-  if (after.length) {
-    menu.addItem((item) => item.setTitle(t('interface.menu.close-after') || 'Close tabs after').onClick(() => {
-      for (const l of after) l.detach();
-    }));
+  menu.addSections(['title', 'close', 'pane', 'open', 'action', 'find', 'info', 'info.copy', 'view', 'view.linked', 'system', '', 'danger']);
+  menu.setSectionSubmenu('info.copy', { title: t('interface.menu.copy-path'), icon: 'lucide-clipboard' });
+  menu.setSectionSubmenu('view.linked', { title: t('interface.menu.open-linked-view'), icon: 'lucide-link' });
+  const tabs = leaf.parent;
+  if (tabs) {
+    menu.addItem((item) => item.setSection('close').setTitle(t('interface.menu.close') || 'Close').setIcon('lucide-x').onClick(() => leaf.detach()));
+    const siblings = tabs.children.slice();
+    const others = siblings.filter((l) => !l.pinned && l !== leaf);
+    if (others.length) {
+      menu.addItem((item) => item.setSection('close').setTitle(t('interface.menu.close-others') || 'Close others').setIcon('lucide-x')
+        .onClick(() => { for (const l of others) l.detach(); }));
+    }
+    const after = siblings.slice(siblings.indexOf(leaf) + 1).filter((l) => !l.pinned);
+    if (after.length) {
+      menu.addItem((item) => item.setSection('close').setTitle(t('interface.menu.close-after') || 'Close tabs after').setIcon('lucide-x')
+        .onClick(() => { for (const l of after) l.detach(); }));
+    }
+    const closable = siblings.filter((l) => !l.pinned);
+    if (closable.length > 0 && !(closable.length === 1 && closable[0] === leaf)) {
+      menu.addItem((item) => item.setSection('close').setTitle(t('interface.menu.close-all') || 'Close all').setIcon('lucide-x')
+        .onClick(() => { for (const l of closable) l.detach(); }));
+    }
   }
-  menu.addSeparator();
-  menu.addItem((item) => item.setTitle(t('menu-items.new-tab') || 'New tab').setIcon('plus').onClick(() => {
-    const newLeaf = workspace.getLeaf('tab', leaf.parent);
-    newLeaf.setViewState({ type: 'empty' });
+  menu.addItem((item) => item.setSection('pane')
+    .setTitle(leaf.pinned ? (t('interface.menu.unpin') || 'Unpin') : (t('interface.menu.pin') || 'Pin'))
+    .setIcon('lucide-pin')
+    .onClick(() => { leaf.pinned = !leaf.pinned; workspace._syncAllTabs(); }));
+  // 原版 ItemView.onPaneMenu：拆分右侧/拆分下方（duplicateLeaf 复制当前视图状态）
+  const duplicateLeaf = async (direction) => {
+    const view = leaf.view;
+    const state = view && view.getState ? view.getState() : null;
+    const newLeaf = workspace.createLeafBySplit(leaf, direction);
+    await newLeaf.setViewState(state ? { type: view.getViewType(), state } : { type: 'empty' });
     workspace.setActiveLeaf(newLeaf, { focus: true });
-  }));
-  menu.addItem((item) => item.setTitle(t('menu-items.split-right') || 'Split right').setIcon('separator-vertical').onClick(async () => {
-    const newLeaf = workspace.createLeafBySplit(leaf, 'vertical');
-    const st = leaf.view && leaf.view.getState ? leaf.view.getState() : null;
-    await newLeaf.setViewState(st && st.file ? { type: leaf.view.getViewType(), state: { file: st.file, mode: st.mode } } : { type: 'empty' });
-    workspace.setActiveLeaf(newLeaf, { focus: true });
-  }));
-  menu.addItem((item) => item.setTitle(t('menu-items.split-down') || 'Split down').setIcon('separator-horizontal').onClick(async () => {
-    const newLeaf = workspace.createLeafBySplit(leaf, 'horizontal');
-    const st = leaf.view && leaf.view.getState ? leaf.view.getState() : null;
-    await newLeaf.setViewState(st && st.file ? { type: leaf.view.getViewType(), state: { file: st.file, mode: st.mode } } : { type: 'empty' });
-    workspace.setActiveLeaf(newLeaf, { focus: true });
-  }));
-  if (leaf.parent && leaf.parent.children.length > 1) {
-    menu.addItem((item) => item.setTitle(t('interface.menu.move-to-new-window') || 'Move to new window').setIcon('picture-in-picture-2').onClick(() => {
-      new Notice('Opening new windows is not supported in this replica.');
-    }));
-  }
+  };
+  menu.addItem((item) => item.setSection('open').setTitle(t('commands.split-right') || 'Split right')
+    .setIcon('lucide-separator-vertical').onClick(() => duplicateLeaf('vertical')));
+  menu.addItem((item) => item.setSection('open').setTitle(t('commands.split-down') || 'Split down')
+    .setIcon('lucide-separator-horizontal').onClick(() => duplicateLeaf('horizontal')));
+  const view = leaf.view;
+  if (view && typeof view.onTabMenu === 'function') view.onTabMenu(menu);
+  if (view && typeof view.onPaneMenu === 'function') view.onPaneMenu(menu, 'tab-header');
+  workspace.trigger('leaf-menu', menu, leaf);
+  const header = ev && ev.currentTarget && ev.currentTarget.addClass ? ev.currentTarget : leaf._tabHeaderEl;
+  if (header) menu.setParentElement(header);
   menu.showAtMouseEvent(ev);
 }
 

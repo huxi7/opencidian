@@ -1,7 +1,7 @@
 /**
  * [INPUT]: Events、图标与 Keymap 的弹窗作用域。
  * [OUTPUT]: Modal、PromptModal、prompt、confirmDialog 和弹窗状态查询。
- * [POS]: 弹窗生命周期基座。复开取消延迟卸载，确认值先于关闭回调结算。
+ * [POS]: 弹窗生命周期基座。复开取消延迟卸载，确认值先于关闭回调结算。dimBackground/getRootEl 对齐原版，供设置独立窗口复用。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 /* Modal base class + prompt helpers. */
@@ -15,6 +15,9 @@ export class Modal extends Events {
   constructor(app) {
     super();
     this.app = app;
+    // 原版 Modal：dimBackground 默认 true（mod-dim → --shadow-l 大阴影），bgOpacity 默认 0.85
+    this.dimBackground = true;
+    this.bgOpacity = '0.85';
     this.containerEl = createDiv('modal-container');
     this.bgEl = this.containerEl.createDiv('modal-bg');
     this.modalEl = this.containerEl.createDiv('modal');
@@ -38,6 +41,10 @@ export class Modal extends Events {
     this.scope = app.keymap ? app.keymap.createScope() : null;
   }
   shouldCloseOnBgClick() { return true; }
+  /** 原版 getRootEl：默认 modal-container；设置独立窗口覆写为 modalEl（body > .modal）。 */
+  getRootEl() { return this.containerEl; }
+  setDimBackground(dim) { this.dimBackground = !!dim; return this; }
+  setBackgroundOpacity(opacity) { this.bgOpacity = opacity; return this; }
   setTitle(title) { this.titleEl.setText(title); return this; }
   setContent(content) {
     this.contentEl.empty();
@@ -51,11 +58,14 @@ export class Modal extends Events {
     if (openModals.includes(this)) return this;
     this.bgEl.removeClass('is-hidden');
     this.modalEl.removeClass('is-hidden');
-    document.body.appendChild(this.containerEl);
+    document.body.appendChild(this.getRootEl());
     openModals.push(this);
     this._prevFocusEl = document.activeElement;
     this.onOpen && this.onOpen();
     this.containerEl.addClass('is-open');
+    // 原版 open：mod-dim（大阴影）+ 遮罩 bgOpacity；dimBackground=false 时遮罩不可见
+    this.containerEl.toggleClass('mod-dim', this.dimBackground);
+    this.bgEl.style.opacity = this.dimBackground ? this.bgOpacity : '0';
     if (this.scope && this.app.keymap) this.app.keymap.pushScope(this.scope);
     this._onKeyDown = (ev) => {
       if (ev.key === 'Escape') {
@@ -99,8 +109,9 @@ export class Modal extends Events {
     if (this.scope && this.app.keymap) this.app.keymap.popScope(this.scope);
     if (this._onKeyDown) document.removeEventListener('keydown', this._onKeyDown, true);
     this.bgEl.addClass('is-hidden');
+    this.bgEl.style.opacity = '0';
     this.modalEl.addClass('is-hidden');
-    this._closeTimer = setTimeout(() => this.containerEl.detach(), 150);
+    this._closeTimer = setTimeout(() => this.getRootEl().detach(), 150);
     // 原版：关闭后把焦点还给打开前的元素（焦点已被其它弹窗接管时不抢）
     const prev = this._prevFocusEl;
     this._prevFocusEl = null;

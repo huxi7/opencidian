@@ -1,7 +1,8 @@
 /**
  * [INPUT]: 独立临时 vault 与 OBS_ACT eval 注入的应用实例。
  * [OUTPUT]: 返回编辑器右键菜单与外部文件拖入断言；失败抛出异常，供运行器判定。
- * [POS]: editor-menu 场景。覆盖菜单结构（剪贴板/格式/段落/插入/复制路径）、editor-menu 事件、加粗动作、标题命令与外部文件拖入落盘。
+ * [POS]: editor-menu 场景。覆盖编辑器右键菜单的 1.14 分节项序（selection-link/format/paragraph/insert/clipboard）、
+ *        文本格式子菜单三节、内部链接菜单（edit-link + file-menu 的复制路径）、editor-menu 事件、标题命令与外部文件拖入落盘。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 (async()=>{
@@ -28,26 +29,76 @@ content.dispatchEvent(new MouseEvent('contextmenu',{bubbles:true,cancelable:true
 await until(()=>!!document.querySelector('body > .menu'),'右键菜单弹出',3000);
 const menu=document.querySelector('body > .menu');
 const has=(s)=>[...document.querySelectorAll('body .menu .menu-item-title')].some(el=>el.textContent.includes(s));
+const titles=()=>[...menu.querySelectorAll('.menu-item-title')].map((el)=>el.textContent);
+const iconsOf=()=>[...menu.querySelectorAll('.menu-item')].map((el)=>el.querySelector('svg')?el.querySelector('svg').getAttribute('class'):'');
 check(has('剪切')||has('Cut'),'含剪切');
 check(has('粘贴')||has('Paste'),'含粘贴');
 check(has('全选')||has('Select'),'含全选');
 check(has('文本格式')||has('Formatting'),'含文本格式子菜单');
 check(has('段落设置')||has('Paragraph'),'含段落设置子菜单');
 check(has('插入')||has('Insert'),'含插入子菜单');
-check(has('复制路径')||has('Copy path'),'含复制路径子菜单');
 check(!!fired,'editor-menu 事件触发');
+// 原版 1.14 项序：selection-link（新增链接）→ selection.format → selection.paragraph → selection.insert → clipboard
+check(JSON.stringify(titles())===JSON.stringify(['新增链接','新增外部链接','文本格式','段落设置','插入','剪切','复制','粘贴','以纯文本形式粘贴','全选']),'编辑器菜单项序与原版分节一致：'+titles().join('/'));
+check(!has('复制路径')&&!has('Copy path'),'普通正文右键不含复制路径（原版由 file-menu 提供，仅链接场景出现）');
+const visibleSeps=(m)=>[...m.querySelectorAll(':scope > .menu-scroll > .menu-separator')].filter((el)=>getComputedStyle(el).display!=='none').length;
+check(visibleSeps(menu)===2,'普通正文右键仅两处分隔线（文本格式前 / 剪切前），实际 '+visibleSeps(menu));
+const iconList=iconsOf();
+check(iconList[0]&&iconList[0].includes('lucide-link'),'新增链接图标 lucide-link');
+check(iconList[1]&&iconList[1].includes('lucide-external-link'),'新增外部链接图标 lucide-external-link');
+check(iconList[2]&&iconList[2].includes('lucide-paintbrush'),'文本格式图标 lucide-paintbrush');
+check(iconList[3]&&iconList[3].includes('lucide-pilcrow'),'段落设置图标 lucide-pilcrow');
+check(iconList[4]&&iconList[4].includes('lucide-list-plus'),'插入图标 lucide-list-plus');
+check(iconList[5]&&iconList[5].includes('lucide-scissors'),'剪切图标 lucide-scissors');
+check(iconList[9]&&iconList[9].includes('lucide-box-select'),'全选图标 lucide-box-select');
 
 const fmtItem=[...menu.querySelectorAll('.menu-item')].find(el=>el.textContent.includes('文本格式')||el.textContent.includes('Formatting'));
 fmtItem.dispatchEvent(new MouseEvent('mouseenter',{bubbles:false}));
 await wait(380);
 const boldItem=[...document.querySelectorAll('body .menu .menu-item')].find(el=>el.textContent.includes('加粗')||el.textContent.includes('Bold'));
 check(!!boldItem,'格式化子菜单含加粗');
+// 原版 NV()：basic（加粗/倾斜/删除线/高亮）— advanced（代码/数学/注释）— danger（清除格式）
+const fmtMenus=[...document.querySelectorAll('body .menu')];
+const fmtScroll=fmtMenus[fmtMenus.length-1].querySelector('.menu-scroll');
+const fmtTitles=[...fmtScroll.querySelectorAll('.menu-item-title')].map((el)=>el.textContent);
+check(JSON.stringify(fmtTitles)===JSON.stringify(['加粗','倾斜','删除线','高亮','代码','数学','注释','清除格式']),'文本格式子菜单项序与原版一致：'+fmtTitles.join('/'));
+check(fmtScroll.querySelectorAll('.menu-separator').length===2,'文本格式子菜单两处分隔线（basic/advanced/danger）');
 boldItem.click();
 await wait(150);
 check(view.editor.getValue().includes('**hello**'),'加粗动作包裹选区');
 if (ref && ref.unregister) ref.unregister();
 await wait(120);
 check(!document.querySelector('body > .menu'),'点击后菜单关闭');
+
+// ---------------------------------------------------------- 段落/插入子菜单与链接场景
+await until(()=>!!document.querySelector('body > .menu')===false,'菜单已关',1500);
+const rightClickEl=(el)=>{const rr=el.getBoundingClientRect();content.dispatchEvent(new MouseEvent('contextmenu',{bubbles:true,cancelable:true,button:2,clientX:rr.left+4,clientY:rr.top+4}));};
+const linkSpan=content.querySelector('.cm-wikilink');
+check(!!linkSpan,'实时预览渲染 cm-wikilink');
+if(linkSpan){
+  view.editor.setCursor({line:0,ch:0});
+  await wait(120);
+  const span=content.querySelector('.cm-wikilink')||linkSpan;
+  rightClickEl(span);
+  await until(()=>!!document.querySelector('body > .menu'),'链接右键菜单',3000);
+  const linkMenu=document.querySelector('body > .menu');
+  const linkTitles=[...linkMenu.querySelectorAll('.menu-item-title')].map((el)=>el.textContent);
+  check(linkTitles.includes('编辑链接'),'链接菜单含编辑链接');
+  check(linkTitles.includes('在新标签页中打开'),'链接菜单含在新标签页中打开');
+  check(linkTitles.includes('复制路径'),'内部链接菜单含复制路径（file-menu 填充）');
+  check(linkTitles.indexOf('在新标签页中打开')<linkTitles.indexOf('新增链接'),'原版节序：open 节在 selection-link 之前');
+  const copyItem=[...linkMenu.querySelectorAll('.menu-item')].find(el=>el.textContent.includes('复制路径'));
+  check(!!copyItem.querySelector('.menu-item-chevron'),'复制路径带子菜单箭头');
+  copyItem.dispatchEvent(new MouseEvent('mouseenter',{bubbles:false}));
+  await wait(380);
+  const subMenus=[...document.querySelectorAll('body .menu')];
+  const copyMenu=subMenus.find((m)=>[...m.querySelectorAll('.menu-item-title')].some((el)=>el.textContent==='基于库的相对路径'));
+  check(!!copyMenu,'复制路径子菜单已展开');
+  const copyTitles=copyMenu?[...copyMenu.querySelectorAll('.menu-item-title')].map((el)=>el.textContent):[];
+  check(JSON.stringify(copyTitles)===JSON.stringify(['Obsidian URL','基于库的相对路径','绝对路径']),'复制路径子菜单项序与原版一致：'+copyTitles.join('/'));
+  document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}));
+  await wait(120);
+}
 
 // ---------------------------------------------------------- 外部文件拖入
 const bytes=new Uint8Array([137,80,78,71,13,10,26,10,9,9,9]);

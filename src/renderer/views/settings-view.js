@@ -1,17 +1,18 @@
 /**
- * [INPUT]: 依赖 ../core/modals.js 的 Modal；依赖 ../core/icons.js 的 setIcon；依赖 ../core/i18n.js 的 t；依赖 ./settings-tabs.js 的 AboutTab/EditorTab/FileTab/AppearanceTab；依赖 ./settings-tabs-plugins.js 的 HotkeysTab/CorePluginsTab/CommunityPluginsTab
+ * [INPUT]: 依赖 ../core/modals.js 的 Modal；依赖 ../core/ipc.js 的 Desktop；依赖 ../core/icons.js 的 setIcon；依赖 ../core/i18n.js 的 t；依赖 ./settings-tabs.js 的 AboutTab/EditorTab/FileTab/AppearanceTab；依赖 ./settings-tabs-plugins.js 的 HotkeysTab/CorePluginsTab
  * [OUTPUT]: 导出 SettingTab（页签基类）、SettingsHost（设置模态宿主）、installSettingsHost(app)
- * [POS]: views/ 的设置模态宿主，逐字对齐原版 fte 类 DOM：modal.mod-settings.mod-sidebar-layout > .modal-content.vertical-tabs-container > .vertical-tab-header + .vertical-tab-content-container。app.setting 即本类实例；插件通过 addSettingTab 注册页签。
+ * [POS]: views/ 的设置模态宿主，逐字对齐原版 fte 类 DOM：modal.mod-settings.mod-sidebar-layout > .modal-content.vertical-tabs-container > .vertical-tab-header + .vertical-tab-content-container。app.setting 即本类实例；插件通过 addSettingTab 注册页签。1.14.4 popout：shouldUsePopout 读 vault 配置 settingsPopoutWindow，开启时主进程开独立窗口，窗口内 modalEl 直接挂 body（is-popout-modal）。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 /* Settings host — modal shell + tab management, DOM 1:1 with the original. */
 import { Modal } from '../core/modals.js';
+import { Desktop } from '../core/ipc.js';
 import { setIcon } from '../core/icons.js';
 import { tt } from '../core/i18n.js';
 import { SettingTab } from '../core/setting.js';
 import { AboutTab, EditorTab, FileTab } from './settings-tabs.js';
 import { AppearanceTab } from './settings-tabs-appearance.js';
-import { HotkeysTab, CorePluginsTab, CommunityPluginsTab } from './settings-tabs-plugins.js';
+import { HotkeysTab, CorePluginsTab } from './settings-tabs-plugins.js';
 
 export { SettingTab };
 
@@ -19,7 +20,7 @@ export class SettingsHost extends Modal {
   constructor(app) {
     super(app);
     this.settingTabs = [];
-    this.pluginTabs = [];       // 插件页签：{ id, name, icon, group: 'core' | 'community', ... }
+    this.pluginTabs = [];       // 插件页签：{ id, name, icon, group: 'core', ... }
     this.activeTab = null;
     this.lastTabId = '';
     this.modalEl.addClass('mod-settings', 'mod-sidebar-layout');
@@ -38,29 +39,78 @@ export class SettingsHost extends Modal {
         this.corePluginTabContainer = group.createDiv('vertical-tab-header-group-items');
         this.corePluginTabContainer.setAttr('data-section', 'core-plugins');
       });
-      header.createDiv('vertical-tab-header-group', (group) => {
-        this.communityPluginTabHeaderGroup = group.createDiv({ cls: 'vertical-tab-header-group-title', text: tt('setting.third-party-plugin.name', 'Community plugins') });
-        this.communityPluginTabHeaderGroup.hide();
-        this.communityPluginTabContainer = group.createDiv('vertical-tab-header-group-items');
-        this.communityPluginTabContainer.setAttr('data-section', 'community-plugins');
-      });
     });
     this.tabContentContainer = createDiv('vertical-tab-content-container');
 
-    // 内置页签顺序对齐原版：关于 → 编辑器 → 文件与链接 → 外观 → 快捷键 → 核心插件 → 第三方插件
+    // 内置页签顺序对齐原版：关于 → 编辑器 → 文件与链接 → 外观 → 快捷键 → 核心插件
     this.addSettingTab(new AboutTab(app, this));
     this.addSettingTab(new EditorTab(app, this));
     this.addSettingTab(new FileTab(app, this));
     this.addSettingTab(new AppearanceTab(app, this));
     this.addSettingTab(new HotkeysTab(app, this));
     this.addSettingTab(new CorePluginsTab(app, this));
-    this.addSettingTab(new CommunityPluginsTab(app, this));
   }
 
   updateModalTitle(tab) {
     this.titleEl.empty();
     if (tab) this.titleEl.setText(tab.name);
     else this.titleEl.setText(tt('interface.settings', 'Settings'));
+  }
+
+  // -------------------------------------------------------------------------
+  // 独立窗口（1.14.4 popout）：shouldUsePopout/getPopoutOptions/getRootEl 与原版同名同行
+  // -------------------------------------------------------------------------
+  /** 原版：vault 配置 settingsPopoutWindow（默认 true）；设置窗口自身永不嵌套 popout。 */
+  shouldUsePopout() {
+    if (this.app.isSettingsWindow) return false;
+    if (this.app.settings.appSettings.settingsPopoutWindow === false) return false;
+    // E2E 验收默认走应用内模态（单窗口断言）；settings-window 场景以 __SETTINGS_POPOUT_FORCE__ 显式开窗
+    if (!window.__SETTINGS_POPOUT_FORCE__) {
+      try { if (process.env.E2E === '1') return false; } catch (e) {}
+    }
+    return true;
+  }
+  /** 原版 getPopoutOptions：900x700，min 600x400。 */
+  getPopoutOptions() { return { width: 900, height: 700, minWidth: 600, minHeight: 400 }; }
+  /** 原版：popout 文档里 modalEl 直接挂 body（body > .modal.mod-settings）；应用内仍是 modal-container。 */
+  getRootEl() { return this.app.isSettingsWindow ? this.modalEl : this.containerEl; }
+
+  /** 向主进程请求开窗/聚焦，并接力目标页签。 */
+  _openPopoutWindow(tabId) {
+    let background = '';
+    try { background = getComputedStyle(document.body).backgroundColor; } catch (e) {}
+    try {
+      Desktop.settingsWindowOpen({
+        vaultId: this.app.vaultId,
+        tabId: tabId || '',
+        ...this.getPopoutOptions(),
+        background,
+      });
+    } catch (e) { /* 主进程不可用时保持静默（测试宿主） */ }
+  }
+
+  open() {
+    if (this.shouldUsePopout()) { this._openPopoutWindow(this.lastTabId); return this; }
+    return this.openInApp();
+  }
+
+  /** 主进程已裁决回退应用内模态：绕过本地配置缓存（设置窗口写的配置尚未同步到本渲染器）。 */
+  openInApp() {
+    if (this.app.isSettingsWindow) document.body.addClass('is-popout-modal');
+    return super.open();
+  }
+
+  close() {
+    // 设置窗口自身：只关本模态并通知主进程销毁窗口（配置为 popout 时也走这里）
+    if (this.app.isSettingsWindow) {
+      const r = super.close();
+      try { Desktop.settingsWindowClose(); } catch (e) {}
+      return r;
+    }
+    // 应用内模态正在显示：先按模态关闭。否则开关写入 true 后再关，会因 shouldUsePopout() 成真而滞留。
+    if (this.containerEl.isConnected) return super.close();
+    if (this.shouldUsePopout()) { try { Desktop.settingsWindowClose(); } catch (e) {} return this; }
+    return super.close();
   }
 
   addSettingTab(tab) {
@@ -92,16 +142,15 @@ export class SettingsHost extends Modal {
     this.updatePluginSection();
   }
 
-  /** 核心/社区插件在禁用时移除其设置页签（plugins.js 调用）。 */
+  /** 核心插件在禁用时移除其设置页签（plugins.js 调用）。 */
   removePluginTabs(pluginId) {
     for (const tab of [...this.pluginTabs]) {
-      const owner = tab.pluginId || (tab.plugin && tab.plugin.manifest && tab.plugin.manifest.id);
-      if (owner === pluginId) this.removeSettingTab(tab);
+      if (tab.pluginId === pluginId) this.removeSettingTab(tab);
     }
   }
 
   isPluginSettingTab(tab) {
-    return !!(tab.group === 'core' || tab.group === 'community' || tab.plugin);
+    return !!(tab.group === 'core' || tab.plugin);
   }
 
   updatePluginSection() {
@@ -110,16 +159,11 @@ export class SettingsHost extends Modal {
     core.length ? this.corePluginTabHeaderGroup.show() : this.corePluginTabHeaderGroup.hide();
     this.corePluginTabContainer.empty();
     for (const tab of core) this.corePluginTabContainer.appendChild(tab.navEl);
-
-    const community = this.pluginTabs.filter((tab) => tab.group !== 'core');
-    community.sort((a, b) => String(a.name).localeCompare(String(b.name), 'zh'));
-    community.length ? this.communityPluginTabHeaderGroup.show() : this.communityPluginTabHeaderGroup.hide();
-    this.communityPluginTabContainer.empty();
-    for (const tab of community) this.communityPluginTabContainer.appendChild(tab.navEl);
   }
 
   openTab(tab) {
     if (!tab || !tab.containerEl) return;
+    if (this.shouldUsePopout()) { this.lastTabId = tab.id; this._openPopoutWindow(tab.id); return; }
     this.tabContentContainer.empty();
     this.updateModalTitle(tab);
     if (this.activeTab) {

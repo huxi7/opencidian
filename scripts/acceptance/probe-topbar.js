@@ -57,6 +57,42 @@ pick('leftDividerHost','.workspace-split.workspace-root');
 pick('rightSplit','.mod-right-split');
 pick('rightTabs','.workspace-split.mod-right-split .workspace-tabs');
 pick('rightToggle','.sidebar-toggle-button.mod-right');
+/* 1.14 对齐取证：标签栏 + / ⌄ 与文件列表头 */
+pick('newTabOuter','.mod-root .workspace-tab-header-new-tab');
+pick('newTabInner','.mod-root .workspace-tab-header-new-tab .clickable-icon');
+pick('tabListOuter','.mod-root .workspace-tab-header-tab-list');
+pick('tabListInner','.mod-root .workspace-tab-header-tab-list .clickable-icon');
+pick('navHeader','.workspace-leaf-content[data-type="file-explorer"] .nav-header');
+pick('navButtons','.workspace-leaf-content[data-type="file-explorer"] .nav-buttons-container');
+pick('explorerTree','.workspace-leaf-content[data-type="file-explorer"] .nav-files-container');
+pick('emptyPill','.empty-state-action-list .empty-state-action');
+
+/* 几何增量：+ 距末标签右缘、+ 内层盒、⌄ 盒、文件列表头内边距与 gap */
+const rect=(el)=>{if(!el)return null;const r=el.getBoundingClientRect();return {x:+r.x.toFixed(1),y:+r.y.toFixed(1),w:+r.width.toFixed(1),h:+r.height.toFixed(1),right:+r.right.toFixed(1),bottom:+r.bottom.toFixed(1)};};
+const innerEl=document.querySelector('.workspace-split.mod-root .workspace-tab-header-container-inner');
+const tabEls=innerEl?[...innerEl.querySelectorAll(':scope > .workspace-tab-header')]:[];
+const lastTabEl=tabEls.length?tabEls[tabEls.length-1]:null;
+const newTabInnerEl=document.querySelector('.mod-root .workspace-tab-header-new-tab .clickable-icon');
+const explorerButtons=[...document.querySelectorAll('.workspace-leaf-content[data-type="file-explorer"] .nav-action-button')]
+  .map((b)=>({cls:String(b.className),label:b.getAttr?b.getAttr('aria-label'):b.getAttribute('aria-label'),icon:(b.querySelector('svg')&&String(b.querySelector('svg').className.baseVal||'').trim())||''}));
+const aligned={
+  containerHeight:(()=>{const el=document.querySelector('.workspace-split.mod-root .workspace-tab-header-container');return el?+el.getBoundingClientRect().height.toFixed(1):null;})(),
+  innerPadding:innerEl?getComputedStyle(innerEl).paddingLeft+' '+getComputedStyle(innerEl).paddingRight+' '+getComputedStyle(innerEl).paddingBottom:'',
+  lastTab:rect(lastTabEl),
+  newTabOuter:rect(document.querySelector('.mod-root .workspace-tab-header-new-tab')),
+  newTabInner:rect(newTabInnerEl),
+  newTabInnerPadding:newTabInnerEl?getComputedStyle(newTabInnerEl).padding:'',
+  newTabMargin:document.querySelector('.mod-root .workspace-tab-header-new-tab')?getComputedStyle(document.querySelector('.mod-root .workspace-tab-header-new-tab')).marginLeft+' '+getComputedStyle(document.querySelector('.mod-root .workspace-tab-header-new-tab')).marginRight:'',
+  tabListOuter:rect(document.querySelector('.mod-root .workspace-tab-header-tab-list')),
+  tabListInner:rect(document.querySelector('.mod-root .workspace-tab-header-tab-list .clickable-icon')),
+  tabListMargin:(()=>{const el=document.querySelector('.mod-root .workspace-tab-header-tab-list');return el?getComputedStyle(el).marginRight:'';})(),
+  gapLastTabToNewTabIcon:(lastTabEl&&newTabInnerEl)?+(newTabInnerEl.getBoundingClientRect().left-lastTabEl.getBoundingClientRect().right).toFixed(1):null,
+  navHeaderPadding:(()=>{const el=document.querySelector('.workspace-leaf-content[data-type="file-explorer"] .nav-header');return el?getComputedStyle(el).padding:'';})(),
+  navButtonsGap:(()=>{const el=document.querySelector('.workspace-leaf-content[data-type="file-explorer"] .nav-buttons-container');return el?getComputedStyle(el).gap+' / pad '+getComputedStyle(el).padding:'';})(),
+  explorerButtons,
+  iconSizes:(()=>{const cs=getComputedStyle(document.body);return {'--icon-m':cs.getPropertyValue('--icon-m').trim(),'--icon-m-stroke-width':cs.getPropertyValue('--icon-m-stroke-width').trim(),'--icon-size':cs.getPropertyValue('--icon-size').trim()};})(),
+  newTabIconBox:(()=>{const svg=newTabInnerEl&&newTabInnerEl.querySelector('svg');if(!svg)return null;const r=svg.getBoundingClientRect();return +r.width.toFixed(1)+'x'+ +r.height.toFixed(1);})(),
+};
 
 const activeTabEl=document.querySelector('.workspace-split.mod-root .workspace-tab-header.is-active');
 const pseudoOf=(el,p)=>{const cs=getComputedStyle(el,p);return {content:cs.content,w:cs.width,h:cs.height,left:cs.left,right:cs.right,bottom:cs.bottom,pos:cs.position,bw:cs.borderWidth,bc:cs.borderColor,br:cs.borderRadius,shadow:cs.boxShadow,clip:cs.clipPath,bg:cs.backgroundColor,display:cs.display};};
@@ -82,6 +118,14 @@ if (want('test')) {
   style.textContent='.workspace-tab-header.is-active::before,.workspace-tab-header.is-active::after{background-color:#ff0000 !important;border-color:#ff0000 !important}';
   document.head.appendChild(style);
   await wait(150);
-}console.log('PROBE-TOPBAR '+JSON.stringify({state,bodyClass:String(body.className),nodes,pseudo,variables,rows},null,1));
+}/* 令牌 'empty'：最后打开一个空标签页，让截图覆盖空态 pill（1.14 aI 取证） */
+if (want('empty')) {
+  app.commands.executeCommandById('workspace:new-tab');
+  await wait(500);
+  // pill 几何：原版三条 pill 等宽（width:100% 于 shrink-to-fit 的列容器）
+  aligned.emptyPills=[...document.querySelectorAll('.workspace-split.mod-root .workspace-leaf.mod-active .empty-state-action')]
+    .map((el)=>({text:el.textContent.trim(),w:+el.getBoundingClientRect().width.toFixed(1),h:+el.getBoundingClientRect().height.toFixed(1)}));
+}
+console.log('PROBE-TOPBAR '+JSON.stringify({state,bodyClass:String(body.className),nodes,aligned,pseudo,variables,rows},null,1));
 return {pass:true,checks,state,ribbonClass:String(ribbon.className),ribbonBg:nodes.ribbon&&nodes.ribbon.color,ribbonBefore:pseudo.ribbonBefore,centerHeader: nodes.centerHeader};
 })()

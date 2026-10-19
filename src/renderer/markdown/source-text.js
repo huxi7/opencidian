@@ -299,8 +299,11 @@ function mimeForExtension(ext) {
 /**
  * 阅读视图图片右键菜单（原版 h6 的分支与顺序）：
  * 复制图片 → 库内图片再挂链接菜单 → 重置大小（仅带 width）→ 删除图片。
+ * 分节表 addSections(['title','image'])：图片项自成一节，链接菜单项排在其后，danger 段在末尾。
  */
 export function fillImageContextMenu(app, menu, img, sourcePath, ev) {
+  // 原版 addSections(["title","image"])：图片项自成一节，链接菜单项排列其后，danger 段在末尾
+  menu.addSections(['title', 'image']);
   const holder = img.closest('[data-source-text]') || img.closest('[data-href]');
   const href = holder ? holder.getAttr('data-href') : '';
   addCopyImageItem(app, menu, href, sourcePath);

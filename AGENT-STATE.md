@@ -9,12 +9,12 @@
 ## 0. 项目身份
 
 - 项目名：**OpenSidian**（包名 `opensidian`，中文名「开曜」）。2026-10-17 完成品牌化改名：产品名、窗口标题、菜单、About 页、README、包名、userData 目录全部改为 OpenSidian；库内配置目录继续使用 `.obsidian`（数据格式兼容的一部分，禁止改名）。
-- 目标：1:1 复刻 macOS 上的 Obsidian 1.12.4 桌面版（/Applications/Obsidian.app）。
+- 目标：1:1 复刻 macOS 上的 Obsidian 1.14.4 桌面版（/Applications/Obsidian.app；提取源 `_analysis/obsidian-114/`）。
 - 仓库位置：`/Users/link/Desktop/opencidian`（本仓库；文件夹名为用户所改）。HANDOFF.md 已按用户要求删除，交接信息以本文件为准。
 - 技术栈：Electron 33 + esbuild（bundle/iife/chrome120，Node 内置 external）；renderer `nodeIntegration:true`；编辑器 CM6；阅读渲染 markdown-it。
 - 用户约束（铁律）：
   1. 不劫持 `obsidian://` 协议；不干扰真实 Obsidian 数据。
-  2. 第三方/社区插件**暂不做**（市场不接入）；**自带核心插件要做**。
+  2. 第三方/社区插件**整体移除**（不加载、无设置入口、无信任模态、无市场）；**自带核心插件要做**。
   3. 设置功能是重中之重，必须可用。
   4. 用 REA 工作流：静态/行为分析 → 常规工具重建；不搬运专有代码。
   5. GEB 分形文档：L1 `/CLAUDE.md`、L2 模块 `CLAUDE.md`、L3 文件头 `[INPUT]/[OUTPUT]/[POS]/[PROTOCOL]`；改代码必须回环更新文档；单文件 ≤800 行。
@@ -486,6 +486,21 @@ node --experimental-vm-modules src/renderer/core/workspace-regression.js
 - 表格：手柄拖拽重排、单元格矩形选择、Tab 换格、单元格原位置编辑未做（其余已齐）。
 - 编辑器/阅读：链接路径 tooltip、图片尺寸语法未逐项核对；卡片内命令 no-op（见画布行）。
 - 核心插件：slash-command/webviewer/bases/markdown-importer/publish/sync 按约定跳过；audio-recorder 真机麦克风仍需手点一次。
-- 第三方插件页：捐赠按钮未做（市场未接入）。
+- 第三方插件：宿主/设置页/信任模态已整体移除，不加载任何第三方代码；`.obsidian/plugins` 与 community-plugins.json 不读不写（不破坏用户数据）。
 - 系统级：electron-builder 打包已完成（dmg/zip + 打包版冒烟；未签名，`identity: null`；正式分发需证书与公证）。自动更新仍未做（LICENSE 已定 MIT）。
-- 未做像素级视觉验收（用户要求停截图）：只保证 DOM/逻辑/计算样式与回归。
+- 视觉验收以计算样式断言 + 探针截图为证（浅/深），未做整屏逐像素 diff；常规验收仍用 --no-screenshot。
+
+---
+
+## 17. 1.14.4 保真批 + 插件整删 + 设置独立窗口（2026-10-19）
+
+- 参照物升级：本机 Obsidian 1.14.4；提取 `_analysis/obsidian-114/renderer/{app.js,app.css,main.js,i18n/}`。
+- 五路并行交付（主代理集成，已提交 `85107de`）：
+  1. **第三方插件整删**：`core/plugins.js` 668→93（社区宿主/shim/安全模式/信任模态全清；`Plugin` 基类零消费者已删）；`views/settings-tabs-plugins.js` 672→454（CommunityPluginsTab 删除）；settings/suggest/app/styles/locale/README 同步；`community.js` 场景删除。grep 11 组归零（third-party-plugin/community-plugins/buildObsidianApi/enable-plugin-…）。**唯一保留** `setting.third-party-plugin.label-no-recent-files-found`：原版 quick switcher 自身的遗留 key（app.js `db.setting.thirdPartyPlugin.labelNoRecentFilesFound()`），非插件逻辑。敌对库实测：预置插件文件 + community-plugins.json 启动，无信任弹窗、零加载、零改写。
+  2. **设置独立窗口**：`src/main/settings-window.js`（Map<vaultId> 单实例、900×700 / min 600×400、跟随「窗口边框」的 frame/titleBarStyle、首次相对主窗居中、标题取 document.title）；渲染层 `isSettingsWindow`(#settings-window) 分流；`settingsPopoutWindow` 默认 true + 外观页「在窗口中打开设置」；修复多库串窗 / 模态内切窗死锁 / 跨窗口缓存不同步。settings-window 49 项、modal-ui 21 项。
+  3. **顶栏**：标签栏容器底线 + 内层 -1px 负边距消缝、活动标签凹弧(clip-path)、「+」「⌄」外层 div + 内层 span.clickable-icon（margin 8/4；原版实测末标签盒距 8px、字形距 12px，改前 -4px 重叠）；view-header 重建（左导航钮/面包屑/居中标题/mod-fade/聚焦底色 + mod-active）。文件列表头补 `.nav-header`(8px) + 五按钮（新建笔记 lucide-edit、排序动态图标、自动显示、折叠全部）；空标签页三枚 pill + 热键。`--icon-m` 18→16px、stroke 2px（1.14.4 基线）。sidebar-chrome 66、view-header 61。
+  4. **菜单家族**：menu.js 分节 API（addSections/setSectionSubmenu/sort、.menu-group、显式分节表才排序）；新增 `core/file-menu.js`（复制路径▸/默认应用/访达/移动到…）；编辑器/文件树/标签页/属性行/反链出链对齐；修 menu.js:184 空节重复登记（4 项×5=20）。menu-family 52、editor-menu 42。
+  5. **快速切换**：switcher.js 120→534（prompt 700px/15vh 顶部、六条指令栏、最近 10 项 MRU、文件/别名/未解析/书签、20 项上限、创建项、键盘全键位、Tab 补全、三项开关写 switcher.json + settingTab）；suggest.js 319→432。quick-switcher 130×浅深全过。
+- **全量回归（2026-10-19，`/tmp/opensidian-full-1019-220645`）**：52/56 直过；4 个假红复核——settings-restart（需 settings-write vault）过、graph-persist-read（需 graph-persist-write vault）过、graph-perf（需 --nodes）过、core-ribbon（旧断言依赖自造 `mod-quick-switcher`，已改为 `.prompt .prompt-input`）过。**最终 56/56 全绿**。
+- 已知偏差（等价替代）：前进后退用全局历史而非 per-leaf；面包屑右键复用文件夹菜单（has-active-menu 落树项）；`corner-shape: superellipse` 本机 Chromium 不支持（声明保留）；「自动显示」用视图/布局状态而非设置项（原版 autoRevealFile 待接）。
+- 待办：设置「自动显示当前文件」落到设置面板；per-leaf 历史单独立项；画布/图谱右键菜单原版分节表已抄待排期；属性类型子菜单、标签组模型、表格单元格段落/插入守卫。

@@ -108,15 +108,107 @@ check(ribbonBefore()===centerHeaderBg(),'焦点态：功能区左上角与中心
 body.toggleClass('is-focused', focusedBefore);
 await wait(60);
 const fillet=()=>getComputedStyle(activeTabEl(),'::before');
-check(fillet().width===tokenOf('--tab-curve')&&fillet().backgroundColor===colorOf('--tab-background-active', activeTabEl()),
-  '活动标签底角凹弧存在且填标签底色（原版 6171-6196）');
-check(getComputedStyle(document.querySelector('.workspace-split.mod-root .workspace-tab-header-container-inner')).paddingLeft===tokenOf('--tab-curve'),
-  '标签栏内层左右留凹弧空间（否则 overflow 裁掉弧线）');
+const curveOf=()=>parseFloat(tokenOf('--tab-curve', activeTabEl()));
+check(fillet().width===(curveOf()*2)+'px'&&fillet().clipPath.startsWith('inset(50%')&&fillet().boxShadow.includes(colorOf('--tab-background-active', activeTabEl())),
+  '活动标签底角凹弧：2*--tab-curve 的圆 + clip-path 取四分之一，弧外填标签底色（原版 1.14 7026-7052）');
+const headerRect=centerHeaderEl().getBoundingClientRect();
+const activeRect=activeTabEl().getBoundingClientRect();
+check(Math.abs(activeRect.bottom-headerRect.bottom)<0.75,
+  '活动标签脚印压住标签栏底边线（活动标签底部与内容区无缝）');
 ws.toggleSidebar('left');
 await wait(520);
 check(!ribbonEl().hasClass('is-collapsed')&&bgOf(ribbonEl())===colorOf('--ribbon-background'),
   '展开后功能区回到 --ribbon-background 且去掉 is-collapsed :: '+bgOf(ribbonEl()));
 check(leftHandle().getBoundingClientRect().width>0&&getComputedStyle(leftHandle()).opacity==='1','展开后左侧分隔条恢复占位与不透明');
+
+// ------------------------------------------------- 文件列表头（原版 1.14 QL、app.css:9574-9593）
+const feLeaf=ws.getLeavesOfType('file-explorer')[0];
+check(!!feLeaf&&!!feLeaf.view,'文件浏览器存在（前置）');
+const feView=feLeaf.view;
+const navHeader=()=>feView.contentEl.querySelector(':scope > .nav-header');
+const navButtons=()=>navHeader()&&navHeader().querySelector(':scope > .nav-buttons-container');
+check(!!navHeader(),'文件列表头是 .nav-header（原版 QL 结构）');
+check(!!navButtons(),'.nav-header 内含 .nav-buttons-container');
+check(navHeader().nextElementSibling===feView.container&&feView.container.hasClass('nav-files-container'),
+  '.nav-header 与 .nav-files-container 平级且在前（按钮行固定，不随树滚动）');
+check(getComputedStyle(navHeader()).padding==='8px','.nav-header padding=8px（原版 9574-9576）:: '+getComputedStyle(navHeader()).padding);
+check(getComputedStyle(navButtons()).gap==='2px'&&getComputedStyle(navButtons()).padding==='0px',
+  '按钮行 gap=2px、padding=0（原版 9581-9583）:: '+getComputedStyle(navButtons()).gap+' / '+getComputedStyle(navButtons()).padding);
+check(navHeader().getBoundingClientRect().bottom<=feView.container.getBoundingClientRect().top+1,'树从列表头下方开始（无重叠）');
+const btnIcons=[...navButtons().querySelectorAll('.nav-action-button')].map((b)=>{
+  const svg=b.querySelector('svg');
+  return svg?String(svg.getAttribute('class')||''):'';
+});
+check(btnIcons.length===5,'文件列表头五个动作按钮 :: '+btnIcons.length);
+check(btnIcons[0].includes('lucide-edit')&&btnIcons[1].includes('lucide-folder-plus')&&btnIcons[2].includes('lucide-sort-asc')
+  &&btnIcons[3].includes('lucide-gallery-vertical')&&btnIcons[4].includes('lucide-chevrons-down-up'),
+  '按钮图标顺序 edit/folder-plus/sort-asc/gallery-vertical/chevrons-down-up :: '+btnIcons.join('|'));
+check(feView._autoRevealBtn&&feView._autoRevealBtn.hasClass('is-active')===!!feView._autoReveal,
+  '自动显示按钮 is-active 跟随 _autoReveal 状态');
+check(feView._collapseAllBtn&&String(feView._collapseAllBtn.getAttribute('aria-label')).length>0,
+  '全部折叠按钮带 aria-label（工具提示）');
+
+// 排序菜单：三组 × 2 项 + 组后分隔线（原版 QL.addSortButton，app.js:1473296）
+feView._sortBtn.click();
+await wait(160);
+const sortMenu=[...document.querySelectorAll('body > .menu')].pop();
+check(!!sortMenu,'排序按钮弹出菜单');
+const sortLabels=[...sortMenu.querySelectorAll('.menu-item')].map((el)=>el.textContent.trim());
+check(sortLabels.length===6,'排序菜单 6 项（名称/修改时间/创建时间 各 2）:: '+sortLabels.join('|'));
+const sortSeps=[...sortMenu.querySelectorAll('.menu-scroll > .menu-separator')]
+  .filter((el)=>getComputedStyle(el).display!=='none').length;
+const sortSepsInDom=(sortMenu.innerHTML.match(/menu-separator/g)||[]).length;
+check(sortSeps===2&&sortSepsInDom>=3,'排序菜单三条分隔线、末尾一条被 :last-child 隐藏（原版 9175）:: 可见 '+sortSeps+' / DOM '+sortSepsInDom);
+check(!!sortMenu.querySelector('.menu-item.mod-checked'),'当前排序项带选中标记（lucide-check）');
+document.body.dispatchEvent(new MouseEvent('mousedown',{bubbles:true}));
+await wait(140);
+
+// ------------------------------------------------- 空标签页 pill（原版 1.14 aI、app.css:4083-4204）
+app.commands.executeCommandById('workspace:new-tab');
+await wait(220);
+let emptyLeaf=ws.activeLeaf;
+check(!!emptyLeaf&&emptyLeaf.view.getViewType()==='empty','新标签页为空视图（前置）');
+const pillList=()=>[...emptyLeaf.view.contentEl.querySelectorAll('.empty-state-action-list > .empty-state-action')];
+let pills=pillList();
+check(pills.length>=2,'空态动作行是 pill 列表 :: '+pills.length);
+check(pills.every((p)=>p.hasClass('text-icon-button')&&p.hasClass('mod-pill')),'pill 使用 text-icon-button.mod-pill（原版 aI）');
+const pillIcons=pills.map((p)=>{const svg=p.querySelector('.text-button-icon svg');return svg?String(svg.getAttribute('class')||''):'';});
+check(pillIcons[0].includes('lucide-square-pen'),'首个 pill 图标 lucide-square-pen（原版）:: '+pillIcons[0]);
+check(pillIcons.some((c)=>c.includes('lucide-layout-dashboard')),'canvas 启用时有"新建白板" pill（lucide-layout-dashboard）');
+check(!pills.some((p)=>/(前往文件|打开文件|Go to file)/.test(p.textContent)),'空库不显示"前往文件" pill（原版 vault.isEmpty() 门）');
+check(pills.every((p)=>!!p.querySelector('.text-button-icon')&&!!p.querySelector('.text-button-label')),'每个 pill 都有图标 + 文案两层');
+check(pills.some((p)=>!!p.querySelector('.empty-state-hotkey')),'pill 带热键后缀（printHotkeyForCommand）');
+check(!pills.some((p)=>/^(关闭|Close)$/.test(p.textContent.trim())),'空态不再有 Close 动作（1.14 无此 pill）');
+await app.vault.create('Pill-Probe.md','# p\n');
+// 空视图在 onOpen 时按库状态生成动作；先移除旧空标签再开新标签，得到一次全新渲染
+emptyLeaf.detach();
+await wait(160);
+app.commands.executeCommandById('workspace:new-tab');
+await wait(240);
+emptyLeaf=ws.activeLeaf;
+pills=pillList();
+check(pills.some((p)=>/(前往文件|打开文件|Go to file)/.test(p.textContent)),'库非空时出现"前往文件" pill :: '+pills.map((p)=>p.textContent).join('|'));
+
+// ------------------------------------------------- 全部折叠 ↔ 展开全部（原版 setIsAllCollapsed，app.js:1505176）
+const collapseFolder=await app.vault.createFolder('Collapse-Probe');
+await app.vault.create('Collapse-Probe/inner.md','# i\n');
+await wait(220);
+feView._collapseAllBtn.click();
+await wait(180);
+check(feView._allCollapsed===true&&feView._collapsed.has(collapseFolder.path),'全部折叠：文件夹进入折叠集');
+check(!!feView._collapseAllBtn.querySelector('.lucide-chevrons-up-down'),'全部折叠后图标=chevrons-up-down');
+check(/(全部展开|展开全部|Expand all)/.test(String(feView._collapseAllBtn.getAttribute('aria-label'))),'全部折叠后文案=Expand all :: '+feView._collapseAllBtn.getAttribute('aria-label'));
+feView._collapseAllBtn.click();
+await wait(180);
+check(feView._allCollapsed===false&&!feView._collapsed.has(collapseFolder.path),'展开全部：折叠集移除该文件夹');
+check(!!feView._collapseAllBtn.querySelector('.lucide-chevrons-down-up'),'展开全部后图标=chevrons-down-up');
+// 手动展开任一文件夹后按钮回到 Collapse all（原版 setCollapsed(false) → setIsAllCollapsed(false)）
+feView._collapseAllBtn.click();
+await wait(160);
+feView._toggleFolder(collapseFolder.path);
+await wait(160);
+check(feView._allCollapsed===false&&!!feView._collapseAllBtn.querySelector('.lucide-chevrons-down-up'),
+  '手动展开文件夹后按钮回到 Collapse all 态');
 
 return {pass:true,checks};
 })()

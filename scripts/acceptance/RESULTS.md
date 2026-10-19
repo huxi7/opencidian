@@ -342,3 +342,16 @@ MathJax 独立适配器子代理的41项基础/故障测试见 assets/mathjax/SO
 - 断言总量 ≈2700（计数场景合计 2709 + 6 个无计数场景 + 内存 19）；50 份日志零 `TypeError|ReferenceError|act failed|unhandledrejection|SyntaxError`。
 - 本轮新增/扩容锁：theme-tokens 717、reading-ui 212、canvas-ui 107、editor 131、dialogs 8、zoom-lock 11、sidebar-chrome 35。
 - 运行脚本与日志：`/private/var/folders/…/T/opencode/full-regression.sh` + `ui-deep-regression.log`。
+
+## 1.14.4 保真批全量回归（2026-10-19 晚 · 插件整删/设置窗口/顶栏/菜单/快速切换)
+
+- 范围：第三方插件整体移除、设置独立窗口（popout）、1.14.4 顶栏（标签栏消缝 + 「+」「⌄」+ view-header）、菜单家族、快速切换 1:1。
+- 新增/扩容永久场景：`quick-switcher` 130 项（浅/深各一遍）、`view-header` 61 项、`menu-family` 52 项、`settings-window` 49 项、`modal-ui` 21 项、`sidebar-chrome` 35→66 项、`editor-menu` 42 项、`settings-plugins` 42 项；`community.js` 删除。
+- 全量主循环（56 场景、独立临时库、`--no-screenshot`）：52 直过；4 个按正确相位/参数复核后通过——
+  - `settings-restart --vault <settings-write 库>` → `/tmp/obs-copy-acceptance/settings-restart-run-result-sx89P3/run.log`
+  - `graph-persist-read --vault <graph-persist-write 库>` → `…/graph-persist-read-run-result-Y5lkeV/run.log`
+  - `graph-perf --nodes 100` → `…/graph-perf-run-result-goyTUq/run.log`
+  - `core-ribbon`（旧断言依赖自造 `mod-quick-switcher`，已改为 `.prompt .prompt-input`）→ `…/core-ribbon-run-result-UsdJYo/run.log`
+- 主循环日志目录：`/tmp/opensidian-full-1019-220645/`（`summary.txt` + 每场景 run.log）。最终 **56/56 通过**。
+- 视觉取证：`_analysis/topbar-114/`（改前/改后浅深、空态、裁切）、`_analysis/quick-switcher-114/screens/`（我方与原版复现页截图 + 计算样式 json）、`_analysis/menu-family-114/`（audit.md + screens）；设置窗口浅/深截图见 `settings-window` 场景输出目录。
+- 已知边界：per-leaf 前进后退、自动显示设置项、画布/图谱右键菜单、属性类型子菜单、标签组模型仍待单独立项。

@@ -72,7 +72,7 @@
   await until(() => app.workspace.activeLeaf?.view.getViewType() === 'graph', '键盘 Enter 激活图谱入口');
 
   buttons('switcher:open')[0].click();
-  check(document.querySelector('.prompt.mod-quick-switcher:not(.is-hidden)'), '快速切换按钮打开已有选择器');
+  check(document.querySelector('.prompt:not(.is-hidden) .prompt-input'), '快速切换按钮打开快速切换');
   document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); await wait(170);
   buttons('command-palette:open')[0].click();
   check(document.querySelector('.prompt.mod-command-palette:not(.is-hidden)'), '命令按钮打开已有命令面板');

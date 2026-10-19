@@ -1,6 +1,6 @@
 /**
  * [INPUT]: 依赖 electron 的 app/BrowserWindow/ipcMain/protocol/shell/dialog/session；Node 内置 fs/path
- * [OUTPUT]: 主进程全部 IPC handler（vault 注册表、文件读写、窗口控制、回收站、拼写检查词典/语言）、app:// 协议、devScreenshotHook（OBS_* 环境变量门控的调试钩子）
+ * [OUTPUT]: 主进程全部 IPC handler（vault 注册表、文件读写、窗口控制、回收站、拼写检查词典/语言）、app:// 协议、devScreenshotHook（OBS_* 环境变量门控的调试钩子）、设置独立窗口管理器（settings-window.js）的装配
  * [POS]: 应用主进程入口。vault 注册表存于 userData/opensidian.json（启动时从旧产品名 "Obsidian Copy" 的 userData 迁移一次）；拼写检查自加词存 userData/spellcheck-words.json，语言选择存 opensidian.json 的 spellcheckLanguages。渲染进程经 preload/ipc.js 调用此处 handler。原生菜单保留设置入口。dev-hooks 只在指定测试库窗口执行。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
@@ -18,6 +18,7 @@ const os = require('os');
 const fs = require('fs');
 const crypto = require('crypto');
 const { devScreenshotHook } = require('./dev-hooks');
+const { setupSettingsWindows } = require('./settings-window');
 const { app, BrowserWindow, protocol, ipcMain, Menu, shell, dialog, session, nativeTheme } = require('electron');
 
 const APP_ROOT = path.join(__dirname, '..', '..');
@@ -161,6 +162,7 @@ function removeVaultInternal(id) {
 const windows = {};      // vaultId -> BrowserWindow
 let starterWindow = null;
 let quitting = false;
+let settingsWindows = null;   // 设置独立窗口管理器（setupSettingsWindows）
 const customContextWindows = new Set();
 
 function getVaultConfig(id) {
@@ -530,6 +532,7 @@ function openVaultWindow(id, focus = true) {
   });
   win.on('closed', () => {
     delete windows[id];
+    if (settingsWindows) settingsWindows.closeFor(id);
     const entry = VAULTS[id];
     if (entry) { delete entry.open; }
     if (!quitting && Object.keys(windows).length === 0) {
@@ -634,6 +637,9 @@ function setupIpc() {
     for (const id in windows) {
       if (windows[id].webContents === e.sender) { e.returnValue = { id, path: path.resolve(VAULTS[id].path) }; return; }
     }
+    // 设置独立窗口：同一个 vault 的第二个 webContents（原版 popout 共享 app 的等价映射）
+    const settingsId = settingsWindows && settingsWindows.vaultIdFor(e.sender);
+    if (settingsId && VAULTS[settingsId]) { e.returnValue = { id: settingsId, path: path.resolve(VAULTS[settingsId].path) }; return; }
     e.returnValue = {};
   });
   ipcMain.on('vault-list', (e) => { e.returnValue = VAULTS; });
@@ -889,6 +895,19 @@ if (!gotLock) {
   app.whenReady().then(() => {
     if (E2E && IS_MAC && app.dock) { try { app.dock.hide(); } catch (e) { /* ignore */ } }
     registerAppProtocol();
+    settingsWindows = setupSettingsWindows({
+      BrowserWindow,
+      ipcMain,
+      screen: require('electron').screen,
+      indexUrl,
+      frameWindowOptions,
+      isE2E: E2E,
+      vaultPathForId: (id) => (id && VAULTS[id] ? VAULTS[id].path : null),
+      getVaultWindow: (id) => (id ? windows[id] : null),
+      getVersion: () => '1.12.4',
+      getFrame: () => config.frame || 'hidden',
+      isChinese: () => String(app.getLocale()).toLowerCase().startsWith('zh'),
+    });
     setupIpc();
     installMenu();
     applyAppIcon();

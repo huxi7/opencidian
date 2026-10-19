@@ -5,7 +5,7 @@
 渲染进程。nodeIntegration:true，可直接 require Node 模块。启动入口 main.js；vault 选择窗口入口 starter.js。
 
 成员清单
-main.js: 渲染进程入口。顺序：core/dom.js(全局 DOM 助手) → App 构造 → registerBuiltinViews → registerEditorCommands → app.initialize() → registerAppCommands → 布局自动保存 + 全局错误捕获。
+main.js: 渲染进程入口。顺序：core/dom.js(全局 DOM 助手) → App 构造 → registerBuiltinViews → registerEditorCommands → app.initialize() → registerAppCommands → 布局自动保存 + 全局错误捕获。设置独立窗口与主窗口共用本入口，以 `app.isSettingsWindow`(#settings-window) 分流。
 starter.js: vault 选择窗口逻辑：列出/打开/新建/移除 vault，拖拽文件夹入窗。
 index.html: 主窗口骨架，链接 styles/*.css 与 dist/renderer.js。公式由 math.js 懒加载官方资源。
 starter.html: vault 选择窗口骨架。

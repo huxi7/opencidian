@@ -1,7 +1,7 @@
 /**
  * [INPUT]: 独立临时 vault 与 OBS_ACT eval 注入的应用实例。
  * [OUTPUT]: 返回验收断言结果；失败抛出异常，供运行器判定。
- * [POS]: settings-plugins 场景：快捷键页筛选菜单/芯片、按快捷键捕获筛选与 Esc 退出、冲突芯片跳筛选；核心插件页齿轮/快捷键入口显隐与跳转；社区插件卸载确认与目录删除。
+ * [POS]: settings-plugins 场景：快捷键页筛选菜单/芯片、按快捷键捕获筛选与 Esc 退出、冲突芯片跳筛选；核心插件页齿轮/快捷键入口显隐与跳转。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 (async()=>{
@@ -119,48 +119,6 @@ const hkInput=app.setting.activeTab.containerEl.querySelector('input[type=search
 check(!!hkInput&&hkInput.value.includes('templates'),'快捷键页搜索框填入插件 id');
 check(document.activeElement===hkInput,'快捷键页搜索框聚焦');
 
-/* ================= C. 社区插件卸载 ================= */
-const fsc=require('fs');const pth=require('path');
-const plugins=app.plugins;
-const dir=pth.join(app.settings.dir,'plugins','test-plugin');
-fsc.mkdirSync(dir,{recursive:true});
-fsc.writeFileSync(pth.join(dir,'manifest.json'),JSON.stringify({id:'test-plugin',name:'Acceptance Plugin',version:'1.0.0',author:'OpenSidian QA',description:'acceptance fixture'}));
-fsc.writeFileSync(pth.join(dir,'main.js'),"const { Plugin } = require('obsidian');\nmodule.exports = class extends Plugin {\n  async onload() { this.addCommand({ id: 'test-plugin:hello', name: 'Hello from acceptance plugin', callback() {} }); }\n};\n");
-const list=new Set(app.settings.communityPlugins||[]);list.add('test-plugin');app.settings.setCommunityPlugins([...list]);
-await plugins.setEnable(true);
-await until(()=>!!plugins.plugins['test-plugin'],'社区插件已加载');
-const communityTab=app.setting.openTabById('community-plugins');
-await wait(150);
-check(!!communityTab&&app.setting.activeTab===communityTab,'社区插件页打开');
-const communityEl=communityTab.containerEl;
-const pluginRow=()=>[...communityEl.querySelectorAll('.installed-plugins-container .setting-item')].find(el=>text(el.querySelector('.setting-item-name'))==='Acceptance Plugin');
-check(!!pluginRow(),'已装插件行存在');
-const trash=extraOf(pluginRow(),'lucide-trash-2');
-check(!!trash&&trash.style.display!=='none','卸载按钮存在');
-trash.click();await wait(100);
-const confirmEl=[...document.querySelectorAll('.modal:not(.is-hidden)')].find(m=>/卸载插件|Uninstall plugin/.test(text(m.querySelector('.modal-title'))));
-check(!!confirmEl,'弹出卸载确认弹窗');
-check(/Are you sure|确定要卸载/.test(text(confirmEl)),'确认弹窗含警告文案');
-const confirmCta=[...confirmEl.querySelectorAll('button')].find(b=>b.classList.contains('mod-warning'));
-check(!!confirmCta,'确认按钮为 mod-warning');
-confirmCta.click();
-await until(()=>!fsc.existsSync(dir),'确认后插件目录被删除');
-await until(()=>!pluginRow(),'卸载后行消失');
-check(!(app.settings.communityPlugins||[]).includes('test-plugin'),'community-plugins.json 已移除该插件');
-/* 未加载（禁用）插件的卸载路径：无实例也要删目录并清配置 */
-fsc.mkdirSync(dir,{recursive:true});
-fsc.writeFileSync(pth.join(dir,'manifest.json'),JSON.stringify({id:'test-plugin',name:'Acceptance Plugin',version:'1.0.0'}));
-fsc.writeFileSync(pth.join(dir,'main.js'),'module.exports = {};\n');
-app.settings.setCommunityPlugins([...new Set([...(app.settings.communityPlugins||[]),'test-plugin'])]);
-communityTab.render();await wait(150);
-check(!!pluginRow(),'禁用状态插件行存在');
-extraOf(pluginRow(),'lucide-trash-2').click();await wait(100);
-const confirmEl2=[...document.querySelectorAll('.modal:not(.is-hidden)')].find(m=>/卸载插件|Uninstall plugin/.test(text(m.querySelector('.modal-title'))));
-check(!!confirmEl2,'禁用插件弹出确认');
-[...confirmEl2.querySelectorAll('button')].find(b=>b.classList.contains('mod-warning')).click();
-await until(()=>!fsc.existsSync(dir),'禁用插件确认后目录删除');
-await until(()=>!pluginRow(),'禁用插件行消失');
-check(!(app.settings.communityPlugins||[]).includes('test-plugin'),'禁用插件配置已清理');
 if(app.setting&&app.setting.close)app.setting.close();
 await app.saveLayout();
 return {pass:true,count};

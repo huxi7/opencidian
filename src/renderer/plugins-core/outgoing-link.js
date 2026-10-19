@@ -2,7 +2,7 @@
  * [INPUT]: View 生命周期、workspace 当前文件、metadataCache 的 links/embeds/headings/blocks 与 DOM 图标。
  * [OUTPUT]: 导出 OutgoingLinkView 与插件 create(app)（命令 outgoing-links:open / outgoing-links:open-for-current）。
  * [POS]: plugins-core/ 的出链面板（右栏视图 type outgoing-link）。逐条列出当前文件的已解析与未解析出链，
- *        点击打开目标；关闭时释放订阅与计时器。
+ *        点击打开目标；每行右键弹出原版链接菜单（buildLinkMenu + handleLinkContextMenu）；关闭时释放订阅与计时器。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 /* Core plugin: outgoing-link — the "Outgoing links" sidebar pane. */
@@ -252,6 +252,14 @@ export class OutgoingLinkView extends View {
       if (ev.button !== 0 && ev.button !== 1) return;
       this.app.workspace.openLinkText(entry.linktext, sourcePath, isModEvent(ev));
     };
+    // 原版出链条目：右键挂链接菜单（分节表 title/open/action/view/info/danger）
+    row.addEventListener('contextmenu', (ev) => {
+      const menu = this.app.workspace.buildLinkMenu();
+      const ok = this.app.workspace.handleLinkContextMenu(menu, entry.linktext, sourcePath, ev);
+      if (!ok) return;
+      ev.preventDefault();
+      menu.setParentElement(row).showAtMouseEvent(ev);
+    });
   }
 }
 

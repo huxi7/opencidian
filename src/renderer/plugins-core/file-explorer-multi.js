@@ -4,7 +4,8 @@
  * [OUTPUT]: 导出 movableItems、flattenTopLevel、dragPayloadFor、dragGhostTitle、moveItemsToFolder、deleteItemsSequentially、
  *          createFolderWithSelection、showMultiSelectionMenu、folderChoicesFor、chooseMoveTarget
  * [POS]: plugins-core/file-explorer 的多选批量操作层。逐条对应原版：x8.dragFiles（多选拖动载荷）、
- *        onFileContextMenu 多选分支（actionNewFolderWithCount + files-menu 的 actionMoveItems + menuOptDelete）、
+ *        onFileContextMenu 多选分支（actionNewFolderWithCount + 触发 files-menu 由 core/file-menu.js 补 actionMoveItems + menuOptDelete，
+ *        分节表与单选菜单一致）、
  *        onDeleteSelectedFiles（顺序 promptForDeletion）、f$（移动进文件夹）、v$（剔除被选中文件夹包含的项）。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
@@ -87,25 +88,22 @@ export async function createFolderWithSelection(view, targetItem, items) {
   return created;
 }
 
-/** 原版多选右键菜单：New folder with selection (N item) / Move N items to... / Delete。 */
+/** 原版多选右键菜单：新建文件夹含选中项（action-primary）/ 移动到…（files-menu）/ 删除（danger）。 */
 export function showMultiSelectionMenu(view, ev, clickedItem) {
   const items = view._selection.items();
   const targets = flattenTopLevel(items);
   const menu = new Menu(view.app);
+  menu.addSections(['title', 'open', 'action-primary', 'action', 'info', 'info.copy', 'view', 'system', '', 'danger']);
   menu.addItem((i) => i.setSection('action-primary')
     .setTitle(t('plugins.file-explorer.action-new-folder-with-count', { count: targets.length }))
-    .setIcon('folder-plus')
+    .setIcon('lucide-folder-plus')
     .onClick(() => { createFolderWithSelection(view, clickedItem, items); }));
-  menu.addItem((i) => i.setSection('action')
-    .setTitle(t('plugins.file-explorer.action-move-items', { count: targets.length }))
-    .setIcon('folder-tree')
-    .onClick(() => { promptMoveMany(view, items); }));
-  menu.addSeparator();
   menu.addItem((i) => i.setSection('danger')
     .setTitle(t('plugins.file-explorer.menu-opt-delete'))
-    .setIcon('trash-2')
+    .setIcon('lucide-trash-2')
     .setWarning(true)
     .onClick(() => { deleteItemsSequentially(view, items); }));
+  view.app.workspace.trigger('files-menu', menu, items, 'file-explorer-context-menu', null);
   const titleEl = view._titleEl(clickedItem.path);
   if (titleEl) menu.setParentElement(titleEl);
   view._selection.setFocus(clickedItem.path, false);
@@ -139,10 +137,4 @@ export function chooseMoveTarget(view, items) {
     m.open();
     m.onClose = () => resolve(null);
   });
-}
-
-async function promptMoveMany(view, items) {
-  const chosen = await chooseMoveTarget(view, items);
-  if (!chosen) return;
-  await moveItemsToFolder(view, items, chosen.folder);
 }

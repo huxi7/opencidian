@@ -14,7 +14,6 @@ import taskLists from 'markdown-it-task-lists';
 import { Desktop } from '../core/ipc.js';
 import { createIcon, setIcon } from '../core/icons.js';
 import { tt } from '../core/i18n.js';
-import { Menu } from '../core/menu.js';
 import { normalizePath, parentPathOf } from '../core/vault.js';
 import { codeLanguageName, highlightCodeBlocks } from './highlight.js';
 import { renderMathBlocks } from './math.js';
@@ -734,7 +733,7 @@ export function attachMarkdownInteractions(app, container, getSourcePath) {
     const img = target.closest('.internal-embed.image-embed img, img.cm-inline-image');
     if (img) {
       ev.preventDefault();
-      const menu = new Menu(app);
+      const menu = app.workspace.buildLinkMenu();
       fillImageContextMenu(app, menu, img, sourcePath, ev);
       menu.showAtMouseEvent(ev);
       return;
@@ -742,7 +741,7 @@ export function attachMarkdownInteractions(app, container, getSourcePath) {
     const link = target.closest('a.internal-link');
     if (link) {
       ev.preventDefault();
-      const menu = new Menu(app);
+      const menu = app.workspace.buildLinkMenu();
       app.workspace.handleLinkContextMenu(menu, link.getAttr('data-href'), sourcePath, ev);
       menu.showAtMouseEvent(ev);
       return;
@@ -751,7 +750,7 @@ export function attachMarkdownInteractions(app, container, getSourcePath) {
     const embed = target.closest('.internal-embed[data-href]:not(.image-embed)');
     if (embed) {
       ev.preventDefault();
-      const menu = new Menu(app);
+      const menu = app.workspace.buildLinkMenu();
       app.workspace.handleLinkContextMenu(menu, embed.getAttr('data-href'), sourcePath, ev);
       menu.showAtMouseEvent(ev);
       return;
@@ -759,7 +758,7 @@ export function attachMarkdownInteractions(app, container, getSourcePath) {
     const ext = target.closest('a.external-link');
     if (ext) {
       ev.preventDefault();
-      const menu = new Menu(app);
+      const menu = app.workspace.buildLinkMenu();
       app.workspace.handleExternalLinkContextMenu(menu, ext.getAttribute('href'));
       menu.showAtMouseEvent(ev);
     }

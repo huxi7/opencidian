@@ -1,20 +1,20 @@
 /**
  * [INPUT]: 节点模型、workspace-profile 底栏、i18n、图标与桌面 IPC。
- * [OUTPUT]: 导出工作区挂载、DOM 渲染、标签同步、尺寸与 ribbon 函数。
- * [POS]: 侧栏只创建固定工具图标，库信息栏独立于标签树。由 Workspace 委托渲染。首参 workspace 提供树状态与交互入口。
- * 视图 _rootEl 只迁移不重建；节点类型统一由 workspace-model 导入。
- * 分割方向保持 vertical 横排、horizontal 纵排。
- * 标签组的叶子挂在 .workspace-tab-container（原版 tabsContainerEl）；堆叠态的头叶排布与滑动布局由模型按状态落位。
- * updateSidebarChrome 是折叠态外观的唯一出口：顶栏组 mod-top 归位（原版 updateFrameless）、开关迁移、
- * 分隔条宽度/透明度、功能区 is-collapsed 底色，都在这里一次落定。
+ * [OUTPUT]: 导出工作区挂载、DOM 渲染、标签同步、尺寸与 ribbon 函数；视图头构造/填充委托 view-header.js（_fillViewHeader 转发）。
+ * [POS]: 侧栏只创建固定工具图标，库信息栏独立于标签树；由 Workspace 委托渲染，首参 workspace 提供树状态与交互入口。
+ * 视图 _rootEl 只迁移不重建；节点类型统一由 workspace-model 导入；分割方向 vertical 横排、horizontal 纵排。
+ * 标签组叶子挂 .workspace-tab-container（原版 tabsContainerEl）；堆叠头叶排布与滑动由模型落位。
+ * view-header 由 view-header.js 落三块（left 导航钮 / title-container 面包屑+标题 mod-fade / actions）；活动叶与活动标签组带 mod-active（焦点规则挂它）。
+ * updateSidebarChrome 是折叠态外观的唯一出口：顶栏组 mod-top 归位（原版 updateFrameless）、开关迁移、分隔条宽度/透明度、功能区 is-collapsed 底色。
  * mount 时装载 stacked 键的序列化装饰器（layout JSON 组装在 workspace.js）。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 import { WorkspaceSplit, WorkspaceTabs, WorkspaceLeaf, installStackedSerialization } from './workspace-model.js';
-import { t, tt } from './i18n.js';
+import { tt } from './i18n.js';
 import { createVaultProfile } from './workspace-profile.js';
 import { Desktop, ipcOn } from './ipc.js';
 import { setIcon } from './icons.js';
+import { renderViewHeader, fillViewHeader, syncNavButtons } from './view-header.js';
 
 export function mount(workspace, container) {
   workspace.containerEl = container;
@@ -74,6 +74,8 @@ export function mount(workspace, container) {
   window.addEventListener('focus', () => container.addClass('is-focused'));
   window.addEventListener('blur', () => container.removeClass('is-focused'));
   if (document.hasFocus()) container.addClass('is-focused');
+  // 历史栈在 app 命令层增长（file-open 时入栈）：开完文件后刷新 ← → 的可用性
+  workspace.on('file-open', () => workspace._syncAllTabs());
   installWindowState();
 }
 
@@ -227,21 +229,33 @@ export function _renderTabs(workspace, tabs) {
   }
 
   if (isRoot) {
-    const newTabBtn = headersOuter.createDiv('workspace-tab-header-new-tab clickable-icon');
-    newTabBtn.setAttr('aria-label', tt('menu-items.new-tab', '新标签页'));
-    setIcon(newTabBtn, 'plus');
-    newTabBtn.onclick = () => workspace._onNewTab(tabs);
+    // 原版 app.js:1555654：外层 div + 内层 span.clickable-icon（图标/aria/hover 盒都在内层）
+    const newTabBtn = headersOuter.createDiv('workspace-tab-header-new-tab');
+    const newTabIcon = newTabBtn.createSpan('clickable-icon');
+    newTabIcon.setAttr('aria-label', tt('menu-items.new-tab', '新标签页'));
+    setIcon(newTabIcon, 'lucide-plus');
+    newTabIcon.onclick = () => workspace._onNewTab(tabs);
+    // 兼容旧命中：点击外层 padding 区域也等同点按钮（原版外层无可点区域）
+    newTabBtn.onclick = (ev) => { if (ev.target === newTabBtn) workspace._onNewTab(tabs); };
   }
   headersOuter.createDiv('workspace-tab-header-spacer');
   if (isRoot) {
-    // 原版：标签列表按钮在 spacer 之后（最右），图标 lucide-chevron-down
-    const tabListBtn = headersOuter.createDiv('workspace-tab-header-tab-list clickable-icon');
-    tabListBtn.setAttr('aria-label', tt('interface.menu.tab-list', '标签页列表'));
-    setIcon(tabListBtn, 'lucide-chevron-down');
-    // 原版 VD：标签列表菜单由标签组自己弹出（含堆叠/取消堆叠项）
-    const showMenu = (ev) => { ev.preventDefault(); ev.stopPropagation(); tabs.showTabListMenu(ev, tabListBtn); };
-    tabListBtn.onclick = showMenu;
-    tabListBtn.oncontextmenu = showMenu;
+    // 原版：标签列表按钮在 spacer 之后（最右），外层 div + 内层 span.clickable-icon
+    const tabListBtn = headersOuter.createDiv('workspace-tab-header-tab-list');
+    const tabListIcon = tabListBtn.createSpan('clickable-icon');
+    setIcon(tabListIcon, 'lucide-chevron-down');
+    // 原版 VD：标签列表菜单由标签组自己弹出（含堆叠/取消堆叠项）；菜单以按钮内层为锚点
+    const showMenu = (ev) => {
+      ev.preventDefault();
+      ev.stopPropagation();
+      if (tabListIcon.hasClass('has-active-menu')) return;
+      tabs.showTabListMenu(ev, tabListIcon);
+    };
+    tabListIcon.onclick = showMenu;
+    tabListIcon.oncontextmenu = showMenu;
+    // 兼容旧命中：外层容器被直接点击/右键时转给内层
+    tabListBtn.onclick = (ev) => { if (ev.target === tabListBtn) showMenu(ev); };
+    tabListBtn.oncontextmenu = (ev) => { if (ev.target === tabListBtn) showMenu(ev); };
   }
 
   for (const leaf of tabs.children) {
@@ -265,18 +279,16 @@ export function _renderLeaf(workspace, leaf) {
   content.setAttr('data-type', leaf.view ? leaf.view.getViewType() : 'empty');
   if (leaf.view) leaf.view.containerEl = content;
 
+  // 原版 View 构造器：view-header = left（导航钮）+ title-container（面包屑+标题）+ actions
   const header = content.createDiv('view-header');
-  const titleContainer = header.createDiv('view-header-title-container');
-  leaf._viewTitleEl = titleContainer.createDiv('view-header-title');
-  const actions = header.createDiv('view-actions');
-  leaf._viewActionsEl = actions;
+  renderViewHeader(workspace, leaf, header);
+  leaf._viewHeaderEl = header;
   if (leaf.view) {
     leaf.view._viewHeaderEl = header;
-    leaf.view._viewActionsEl = actions;
+    leaf.view._viewActionsEl = leaf._viewActionsEl;
     leaf.view._viewTitleEl = leaf._viewTitleEl;
     workspace._fillViewHeader(leaf);
   }
-  // breadcrumbs path for markdown views
   content.appendChild(leaf.view && leaf.view._rootEl ? leaf.view._rootEl : createDiv('view-content'));
 
   // focus
@@ -301,18 +313,7 @@ export function _renderLeaf(workspace, leaf) {
 }
 
 export function _fillViewHeader(workspace, leaf) {
-  const view = leaf.view;
-  if (!view) return;
-  if (leaf._viewTitleEl) {
-    leaf._viewTitleEl.empty();
-    const title = view.getDisplayText();
-    leaf._viewTitleEl.setText(typeof title === 'string' ? title : '');
-  }
-  const actions = leaf._viewActionsEl;
-  if (actions) {
-    actions.empty();
-    view._fillViewActions && view._fillViewActions(actions);
-  }
+  return fillViewHeader(workspace, leaf);
 }
 
 export function _refreshLeafContent(workspace, leaf) {
@@ -417,12 +418,19 @@ export function _syncTabsVisibility(workspace, tabs) {
     const isActive = tabs.activeLeaf === leaf;
     // 原版：堆叠态下所有 pane 都显示（横向滑动可见），非堆叠态只显示活动 pane
     if (leaf._leafEl) leaf._leafEl.toggle(!!tabs.isStacked || isActive);
+    // 原版 setActiveLeaf：活动叶子的 .workspace-leaf 带 mod-active（焦点底色规则挂它）
+    if (leaf._leafEl) leaf._leafEl.toggleClass('mod-active', workspace.activeLeaf === leaf);
     if (leaf._tabHeaderEl) {
       leaf._tabHeaderEl.toggleClass('is-active', isActive);
       leaf._tabHeaderEl.setAttr('aria-selected', String(isActive));
       leaf._tabHeaderEl.toggleClass('is-pinned', !!leaf.pinned);
       syncPinnedStatus(workspace, leaf, leaf._tabHeaderEl);
     }
+    syncNavButtons(workspace, leaf);
+  }
+  // 原版 setActiveLeaf：活动标签组带 mod-active（焦点态标签文字色规则挂它）
+  if (tabs.containerEl) {
+    tabs.containerEl.toggleClass('mod-active', !!workspace.activeLeaf && workspace.activeLeaf.parent === tabs);
   }
   tabs.updateTabDisplay();
 }

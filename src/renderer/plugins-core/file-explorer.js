@@ -1,8 +1,12 @@
 /**
- * [INPUT]: 依赖 ../core/view.js 的 View；依赖 ../core/i18n.js 的 t/tt；依赖 ../core/icons.js 的 setIcon；依赖 ../core/menu.js 的 Menu；依赖 ../core/notices.js 的 Notice；依赖 ../core/vault.js 的 TFile/TFolder/normalizePath/parentPathOf；依赖 ../editor/attachments.js 的 getAvailableAttachmentPath；依赖 ../core/keymap.js 的 IS_MAC；依赖 ./file-explorer-selection.js 的 FileTreeSelection/isModEvent；依赖 ./file-explorer-multi.js 的多选批量操作
+ * [INPUT]: 依赖 ../core/view.js 的 View；依赖 ../core/i18n.js 的 t/tt；依赖 ../core/icons.js 的 setIcon；依赖 ../core/menu.js 的 Menu；依赖 ../core/notices.js 的 Notice；依赖 ../core/vault.js 的 TFile/TFolder/normalizePath/parentPathOf；依赖 ../editor/attachments.js 的 getAvailableAttachmentPath；依赖 ../core/keymap.js 的 IS_MAC；依赖 ./file-explorer-selection.js 的 FileTreeSelection/isModEvent；依赖 ./file-explorer-multi.js 的多选批量操作；依赖 ./file-explorer-toolbar.js 的 createExplorerToolbar/syncExplorerToolbar/SORT_ORDER_IDS
  * [OUTPUT]: 导出 FileExplorerView 与插件注册（左侧栏 'file-explorer' 视图）
  * [POS]: plugins-core/ 的导航面板。DOM 逐字对齐原版：tree-item nav-folder > tree-item-self nav-folder-title.is-clickable > (tree-item-icon.collapse-icon[+right-triangle] + tree-item-inner nav-folder-title-content)。折叠状态同时写在 nav-folder 与 collapse-icon 上（原版 _L() 语义）。文件标题显示去扩展名 basename，非 md 文件追加 nav-file-tag。
+ *        面板头按原版 QL：.nav-header 是内容块第一个子块（固定在树上方，不随树滚动），按钮行与排序菜单由 file-explorer-toolbar.js 建，本文件只持 _autoReveal/_allCollapsed 状态并调用 syncExplorerToolbar 渲染。
+ *        排序菜单按原版三分组（名称/修改时间/创建时间），组后各插分隔线；自动显示开启时才在 file-open / 活动叶切换时展开祖先并滚入视野。
  *        选择集与键盘由 FileTreeSelection 持有（Alt 切换 / Shift 范围 / 方向键 / Delete），本文件只提供 DOM 与动作（打开、折叠、重命名、删除、拖动、菜单）。
+ *        右键菜单按 1.14 onFileContextMenu 的分节与项集构建（open/action-primary/action/info.copy/system/danger），
+ *        复制路径子菜单与 system/action 系统项由 file-menu 事件交给 core/file-menu.js 补齐。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 /* Core plugin: file-explorer — navigation pane with the vault tree. */
@@ -10,6 +14,7 @@ import { View } from '../core/view.js';
 import { t, tt } from '../core/i18n.js';
 import { setIcon } from '../core/icons.js';
 import { Menu } from '../core/menu.js';
+import { createExplorerToolbar, syncExplorerToolbar, SORT_ORDER_IDS } from './file-explorer-toolbar.js';
 import { Notice } from '../core/notices.js';
 import { getAvailableAttachmentPath } from '../editor/attachments.js';
 import { TFile, TFolder, normalizePath, parentPathOf } from '../core/vault.js';
@@ -26,15 +31,6 @@ const KNOWN_EXTS = new Set([
   'md', 'canvas', 'pdf', 'png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'bmp', 'avif',
   'mp3', 'wav', 'm4a', 'ogg', '3gp', 'flac', 'opus', 'mp4', 'webm', 'ogv', 'mov', 'mkv',
 ]);
-
-const SORT_ORDERS = {
-  alphabetical: 'A → Z',
-  alphabeticalReverse: 'Z → A',
-  byModifiedTime: 'Modified time (new to old)',
-  byModifiedTimeReverse: 'Modified time (old to new)',
-  byCreatedTime: 'Created time (new to old)',
-  byCreatedTimeReverse: 'Created time (old to new)',
-};
 
 function sortChildren(children, order) {
   const arr = [...children];
@@ -73,6 +69,8 @@ export class FileExplorerView extends View {
     this.navigation = true;
     this._collapsed = new Set();
     this._sortOrder = localStorage.getItem('file-explorer-sort-order') || 'alphabetical';
+    this._autoReveal = false;   // 原版 autoRevealFile 默认关闭（布局恢复时由 setState 回填）
+    this._allCollapsed = false;
     this._activePath = null;
     this._refs = [];
     this._rerenderQueued = false;
@@ -82,32 +80,26 @@ export class FileExplorerView extends View {
   getViewType() { return 'file-explorer'; }
   getDisplayText() { return t('plugins.file-explorer.name') || 'Files'; }
   getState() {
-    return { collapsed: [...this._collapsed], sortOrder: this._sortOrder };
+    return { collapsed: [...this._collapsed], sortOrder: this._sortOrder, autoReveal: this._autoReveal };
   }
   async setState(state) {
     if (state && state.collapsed) this._collapsed = new Set(state.collapsed);
     if (state && state.sortOrder) this._sortOrder = state.sortOrder;
+    if (state && typeof state.autoReveal === 'boolean') this._autoReveal = state.autoReveal;
   }
 
   async onOpen() {
     this.contentEl.addClass('file-explorer-view');
+    // 原版 QL.addNavButton：.nav-header 是内容块的第一个子块，按钮行固定在树容器上方（见 file-explorer-toolbar.js）
+    const toolbar = createExplorerToolbar(this);
+    this.navHeaderEl = toolbar.headerEl;
+    this._sortBtn = toolbar.sortBtn;
+    this._autoRevealBtn = toolbar.autoRevealBtn;
+    this._collapseAllBtn = toolbar.collapseAllBtn;
+    syncExplorerToolbar(this);
+
     const container = this.contentEl.createDiv('nav-files-container node-insert-event');
     this.container = container;
-
-    // Action buttons
-    const buttons = container.createDiv('nav-buttons-container');
-    const addBtn = (icon, label, cb) => {
-      const btn = buttons.createDiv('nav-action-button clickable-icon');
-      btn.setAttr('aria-label', label);
-      setIcon(btn, icon);
-      btn.onclick = cb;
-      return btn;
-    };
-    addBtn('file-plus', t('plugins.file-explorer.action-new-note') || 'New note', () => this.app.commands.executeCommandById('file-explorer:new-file'));
-    addBtn('folder-plus', t('plugins.file-explorer.action-new-folder') || 'New folder', () => this.app.commands.executeCommandById('file-explorer:new-folder'));
-    const sortBtn = addBtn('arrow-up-narrow-wide', t('plugins.file-explorer.action-change-sort') || 'Change sort order', (ev) => this._showSortMenu(ev));
-    if (this._sortOrder !== 'alphabetical') sortBtn.addClass('is-active');
-
     this.treeEl = container.createDiv('nav-tree');
     // 键盘导航：容器本身可聚焦（原版走 scope + focusedItem，本复刻用 DOM 焦点等价）
     container.setAttr('tabindex', '0');
@@ -152,7 +144,11 @@ export class FileExplorerView extends View {
       this.app.vault.on('delete', debouncedRender),
       this.app.vault.on('rename', debouncedRender),
       this.app.workspace.on('file-open', () => this._onFileOpen()),
-      this.app.workspace.on('active-leaf-change', () => this.setActivePath(this.app.workspace.getActiveFile() ? this.app.workspace.getActiveFile().path : null)),
+      this.app.workspace.on('active-leaf-change', () => {
+        const file = this.app.workspace.getActiveFile();
+        // 原版：活动叶变化只标记选择集；展开祖先 + 滚入视野仅由「自动显示当前文件」驱动
+        this.setActivePath(file ? file.path : null, this._autoReveal);
+      }),
     ];
     // context menu on empty tree area
     container.addEventListener('contextmenu', (ev) => {
@@ -163,7 +159,7 @@ export class FileExplorerView extends View {
       this._showRootMenu(ev, this.app.vault.getRoot());
     });
     // keyboard
-    this.setActivePath(this.app.workspace.getActiveFile() ? this.app.workspace.getActiveFile().path : null);
+    this.setActivePath(this.app.workspace.getActiveFile() ? this.app.workspace.getActiveFile().path : null, this._autoReveal);
   }
 
   onClose() {
@@ -391,7 +387,8 @@ export class FileExplorerView extends View {
     const file = this.app.workspace.getActiveFile();
     const path = file ? file.path : null;
     if (path !== this._selection.focusPath) this._selection.clear();
-    this.setActivePath(path);
+    // 原版 onFileOpen：自动显示开启时才展开祖先并滚入视野
+    this.setActivePath(path, this._autoReveal);
   }
 
   _expandTo(path) {
@@ -431,107 +428,99 @@ export class FileExplorerView extends View {
     }
     this._selection.setFocus(file.path, false);
     const menu = new Menu(this.app);
-    menu.addItem((i) => i.setTitle(t('interface.menu.open-in-new-tab') || 'Open in new tab').setIcon('file').onClick(() => this.app.workspace.openFile(file, { newLeaf: 'tab' })));
-    menu.addItem((i) => i.setTitle(t('interface.menu.open-to-the-right') || 'Open to the right').setIcon('separator-vertical').onClick(() => this.app.workspace.openFile(file, { newLeaf: 'split' })));
-    menu.addSeparator();
-    menu.addItem((i) => i.setTitle(t('interface.menu.rename') || 'Rename...').setIcon('pencil').onClick(() => this.startRename(file)));
-    menu.addItem((i) => i.setTitle(t('interface.menu.delete-file') || 'Delete').setIcon('trash-2').onClick(() => this.app.fileManager.deleteFile(file)));
-    if (file.extension === 'md') {
-      menu.addItem((i) => i.setTitle(t('plugins.file-explorer.command-make-a-copy') || 'Make a copy').setIcon('copy').onClick(async () => {
-        const folder = this.app.vault.getFolderByPath(parentPathOf(file.path)) || this.app.vault.getRoot();
-        const copy = await this.app.fileManager.copyFile(file, folder);
-        if (copy) this.app.workspace.openFile(copy, { newLeaf: 'tab' });
-      }));
+    // 原版 onFileContextMenu 分节表：open 在最前，danger（重命名/删除）在最后
+    menu.addSections(['title', 'open', 'action-primary', 'action', 'info', 'info.copy', 'view', 'system', '', 'danger']);
+    const isFolder = file instanceof TFolder;
+    const isRoot = typeof file.isRoot === 'function' && file.isRoot();
+    if (!isRoot) {
+      menu.addItem((i) => i.setSection('danger').setTitle(t('plugins.file-explorer.menu-opt-rename') || 'Rename')
+        .setIcon('lucide-edit-3').onClick(() => this.startRename(file)));
     }
-    menu.addItem((i) => i.setTitle(t('plugins.file-explorer.action-move-file') || 'Move file to...').setIcon('folder-input').onClick(() => this.promptMove(file)));
-    menu.addSeparator();
-    menu.addItem((i) => i.setTitle(t('interface.menu.copy-path') || 'Copy path').setIcon('clipboard').onClick(() => {
-      navigator.clipboard.writeText(this.app.vault.adapter.toAbs(file.path)).catch(() => {});
-    }));
-    menu.addItem((i) => i.setTitle('Show in system explorer').setIcon('folder-open').onClick(() => {
-      require('../core/ipc.js').Desktop.showItemInFolder(this.app.vault.adapter.toAbs(file.path));
-    }));
+    if (isFolder) {
+      menu.addItem((i) => i.setSection('action-primary').setTitle(t('plugins.file-explorer.menu-opt-new-note') || 'New note')
+        .setIcon('lucide-edit').onClick((ev2) => this._newNoteIn(file, isModEvent(ev2) ? 'tab' : false)));
+      menu.addItem((i) => i.setSection('action-primary').setTitle(t('plugins.file-explorer.menu-opt-new-folder') || 'New folder')
+        .setIcon('lucide-folder-open').onClick(() => this._newFolderIn(file)));
+    } else {
+      menu.addItem((i) => i.setSection('open').setTitle(t('interface.menu.open-in-new-tab') || 'Open in new tab')
+        .setIcon('lucide-file-plus').onClick(() => this.app.workspace.openFile(file, { newLeaf: 'tab' })));
+      menu.addItem((i) => i.setSection('open').setTitle(t('interface.menu.open-to-the-right') || 'Open to the right')
+        .setIcon('lucide-separator-vertical').onClick(() => this.app.workspace.openFile(file, { newLeaf: 'split' })));
+    }
+    if (!isRoot) {
+      menu.addItem((i) => i.setSection('action')
+        .setTitle(IS_MAC ? (t('plugins.file-explorer.menu-opt-make-copy-mac') || 'Make a copy')
+          : (t('plugins.file-explorer.menu-opt-make-copy') || 'Make a copy'))
+        .setIcon('lucide-files').onClick(async (ev2) => {
+          const parent = this.app.vault.getFolderByPath(parentPathOf(file.path)) || this.app.vault.getRoot();
+          const copy = await this.app.fileManager.copyFile(file, parent);
+          if (copy) this._afterCreate(copy, isModEvent(ev2));
+        }));
+      menu.addItem((i) => i.setSection('danger').setTitle(t('plugins.file-explorer.menu-opt-delete') || 'Delete')
+        .setIcon('lucide-trash-2').setWarning(true).onClick(() => this.app.fileManager.promptForDeletion(file)));
+    }
+    this.app.workspace.trigger('file-menu', menu, file, 'file-explorer-context-menu', null);
     const titleEl = this._titleEl(file.path);
     if (titleEl) menu.setParentElement(titleEl);
     menu.showAtMouseEvent(ev);
   }
 
+  /** 原版 afterCreate：文件副本在标签页打开并进入改名；文件夹只排序。 */
+  async _afterCreate(file, openInNew = false) {
+    if (file instanceof TFolder) return;
+    const leaf = await this.app.workspace.openFile(file, openInNew ? { newLeaf: 'tab' } : {});
+    if (leaf && leaf.view && leaf.view.focusInlineTitle) setTimeout(() => leaf.view.focusInlineTitle(), 30);
+  }
+
   _showFolderMenu(ev, folder) {
-    // 原版：多选菜单与文件共用（右键项属于选择集时作用于整个选择集）
-    if (this._selection.size > 1 && this._selection.has(folder.path)) {
-      showMultiSelectionMenu(this, ev, folder);
-      return;
-    }
-    this._selection.setFocus(folder.path, false);
-    const menu = new Menu(this.app);
-    menu.addItem((i) => i.setTitle(t('plugins.file-explorer.action-new-note') || 'New note').setIcon('file-plus').onClick(() => {
-      this._newNoteIn(folder);
-    }));
-    menu.addItem((i) => i.setTitle(t('plugins.file-explorer.action-new-folder') || 'New folder').setIcon('folder-plus').onClick(() => this._newFolderIn(folder)));
-    menu.addSeparator();
-    if (!folder.isRoot()) {
-      menu.addItem((i) => i.setTitle(t('interface.menu.rename') || 'Rename...').setIcon('pencil').onClick(() => this.startRename(folder)));
-      menu.addItem((i) => i.setTitle(t('interface.menu.delete-file') || 'Delete').setIcon('trash-2').onClick(() => this.app.fileManager.deleteFile(folder)));
-      menu.addSeparator();
-    }
-    const subItem = menu.addItem((i) => i.setTitle(t('plugins.file-explorer.action-change-sort') || 'Change sort order').setIcon('arrow-up-narrow-wide').setSubmenu());
-    const sub = subItem.submenu;
-    if (sub) {
-      for (const [key, label] of Object.entries(SORT_ORDERS)) {
-        sub.addItem((i) => i.setTitle(label).setChecked(this._sortOrder === key).onClick(() => {
-          this._sortOrder = key;
-          localStorage.setItem('file-explorer-sort-order', key);
-          this.render();
-        }));
-      }
-    }
-    menu.addSeparator();
-    menu.addItem((i) => i.setTitle(t('plugins.file-explorer.action-collapse-all') || 'Collapse all').setIcon('chevrons-down-up').onClick(() => {
-      this._collapseAll(folder);
-    }));
-    menu.addItem((i) => i.setTitle(t('plugins.file-explorer.action-expand-all') || 'Expand all').setIcon('chevrons-up-down').onClick(() => {
-      this._collapsed.clear();
-      this.render();
-    }));
-    const titleEl = this._titleEl(folder.path);
-    if (titleEl) menu.setParentElement(titleEl);
-    menu.showAtMouseEvent(ev);
+    this._showFileMenu(ev, folder);
   }
 
   _showRootMenu(ev, folder) {
     this._showFolderMenu(ev, this.app.vault.getRoot());
   }
 
-  _showSortMenu(ev) {
-    const menu = new Menu(this.app);
-    for (const [key, label] of Object.entries(SORT_ORDERS)) {
-      menu.addItem((i) => i.setTitle(label).setChecked(this._sortOrder === key).onClick(() => {
-        this._sortOrder = key;
-        localStorage.setItem('file-explorer-sort-order', key);
-        this.render();
-      }));
-    }
-    menu.showAtMouseEvent(ev);
+  /** 原版 setSortOrder：记排序并保存布局。 */
+  setSortOrder(order) {
+    if (!SORT_ORDER_IDS.has(order)) return;
+    this._sortOrder = order;
+    localStorage.setItem('file-explorer-sort-order', order);
+    this.render();
   }
 
-  _collapseAll(folder) {
-    const walk = (f) => {
-      for (const c of f.children) {
-        if (c instanceof TFolder) { this._collapsed.add(c.path); walk(c); }
-      }
-    };
-    walk(folder);
-    this.render();
+  /** 原版 onToggleAutoReveal：切换 is-active，开启时立即揭示当前文件并保存布局。 */
+  _toggleAutoReveal() {
+    this._autoReveal = !this._autoReveal;
+    syncExplorerToolbar(this);
+    if (this._autoReveal) this._revealActiveFile();
+    if (this.app.workspace.requestSaveLayout) this.app.workspace.requestSaveLayout();
+  }
+
+  /** 原版 revealActiveFile：展开祖先并滚入视野（init 时同样带 4 行预滚动余量）。 */
+  _revealActiveFile() {
+    const file = this.app.workspace.getActiveFile();
+    if (!file) return;
+    this._expandTo(file.path);
+    const el = this._titleEl(file.path);
+    if (el) el.scrollIntoView({ block: 'nearest' });
+  }
+
+  /** 原版 tree.toggleCollapseAll + setIsAllCollapsed：折叠全部 ↔ 展开全部，按钮图标/提示同步。 */
+  _toggleCollapseAll() {
+    this._allCollapsed = !this._allCollapsed;
+    this._setCollapsedAll(this._allCollapsed);
+    syncExplorerToolbar(this);
   }
 
   // -------------------------------------------------------------------------
   // Creating / renaming
   // -------------------------------------------------------------------------
-  async _newNoteIn(folder, openInNew = false) {
+  async _newNoteIn(folder, newLeaf = false) {
     const base = 'Untitled';
     const name = this.app.fileManager.getUniqueFilename(folder, base, '.md');
     const file = await this.app.fileManager.createNewMarkdownFile(folder, name + '.md', '');
-    const leaf = await this.app.workspace.openFile(file, openInNew ? { newLeaf: 'split' } : {});
+    const options = newLeaf === 'tab' ? { newLeaf: 'tab' } : (newLeaf ? { newLeaf: 'split' } : {});
+    const leaf = await this.app.workspace.openFile(file, options);
     if (leaf && leaf.view && leaf.view.focusInlineTitle) setTimeout(() => leaf.view.focusInlineTitle(), 30);
     return file;
   }
@@ -642,14 +631,25 @@ export class FileExplorerView extends View {
   }
 
   _toggleFolder(path) {
-    if (this._collapsed.has(path)) this._collapsed.delete(path);
+    const expanded = this._collapsed.has(path);
+    if (expanded) this._collapsed.delete(path);
     else this._collapsed.add(path);
+    // 原版 setCollapsed(false) → setIsAllCollapsed(false)：手动展开任一文件夹即退出"全部折叠"态
+    if (expanded) this._markAllCollapsed(false);
     this.render();
   }
 
   _setCollapsed(path, collapsed) {
     if (collapsed) this._collapsed.add(path); else this._collapsed.delete(path);
+    if (!collapsed) this._markAllCollapsed(false);
     this.render();
+  }
+
+  /** 已不是"全部折叠"时把按钮切回 Collapse all 图标与文案（原版 setIsAllCollapsed）。 */
+  _markAllCollapsed(allCollapsed) {
+    if (this._allCollapsed === allCollapsed) return;
+    this._allCollapsed = allCollapsed;
+    syncExplorerToolbar(this);
   }
 
   /** 原版 setCollapseAll：折叠/展开全部文件夹。 */

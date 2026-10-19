@@ -1,13 +1,17 @@
 /**
- * [INPUT]: 依赖 ../core/view.js 的 View；依赖 ../core/i18n.js 的 t；依赖 ../core/commands.js 的命令表（间接）。
+ * [INPUT]: 依赖 ../core/view.js 的 View；依赖 ../core/i18n.js 的 t；依赖 ../core/icons.js 的 setIcon；
+ *          依赖 app.hotkeyManager（printHotkeyForCommand）与 app.commands（命令派发）。
  * [OUTPUT]: 导出 EmptyView（空标签页视图）。
- * [POS]: views/ 的空标签视图。对齐原版 JT：.empty-state > .empty-state-container，无图标；
- *        普通空标签不设标题，提供"创建新笔记 / 打开文件 / 关闭"三行；unknownPane 才显示标题与描述。
+ * [POS]: views/ 的空标签视图。对齐原版 1.14.4 aI：.empty-state > .empty-state-container，
+ *        普通空标签不设标题，动作行是 pill（.text-icon-button.mod-pill.empty-state-action）：
+ *        图标 + 文案 + 热键后缀；顺序=新建笔记 → 新建白板（canvas 启用时）→ 前往文件（库非空时）。
+ *        unknownPane 才显示标题与描述。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 /* Empty view — shown for empty tabs; offers common actions like the original. */
 import { View } from '../core/view.js';
 import { t } from '../core/i18n.js';
+import { setIcon } from '../core/icons.js';
 
 export class EmptyView extends View {
   constructor(leaf) {
@@ -30,21 +34,31 @@ export class EmptyView extends View {
       container.createDiv('empty-state-description', (el) => el.setText((t('interface.empty-state.unknown-pane-desc') || 'The plugin that created this tab ({{type}}) has gone away.').replace('{{type}}', state.missing)));
       return;
     }
-    // 原版普通空标签：无标题，三行动作（创建新笔记 / 打开文件 / 关闭）
+    // 原版 aI.onOpen（app.js:1433129）：每个动作 = text-icon-button.mod-pill.empty-state-action，
+    // 内含 .text-button-icon + .text-button-label；有物理键盘时追加 .empty-state-hotkey 后缀。
     const actions = container.createDiv('empty-state-action-list');
-    const make = (label, cb) => {
-      const item = actions.createDiv('empty-state-action');
-      item.setText(label);
-      item.onclick = cb;
+    const addAction = (commandId, label, icon) => {
+      const button = actions.createDiv({
+        cls: 'text-icon-button tappable mod-pill empty-state-action',
+        attr: { tabindex: '0', role: 'button' },
+      });
+      setIcon(button.createSpan('text-button-icon'), icon);
+      button.createSpan({ cls: 'text-button-label', text: label });
+      button.setAttr('aria-label', label);
+      button.onclick = (ev) => this.app.commands.executeCommandById(commandId, ev);
+      const hotkey = this.app.hotkeyManager ? this.app.hotkeyManager.printHotkeyForCommand(commandId) : '';
+      if (hotkey) button.createSpan({ cls: 'empty-state-hotkey', text: ' ' + hotkey });
     };
-    make(t('interface.empty-state.create-new-file') || 'Create new note', () => {
-      this.app.commands.executeCommandById('file-explorer:new-file');
-    });
-    make(t('interface.empty-state.go-to-file') || 'Go to file', () => {
-      this.app.commands.executeCommandById('switcher:open');
-    });
-    make(t('interface.empty-state.close') || 'Close', () => {
-      if (this.leaf) this.leaf.detach();
-    });
+    addAction('file-explorer:new-file', t('plugins.file-explorer.action-new-note') || 'New note', 'lucide-square-pen');
+    const canvasPlugin = this.app.plugins && this.app.plugins.getInternalPlugin
+      ? this.app.plugins.getInternalPlugin('canvas')
+      : null;
+    if (canvasPlugin && canvasPlugin.enabled) {
+      addAction('canvas:new-file', t('plugins.canvas.action-new-canvas') || 'New canvas', 'lucide-layout-dashboard');
+    }
+    // 原版：vault.isEmpty() 时不提供"前往文件"
+    if (this.app.vault.getFiles().length > 0) {
+      addAction('switcher:open', t('interface.empty-state.go-to-file') || 'Go to file', 'lucide-search');
+    }
   }
 }

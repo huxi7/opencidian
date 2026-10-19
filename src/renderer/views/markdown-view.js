@@ -1,7 +1,7 @@
 /**
  * [INPUT]: 依赖 ../core/view.js 的 View 基类；依赖 ../core/i18n.js 的 t；依赖 ../core/icons.js 的 setIcon；依赖 ../editor/editor.js 的 Editor 与 livePreviewExtension；依赖 ../markdown/reading.js 的 renderMarkdown/attachMarkdownInteractions；依赖 ../markdown/properties.js 的 renderProperties
  * [OUTPUT]: 导出 MarkdownView 类（三模式：source/live/preview），registerView 注册 'markdown'
- * [POS]: views/ 的 Markdown 生命周期入口。行内标题挂在编辑器 .cm-sizer 内；行宽 class 挂视图元素。换文件前保存正文；首次加载与布局恢复均同步模式 DOM；设置事件热重配编辑器。阅读正文交给 markdown/ 渲染。
+ * [POS]: views/ 的 Markdown 生命周期入口。行内标题挂在编辑器 .cm-sizer 内；行宽 class 挂视图元素。换文件前保存正文；首次加载与布局恢复均同步模式 DOM；设置事件热重配编辑器。阅读正文交给 markdown/ 渲染。重命名/换文件后由 _updateTitles 回填视图头标题与面包屑。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 /*
@@ -386,6 +386,8 @@ export class MarkdownView extends View {
     if (this.readingTitle) this.readingTitle.setText(name);
     if (this.inlineTitleEdit) this.inlineTitleEdit.toggle(!(this.app.settings.appSettings.showInlineTitle === false));
     if (this.leaf) this.leaf.updateTabHeader();
+    // 原版 onRename：重命名后同步视图头（标题 + 面包屑）
+    if (this.leaf && this.app.workspace._fillViewHeader) this.app.workspace._fillViewHeader(this.leaf);
     this.app.workspace.updateTitle();
   }
 
@@ -500,5 +502,41 @@ export class MarkdownView extends View {
         await this.app.fileManager.processFrontMatter(this.file, (fm) => { if (!(key in fm)) fm[key] = ''; });
       },
     }).open();
+  }
+
+  /**
+   * 原版 MarkdownView.onPaneMenu：阅读视图切换（pane）、增加属性（action）、
+   * 源码模式（pane，编辑态）、查找/替换（find，替换仅编辑态可用）。
+   * 导出为 PDF 依赖原版导出链路，本项目未实现，故意缺失。
+   */
+  onPaneMenu(menu, source) {
+    if (source !== 'tab-header' && source !== 'more-options') return;
+    const editMode = this.mode === 'live' || this.mode === 'source';
+    menu.addItem((i) => i.setSection('pane')
+      .setTitle(t('interface.menu.toggle-reading-view') || 'Reading view')
+      .setIcon('lucide-book-open')
+      .setChecked(this.mode === 'preview')
+      .onClick(() => this.toggleMode()));
+    menu.addItem((i) => i.setSection('action')
+      .setTitle(t('interface.menu.add-property') || 'Add property')
+      .setIcon('lucide-plus-circle')
+      .setDisabled(!this.file)
+      .onClick(() => this.promptAddProperty()));
+    if (editMode) {
+      menu.addItem((i) => i.setSection('pane')
+        .setTitle(t('interface.menu.toggle-source-mode') || 'Source mode')
+        .setIcon('lucide-code-2')
+        .setChecked(this.mode === 'source')
+        .onClick(() => this.toggleSourceLive()));
+    }
+    menu.addItem((i) => i.setSection('find')
+      .setTitle(t('interface.menu.find') || 'Find')
+      .setIcon('lucide-file-search')
+      .onClick(() => this.app.commands.executeCommandById('editor:open-search')));
+    menu.addItem((i) => i.setSection('find')
+      .setTitle(t('interface.menu.replace') || 'Replace')
+      .setIcon('lucide-file-search')
+      .setDisabled(!editMode)
+      .onClick(() => this.app.commands.executeCommandById('editor:open-search-replace')));
   }
 }

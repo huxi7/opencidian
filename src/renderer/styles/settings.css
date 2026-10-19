@@ -30,9 +30,6 @@
   --icon-size: var(--icon-s);
   --icon-stroke: var(--icon-s-stroke-width);
 }
-.vertical-tab-header-group-items[data-section="community-plugins"] .vertical-tab-nav-item-icon {
-  display: none;
-}
 body:not(.is-phone) .vertical-tab-header-group-items {
   gap: var(--size-2-1);
 }
@@ -749,28 +746,6 @@ select.mod-hidden {
 /* --------------------------------------------------- core plugin list extras */
 .setting-item.mod-toggle {
   flex-wrap: nowrap;
-}
-.installed-plugins-container {
-  border: var(--border-width) solid var(--background-modifier-border);
-  padding: var(--size-4-3);
-  border-radius: var(--radius-m);
-}
-
-/* ---------------------------------------------- community plugins (tte/Q0) */
-/* 原版 app.css：.setting-icon（免责说明行图标）与社区插件 CTA 容器、信任模态宽度 */
-.setting-icon {
-  display: flex;
-  color: var(--text-normal);
-  align-self: flex-start;
-}
-.community-modal-button-container {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--size-4-2);
-  margin-top: var(--size-4-4);
-}
-.modal.mod-trust-folder {
-  max-width: 700px;
 }
 
 /* ------------------------------------------- spellcheck dict & language pills */

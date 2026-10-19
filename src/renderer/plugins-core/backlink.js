@@ -2,6 +2,7 @@
  * [INPUT]: View 生命周期、workspace 当前文件、metadataCache 反链索引与 DOM 图标。
  * [OUTPUT]: 导出 BacklinkView、findLinkContexts 与插件 create。
  * [POS]: 右栏反链视图。复用搜索结果结构，关闭时释放订阅与重绘计时器。
+ *        链接文件行与未链接提及行右键弹原版链接菜单（workspace.buildLinkMenu + handleLinkContextMenu）。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 import { View } from '../core/view.js';
@@ -9,6 +10,20 @@ import { t } from '../core/i18n.js';
 import { setIcon } from '../core/icons.js';
 
 export const nameKey = 'plugins.backlinks';
+
+/**
+ * 原版搜索/反链条目共用：右键挂链接菜单（分节表 title/open/action/view/info/info.copy/danger）。
+ * linktext 用来源文件路径，sourcePath 用当前笔记路径，重命名等动作才能命中同一文件。
+ */
+function attachLinkRowMenu(app, el, sourceFile, currentFile) {
+  el.addEventListener('contextmenu', (ev) => {
+    const menu = app.workspace.buildLinkMenu();
+    const ok = app.workspace.handleLinkContextMenu(menu, sourceFile.path, currentFile ? currentFile.path : '', ev);
+    if (!ok) return;
+    ev.preventDefault();
+    menu.setParentElement(el).showAtMouseEvent(ev);
+  });
+}
 
 // --- 从来源正文提取指向目标文件的链接上下文 ---
 export function findLinkContexts(app, sourceFile, targetFile) {
@@ -202,6 +217,7 @@ export class BacklinkView extends View {
           };
         }
         selfEl.onclick = () => this.app.workspace.openFile(source, { eState: { line: contexts[0] ? contexts[0].line : 0 } });
+        attachLinkRowMenu(this.app, selfEl, source, file);
       }
     }
   }
@@ -232,6 +248,7 @@ export class BacklinkView extends View {
       setCollapsed(!item.hasClass('is-collapsed'));
     };
     self.onclick = () => this.app.workspace.openFile(source);
+    attachLinkRowMenu(this.app, self, source, current);
     const contexts = current ? findLinkContexts(this.app, source, current) : [];
     const q = this._query.toLowerCase();
     const filtered = q ? contexts.filter((c) => c.text.toLowerCase().includes(q)) : contexts;
@@ -246,9 +263,6 @@ export class BacklinkView extends View {
     if (!filtered.length) {
       children.createDiv({ cls: 'search-result-file-match', text: t('plugins.backlinks.ellipsis') || '...' });
     }
-  }
-  onPaneMenu(menu, source) {
-    menu.addItem((i) => i.setTitle(t('plugins.backlinks.label-linked-mentions') || 'Linked mentions').setChecked(true));
   }
 }
 

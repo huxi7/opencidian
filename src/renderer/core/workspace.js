@@ -7,6 +7,8 @@
  * loadLayout 只替换布局；旧视图保存与关闭仍由调用方负责。
  * 活动编辑器（原版 workspace.activeEditor）：getActiveEditor 取登记项（画布卡片宿主），否则回落活动叶子的编辑器视图；
  * setActiveEditor/unsetActiveEditor 是登记与清空入口，切换活动叶子即清空登记。命令层经此拿到当前应作用的内嵌编辑器。
+ * 菜单事件：构造时 attachFileMenuHandler 把 core/file-menu.js 接到 file-menu/files-menu；
+ * buildLinkMenu 提供原版链接元素菜单的分节表，handleLink/ExternalLinkContextMenu 负责填充。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 import { Events } from './events.js';
@@ -19,6 +21,8 @@ import { WorkspaceSplit, WorkspaceTabs, WorkspaceLeaf } from './workspace-model.
 import * as workspaceRenderer from './workspace-renderer.js';
 import * as workspaceInteractions from './workspace-interactions.js';
 import { reconcileSidebars, canCloseLeaf } from './workspace-sidebar.js';
+import { attachFileMenuHandler } from './file-menu.js';
+import { Menu } from './menu.js';
 
 export { WorkspaceItem, WorkspaceSplit, WorkspaceTabs, WorkspaceLeaf } from './workspace-model.js';
 
@@ -38,6 +42,7 @@ export class Workspace extends Events {
     this._leafMap = new Map();
     this._lastActiveLeaves = [];
     this._activeEditor = null;
+    attachFileMenuHandler(this);
   }
 
   // -------------------------------------------------------------------------
@@ -401,6 +406,16 @@ export class Workspace extends Events {
       newLeaf: typeof newLeaf === 'string' ? newLeaf : !!newLeaf,
       eState: subpath ? { subpath } : undefined,
     });
+  }
+
+  /**
+   * 原版 ES.forEvent(e) 的链接菜单：阅读视图链接、搜索结果行、反链/出链条目共用的分节表。
+   * 调用方随后用 handleLinkContextMenu / handleExternalLinkContextMenu 填充。
+   */
+  buildLinkMenu() {
+    const menu = new Menu(this.app);
+    menu.addSections(['title', 'open', 'action', 'view', 'info', 'info.copy', '', 'danger']);
+    return menu;
   }
 
   /**

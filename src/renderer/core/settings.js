@@ -47,6 +47,7 @@ export const DEFAULT_APP_SETTINGS = {
   openBehavior: '',                   // '' | 'new' | 'daily' | 'file:<path>'
   pdfExportSettings: { pageSize: 'Letter', landscape: false, margin: '0', downscalePercent: 100 },
   uriCallbacks: false,
+  settingsPopoutWindow: true,         // 1.14：设置默认在独立窗口中打开（vault.getConfig("settingsPopoutWindow")）
   // 1.12 起外观键实际存 appearance.json（见 DEFAULT_APPEARANCE_SETTINGS），此处保留同名兜底
   showViewHeader: true,
   showRibbon: true,
@@ -128,7 +129,6 @@ export class Settings extends Events {
     this.appearance = { ...DEFAULT_APPEARANCE_SETTINGS };
     this.hotkeys = {};
     this.corePlugins = { ...DEFAULT_CORE_PLUGINS };
-    this.communityPlugins = [];
   }
 
   setDir(vaultPath) {
@@ -180,8 +180,6 @@ export class Settings extends Events {
         this.corePlugins = { ...DEFAULT_CORE_PLUGINS, ...core };
       }
     }
-    const community = this.readJson('community-plugins.json');
-    if (Array.isArray(community)) this.communityPlugins = community;
     this.trigger('change');
   }
 
@@ -218,15 +216,7 @@ export class Settings extends Events {
     this.trigger('change');
   }
 
-  setCommunityPlugins(list) {
-    this.communityPlugins = list;
-    try {
-      fs.writeFileSync(nodePath.join(this.dir, 'community-plugins.json'), JSON.stringify(list));
-    } catch (e) {}
-    this.trigger('change');
-  }
-
-  // per-plugin data files (data.json inside plugin folder for community, or provided name)
+  // per-plugin data files (data.json inside the plugin folder, or provided name)
   loadPluginData(name, defaults = {}) {
     const data = this.readJson(name);
     return data ? { ...defaults, ...data } : { ...defaults };

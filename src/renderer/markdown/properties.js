@@ -2,6 +2,7 @@
  * [INPUT]: 依赖 ../core/i18n.js 的 t；依赖 ../core/icons.js 的 setIcon；依赖 ../core/suggest.js 的 AbstractInputSuggest；依赖 ../core/modals.js 的 PromptModal；依赖 ../core/menu.js 的 Menu
  * [OUTPUT]: 导出 renderProperties(app, container, file, options)、buildMetadataContainer(app, file, options)
  * [POS]: markdown/ 的属性面板渲染器。live-preview.js 的 PropertiesWidget 与 markdown-view.js 阅读模式共同调用。DOM 逐字对齐原版：error-container → heading → metadata-content(properties + add-button)。写回经 fileManager.processFrontMatter。
+ *        每行挂原版 showPropertyMenu（attachPropertyRowMenu），标签/多值行与标量行共用同一菜单。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 /*
@@ -114,6 +115,7 @@ function renderPropertyRow(app, container, file, prop, options) {
   const row = container.createDiv('metadata-property');
   row.setAttr('data-property-key', prop.key);
   row.setAttr('data-property-type', prop.type);
+  if (options.editable !== false && !prop.readonly) attachPropertyRowMenu(app, file, prop, row);
   const keyEl = row.createDiv('metadata-property-key');
   keyEl.createSpan({ cls: 'metadata-property-icon' });
   setIcon(keyEl.querySelector('.metadata-property-icon'), typeIcon(prop.type));
@@ -187,17 +189,29 @@ function renderPropertyRow(app, container, file, prop, options) {
     valueDisplay.setAttr('tabindex', '0');
     valueDisplay.onclick = () => editPropertyValue(app, file, prop, valueDisplay);
     row.setAttr('tabindex', '0');
-    row.addEventListener('contextmenu', (ev) => {
-      ev.preventDefault();
-      const menu = new Menu(app);
-      menu.addItem((i) => i.setTitle(t('plugins.properties.opt-delete-properties') || 'Delete property')
-        .setIcon('trash')
-        .onClick(async () => {
-          await app.fileManager.processFrontMatter(file, (fm2) => { delete fm2[prop.key]; });
-        }));
-      menu.showAtMouseEvent(ev);
-    });
   }
+}
+
+/**
+ * 原版 metadata-editor showPropertyMenu：任意类型的属性行都挂右键菜单。
+ * 分节表 title/action/action.changeType/selection/clipboard/danger；本项目无属性类型管理器，
+ * 属性类型子菜单与剪贴板三项（桌面端走 webContents cut/copy/paste）未实现，故意缺失。
+ */
+function attachPropertyRowMenu(app, file, prop, row) {
+  row.addEventListener('contextmenu', (ev) => {
+    ev.preventDefault();
+    const menu = new Menu(app);
+    menu.addSections(['title', 'action', 'action.changeType', 'selection', 'clipboard', '', 'danger']);
+    menu.setSectionSubmenu('action.changeType', { title: t('plugins.properties.option-property-type') || 'Property type', icon: 'lucide-info' });
+    menu.addItem((i) => i.setSection('danger')
+      .setTitle(t('interface.menu.remove') || 'Remove')
+      .setWarning(true)
+      .setIcon('lucide-trash-2')
+      .onClick(async () => {
+        await app.fileManager.processFrontMatter(file, (fm2) => { delete fm2[prop.key]; });
+      }));
+    menu.setParentElement(row).showAtMouseEvent(ev);
+  });
 }
 
 function normalizeArray(v) {

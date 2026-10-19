@@ -1,7 +1,8 @@
 /**
  * [INPUT]: 依赖 core/icons.js 的 setIcon；使用 dom.js 安装的元素助手。
- * [OUTPUT]: 导出 Menu（addItem/addSeparator/setParentElement/showAtMouseEvent/showAtPosition/close）与 MenuItem（title/icon/checked/section/submenu/callback）。
+ * [OUTPUT]: 导出 Menu（addItem/addSeparator/addSections/setSectionSubmenu/setParentElement/showAtMouseEvent/showAtPosition/close）与 MenuItem（title/icon/checked/section/submenu/callback）。
  * [POS]: core/ 的通用菜单层。菜单挂 document.body，外部 mousedown/contextmenu 关闭，键盘上下/Enter/Esc 导航。
+ *        分节排序镜像原版 qg.sort：sections 定序、相邻节之间插分隔线、setSectionSubmenu 收编子节。
  *        setParentElement 让触发元素在菜单打开期间带 has-active-menu（原版语义），供画布快速设置按钮防重复打开。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
@@ -28,6 +29,7 @@ export class MenuItem {
   setChecked(checked) { this.checked = checked; this.update(); return this; }
   setDisabled(disabled) { this.disabled = disabled; this.update(); return this; }
   setSection(section) { this.section = section; return this; }
+  removeIcon() { this.icon = ''; this.update(); return this; }
   setWarning(warning) { this.warning = warning; this.update(); return this; }
   onClick(callback) { this.callback = callback; return this; }
   setSubmenu() { this.submenu = new Menu(this.menu.app); return this.submenu; }
@@ -38,6 +40,9 @@ export class Menu {
   constructor(app) {
     this.app = app;
     this.items = [];
+    this.sections = [];
+    this.submenuConfigs = {};
+    this.orderedItems = null;
     this.dom = null;
     this.selected = -1;
     this.parentMenu = null;
@@ -46,6 +51,20 @@ export class Menu {
 
   /** 绑定触发元素：菜单打开期间元素带 has-active-menu（原版 setParentElement 语义）。 */
   setParentElement(el) { this.parentEl = el; return this; }
+
+  /** 原版 qg.addSections：在 "" 之前插入未登记的分节名。 */
+  addSections(sections) {
+    const fresh = sections.filter((s) => !this.sections.includes(s));
+    const at = this.sections.indexOf('');
+    this.sections.splice(at < 0 ? this.sections.length : at, 0, ...fresh);
+    return this;
+  }
+
+  /** 原版 qg.setSectionSubmenu：把 section 及其子节（section.*）收编为一个子菜单项。 */
+  setSectionSubmenu(section, config) {
+    this.submenuConfigs[section] = config;
+    return this;
+  }
 
   addItem(cb) {
     const item = new MenuItem(this);
@@ -112,14 +131,29 @@ export class Menu {
     const dom = this._scrollEl || this.dom;
     if (!dom) return;
     dom.empty();
-    for (const item of this.items) {
+    // 分节排序为显式声明（addSections / setSectionSubmenu）的菜单启用；未声明分节表的菜单保持插入序，
+    // 以保留表格菜单等自行插分隔线的既有结构（它们的插入序本就等于原版分节序）。
+    // 由分节排序生成的子菜单（_sectioned）同样按自身子节插分隔线（原版 NV() 的 basic/advanced/danger）。
+    const grouped = this._sectioned || this.sections.length > 0 || Object.keys(this.submenuConfigs).length > 0;
+    const ordered = grouped ? this._sort() : this.items.slice();
+    this.orderedItems = ordered;
+    let group = null;
+    for (const item of ordered) {
       if (item.isSeparator) {
+        group = null;
         dom.createDiv('menu-separator');
         continue;
       }
-      const itemEl = dom.createDiv('menu-item');
+      const itemEl = document.createElement('div');
+      itemEl.addClass('menu-item');
       item.dom = itemEl;
       renderMenuItem(item, itemEl);
+      if (grouped) {
+        if (!group) group = dom.createDiv('menu-group');
+        group.appendChild(itemEl);
+      } else {
+        dom.appendChild(itemEl);
+      }
       if (!item.disabled && !item.isLabel) {
         itemEl.onclick = (ev) => {
           if (item.submenu) return;
@@ -136,6 +170,64 @@ export class Menu {
         };
       }
     }
+  }
+
+  /**
+   * 原版 qg.sort：按 items 的 section 分组，按 sections 定序展开；相邻不同节之间断言分隔线；
+   * setSectionSubmenu 登记的节生成子菜单占位项，其子节（section.*）进入该子菜单。
+   * 未登记的分节按首次出现顺序追加；末尾分隔线丢弃。
+   */
+  _sort() {
+    const sections = this.sections;
+    const groups = { '': [] };
+    for (const item of this.items) {
+      // 已收编进【本菜单的】子菜单的项不参与二次分组；进入子菜单自身排序时正常参与
+      if (item._inSubmenu && item._inSubmenu !== this) continue;
+      const section = item.isSeparator ? '' : (item.section || '');
+      if (section === '' || !sections.includes(section)) sections.push(section);
+      (groups[section] || (groups[section] = [])).push(item);
+    }
+    const out = [];
+    const separator = () => { const s = new MenuItem(this); s.isSeparator = true; return s; };
+    let current = null;
+    let submenu = null;
+    let currentSubmenuKey = '';
+    for (const section of sections) {
+      if (!Object.prototype.hasOwnProperty.call(groups, section)) continue;
+      let owner = '';
+      for (const key of Object.keys(this.submenuConfigs)) {
+        if (section === key || section.substring(0, key.length + 1) === key + '.') { owner = key; break; }
+      }
+      const parts = section.split('.');
+      const root = parts[0];
+      const relative = parts.length > 0 ? parts.slice(1).join('.') : section;
+      if (owner) {
+        if (submenu && owner === currentSubmenuKey) {
+          submenu.items.push(separator());
+        } else {
+          if (current && current.split('.')[0] !== root) { out.push(separator()); current = section; }
+          const config = this.submenuConfigs[owner];
+          const placeholder = new MenuItem(this);
+          out.push(placeholder);
+          placeholder.setTitle(config.title);
+          if (config.icon) placeholder.setIcon(config.icon);
+          if (config.disabled) placeholder.setDisabled(true);
+          submenu = placeholder.setSubmenu();
+          submenu._sectioned = true;
+          currentSubmenuKey = owner;
+        }
+        for (const item of groups[section]) {
+          if (!item.isSeparator) { item.setSection(relative); item._inSubmenu = submenu; }
+          submenu.items.push(item);
+        }
+      } else {
+        if (current !== root) { if (current !== null) out.push(separator()); current = section; }
+        for (const item of groups[section]) out.push(item);
+      }
+    }
+    if (!sections.includes('')) for (const item of groups['']) out.push(item);
+    while (out.length && out[out.length - 1].isSeparator) out.pop();
+    return out;
   }
 
   /** 原版 qg.openSubmenuSoon：悬停 250ms 后才展开，移开即取消。 */
@@ -168,9 +260,9 @@ export class Menu {
     }
   }
 
-  /** 可导航项（跳过分隔线、禁用与 label）。 */
+  /** 可导航项（跳过分隔线、禁用与 label），按渲染顺序。 */
   _selectableItems() {
-    return this.items.filter((i) => !i.isSeparator && !i.disabled && !i.isLabel);
+    return (this.orderedItems || this.items).filter((i) => !i.isSeparator && !i.disabled && !i.isLabel);
   }
 
   /** 选中第 index 个可导航项（键盘进入子菜单时选第一项）。 */

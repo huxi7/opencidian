@@ -1,7 +1,7 @@
 /**
  * [INPUT]: 依赖 ../core/i18n.js 的 tt；依赖 ../core/setting.js 的 SettingGroup/SettingTab；依赖 ../core/notices.js 的 Notice；依赖 ../core/modals.js 的 Modal；依赖 ../core/ipc.js 的 Desktop；Node 内置 fs/path；Electron renderer 的 webFrame/ipcRenderer
  * [OUTPUT]: 导出 AppearanceTab（外观页签）、FontManagerModal（字体管理弹窗）
- * [POS]: views/ 的外观设置页签。逐字对齐原版 Jee 的 display()：基础（基础颜色/主题色/主题）、界面（页内标题/标签页标题栏/功能区）、字体（三种字体/字号/快速调整）、高级（缩放/原生菜单/窗口边框/硬件加速）、CSS 代码片段。CSS 注入由 core/app.js 的 _applyCustomCss 执行，本页签只改配置与读取 snippets 目录。
+ * [POS]: views/ 的外观设置页签。逐字对齐原版 Jee 的 display()：基础（基础颜色/主题色/主题）、界面（页内标题/标签页标题栏/功能区）、字体（三种字体/字号/快速调整）、高级（缩放/原生菜单/窗口边框/在新窗口中打开设置/硬件加速）、CSS 代码片段。CSS 注入由 core/app.js 的 _applyCustomCss 执行，本页签只改配置与读取 snippets 目录。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 /* Appearance settings tab — base theme, fonts, advanced desktop options, CSS snippets. */
@@ -262,6 +262,26 @@ export class AppearanceTab extends SettingTab {
             });
           });
       });
+      // 原版 1.14.4：高级组的「在新窗口中打开设置」开关（Qy.canPopoutWindow 恒真于桌面）。
+      // 切换行为对齐原版：写配置后 setting.close(); setTimeout(() => { setting.open(); setting.openTab(tab) })
+      adv.addSetting((s) => s
+        .setName(tt('setting.appearance.option-open-settings-in-window', '在新窗口中打开设置'))
+        .setDesc(tt('setting.appearance.option-open-settings-in-window-description', '在独立窗口中打开设置，而不是嵌入在应用中。'))
+        .addToggle((tog) => tog
+          .setValue(app.settings.appSettings.settingsPopoutWindow !== false)
+          .onChange((v) => {
+            app.settings.updateAppSettings({ settingsPopoutWindow: v });
+            const setting = app.setting;
+            if (!setting) return;
+            const tabId = (setting.activeTab && setting.activeTab.id) || setting.lastTabId || '';
+            if (app.isSettingsWindow) {
+              // 本渲染器即设置窗口：交主进程关窗并在主窗口以模态重开（跨窗口 close→open）
+              try { Desktop.settingsWindowToggle({ tabId }); } catch (e) {}
+            } else {
+              setting.close();
+              setTimeout(() => { setting.open(); if (tabId) setting.openTabById(tabId); });
+            }
+          })));
       let gpuDisabled = false;
       try { gpuDisabled = !!electron.ipcRenderer.sendSync('disable-gpu'); } catch (e) {}
       adv.addSetting((s) => {

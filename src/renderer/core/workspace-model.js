@@ -206,6 +206,8 @@ export class WorkspaceTabs extends WorkspaceItem {
   showTabListMenu(ev, parentEl) {
     if (!this.workspace._sideOf || this.workspace._sideOf(this) !== 'center') return;
     const menu = new Menu(this.workspace.app);
+    // 原版 VD 的分节表：action（堆叠/取消堆叠）→ close（全部关闭）→ tablist（每个标签）
+    menu.addSections(['action', 'close', '', 'tablist', '']);
     menu.onShow = () => { if (menu.dom) menu.dom.addClass('mod-tab-list'); };   // 原版 n.dom.addClass("mod-tab-list")
     menu.addItem((item) => item.setSection('action')
       .setTitle(t(this.isStacked ? 'interface.menu.unstack-tabs' : 'interface.menu.stack-tabs'))

@@ -1,12 +1,13 @@
 /**
- * [INPUT]: Modal、DOM 助手与 i18n 的 tt。
- * [OUTPUT]: 模糊匹配、SuggestModal、GenericSuggester 与输入建议层。
- * [POS]: 命令、模板、文件选择的公共入口。输入位于结果前，接受选择后关闭。
+ * [INPUT]: 依赖 ./modals.js 的 Modal；依赖 ./keymap.js 的 IS_MAC。
+ * [OUTPUT]: 导出模糊匹配、SuggestModal、GenericSuggester 与输入建议层。
+ * [POS]: 命令、模板、文件选择的公共入口。SuggestModal 的 DOM 与按键逐字对齐原版 OT/IT：
+ *         `.prompt` 直挂输入容器/结果/指令栏；选择器环绕、分页、Home/End、Ctrl+P/N、Tab 补全，
+ *         悬停不滚动，回车交给 onChooseSuggestion。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 /* Suggestion framework: fuzzy matching + SuggestModal (quick switcher etc). */
 import { Modal } from './modals.js';
-import { tt } from './i18n.js';
 import { IS_MAC } from './keymap.js';
 
 export function fuzzyMatch(query, text) {
@@ -43,59 +44,95 @@ export function fuzzyMatch(query, text) {
 export function renderHighlightedText(el, text, matches) {
   el.empty();
   if (!matches || !matches.length) { el.setText(text); return; }
-  const set = new Set(matches);
-  let current = null;
-  let buffer = '';
-  const flush = () => {
-    if (!buffer) return;
-    if (current) el.createSpan({ text: buffer, cls: 'suggestion-highlight' });
-    else el.appendText(buffer);
-    buffer = '';
-  };
-  for (let i = 0; i < text.length; i++) {
-    const isMatch = set.has(i);
-    if (current === null) current = isMatch;
-    if (isMatch !== current) { flush(); current = isMatch; }
-    buffer += text[i];
+  // 兼容两种匹配表示：索引数组（旧 fuzzyMatch）与区间数组 [start,end]（原版 ux/cx）。
+  let ranges;
+  if (Array.isArray(matches[0])) {
+    ranges = matches.map((range) => [range[0], range[1]]).sort((a, b) => a[0] - b[0]);
+  } else {
+    ranges = [];
+    for (const index of [...matches].sort((a, b) => a - b)) {
+      const last = ranges[ranges.length - 1];
+      if (last && last[1] === index) last[1] = index + 1;
+      else ranges.push([index, index + 1]);
+    }
   }
-  flush();
+  let cursor = 0;
+  for (const [start, end] of ranges) {
+    const from = Math.max(0, start);
+    const to = Math.min(text.length, end);
+    if (to <= from) continue;
+    if (from > cursor) el.appendText(text.slice(cursor, from));
+    el.createSpan({ cls: 'suggestion-highlight', text: text.slice(from, to) });
+    cursor = to;
+  }
+  if (cursor < text.length) el.appendText(text.slice(cursor));
 }
 
+/**
+ * 原版 OT + IT：prompt 基类与建议选择器。
+ * 子类契约（与原版一致）：
+ *   getSuggestions(query) -> values[]；null 值表示「创建项」
+ *   renderSuggestion(value, el, query)
+ *   onChooseSuggestion(value, ev)
+ *   onNoSuggestion()  可覆写；默认按 supportsCreate 决定创建项或空态文案
+ *   getCompletionText(value)  Tab 补全文本；返回 null 表示不补全
+ */
 export class SuggestModal extends Modal {
   constructor(app) {
     super(app);
-    this.inputEl = null;
-    this.clearButtonEl = null;
+    this.limit = 100;
+    this.emptyStateText = 'No results found.';
+    this.noRecentFilesText = 'No recent files found. Type to search...';
+    this.allowCreateNewFile = false;
+    this.shouldShowMarkdown = false;
+    this.shouldShowNonAttachments = true;
+    this.shouldShowAlias = true;
+    this.shouldShowUnresolved = false;
+    this.shouldShowNonImageAttachments = true;
+    this.shouldShowImages = true;
+    this.shouldShowAllTypes = false;
+    this.shouldShowNonFileBookmarks = false;
+    this.context = 'view';
+    this._selectedIndex = 0;
+    this.results = [];
+    this.suggestions = [];
+    // 原版 OT：modalEl 去掉 .modal，换成 .prompt，并清空基类骨架
     this.modalEl.removeClass('modal');
     this.modalEl.addClass('prompt');
     this.headerEl.detach();
     this.closeButtonEl.detach();
     this.buttonContainerEl.detach();
-    // 输入容器：input 在前，清空按钮在后(原版 ob)
-    const inputContainer = this.modalEl.createDiv('prompt-input-container');
+    this.contentEl.detach();
+
+    const inputContainer = this.modalEl.createDiv('prompt-input-container mod-raised');
     this.inputEl = inputContainer.createEl('input', {
-      cls: 'prompt-input', type: 'text', attr: { autocapitalize: 'off', spellcheck: 'false' },
+      cls: 'prompt-input', type: 'text',
+      attr: { autocapitalize: 'off', spellcheck: 'false', enterkeyhint: 'done' },
     });
-    this.inputEl.placeholder = this.getPlaceholder() || '';
+    this.ctaEl = inputContainer.createDiv('prompt-input-cta');
     this.clearButtonEl = inputContainer.createDiv('search-input-clear-button');
-    this.clearButtonEl.addEventListener('mousedown', (ev) => ev.preventDefault());
-    this.clearButtonEl.addEventListener('click', () => {
-      if (this.inputEl.value !== '') { this.inputEl.value = ''; this.inputEl.dispatchEvent(new Event('input')); }
-      else this.close();
+    this.clearButtonEl.addEventListener('mousedown', (ev) => {
+      if (this.inputEl.value !== '') ev.preventDefault();
     });
-    this.modalEl.insertBefore(inputContainer, this.contentEl);
-    this.resultContainerEl = this.contentEl.createDiv('suggestion-container');
-    this.resultContainerEl.addClass('prompt-results');
-    this.limit = 100;
-    this.emptyStateText = tt('setting.third-party-plugin.label-no-results-found', '无结果');
-    this._selectedIndex = 0;
-    this.results = [];
-    this.instructionsEl = this.modalEl.createDiv('prompt-instructions');
-    this.renderInstructions();
-    this.inputEl.oninput = () => this.updateSuggestions();
-    this.inputEl.onkeydown = (ev) => this.onInputKeyDown(ev);
+    this.clearButtonEl.addEventListener('click', () => {
+      if (this.inputEl.value !== '') {
+        this.inputEl.value = '';
+        this.inputEl.dispatchEvent(new Event('input'));
+      } else {
+        this.close();
+      }
+    });
+
+    this.resultContainerEl = this.modalEl.createDiv('prompt-results');
+    this.instructionsEl = createDiv('prompt-instructions');
+    this.inputEl.addEventListener('input', () => this.onInput());
+    this.inputEl.addEventListener('keydown', (ev) => this.onInputKeyDown(ev));
     this.scope = app.keymap ? app.keymap.createScope() : null;
+    this.inputEl.placeholder = this.getPlaceholder() || '';
+    const instructions = this.getInstructions();
+    if (instructions && instructions.length) this.setInstructions(instructions);
   }
+
   getPlaceholder() { return ''; }
   getInstructions() {
     return this.instructions || [
@@ -104,99 +141,174 @@ export class SuggestModal extends Modal {
       { command: 'esc', purpose: 'to dismiss' },
     ];
   }
-  renderInstructions() {
+  /** 原版 supportsCreate：允许创建且展示 Markdown。 */
+  get supportsCreate() { return !!this.allowCreateNewFile && !!this.shouldShowMarkdown; }
+
+  renderInstructions(instructions = this.getInstructions()) {
     this.instructionsEl.empty();
-    for (const inst of this.getInstructions()) {
-      const el = this.instructionsEl.createDiv('prompt-instruction');
-      el.createSpan({ cls: 'prompt-instruction-command', text: inst.command });
-      el.createSpan({ text: inst.purpose });
+    for (const inst of instructions || []) {
+      this.instructionsEl.createDiv('prompt-instruction', (el) => {
+        el.createSpan({ cls: 'prompt-instruction-command', text: inst.command });
+        el.createSpan({ text: inst.purpose });
+      });
     }
   }
-  onOpen() {
-    setTimeout(() => { this.inputEl.focus(); this.updateSuggestions(); }, 10);
+  setInstructions(instructions) {
+    this.instructions = instructions;
+    this.renderInstructions(instructions);
+    if (instructions && instructions.length) {
+      if (!this.instructionsEl.parentElement) this.modalEl.appendChild(this.instructionsEl);
+    } else {
+      this.instructionsEl.detach();
+    }
+    return this;
   }
   setPlaceholder(text) { this.inputEl.placeholder = text; return this; }
-  setInstructions(instructions) { this.instructions = instructions; this.renderInstructions(); return this; }
+
+  onOpen() {
+    this.inputEl.value = '';
+    this.inputEl.focus();
+    this.updateSuggestions();
+  }
+  onInput() { this.updateSuggestions(); }
+
   getSuggestions(query) { return []; }
   renderSuggestion(value, el) { el.setText(String(value)); }
   onChooseSuggestion(value, ev) {}
+  getCompletionText(value) { return null; }
+
   updateSuggestions() {
     const query = this.inputEl.value;
-    this.results = this.getSuggestions(query) || [];
-    if (this.results.length > this.limit) this.results = this.results.slice(0, this.limit);
-    this._selectedIndex = 0;
-    this.renderResults();
+    const values = this.getSuggestions(query);
+    const apply = (list) => {
+      if (list && list.length) {
+        if (this.limit && this.limit > 0) list = list.slice(0, this.limit);
+        this.setSuggestions(list);
+      } else {
+        this.onNoSuggestion();
+      }
+    };
+    if (Array.isArray(values)) apply(values);
+    else Promise.resolve(values).then(apply);
   }
-  renderResults() {
-    this.resultContainerEl.empty();
-    if (!this.results.length) {
-      this.resultContainerEl.createDiv({ cls: 'suggestion-empty', text: this.emptyStateText });
+
+  /** 原版 D5.onNoSuggestion：非空输入且可创建时给创建项，否则空态文案。 */
+  onNoSuggestion() {
+    const query = this.inputEl.value.trim();
+    if (query && this.supportsCreate) {
+      this.setSuggestions([null]);
       return;
     }
-    this.results.forEach((value, i) => {
-      const el = this.resultContainerEl.createDiv('suggestion-item');
-      el.toggleClass('is-selected', i === this._selectedIndex);
-      this.renderSuggestion(value, el, this.inputEl.value);
-      el.onmousemove = () => this.setSelectedIndex(i);
-      el.onclick = (ev) => this.selectSuggestion(i, ev);
-      el.onauxclick = (ev) => this.selectSuggestion(i, ev);
+    this.setSuggestions(null);
+    this.resultContainerEl.createDiv({
+      cls: 'suggestion-empty',
+      text: query ? this.emptyStateText : this.noRecentFilesText,
     });
-    const selected = this.resultContainerEl.children[this._selectedIndex];
-    if (selected) selected.scrollIntoView({ block: 'nearest' });
   }
-  setSelectedIndex(i) {
+
+  setSuggestions(values) {
+    this.results = values ? values.slice() : [];
+    this.resultContainerEl.empty();
+    const query = this.inputEl.value;
+    this.suggestions = this.results.map((value, i) => {
+      const el = this.resultContainerEl.createDiv('suggestion-item');
+      this.renderSuggestion(value, el, query);
+      el.onmousemove = (ev) => this.setSelectedIndex(i, ev);
+      el.onclick = (ev) => {
+        if (ev.defaultPrevented) return;
+        ev.preventDefault();
+        this.setSelectedIndex(i, ev);
+        this.selectSuggestion(value, ev);
+      };
+      el.onauxclick = el.onclick;
+      return el;
+    });
+    this._selectedIndex = 0;
+    this.setSelectedIndex(0, null);
+  }
+
+  /** 原版 IT.setSelectedItem：越界环绕；键盘触发滚动，鼠标悬停不滚动。 */
+  setSelectedIndex(index, ev) {
     const n = this.results.length;
-    if (!n) return;
-    this._selectedIndex = ((i % n) + n) % n;
-    for (let k = 0; k < this.resultContainerEl.children.length; k++) {
-      this.resultContainerEl.children[k].toggleClass('is-selected', k === this._selectedIndex);
+    if (!n) { this._selectedIndex = 0; return; }
+    if (index < 0) index = n - 1;
+    else if (index >= n) index = 0;
+    const previous = this.suggestions[this._selectedIndex];
+    if (previous) previous.removeClass('is-selected');
+    this._selectedIndex = index;
+    const el = this.suggestions[index];
+    if (el) {
+      el.addClass('is-selected');
+      if (!(ev instanceof MouseEvent)) el.scrollIntoView({ block: 'nearest' });
     }
-    const selected = this.resultContainerEl.children[this._selectedIndex];
-    if (selected) selected.scrollIntoView({ block: 'nearest' });
+    if (this.onSelectedChange) this.onSelectedChange(this.results[index], ev);
   }
-  onInputKeyDown(ev) {
-    if (ev.isComposing) return;
-    if (ev.key === 'ArrowDown') { ev.preventDefault(); this.setSelectedIndex(this._selectedIndex + 1); }
-    else if (ev.key === 'ArrowUp') { ev.preventDefault(); this.setSelectedIndex(this._selectedIndex - 1); }
-    else if (ev.key === 'PageDown') { ev.preventDefault(); this.pageDown(); }
-    else if (ev.key === 'PageUp') { ev.preventDefault(); this.pageUp(); }
-    else if (ev.key === 'Enter') { ev.preventDefault(); this.selectSuggestion(this._selectedIndex, ev); }
-    else if (ev.key === 'Home' && !ev.shiftKey) { ev.preventDefault(); this.setSelectedIndex(0); }
-    else if (ev.key === 'End') { ev.preventDefault(); this.setSelectedIndex(this.results.length - 1); }
-    else if (IS_MAC && ev.ctrlKey && ev.key === 'n') { ev.preventDefault(); this.setSelectedIndex(this._selectedIndex + 1); }
-    else if (IS_MAC && ev.ctrlKey && ev.key === 'p') { ev.preventDefault(); this.setSelectedIndex(this._selectedIndex - 1); }
-  }
-  /** 行高与可视行数：滚动量按结果容器实测，超出即整页跳跃(原版 ib.pageUp/pageDown)。 */
+
   rowHeight() {
-    const selected = this.resultContainerEl.children[this._selectedIndex];
-    return selected ? selected.clientHeight : 0;
+    const el = this.suggestions[this._selectedIndex];
+    return el ? el.clientHeight : 0;
   }
   numVisibleItems() {
-    const height = this.rowHeight();
-    return height > 0 ? Math.floor(this.resultContainerEl.clientHeight / height) : 0;
+    const rowHeight = this.rowHeight();
+    return rowHeight > 0 ? Math.floor(this.resultContainerEl.clientHeight / rowHeight) : 0;
   }
-  pageUp() {
-    const container = this.resultContainerEl;
+  pageUp(ev) {
     const rowHeight = this.rowHeight();
     if (!rowHeight) return;
+    const container = this.resultContainerEl;
+    const visible = this.numVisibleItems();
     const paddingTop = parseFloat(getComputedStyle(container).paddingTop) || 0;
     let row = Math.floor((container.scrollTop - paddingTop) / rowHeight);
-    if (this._selectedIndex <= row) row -= this.numVisibleItems();
-    this.setSelectedIndex(Math.max(0, row));
+    if (this._selectedIndex <= row) row -= visible;
+    this.setSelectedIndex(Math.max(0, row), ev);
   }
-  pageDown() {
-    const container = this.resultContainerEl;
+  pageDown(ev) {
     const rowHeight = this.rowHeight();
     if (!rowHeight) return;
+    const container = this.resultContainerEl;
     const visible = this.numVisibleItems();
     const paddingTop = parseFloat(getComputedStyle(container).paddingTop) || 0;
     let row = Math.floor((container.scrollTop - paddingTop) / rowHeight) + (visible - 1);
     if (this._selectedIndex >= row) row += visible;
-    this.setSelectedIndex(Math.min(this.results.length - 1, row));
+    this.setSelectedIndex(Math.min(this.results.length - 1, row), ev);
   }
-  selectSuggestion(i, ev) {
-    const value = this.results[i];
+
+  /** Tab：把选中项的补全文本写入输入框；已相等则补一个 "/"（原版 D5 的 Tab 补全）。 */
+  completeSelection(ev) {
+    const value = this.results[this._selectedIndex];
     if (value === undefined) return;
+    let text = this.getCompletionText(value, this.inputEl.value);
+    if (text === null || text === undefined) return;
+    if (text === this.inputEl.value) text += '/';
+    this.inputEl.value = text;
+    this.updateSuggestions();
+  }
+
+  onInputKeyDown(ev) {
+    if (ev.isComposing) return;
+    const key = ev.key;
+    if (key === 'ArrowDown') { ev.preventDefault(); this.setSelectedIndex(this._selectedIndex + 1, ev); }
+    else if (key === 'ArrowUp') { ev.preventDefault(); this.setSelectedIndex(this._selectedIndex - 1, ev); }
+    else if (key === 'PageDown') { ev.preventDefault(); this.pageDown(ev); }
+    else if (key === 'PageUp') { ev.preventDefault(); this.pageUp(ev); }
+    else if (key === 'Home') { ev.preventDefault(); this.setSelectedIndex(0, ev); }
+    else if (key === 'End') { ev.preventDefault(); this.setSelectedIndex(this.results.length - 1, ev); }
+    else if (IS_MAC && ev.ctrlKey && (key === 'n' || key === 'N')) { ev.preventDefault(); this.setSelectedIndex(this._selectedIndex + 1, ev); }
+    else if (IS_MAC && ev.ctrlKey && (key === 'p' || key === 'P')) { ev.preventDefault(); this.setSelectedIndex(this._selectedIndex - 1, ev); }
+    else if (key === 'Tab') { ev.preventDefault(); this.completeSelection(ev); }
+    else if (key === 'Enter') {
+      ev.preventDefault();
+      if (ev.shiftKey && this.supportsCreate) { this.selectSuggestion(null, ev); return; }
+      this.selectActiveSuggestion(ev);
+    }
+  }
+
+  selectActiveSuggestion(ev) {
+    const value = this.results[this._selectedIndex];
+    if (value === undefined) return;
+    this.selectSuggestion(value, ev);
+  }
+  selectSuggestion(value, ev) {
     this.close();
     this.onChooseSuggestion(value, ev);
   }

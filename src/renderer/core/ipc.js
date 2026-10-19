@@ -1,6 +1,6 @@
 /**
  * [INPUT]: Electron 的 ipcRenderer；主进程 main.js 注册的同名通道
- * [OUTPUT]: ipcSync/ipcSend/ipcInvoke/ipcOn 与 Desktop 门面（含拼写检查词典/语言通道）
+ * [OUTPUT]: ipcSync/ipcSend/ipcInvoke/ipcOn 与 Desktop 门面（含拼写检查词典/语言通道、设置独立窗口的开关/信息/探针/截图通道）
  * [POS]: core/ 的渲染进程 IPC 叶子层。只做通道转发，不持有业务状态；窗口标题、拼写检查等全部经此抵达主进程。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
@@ -67,6 +67,14 @@ export const Desktop = {
   isWindowMaximized: () => ipcSync('window-is-maximized'),
   setTrafficLightPosition: (x, y) => ipcSend('set-traffic-light-position', x, y),
   setCustomContextMenu: () => ipcSend('context-menu'),
+  // 设置独立窗口（1.14.4 popout）：开/关/信息/页签接力/探针/截图
+  settingsWindowOpen: (opts) => ipcSync('settings-window-open', opts),
+  settingsWindowClose: () => ipcSync('settings-window-close'),
+  settingsWindowToggle: (opts) => ipcSync('settings-window-toggle', opts),
+  settingsWindowPendingTab: () => ipcSync('settings-window-pending-tab'),
+  settingsWindowInfo: () => ipcSync('settings-window-info'),
+  settingsWindowProbe: () => ipcInvoke('settings-window-probe'),
+  settingsWindowCapture: (outPath) => ipcInvoke('settings-window-capture', outPath),
   selectFolder: () => ipcInvoke('plugin-select-folder'),
   spellcheckDict: () => ipcSync('spellcheck-dict-list'),
   spellcheckDictRemove: (word) => ipcSync('spellcheck-dict-remove', word),

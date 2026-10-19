@@ -177,16 +177,40 @@ body.is-resizing * { user-select: none !important; }
   min-height: 0;
   min-width: 0;
 }
+/* 原版 1.14.4 app.css:2786-2817 | 标签栏几何 token。
+   tokens-interface.css 的基线仍是 1.12（theme-tokens 断言锚定旧值），
+   顶栏按 1.14 对齐，因此这组值在本文件内以 .workspace-tabs 作用域落定：
+   --tab-curve=10px 决定活动标签底角凹弧半径，--tab-radius-active 决定标签上圆角。 */
+.workspace-tabs {
+  --tab-background: transparent;
+  --tab-background-hover: transparent;
+  --tab-inner-background: transparent;
+  --tab-inner-background-hover: var(--background-modifier-hover);
+  --tab-inner-background-active: transparent;
+  --tab-inner-border-width: 0px;
+  --tab-inner-border-color: transparent;
+  --tab-inner-border-color-hover: transparent;
+  --tab-inner-border-color-active: transparent;
+  --tab-container-padding-start: var(--size-4-2);
+  --tab-container-padding-end: var(--size-4-2);
+  --tab-outline-color-hover: transparent;
+  --tab-corner-shape: var(--corner-shape);
+  --tab-curve: 10px;
+  --tab-radius-active: 10px 10px 0 0;
+}
+
 .workspace-tabs .workspace-tab-header-container { flex: 0 0 auto; }
 
+/* 原版 1.14.4 app.css:6918-6930 | 标签栏容器。
+   底边线归容器画；活动标签靠 .workspace-tab-header-container-inner 的负下边距
+   压过这条线 1px（背景=内容区色），形成"无缝衔接"。 */
 .workspace-tab-header-container {
   display: flex;
-  align-items: center;
-  height: var(--header-height);
   background-color: var(--tab-container-background);
+  height: var(--header-height);
   border-bottom: var(--tab-outline-width) solid var(--tab-outline-color);
-  padding-left: var(--size-4-2);
-  padding-right: var(--size-4-2);
+  padding-inline-start: var(--tab-container-padding-start);
+  padding-inline-end: var(--tab-container-padding-end);
   position: relative;
   -webkit-app-region: drag;
 }
@@ -202,50 +226,72 @@ body.is-hidden-frameless .workspace-tabs.mod-top-right-space .workspace-tab-head
 .mod-right-split .workspace-tab-header-inner-title { display: var(--sidebar-tab-text-display); }
 .mod-left-split .workspace-tab-header-inner-close-button,
 .mod-right-split .workspace-tab-header-inner-close-button { display: none; }
+/* 原版 1.14.4 app.css:6933-6957 | 内层：top 5px、负下边距 -outline-width，
+   让标签脚印压住容器底边线；mod-root 非堆叠态用 overflow: clip + clip-margin
+   给凹弧（-2*curve 外扩）留出绘制区，同时裁掉横向滚动溢出。 */
 .workspace-tab-header-container-inner {
+  --scrollbar-native-width: none;
+  -webkit-app-region: drag;
   display: flex;
-  align-items: flex-end;
-  align-self: stretch;
-  overflow-x: auto;
-  overflow-y: hidden;
-  scrollbar-width: none;
   flex: 0 1 auto;
-  max-width: 100%;
-  /* 原版 6105-6113：内层左右各留 --tab-curve 的凹弧空间；负外边距抵消，标签位置不变。
-     不留空间时 overflow 会把活动标签底角的弧裁掉。 */
-  padding-inline: var(--tab-curve);
-  margin-inline: calc(var(--tab-curve) * -1);
+  overflow: auto;
+  margin: 5px -6px calc(var(--tab-outline-width) * -1);
+  padding: 1px 15px 0;
+  transition: padding 75ms ease-in-out;
 }
 .workspace-tab-header-container-inner::-webkit-scrollbar { display: none; }
+.mod-root .workspace-tab-header-container-inner { padding: 1px 6px 0; }
+.workspace-tab-header-container-inner:empty { display: none; }
+.mod-root .workspace-tabs:not(.mod-stacked) .workspace-tab-header-container-inner {
+  min-width: 0;
+  overflow: clip;
+  overflow-clip-margin: calc(var(--tab-curve) * 2);
+}
 .workspace-tab-header-spacer { display: flex; flex-grow: 1; -webkit-app-region: drag; align-self: stretch; }
 
+/* 原版 1.14.4 app.css:6991-6998 | 标签：padding 1px 3px 3px；
+   上圆角 --tab-radius-active；底边不设边框——底边的连贯只靠 is-active 的 box-shadow。 */
 .workspace-tab-header {
   -webkit-app-region: no-drag;
   color: var(--tab-text-color);
   display: flex;
   position: relative;
-  padding: 1px 4px 3.5px;
+  padding: 1px 3px 3px;
+  scroll-margin-inline-start: var(--size-2-3);
+  scroll-margin-inline-end: var(--size-4-1);
   text-align: center;
   border-radius: var(--tab-radius-active);
-  border: var(--tab-outline-width) solid transparent;
-  border-bottom: none;
-  margin-top: auto;
+  corner-shape: var(--tab-corner-shape);
   max-width: var(--tab-max-width);
   min-width: 0;
 }
+/* 原版 1.14.4 app.css:7068-7105 | 标签内层：height 100%（由外层 padding 决定视觉高度），
+   圆角由 --tab-radius 给；mod-root 内边距 0 6px 0 3px。 */
 .workspace-tab-header-inner {
   display: flex;
   align-items: center;
-  gap: var(--size-4-1);
-  padding: 0 var(--size-4-2);
-  height: calc(var(--header-height) - 10px);
-  border-radius: var(--tab-radius-active);
+  gap: var(--size-2-1);
+  padding: 0 var(--size-2-3);
+  height: 100%;
+  border: var(--tab-inner-border-width) solid var(--tab-inner-border-color);
+  border-radius: var(--tab-radius);
+  corner-shape: var(--tab-corner-shape);
   overflow: hidden;
   min-width: 0;
+  width: 100%;
   flex: 1 1 auto;
 }
-.workspace-tab-header-inner-icon { display: flex; color: var(--text-faint); }
+.mod-root .workspace-tab-header-inner {
+  padding-top: 0;
+  padding-inline-end: 3px;
+  padding-inline-start: 6px;
+  padding-bottom: 0;
+}
+.workspace-tab-header-inner-icon { display: flex; color: var(--icon-color); opacity: var(--icon-opacity); }
 .workspace-tab-header-inner-icon .svg-icon { width: var(--icon-s); height: var(--icon-s); }
+@media (hover: hover) {
+  .workspace-tab-header-inner:hover .workspace-tab-header-inner-icon { color: var(--icon-color-hover); opacity: var(--icon-opacity-hover); }
+}
 .workspace-tab-header-inner-title {
   flex: 1 1 auto;
   font-size: var(--tab-font-size);
@@ -253,8 +299,8 @@ body.is-hidden-frameless .workspace-tabs.mod-top-right-space .workspace-tab-head
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  max-width: var(--tab-width);
-  text-align: start;
+  width: 100%;
+  text-align: left;
 }
 .workspace-tab-header-inner-close-button {
   display: none;
@@ -268,63 +314,126 @@ body.is-hidden-frameless .workspace-tabs.mod-top-right-space .workspace-tab-head
 .workspace-tab-header-inner-close-button .svg-icon { width: var(--icon-xs); height: var(--icon-xs); }
 .workspace-tab-header:hover .workspace-tab-header-inner-close-button { display: flex; }
 .workspace-tab-header-inner-close-button:hover { color: var(--text-normal); background-color: var(--background-modifier-hover); }
-.workspace-tab-header:hover { background-color: var(--background-modifier-hover); }
-.workspace-tab-header:hover .workspace-tab-header-inner-title { color: var(--tab-text-color-focused-active); }
-.workspace-tab-header.is-active {
-  background-color: var(--tab-background-active);
-  border-color: var(--tab-outline-color);
-  border-bottom-color: transparent;
+
+/* 原版 1.14.4 app.css:6962-6990 | 焦点态文字色与悬停态内层底色。
+   悬停的标签只填充内层（--tab-inner-background-hover），不填标签本体。 */
+body.is-focused .workspace-tab-header-container .workspace-tab-header { color: var(--tab-text-color-focused); }
+body.is-focused .workspace-tab-header-container .workspace-tab-header.is-active { color: var(--tab-text-color-focused-active); }
+body.is-focused .mod-active .workspace-tab-header-container .workspace-tab-header.is-active .workspace-tab-header-inner-icon,
+body.is-focused .mod-active .workspace-tab-header-container .workspace-tab-header.is-active .workspace-tab-header-inner-title { color: var(--tab-text-color-focused-active-current); }
+body.is-focused .workspace-tab-header-container .workspace-tab-header.is-highlighted .workspace-tab-header-inner-icon,
+body.is-focused .workspace-tab-header-container .workspace-tab-header.is-highlighted .workspace-tab-header-inner-title { color: var(--tab-text-color-focused-highlighted); }
+@media (hover: hover) {
+  /* 原版 1.14.4 app.css:7003-7024 | 悬停：容器线+内层底色；凹弧用透明 outline 高亮 */
+  .workspace-tab-header-container .workspace-tab-header:not(.is-active):hover {
+    background-color: var(--tab-background-hover);
+    box-shadow: 0 0 0 var(--tab-outline-width) var(--tab-outline-color-hover), inset 0 calc(var(--tab-outline-width) * -1) var(--tab-outline-width) 0 var(--divider-color);
+  }
+  .workspace-tab-header-container .workspace-tab-header:not(.is-active):hover .workspace-tab-header-inner {
+    background-color: var(--tab-inner-background-hover);
+    border-color: var(--tab-inner-border-color-hover);
+  }
+  .workspace-split.mod-root .workspace-tab-header-container .workspace-tab-header:not(.is-active):hover::before,
+  .workspace-split.mod-root .workspace-tab-header-container .workspace-tab-header:not(.is-active):hover::after {
+    box-shadow: inset 0 0 0 var(--tab-outline-width) var(--tab-outline-color-hover), 0 0 0 calc(var(--tab-curve) * 4) var(--tab-background-hover);
+  }
+  .workspace-tab-header-container .workspace-tab-header:not(.is-active):hover::before {
+    clip-path: inset(50% calc(var(--tab-curve) * -1) var(--tab-outline-width) 50%);
+  }
+  .workspace-tab-header-container .workspace-tab-header:not(.is-active):hover::after {
+    clip-path: inset(50% 50% var(--tab-outline-width) calc(var(--tab-curve) * -1));
+  }
 }
-.workspace-tab-header.is-active .workspace-tab-header-inner-title { color: var(--tab-text-color-focused-active-current); }
-.workspace-tab-header.is-active .workspace-tab-header-inner-icon { color: var(--text-muted); }
-/* 原版 6171-6196：活动标签底角的凹弧。弧是以标签底角为圆心的 6px 四分之一圆，
- * 从标签侧边（底边线上方 --tab-curve 处）弯到顶栏底边线；弧外的角区填标签底色，
- * 让顶栏底色与底边线在标签两侧平滑收进弧线，不留断口。 */
-.workspace-tab-header.is-active::before,
-.workspace-tab-header.is-active::after {
-  content: "";
+
+/* 原版 1.14.4 app.css:7026-7059 | 活动标签与底角凹弧。
+   弧是 2*curve 见方的圆，圆心在标签底角；clip-path 取四分之一，
+   巨大扩散 box-shadow 填弧外区域（=标签底色），inset 1px 画弧线。
+   标签本体用 box-shadow 画整圈 outline 并 z-index:1；它比容器底边线
+   低 1px 的那条线正好被下方内容区（后绘制）盖住，于是"无缝"。 */
+.workspace-tab-header-container .workspace-tab-header::before,
+.workspace-tab-header-container .workspace-tab-header::after {
   position: absolute;
   bottom: 0;
-  width: var(--tab-curve);
-  height: var(--tab-curve);
-  background-color: var(--tab-background-active);
+  content: '';
+  corner-shape: var(--tab-corner-shape);
+  width: calc(var(--tab-curve) * 2);
+  height: calc(var(--tab-curve) * 2);
+  border-radius: 100%;
+  box-shadow: 0 0 0 calc(var(--tab-curve) * 3) transparent;
   pointer-events: none;
 }
-.workspace-tab-header.is-active::before {
-  left: calc(var(--tab-curve) * -1 - var(--tab-outline-width));
-  border-top: var(--tab-outline-width) solid var(--tab-outline-color);
-  border-left: var(--tab-outline-width) solid var(--tab-outline-color);
-  border-top-left-radius: var(--tab-curve);
+.workspace-tab-header-container .workspace-tab-header::before {
+  left: calc(var(--tab-curve) * -2);
+  clip-path: inset(50% calc(var(--tab-curve) * -1) 0 50%);
 }
-.workspace-tab-header.is-active::after {
-  right: calc(var(--tab-curve) * -1 - var(--tab-outline-width));
-  border-top: var(--tab-outline-width) solid var(--tab-outline-color);
-  border-right: var(--tab-outline-width) solid var(--tab-outline-color);
-  border-top-right-radius: var(--tab-curve);
+.workspace-tab-header-container .workspace-tab-header::after {
+  right: calc(var(--tab-curve) * -2);
+  clip-path: inset(50% 50% 0 calc(var(--tab-curve) * -1));
+}
+.workspace-tab-header-container .workspace-tab-header.is-active {
+  box-shadow: 0 0 0 var(--tab-outline-width) var(--tab-outline-color);
+  color: var(--tab-text-color-active);
+  background-color: var(--tab-background-active);
+  z-index: 1;
+}
+.workspace-split.mod-root .workspace-tab-header-container .workspace-tab-header.is-active::before,
+.workspace-split.mod-root .workspace-tab-header-container .workspace-tab-header.is-active::after {
+  box-shadow: inset 0 0 0 var(--tab-outline-width) var(--tab-outline-color), 0 0 0 calc(var(--tab-curve) * 4) var(--tab-background-active);
+}
+.workspace-tab-header-container .workspace-tab-header.is-active .workspace-tab-header-inner {
+  background-color: var(--tab-inner-background-active);
+  border-color: var(--tab-inner-border-color-active);
+}
+.workspace-tab-header-container .workspace-tab-header.is-active .workspace-tab-header-inner::after {
+  opacity: 0;
+}
+/* 原版 1.14.4 app.css:7331-7338 | 标签之间的 1px 竖分隔（内层右缘，1em 高） */
+.workspace .mod-root .workspace-tab-header-inner::after {
+  position: absolute;
+  inset-inline-end: -0.5px;
+  width: 1px;
+  background-color: var(--tab-divider-color);
+  content: '';
+  height: 1em;
 }
 .workspace-tab-header.is-being-dragged { opacity: 0.5; }
 .workspace-tab-header[data-type="markdown"] .workspace-tab-header-inner-icon,
 .mod-root .workspace-tab-header[data-type="empty"] .workspace-tab-header-inner-icon { display: none; }
 
-/* 原版 6332-6341：新建/列表按钮 */
+/* 原版 1.14.4 app.css:7181-7211 | 新建标签/标签列表按钮。
+   外层 div 只管位置（padding 8px 0 6px + 1.14 外边距）；按钮盒是内层 span.clickable-icon
+   （4px 内边距 + --icon-size=--icon-m）。旧实现把 clickable-icon 挂在外层，hover 盒与内边距全错。 */
 .workspace-tab-header-tab-list,
 .workspace-tab-header-new-tab {
   -webkit-app-region: no-drag;
   display: none;
   z-index: 1;
   align-items: center;
-  color: var(--icon-color);
-  --icon-size: var(--icon-m);
-  --icon-stroke: var(--icon-m-stroke-width);
 }
 .titlebar .workspace-tab-header-tab-list,
 .titlebar .workspace-tab-header-new-tab,
 .mod-root .workspace-tab-header-tab-list,
 .mod-root .workspace-tab-header-new-tab { display: flex; }
-.workspace-tab-header-new-tab { padding: var(--size-4-2) 0 var(--size-2-3); margin-inline-end: var(--size-4-3); margin-inline-start: -4px; }
-.workspace-tab-header-tab-list { margin-inline-end: var(--size-4-1); padding: var(--size-4-2) 0 var(--size-2-3); }
+.workspace-tab-header-tab-list .clickable-icon,
+.workspace-tab-header-new-tab .clickable-icon {
+  color: var(--icon-color);
+  padding: var(--size-2-2);
+  --icon-size: var(--icon-m);
+  --icon-stroke: var(--icon-m-stroke-width);
+  align-items: center;
+}
+.workspace-tab-header-new-tab {
+  padding: var(--size-4-2) 0 var(--size-2-3);
+  margin-inline-start: var(--size-4-2);
+  margin-inline-end: var(--size-2-2);
+}
+.mod-stacked .workspace-tab-header-new-tab { margin-inline-start: 0; }
+.workspace-tab-header-tab-list {
+  padding: var(--size-4-2) 0 var(--size-2-3);
+  margin-inline-end: var(--size-2-1);
+}
 
-/* 原版 6441-6505：主区域标签均分宽度、容器查询、关闭钮显隐与固定状态 */
+/* 原版 1.14.4 app.css:7270-7315：主区域标签均分宽度、容器查询、关闭钮显隐与固定状态 */
 .workspace .mod-root .workspace-tab-header {
   -webkit-app-region: no-drag;
   container-type: inline-size;
@@ -333,7 +442,7 @@ body.is-hidden-frameless .workspace-tabs.mod-top-right-space .workspace-tab-head
   width: var(--tab-width);
   min-width: 0;
   max-width: var(--tab-max-width);
-  padding: 1px 3px 3.5px;
+  padding: 1px 4px 4px;
 }
 .workspace .mod-root .workspace-tab-header .workspace-tab-header-status-container { position: sticky; inset-inline-end: 0; }
 .workspace .mod-root .workspace-tab-header .workspace-tab-header-inner-close-button { position: sticky; inset-inline-end: 0; }
@@ -515,6 +624,8 @@ body.is-hidden-frameless .workspace-tabs.mod-top-right-space .workspace-tab-head
   flex-direction: column;
 }
 
+/* 原版 1.14.4 app.css:4558-4577 | 视图头。结构：left（导航钮）+ title-container + actions。
+   底边线 --file-header-border 默认透明；聚焦态底色走 --file-header-background-focused。 */
 .view-header {
   height: var(--header-height);
   display: flex;
@@ -524,32 +635,124 @@ body.is-hidden-frameless .workspace-tabs.mod-top-right-space .workspace-tab-head
   position: relative;
   gap: var(--size-4-2);
   padding: 0 var(--size-4-3);
-  align-items: center;
   flex: 0 0 auto;
 }
+.is-focused .workspace-leaf.mod-active .view-header { background-color: var(--file-header-background-focused); }
 .workspace-split.mod-left-split .view-header,
 .workspace-split.mod-right-split .view-header { display: none; }
 body:not(.show-view-header):not(.is-phone) .view-header { display: none; }
 .view-header.is-hidden { display: none; }
-.view-header-title-container {
+/* 原版 4588-4592 */
+.view-header-left {
   display: flex;
-  flex-grow: 1;
+  align-items: center;
+  justify-content: flex-start;
+}
+/* 原版 6798-6802 | 前进/后退导航钮：小图标尺寸 */
+.view-header-nav-buttons {
+  --icon-size: var(--icon-s);
+  align-items: center;
+  display: flex;
+}
+/* 原版 4593-4605 */
+.view-header-title-container {
+  font-family: var(--file-header-font);
+  font-size: var(--file-header-font-size);
+  font-weight: var(--file-header-font-weight);
+  flex: 1 1 auto;
   overflow: hidden;
-  justify-content: var(--file-header-justify, center);
+  position: relative;
+  justify-content: var(--file-header-justify);
+  display: flex;
   align-items: center;
   gap: var(--size-4-1);
   min-width: 0;
 }
+/* 原版 4606-4635 | 面包屑：父路径分段 + 段后 "/"；:empty 隐藏；hover/菜单开启时上底色 */
+.view-header-title-parent {
+  color: var(--text-muted);
+  flex: 0 100 auto;
+  display: flex;
+  gap: 0;
+  overflow: hidden;
+  white-space: nowrap;
+}
+.view-header-title-parent:empty { display: none; }
+.view-header-title-parent .view-header-breadcrumb {
+  padding: 2px 4px;
+  border-radius: var(--radius-s);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.view-header-title-parent .view-header-breadcrumb.has-active-menu {
+  background-color: var(--background-modifier-hover);
+  color: var(--text-normal);
+}
+@media (hover: hover) {
+  .view-header-title-parent .view-header-breadcrumb:hover {
+    background-color: var(--background-modifier-hover);
+    color: var(--text-normal);
+  }
+}
+.view-header-title-parent .view-header-breadcrumb-separator {
+  padding: 2px 1px;
+  color: var(--text-faint);
+}
+/* 原版 4637-4656 | 标题：单行省略；聚焦时可横向滚动（focus-within 放开 overflow） */
 .view-header-title {
-  font-size: var(--file-header-font-size);
-  font-weight: var(--file-header-font-weight);
+  flex: 0 0 auto;
+  max-width: 100%;
+  word-wrap: normal;
   color: var(--text-muted);
   overflow: hidden;
-  white-space: pre;
+  --scrollbar-native-width: none;
+  scroll-padding-inline-end: 20px;
   text-overflow: ellipsis;
-  min-width: 0;
+  white-space: pre;
 }
-.view-actions { display: flex; align-items: center; gap: var(--size-4-1); color: var(--text-muted); flex: 0 0 auto; }
+.view-header-title::-webkit-scrollbar { display: none; }
+.view-header-title:focus-within {
+  max-width: 100%;
+  overflow: auto;
+  text-overflow: unset;
+}
+.is-focused .workspace-leaf.mod-active .view-header-title { color: var(--text-normal); }
+/* 原版 7227-7229 */
+.mod-root .workspace-tabs > .workspace-leaf .view-header-title { white-space: normal; }
+/* 原版 22184-22208 | 横向滚动渐隐：容器带 mod-fade，未到端起/末端时显示 30px 渐变蒙版 */
+.mod-fade {
+  --scroll-fade-offset-right: 0;
+  --scroll-fade-offset-left: 0;
+}
+.mod-fade:not(.mod-at-start):before {
+  content: ' ';
+  pointer-events: none;
+  position: absolute;
+  top: 0;
+  z-index: 1;
+  left: var(--scroll-fade-offset-left);
+  width: 30px;
+  height: 100%;
+  background: linear-gradient(to right, var(--background-primary), transparent);
+}
+.mod-fade:not(.mod-at-end):after {
+  content: ' ';
+  pointer-events: none;
+  position: absolute;
+  top: 0;
+  right: var(--scroll-fade-offset-right);
+  width: 30px;
+  height: 100%;
+  background: linear-gradient(to right, transparent, var(--background-primary));
+}
+/* 原版 8301-8318 | 视图动作区：图标小尺寸、无间隙 */
+.view-actions {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0;
+  --icon-size: var(--icon-s);
+}
 
 .view-content {
   flex: 1 1 auto;

@@ -127,12 +127,12 @@
 .modal.is-hidden { opacity: 0; }
 .modal-close-button {
   position: absolute;
-  top: var(--size-4-2);
-  right: var(--size-4-2);
+  top: var(--size-2-3);
+  inset-inline-end: var(--size-2-3);
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: var(--size-4-1);
+  padding: var(--size-2-2);
   border-radius: var(--radius-s);
   color: var(--text-muted);
   cursor: var(--cursor, pointer);
@@ -162,32 +162,60 @@
   margin-top: var(--size-4-2);
 }
 .modal-container.mod-dim .modal-bg { background-color: var(--background-modifier-cover); }
+/* 原版 app.css 8107：dimBackground 默认 true → 模态大阴影（缺此规则则平扁、无投射感） */
+.modal-container.mod-dim .modal { box-shadow: var(--shadow-l); }
+
+/* --------------------------------------------------- 设置独立窗口（1.14.4 popout） */
+/* 原版 app.css 5968-5994：窗口内 body > .modal 铺满、去边框/圆角/阴影，关闭按钮隐藏 */
+body.is-popout-modal { --traffic-lights-offset-x: 32px; --traffic-lights-offset-y: 32px; }
+body.is-popout-modal > .modal.mod-settings {
+  width: 100%;
+  height: 100%;
+  max-width: none;
+  max-height: none;
+  border: none;
+  border-radius: 0;
+  box-shadow: none;
+}
+body.is-popout-modal > .modal.mod-settings .modal-close-button { display: none; }
+/* 无边框模式：恢复应用自绘标题条（可拖动）并为它让出顶部高度；原生标题栏模式不加 */
+body.is-popout-modal.is-frameless.is-hidden-frameless:not(.is-fullscreen) { padding-top: var(--titlebar-height); }
+/* 原版 .modal-container 为 absolute（随 body 内边距下移）；本项目为 fixed，须显式让出标题条高度 */
+body.is-popout-modal.is-frameless.is-hidden-frameless:not(.is-native-frame) .modal-container { inset-block-start: var(--titlebar-height); }
+body.is-frameless.is-hidden-frameless.is-popout-modal .titlebar {
+  display: flex;
+  height: var(--titlebar-height);
+  background-color: var(--titlebar-background);
+  border-bottom: var(--border-width) solid var(--divider-color);
+}
+/* 原生边框模式：OS 画标题栏，应用标题条隐藏且不占顶部高度 */
+body.is-popout-modal.is-frameless.is-hidden-frameless.is-native-frame { padding-top: 0; }
+body.is-frameless.is-hidden-frameless.is-popout-modal.is-native-frame .titlebar { display: none; }
+/* 设置窗口只显示设置：工作区骨架（功能区/状态栏）不参与呈现 */
+body.is-settings-window .workspace-ribbon,
+body.is-settings-window .status-bar { display: none; }
 
 /* prompt modal (also base for suggest modals) */
 .modal.mod-prompt, .modal:has(.prompt-input) { width: var(--prompt-width, 700px); max-width: var(--prompt-max-width, 1100px); }
 
+/* 逐字移植原版 app.css 10193-10273：建议项。基础项为块级；只有 .mod-complex 才切行。 */
+.suggestion-item, .suggestion-empty { font-size: var(--font-ui-medium); margin-bottom: 1px; }
+.suggestion-empty-suggestion { color: var(--text-faint); }
+.suggestion-empty { color: var(--text-muted); padding: var(--size-4-2); padding-top: var(--size-4-3); text-align: center; }
 .suggestion-item {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
+  cursor: var(--cursor);
   padding: var(--size-2-3) var(--size-4-3);
-  font-size: var(--font-ui-medium);
-  margin-bottom: 1px;
+  white-space: pre-wrap;
   border-radius: var(--radius-s);
-  cursor: var(--cursor, pointer);
+  corner-shape: var(--corner-shape);
 }
-.suggestion-item:hover, .suggestion-item.is-selected { background-color: var(--background-modifier-hover); }
-.suggestion-title { color: var(--text-normal); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.suggestion-note { font-size: var(--font-ui-smaller); color: var(--text-faint); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.suggestion-highlight { color: var(--text-accent); font-weight: var(--font-medium); }
-/* 原版 app.css 9003-9060：复杂建议项（命令面板等）——内容列 + 热键同行靠右。
-   本仓库基础项默认列布局（供快速切换器等），复杂项按原版改回行。 */
-.suggestion-item.mod-complex {
-  flex-direction: row;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 0;
-}
+.suggestion-item.is-selected,
+.suggestion-item.mobile-tap { background-color: var(--background-modifier-hover); }
+.suggestion-item.is-being-dragged { pointer-events: auto; background-color: var(--background-modifier-hover); }
+.suggestion-item.mod-downranked { color: var(--text-muted); }
+.suggestion-item.mod-nowrap { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.suggestion-item.mod-complex { align-items: baseline; display: flex; justify-content: space-between; }
+.suggestion-item.mod-complex .suggestion-title { overflow-wrap: break-word; }
 .suggestion-item.mod-complex .suggestion-content {
   display: flex;
   flex-direction: column;
@@ -195,7 +223,8 @@
   text-overflow: ellipsis;
   margin-inline-end: auto;
 }
-.suggestion-item.mod-complex .suggestion-title { overflow-wrap: break-word; }
+.suggestion-item.mod-complex .suggestion-prefix:after { content: ': '; }
+.suggestion-item.mod-complex .suggestion-highlight { font-weight: bold; }
 .suggestion-item.mod-complex .suggestion-note {
   font-size: 0.8em;
   color: var(--text-muted);
@@ -203,14 +232,50 @@
   flex-basis: 100%;
   overflow-wrap: break-word;
 }
+.suggestion-item.mod-complex .suggestion-icon,
+.suggestion-item.mod-complex .suggestion-aux {
+  display: flex;
+  align-items: center;
+  align-self: center;
+  flex-shrink: 0;
+  gap: var(--size-2-1);
+}
 .suggestion-item.mod-complex .suggestion-hotkey {
-  font-size: var(--font-ui-smaller);
-  font-family: var(--font-interface);
+  font-size: var(--hotkey-font-size);
+  font-family: var(--hotkey-font);
+  background-color: var(--hotkey-background);
+  border-radius: var(--hotkey-radius);
+  corner-shape: var(--hotkey-corner-shape);
   padding: 2px 6px;
 }
 .suggestion-item.mod-complex .suggestion-hotkey:not(:last-child) { margin-inline-start: 10px; }
-.suggestion-empty { padding: var(--size-4-2); padding-top: var(--size-4-3); text-align: center; color: var(--text-muted); }
-/* 逐字移植原版 app.css 8858-8867：建议弹层本体，滚动与留白仍由 .prompt-results 提供。 */
+.suggestion-item.mod-complex .suggestion-action {
+  font-size: var(--font-ui-smaller);
+  font-family: var(--font-interface);
+  color: var(--interactive-accent);
+}
+.suggestion-item.mod-complex .suggestion-flair {
+  color: var(--text-muted);
+  opacity: var(--icon-opacity);
+  display: flex;
+  align-items: center;
+}
+.suggestion-item.mod-complex .suggestion-flair:not(:last-child) { margin-inline-start: 6px; }
+.suggestion-item.mod-complex .suggestion-icon .suggestion-flair,
+.suggestion-item.mod-complex .suggestion-icon .highlight-swatch {
+  margin-top: 0;
+  margin-inline-start: var(--size-4-1);
+  margin-bottom: 0;
+  margin-inline-end: var(--size-4-3);
+}
+.suggestion-item.mod-complex .suggestion-aux .suggestion-flair {
+  margin-top: 0;
+  margin-inline-start: var(--size-4-3);
+  margin-bottom: 0;
+  margin-inline-end: var(--size-4-1);
+}
+.suggestion-highlight { font-weight: bold; }
+/* 逐字移植原版 app.css 8858-8867：输入建议弹层本体（prompt 不再复用此类，避免 300px 高度上限）。 */
 .suggestion-container {
   background-color: var(--suggestion-background);
   backdrop-filter: var(--suggestion-backdrop-filter);
@@ -221,19 +286,6 @@
   max-height: 300px;
   z-index: var(--layer-notice);
 }
-.prompt-instructions {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: center;
-  gap: var(--size-4-4);
-  padding: var(--size-4-2) var(--size-4-4);
-  border-top: 1px solid var(--background-modifier-border);
-  font-size: var(--font-ui-smaller);
-  color: var(--text-faint);
-  flex: 0 0 auto;
-}
-.prompt-instruction { display: flex; align-items: center; gap: var(--size-2-2); }
-.prompt-instruction-command { color: var(--text-muted); }
 
 /* floating input suggest popover */
 .suggestion-container.input-suggest {
@@ -412,31 +464,99 @@
 }
 
 /* ------------------------------------------------------------ empty state */
+/* 原版 1.14.4 app.css:4083-4204 | 空标签页：容器铺满内容区并居中；
+   动作行是纵向 pill 列表（.text-icon-button.mod-pill.empty-state-action）。 */
 .empty-state {
+  position: absolute;
+  height: 100%;
+  width: 100%;
+  container-type: inline-size;
+  container-name: empty-state;
+  top: 0;
+  inset-inline-start: 0;
   display: flex;
-  flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: var(--size-4-3);
-  height: 100%;
-  padding: var(--size-4-8);
-  color: var(--text-muted);
+  flex-direction: column;
+}
+.empty-state-container {
+  max-width: 90%;
+  max-height: 280px;
+  margin: 20px;
   text-align: center;
+  text-wrap: balance;
 }
-.empty-state-title { font-size: var(--font-ui-large); font-weight: var(--font-semibold); color: var(--text-muted); }
+.empty-state-title {
+  margin: 20px 0;
+  font-weight: var(--h2-weight);
+  font-size: var(--h2-size);
+  line-height: var(--line-height-tight);
+  position: relative;
+}
 .empty-state-description { font-size: var(--font-ui-small); color: var(--text-faint); max-width: 340px; }
-.empty-state-action-list { display: flex; flex-direction: column; gap: var(--size-2-2); margin-top: var(--size-4-3); }
-.empty-state-action {
-  display: flex;
-  align-items: center;
+.empty-state-action-list {
+  display: inline-flex;
+  flex-direction: column;
   gap: var(--size-4-2);
-  padding: var(--size-4-2) var(--size-4-4);
-  border-radius: var(--radius-m);
-  color: var(--text-muted);
-  cursor: var(--cursor, pointer);
+  max-width: 100%;
   font-size: var(--font-ui-small);
+  line-height: var(--line-height-tight);
+  margin-top: 20px;
 }
-.empty-state-action:hover { background-color: var(--background-modifier-hover); color: var(--text-normal); }
+.empty-state-hotkey {
+  font-family: var(--hotkey-font);
+  background-color: var(--hotkey-background);
+  border-radius: var(--hotkey-radius);
+  corner-shape: var(--hotkey-corner-shape);
+  padding: 2px 6px 2px 4px;
+  margin-inline-start: auto;
+  margin-inline-end: -4px;
+  white-space: nowrap;
+}
+.empty-state-action-list > .text-icon-button.mod-pill {
+  --no-tooltip: true;
+  width: 100%;
+  height: auto;
+  justify-content: flex-start;
+  font-weight: inherit;
+  margin: 0;
+  background-color: transparent;
+  box-shadow: none;
+  corner-shape: round;
+}
+@media (hover: hover) {
+  .empty-state-action-list > .text-icon-button.mod-pill:hover {
+    background-color: var(--background-modifier-hover);
+    box-shadow: none;
+  }
+}
+.empty-state-action-list > .text-icon-button.mod-pill:focus-visible {
+  box-shadow: 0 0 0 3px var(--background-modifier-border-focus);
+}
+@container empty-state (max-width: 230px) {
+  .empty-state-action-list {
+    display: grid;
+    grid-template-columns: repeat(2, max-content);
+  }
+  .empty-state-action-list > .text-icon-button.mod-pill {
+    --no-tooltip: false;
+    width: auto;
+    padding-inline: 8px;
+    justify-content: center;
+  }
+  .empty-state-action-list > .text-icon-button.mod-pill:last-child:nth-child(odd) {
+    grid-column: 1 / -1;
+    justify-self: center;
+  }
+  .empty-state-action-list .text-button-label { display: none; }
+  .empty-state-hotkey { display: none; }
+}
+@container empty-state (max-width: 120px) {
+  .empty-state-action-list { grid-template-columns: repeat(1, max-content); }
+}
+@container empty-state (max-width: 70px) {
+  .empty-state-action-list { display: none; }
+}
 
 /* --------------------------------------------------------------- settings */
 /* 设置模态外壳。.vertical-tab-*、.setting-item 与各控件的样式见 settings.css。 */
@@ -531,11 +651,36 @@ h6:hover .collapse-indicator,
 .text-icon-button .flair {
   margin: 0;
 }
+/* 原版 1.14.4 app.css:8435-8459 | pill 变体：0.5px 边框、--pill-radius、8/12 内边距 */
+.text-icon-button.mod-pill {
+  --icon-size: var(--icon-s);
+  --icon-color-hover: var(--text-normal);
+  color: var(--text-normal);
+  border: 0.5px solid var(--background-modifier-border);
+  border-radius: var(--pill-radius);
+  corner-shape: round;
+  padding: var(--size-4-2) var(--size-4-3);
+  gap: var(--size-4-2);
+  background-color: transparent;
+  box-shadow: none;
+}
+.text-icon-button.mod-pill .text-button-label {
+  padding-inline-end: 0;
+}
+@media (hover: hover) {
+  .text-icon-button.mod-pill:hover {
+    border-color: var(--background-modifier-border-hover);
+  }
+}
+.text-icon-button.mod-pill:focus-visible {
+  box-shadow: 0 0 0 3px var(--background-modifier-border-focus);
+}
 .text-icon-button.is-active {
   color: var(--icon-color-active);
 }
 .text-icon-button .text-button-icon {
   display: flex;
+  flex-shrink: 0;
   align-items: center;
   justify-content: center;
 }
@@ -585,10 +730,12 @@ h6:hover .collapse-indicator,
   background-color: var(--prompt-background);
   box-shadow: var(--shadow-l);
   backdrop-filter: var(--prompt-backdrop-filter);
-  border: var(--prompt-border-width) solid var(--prompt-border-color);
+  border: var(--prompt-border-width) solid var(--background-modifier-border-hover);
   z-index: 1;
   position: absolute;
-  top: 80px;
+  /* 原版 body 继承 --line-height-tight（app.css:3283）；本项目 body 用 normal，故在 prompt 内部还原。 */
+  line-height: var(--line-height-tight);
+  top: calc((100vh - var(--prompt-max-height)) / 2);
   width: var(--prompt-width);
   max-width: var(--prompt-max-width);
   max-height: var(--prompt-max-height);
@@ -601,7 +748,37 @@ h6:hover .collapse-indicator,
   position: relative;
 }
 .prompt-input-container .search-input-clear-button {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  position: absolute;
+  top: 0;
+  bottom: 0;
   inset-inline-end: var(--size-4-4);
+  width: 28px;
+  height: var(--input-height);
+  margin: auto;
+  padding: 0;
+  line-height: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--search-clear-button-color);
+  cursor: var(--cursor);
+  transition: color var(--anim-duration-fast) ease-in-out;
+}
+.prompt-input-container .search-input-clear-button:after {
+  content: '';
+  height: var(--search-clear-button-size);
+  width: var(--search-clear-button-size);
+  display: block;
+  background-color: currentColor;
+  -webkit-mask-image: url("data:image/svg+xml,<svg viewBox=%270 0 12 12%27 fill=%27none%27 xmlns=%27http://www.w3.org/2000/svg%27%3E%3Cpath fill-rule=%27evenodd%27 clip-rule=%27evenodd%27 d=%27M6 12C9.31371 12 12 9.31371 12 6C12 2.68629 9.31371 0 6 0C2.68629 0 0 2.68629 0 6C0 9.31371 2.68629 12 6 12ZM3.8705 3.09766L6.00003 5.22718L8.12955 3.09766L8.9024 3.8705L6.77287 6.00003L8.9024 8.12955L8.12955 8.9024L6.00003 6.77287L3.8705 8.9024L3.09766 8.12955L5.22718 6.00003L3.09766 3.8705L3.8705 3.09766Z%27 fill=%27currentColor%27/></svg>");
+  -webkit-mask-repeat: no-repeat;
+}
+.prompt-input-container .search-input-clear-button:active,
+.prompt-input-container .search-input-clear-button:hover {
+  color: var(--text-normal);
+  transition: color var(--anim-duration-fast) ease-in-out;
 }
 input.prompt-input {
   width: 100%;
@@ -628,7 +805,6 @@ input.prompt-input:focus-visible {
   overflow-y: auto;
 }
 .prompt-instructions {
-  border-top: var(--border-width) solid var(--background-secondary);
   user-select: none;
   font-size: var(--font-ui-smaller);
   color: var(--text-muted);

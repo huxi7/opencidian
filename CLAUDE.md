@@ -1,6 +1,6 @@
 # OpenSidian - 开源 Obsidian 桌面复刻
 
-OpenSidian 是 Obsidian 桌面版 1.12.4 的独立开源复刻（1:1 目标），兼容 `.obsidian` 库格式。
+OpenSidian 是 Obsidian 桌面版 1.14.4 的独立开源复刻（1:1 目标），兼容 `.obsidian` 库格式。不加载第三方插件：仅内置核心插件。
 
 Electron 33 + esbuild + CodeMirror 6 + markdown-it + MathJax 3.2.2 CHTML + 原生 CSS 变量主题
 
@@ -10,7 +10,7 @@ src/ - 全部源码 (2 子目录)
   renderer/ - 渲染进程：应用主体 (6 子目录: core, editor, markdown, views, plugins-core, styles)
 scripts/ - esbuild 构建与隔离 Electron 验收 (acceptance/)
 assets/ - 图标表、字体与官方 MathJax 离线资源
-_analysis/ - 原版解包产物 (app.asar/obsidian.asar)，只读参考资料
+_analysis/ - 原版解包产物 (obsidian-114/ 为 1.14.4 提取源)，只读参考资料
 dist/ - esbuild 输出 (renderer.js, starter.js, graph-sim-worker.js)
 </directory>
 
