@@ -333,3 +333,12 @@ MathJax 独立适配器子代理的41项基础/故障测试见 assets/mathjax/SO
 - 复跑（主会话独立）：reading-ui 212 ✓、reading-menus 13 ✓、notes 72 ✓、editor 131 ✓、image-size 36 ✓、page-preview 16 ✓、math ✓；代理另跑 table-interaction 178 / table-widget 76 / core-views 83 / editor-block-button 11 / editor-menu 23 / editor-layout 23 全绿，15 份日志零错误。
 - 截图：浅色顶部 `…/probe-reading-run-result-f07wns/screen.png`、浅色 callout/代码/表格 `…/kpCxh1/screen.png`、浅色嵌入/脚注 `…/Zttrex/screen.png`、深色顶部 `…/QfmEa5/screen.png`、深色 callout/表格 `…/fDXpNp/screen.png`。
 - 已知差异：容器 DOM 未复刻（视觉等价选择器）、阅读滚动容器留在 `.markdown-reading-view`、表格列对齐用 style 而非 `align` 属性、嵌块打开按钮 svg 省略 width/height（同原版被 CSS 覆盖）。
+
+## 终版全量回归（2026-10-19 中午 · UI 深挖三批后 · 56/56 通过、0 失败）
+
+- 主循环 42 场景（各自独立临时库）+ graph-perf 100/1000/5000：**45/45 通过**。
+- 链式两连 5 组（同库）：graph-persist write→read、settings write→restart、community run→restart(3)、recovery exercise→restart(45)、audio-recorder run→restart(7)：**10/10 通过**。
+- 内存回归 `workspace-regression`：**19/19**。
+- 断言总量 ≈2700（计数场景合计 2709 + 6 个无计数场景 + 内存 19）；50 份日志零 `TypeError|ReferenceError|act failed|unhandledrejection|SyntaxError`。
+- 本轮新增/扩容锁：theme-tokens 717、reading-ui 212、canvas-ui 107、editor 131、dialogs 8、zoom-lock 11、sidebar-chrome 35。
+- 运行脚本与日志：`/private/var/folders/…/T/opencode/full-regression.sh` + `ui-deep-regression.log`。
