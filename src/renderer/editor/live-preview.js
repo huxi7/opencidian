@@ -50,11 +50,18 @@ class CheckboxWidget extends WidgetType {
 }
 
 class BulletWidget extends WidgetType {
-  constructor(ordered, number) { super(); this.ordered = ordered; this.number = number; }
-  eq(other) { return other.ordered === this.ordered && other.number === this.number; }
+  constructor(ordered, number, silent) { super(); this.ordered = ordered; this.number = number; this.silent = !!silent; }
+  eq(other) {
+    return other.ordered === this.ordered && other.number === this.number && other.silent === this.silent;
+  }
   toDOM() {
+    // 原版 app.css 12114/12164：无序记号是 .cm-formatting-list-ul 内嵌 .list-bullet，圆点由
+    // :after 画出；记号 span 自带 --list-padding-inline-start 缩进。silent 用于任务行：
+    // 保留记号 span（缩进位）但不画圆点，复选框紧随其后。
     const span = createSpan({ cls: this.ordered ? 'cm-formatting-list cm-formatting-list-ol' : 'cm-formatting-list cm-formatting-list-ul' });
-    span.setText(this.ordered ? `${this.number}.` : '');
+    if (this.silent) return span;
+    if (this.ordered) span.setText(`${this.number}.`);
+    else span.createSpan('list-bullet');
     return span;
   }
 }
@@ -601,10 +608,15 @@ function buildDecorations(view, app) {
           // ---- tasks & bullets
           const tm = text.match(RE_TASK);
           if (tm) {
+            // 原版：非光标行的任务标记只留缩进位（- 不可见），[x] 换成复选框
+            const leadMatch = tm[1].match(/^\s*/);
+            const markFrom = lineStart + leadMatch[0].length;
             const cbStart = lineStart + tm[1].length;
+            if (!touches(markFrom, cbStart)) {
+              decorations.push(Decoration.replace({ widget: new BulletWidget(/\d/.test(tm[1]), 0, true) }).range(markFrom, cbStart));
+            }
             decorations.push(Decoration.replace({ widget: new CheckboxWidget(tm[2].toLowerCase() === 'x', cbStart) }).range(cbStart, cbStart + 3));
-            decorations.push(lineClass(line, 'HyperMD-task-line'));
-            bulletDecoration(decorations, line, text, lineStart, touches, tm[1].length);
+            decorations.push(lineClass(line, tm[2].toLowerCase() === 'x' ? 'HyperMD-task-line cm-task-checked' : 'HyperMD-task-line'));
           } else {
             bulletDecoration(decorations, line, text, lineStart, touches, 0);
           }

@@ -170,15 +170,46 @@
   display: flex;
   flex-direction: column;
   gap: 2px;
-  padding: var(--size-4-2) var(--size-4-3);
+  padding: var(--size-2-3) var(--size-4-3);
+  font-size: var(--font-ui-medium);
+  margin-bottom: 1px;
   border-radius: var(--radius-s);
   cursor: var(--cursor, pointer);
 }
 .suggestion-item:hover, .suggestion-item.is-selected { background-color: var(--background-modifier-hover); }
-.suggestion-title { font-size: var(--font-ui-small); color: var(--text-normal); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.suggestion-title { color: var(--text-normal); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .suggestion-note { font-size: var(--font-ui-smaller); color: var(--text-faint); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .suggestion-highlight { color: var(--text-accent); font-weight: var(--font-medium); }
-.suggestion-empty { padding: var(--size-4-6); text-align: center; color: var(--text-faint); font-size: var(--font-ui-small); }
+/* 原版 app.css 9003-9060：复杂建议项（命令面板等）——内容列 + 热键同行靠右。
+   本仓库基础项默认列布局（供快速切换器等），复杂项按原版改回行。 */
+.suggestion-item.mod-complex {
+  flex-direction: row;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0;
+}
+.suggestion-item.mod-complex .suggestion-content {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin-inline-end: auto;
+}
+.suggestion-item.mod-complex .suggestion-title { overflow-wrap: break-word; }
+.suggestion-item.mod-complex .suggestion-note {
+  font-size: 0.8em;
+  color: var(--text-muted);
+  width: 100%;
+  flex-basis: 100%;
+  overflow-wrap: break-word;
+}
+.suggestion-item.mod-complex .suggestion-hotkey {
+  font-size: var(--font-ui-smaller);
+  font-family: var(--font-interface);
+  padding: 2px 6px;
+}
+.suggestion-item.mod-complex .suggestion-hotkey:not(:last-child) { margin-inline-start: 10px; }
+.suggestion-empty { padding: var(--size-4-2); padding-top: var(--size-4-3); text-align: center; color: var(--text-muted); }
 /* 逐字移植原版 app.css 8858-8867：建议弹层本体，滚动与留白仍由 .prompt-results 提供。 */
 .suggestion-container {
   background-color: var(--suggestion-background);

@@ -63,7 +63,11 @@ class CommandPaletteModal extends SuggestModal {
     return out.slice(0, 200).map((o) => o.cmd);
   }
   renderSuggestion(cmd, el) {
-    const nameEl = el.createDiv('suggestion-title');
+    // 原版 app.css 9003-9045：命令项为 .suggestion-item.mod-complex——标题进 .suggestion-content 列，
+    // 热键是 item 的直接子元素，同一行靠右显示
+    el.toggleClass('mod-complex', true);
+    const content = el.createDiv('suggestion-content');
+    const nameEl = content.createDiv('suggestion-title');
     const name = cmd.name || cmd.id;
     const m = fuzzyMatch(this.inputEl.value, cmd.name + ' ' + (cmd.id.split(':')[0] || ''));
     if (m && this.inputEl.value) renderHighlightedText(nameEl, name, m.matches.slice(0, name.length));

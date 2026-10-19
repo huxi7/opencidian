@@ -213,6 +213,37 @@
     await wait(() => freshPreview.readingEl.querySelector('code .token.keyword'), 'fresh preview highlighted');
     checkMode(freshSource, 'source', 'source remains consistent while inactive');
     checkMode(freshPreview, 'preview', 'preview initial load complete');
+
+    // ---- 实时预览记号：列表圆点 / 任务复选框 / 折叠指示器（原版 app.css 12114/12164/7236）
+    await applySettings({ foldHeading: true, foldIndent: true, livePreview: true, showLineNumber: false });
+    const markerText = ['- 项目一', '- 项目二', '- [ ] 未勾选', '- [x] 已勾选', '', '1. 有序一', '2. 有序二', '', '# 折叠标题', '正文', ''].join('\n');
+    const markerFile = await create('markers', markerText);
+    const markerView = await openFresh(markerFile, 'live');
+    markerView.editor.setSelection({ line: 10, ch: 0 });
+    await delay(120);
+    const markerDom = markerView.editor.cm.dom;
+    const bulletSpan = markerDom.querySelector('.cm-formatting-list-ul');
+    assert(!!bulletSpan, 'LP bullet marker span exists');
+    assert(!!bulletSpan.querySelector('.list-bullet'), 'LP bullet uses .list-bullet');
+    const dot = (() => { try { return getComputedStyle(bulletSpan.querySelector('.list-bullet'), '::after'); } catch (e) { return null; } })();
+    assert(!!dot && parseFloat(dot.width) > 0 && dot.backgroundColor !== 'rgba(0, 0, 0, 0)', 'LP bullet dot painted');
+    const bulletStyle = getComputedStyle(bulletSpan);
+    assert(parseFloat(bulletStyle.paddingInlineStart || bulletStyle.paddingLeft) > 0, 'LP list indent applied');
+    const orderedSpan = markerDom.querySelector('.cm-formatting-list-ol');
+    assert(!!orderedSpan && /^\d+\.$/.test(orderedSpan.textContent.trim()), 'LP ordered marker shows number');
+    const taskLine = [...markerDom.querySelectorAll('.cm-line.HyperMD-task-line')].find(el => el.textContent.includes('未勾选'));
+    assert(!!taskLine && !!taskLine.querySelector('.task-list-item-checkbox'), 'LP task line has checkbox');
+    assert(!!taskLine && !taskLine.querySelector('.list-bullet'), 'LP task line has no bullet dot');
+    assert(!!taskLine && !/- \[ \]/.test(taskLine.textContent), 'LP task line hides raw marker');
+    const checkedLine = [...markerDom.querySelectorAll('.cm-line.HyperMD-task-line')].find(el => el.textContent.includes('已勾选'));
+    assert(!!checkedLine && checkedLine.classList.contains('cm-task-checked'), 'LP checked task classed');
+    assert(!!checkedLine && getComputedStyle(checkedLine).textDecorationLine.includes('line-through'), 'LP checked task struck through');
+    const headingLine = markerDom.querySelector('.cm-line.HyperMD-header-1');
+    assert(!!headingLine && !headingLine.textContent.includes('#'), 'LP inactive heading hides hash');
+    // 首个 .cm-gutterElement 是 CM6 的 initialSpacer（visibility:hidden 的折叠态假记号），不参与断言
+    const indicators = [...markerDom.querySelectorAll('.cm-foldGutter .collapse-indicator')];
+    assert(indicators.length > 0, 'LP fold indicators present');
+    assert(indicators.some(el => !el.classList.contains('is-collapsed') && getComputedStyle(el).opacity === '0'), 'LP fold indicators hidden by default');
     return { role: 'editor', passed: true, checks, fixture };
   } finally {
     app.settings.updateAppSettings(saved);

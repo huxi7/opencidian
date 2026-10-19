@@ -83,7 +83,9 @@
   font-variant: tabular-nums;
 }
 .cm-editor .cm-foldGutter .cm-gutterElement { padding: 0; cursor: var(--cursor); }
-.cm-editor .cm-foldGutter .collapse-indicator { color: var(--text-faint); }
+/* 原版 app.css 7236-7259：折叠指示器默认透明，悬停或已折叠时才现形 */
+.cm-editor .cm-foldGutter .collapse-indicator { color: var(--text-faint); opacity: 0; }
+.cm-editor .cm-foldGutter .cm-gutterElement:hover .collapse-indicator { opacity: 1; }
 .cm-editor .cm-foldGutter .collapse-indicator.is-collapsed { opacity: 1; }
 .markdown-source-view.mod-cm6 .cm-foldPlaceholder {
   color: var(--text-faint);
@@ -172,8 +174,39 @@
 .HyperMD-codeblock-begin { border-top-left-radius: var(--code-radius); border-top-right-radius: var(--code-radius); padding-top: var(--size-4-2); }
 .HyperMD-codeblock-end { border-bottom-left-radius: var(--code-radius); border-bottom-right-radius: var(--code-radius); padding-bottom: var(--size-4-2); }
 
-.HyperMD-list-line { padding-inline-start: var(--size-2-2); }
-.cm-list-line-ul .cm-formatting-list { color: var(--list-marker-color); }
+/* 原版 app.css 12105-12234：列表缩进变量（实时预览 0.75em）与记号样式；
+   项目符号由 .list-bullet :after 画圆点，任务行用 silent 记号只留缩进位。 */
+.markdown-source-view { --list-padding-inline-start: var(--list-indent-source); --list-marker-space: 0; }
+.markdown-source-view.is-live-preview { --list-padding-inline-start: var(--list-indent-editing); --list-marker-space: 0.25em; }
+.cm-formatting-list-ul, .cm-formatting-list-ol {
+  font-variant-numeric: tabular-nums;
+  padding-inline-start: var(--list-padding-inline-start, var(--list-indent-editing, 0.75em));
+}
+.markdown-source-view .cm-formatting-list { color: var(--list-marker-color); }
+.markdown-source-view.mod-cm6 .cm-formatting-list-ul,
+.markdown-source-view.mod-cm6 .cm-formatting-list-ol { white-space: pre; }
+.list-bullet {
+  color: transparent;
+  position: relative;
+  display: inline-flex;
+  justify-content: center;
+  align-items: center;
+}
+.list-bullet:before { content: '\200B'; }
+.list-bullet:after {
+  position: absolute;
+  content: '\200B';
+  pointer-events: none;
+  color: var(--list-marker-color);
+  border-radius: var(--list-bullet-radius);
+  width: var(--list-bullet-size);
+  height: var(--list-bullet-size);
+  border: var(--list-bullet-border);
+  transform: var(--list-bullet-transform);
+  background-color: var(--list-marker-color);
+  transition: transform 0.15s, box-shadow 0.15s;
+}
+.list-bullet::selection { background-color: transparent !important; }
 .HyperMD-task-line { }
 .HyperMD-task-line.cm-task-checked, .HyperMD-task-line[data-task="x"] { color: var(--text-faint); text-decoration: line-through; text-decoration-color: var(--text-faint); }
 
@@ -540,28 +573,63 @@ body.is-touch .markdown-source-view.mod-cm6 .cm-table-widget.has-focus .table-co
 .markdown-source-view.mod-cm6 .metadata-container { transform: translateX(calc(var(--size-4-1) * -1 * var(--direction, 1))); }
 .cm-hmd-frontmatter { font-size: var(--font-smaller); color: var(--text-muted); }
 
-/* checkbox widget in tasks */
-.cm-editor .task-list-item-checkbox,
-.task-list-item-checkbox {
+/* checkbox widget in tasks（app.css 12912-12985）：选择器带 input[type]，压过 base.css 的通用重置 */
+input[type="checkbox"].task-list-item-checkbox {
+  -webkit-appearance: none;
   appearance: none;
+  border-radius: var(--checkbox-radius);
+  border: 1px solid var(--checkbox-border-color);
+  flex-shrink: 0;
+  padding: 0;
+  margin: 0;
+  margin-inline-end: 6px;
   width: var(--checkbox-size);
   height: var(--checkbox-size);
-  border: 1px solid var(--checkbox-border-color);
-  border-radius: var(--checkbox-radius);
-  vertical-align: text-bottom;
-  margin-inline-end: var(--size-2-2);
-  cursor: var(--cursor, pointer);
   position: relative;
-  top: -1px;
+  transition: box-shadow 0.15s ease-in-out;
+  cursor: var(--cursor, pointer);
 }
-.task-list-item-checkbox:hover { border-color: var(--checkbox-border-color-hover); }
-.task-list-item-checkbox:checked { background-color: var(--checkbox-color); border-color: var(--checkbox-color); }
-.task-list-item-checkbox:checked:hover { background-color: var(--checkbox-color-hover); border-color: var(--checkbox-color-hover); }
-.task-list-item-checkbox:checked::after {
+input[type="checkbox"].task-list-item-checkbox:hover,
+input[type="checkbox"].task-list-item-checkbox:active,
+input[type="checkbox"].task-list-item-checkbox:focus { outline: 0; border-color: var(--checkbox-border-color-hover); }
+input[type="checkbox"].task-list-item-checkbox:focus-visible { box-shadow: 0 0 0 2px var(--background-modifier-border-focus); }
+input[type="checkbox"].task-list-item-checkbox:checked {
+  background-color: var(--checkbox-color);
+  border-color: var(--checkbox-color);
+}
+@media (hover: hover) {
+  input[type="checkbox"].task-list-item-checkbox:checked:hover {
+    background-color: var(--checkbox-color-hover);
+    border-color: var(--checkbox-color-hover);
+  }
+}
+input[type="checkbox"].task-list-item-checkbox:checked:after {
   content: "";
+  top: -1px;
+  inset-inline-start: -1px;
   position: absolute;
-  inset: 0;
-  background: var(--checkbox-marker-color) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23fff' stroke-width='4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='20 6 9 17 4 12'/%3E%3C/svg%3E") center/70% no-repeat;
+  width: var(--checkbox-size);
+  height: var(--checkbox-size);
+  display: block;
+  background-color: var(--checkbox-marker-color);
+  -webkit-mask-position: 52% 52%;
+  -webkit-mask-size: 65%;
+  -webkit-mask-repeat: no-repeat;
+  -webkit-mask-image: url("data:image/svg+xml; utf8, <svg width=\"12px\" height=\"10px\" viewBox=\"0 0 12 8\" version=\"1.1\" xmlns=\"http://www.w3.org/2000/svg\" xmlns:xlink=\"http://www.w3.org/1999/xlink\"><g stroke=\"none\" stroke-width=\"1\" fill=\"none\" fill-rule=\"evenodd\"><g transform=\"translate%28-4.000000, -6.000000%29\" fill=\"%23000000\"><path d=\"M8.1043257,14.0367999 L4.52468714,10.5420499 C4.32525014,10.3497722 4.32525014,10.0368095 4.52468714,9.8424863 L5.24777413,9.1439454 C5.44721114,8.95166768 5.77142411,8.95166768 5.97086112,9.1439454 L8.46638057,11.5903727 L14.0291389,6.1442083 C14.2285759,5.95193057 14.5527889,5.95193057 14.7522259,6.1442083 L15.4753129,6.84377194 C15.6747499,7.03604967 15.6747499,7.35003511 15.4753129,7.54129009 L8.82741268,14.0367999 C8.62797568,14.2290777 8.3037627,14.2290777 8.1043257,14.0367999\"></path></g></g></svg>");
+}
+/* LP 任务行：行内复选框与行内编辑态颜色（app.css 13034-13046） */
+.markdown-source-view.mod-cm6 .task-list-label { padding: 0; margin-inline-start: -0.25em; }
+.markdown-source-view.mod-cm6 .task-list-label .task-list-item-checkbox {
+  top: -0.1em;
+  vertical-align: middle;
+  margin-inline-start: var(--checkbox-margin-inline-start);
+  margin-inline-end: 0.25em;
+}
+.markdown-source-view.mod-cm6 .cm-formatting-list-ol > .task-list-label .task-list-item-checkbox { margin-inline-start: 2px; }
+.markdown-source-view.mod-cm6 .HyperMD-task-line[data-task="x"],
+.markdown-source-view.mod-cm6 .HyperMD-task-line[data-task="X"] {
+  text-decoration: var(--checklist-done-decoration);
+  color: var(--checklist-done-color);
 }
 
 /* ------------------------------------------------- search panel in editor */

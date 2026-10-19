@@ -24,6 +24,18 @@ paletteInput.value='zzzzqqq';paletteInput.dispatchEvent(new Event('input'));awai
 clearButton.click();await wait(20);
 ok(paletteInput.value==='','clear button empties input');
 ok(palette.querySelectorAll('.suggestion-item').length===allCount,'clear button restores the full list');checks.push('prompt clear button');
+// ---- 复杂建议项布局：标题进内容列，热键同行靠右（原版 app.css 9003-9045）
+paletteInput.value='open';paletteInput.dispatchEvent(new Event('input',{bubbles:true}));await wait(30);
+const complexItems=[...palette.querySelectorAll('.suggestion-item.mod-complex')];ok(complexItems.length>0,'palette uses complex items');
+ok(complexItems.every(el=>el.querySelector(':scope > .suggestion-content > .suggestion-title')),'complex title inside content column');
+const withKey=complexItems.find(el=>el.querySelector(':scope > .suggestion-hotkey'));ok(withKey,'hotkey is a direct child of the item');
+ok(getComputedStyle(withKey).flexDirection==='row','complex item lays out in a row');
+const titleRect=withKey.querySelector('.suggestion-title').getBoundingClientRect();
+const keyRect=withKey.querySelector('.suggestion-hotkey').getBoundingClientRect();
+ok(keyRect.left>=titleRect.right-2,'hotkey right of title');
+ok(Math.abs((keyRect.top+keyRect.height/2)-(titleRect.top+titleRect.height/2))<10,'hotkey on the same row');
+paletteInput.value='';paletteInput.dispatchEvent(new Event('input',{bubbles:true}));await wait(20);
+checks.push('palette complex item layout');
 for (const key of ['PageDown','PageDown','PageUp']) { paletteInput.dispatchEvent(new KeyboardEvent('keydown',{key,bubbles:true})); }
 await wait(20);ok(palette.isConnected&&palette.querySelector('.suggestion-item.is-selected'),'PageUp/PageDown keeps selection');checks.push('PageUp/PageDown');
 paletteInput.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}));await wait(80);ok(!document.querySelector('.prompt:not(.is-hidden)'),'palette closes');
