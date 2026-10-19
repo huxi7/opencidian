@@ -316,3 +316,11 @@ MathJax 独立适配器子代理的41项基础/故障测试见 assets/mathjax/SO
 - 不覆盖并有据：pdf.js 内部 12 项（无 PDF 阅读器）、运行时内联（accent/font/zoom）、组件级同名（pill/canvas-color，body 级断言最终值）、原版自身缺口（深色 `--shadow-edges`）照搬不修、`@media print` 两处。
 - 复跑：theme-tokens 717 ✓、appearance 32 ✓、graph 72 ✓、reading-menus 13 ✓、settings-ui 22 ✓、sidebar 93 ✓、core-views 83 ✓、sidebar-shell 61 ✓。
 - 截图：`…/opencode/theme-token-shots/theme-tokens-panel.png`（面板"差异 0 项"）。
+
+## 画布 UI 大修批（2026-10-19 上午）：原版对照 12 类缺陷
+
+- 修复：图片卡崩（`vault.getResourcePath` 不存在 → 走 `vault.adapter`）；手柄/热区（悬停命中出 `mod-handles`、单选卡片恢复缩放手柄、未命中让位框选）；md 卡正文 padding/弹性留白/居中；卡片外标签（`updateNodeLabel` + 三态 always/hover/never + Mod/中键/双击）；文本卡占位改 `lucide-align-left`；控件第四组 + 帮助弹窗（新 `canvas-help.js`）；`mod-animating` 只在收尾帧切换 + `--zoom-multiplier` 同步 + 视口落库；媒体卡按资源宽高比回写几何；损坏图/缺文件占位；链接卡标签与菜单；三处快捷键文案平台化；画布 CSS 对齐（155 选择器零缺失）。
+- 新增永久验收 `scripts/acceptance/canvas-ui.js`（107 项，浅深两套，纯计算样式/DOM）。
+- 复跑：canvas 95 ✓、canvas-edit 77 ✓、canvas-selection 72 ✓、canvas-ui 107 ✓、editor-block-button 11 ✓、core-ribbon 47 ✓；六日志零 `TypeError|ReferenceError|act failed|setState failed`。
+- 截图（修复后）：浅色 `…/probe-canvas-run-result-wpPOdA/screen.png`、深色 `…/Te85yW/screen.png`、空态 `…/xQWEfc/screen.png`、帮助弹窗 `…/s7DUhp/screen.png`。
+- 剩余差异（有据未做）：链接卡不嵌 webview（既定跳过 webviewer）、分组背景图未实现、画布插件设置页缺失（选项与语义已有，缺 UI）、手柄 DOM 保留在各节点内、导出路径未逐字对齐原版截屏分支。

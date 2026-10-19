@@ -1,6 +1,6 @@
 /**
  * [INPUT]: 依赖 ./canvas-viewport.js 的 CanvasViewport（类链基类）；依赖 ./canvas-node.js 的 CanvasNode（instanceof 判定）；依赖 ./canvas-utils.js 的 clamp、containsBox、unionBBox、expandBBox、bboxOf、rectFromBBox；依赖 ./canvas-selection.js 的 CanvasSelectionBox；依赖 ../core/menu.js 的 Menu；依赖 ../core/keymap.js 的 IS_MAC；依赖 ../core/i18n.js 的 t；依赖 ./canvas-menu.js 的 showCreationMenu、showQuickSettingsMenu
- * [OUTPUT]: 导出 CanvasInteractions 类（选择集合语义：select/deselect/toggleSelect/selectOnly/selectAll/deselectAll、updateSelection/applySelectionDiff、deleteSelection；指针/键盘/拖拽/框选/滚轮/右键菜单）与 startDrag、suppressClick 两个拖拽原语。
+ * [OUTPUT]: 导出 CanvasInteractions 类（选择集合语义：select/deselect/toggleSelect/selectOnly/selectAll/deselectAll、updateSelection/applySelectionDiff、deleteSelection；指针/键盘/拖拽/框选/滚轮/右键菜单；悬停命中 hitTestNode/interactionHitTest/setInteractionTarget/onPointermove/onPointerleave）与 startDrag、suppressClick 两个拖拽原语。
  * [POS]: views/ 画布类链的第三层：View → CanvasViewport → CanvasInteractions → CanvasView。所有画布指针语义（阈值 5px 才成拖拽、拖到视口边缘 30px 自动平移、拖拽后吞掉一次 click）集中于此；
  *        选择集合也归本层：改动一律走 updateSelection（先拍旧集合、置 selectionChanged），帧尾由 applySelectionDiff 统一处理焦点/高亮进出。
  *        CanvasView 只负责装配 DOM 与调度，节点/边自身不注册窗口级监听。startDrag 是原版 wg 的等价物：超过 threshold 后调用一次 factory，cleanup 先于 end/cancel。
@@ -8,6 +8,8 @@
  *        按 mac Alt / 其他平台 Ctrl 拖动改为克隆：原件归位、替身跟着指针走，松手时 cloneData + importData 生成新节点并选中；拖动途中按下/松开该键即时切换（keydown/keyup 经 startDrag 转给 drag）。
  *        canSnap 为假（mac Ctrl / 其他 Alt）时不吸附也不画参考线。框选用 CanvasSelectionBox 画矩形，分组需被完整包含；按住 Mod 松手时按 defaultModDragBehavior 建卡或弹建卡菜单。
  *        键盘含 Esc/Delete、Mod+A、Mod+Z/Mod+Shift+Z/Mod+Y、Shift+1/2，以及方向键微移选中节点（Shift 为 5 倍、对齐网格时吸附网格线）。
+ *        悬停命中（hitTestNode 取 8px/scale 容差 + interactionHitTest）：只给指针下的卡片加 .mod-handles 让手柄可命中；
+ *        命中的卡片属于多选集合时收起手柄（原版 selection.size > 1 分支，帧尾也复核一次，避免指针静止时留下手柄）。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 /* Canvas pointer + keyboard interactions (class chain layer 3). */
@@ -311,6 +313,49 @@ export class CanvasInteractions extends CanvasViewport {
     this.requestFrame();
   }
 
+  /* ------------------------------------------------------- 悬停手柄命中 */
+
+  /**
+   * 原版 hitTestNode：矩形命中测试取 z 最高的节点（含分组——分组内部空白处悬停同样出边手柄）。
+   * tolerance 是屏幕像素，按缩放折算到画布坐标。
+   */
+  hitTestNode(pos, tolerance = 0) {
+    let best = null;
+    for (const node of this.nodes.values()) {
+      const box = expandBBox(bboxOf(node), tolerance);
+      if (pos.x < box.minX || pos.x > box.maxX || pos.y < box.minY || pos.y > box.maxY) continue;
+      if (!best || node.zIndex > best.zIndex) best = node;
+    }
+    return best;
+  }
+
+  /**
+   * 原版 interactionHitTest：指针移动时算出该出手柄的节点。原版把这套手柄放进
+   * 单独的 canvas-node-interaction-layer（C5）；本复刻手柄就近挂在节点上，
+   * 改用 mod-handles 类承接同一显隐语义，故这里只需维护「当前命中节点」。
+   * 拖动中不更新；命中节点属于多选集合时收起（原版 selection.size>1 && has(r) → setTarget(null)）。
+   */
+  interactionHitTest(e) {
+    const pos = this.posFromEvt(e);
+    if (this.pointerFrame) return;
+    this.pointerFrame = window.requestAnimationFrame(() => {
+      this.pointerFrame = 0;
+      if (this.isDragging) return;
+      const node = this.hitTestNode(pos, 8 / this.scale);
+      if (this.selection.size > 1 && this.selection.has(node)) this.setInteractionTarget(null);
+      else if (this.interactionTarget !== node) this.setInteractionTarget(node);
+    });
+  }
+
+  setInteractionTarget(node) {
+    if (this.interactionTarget === node) return;
+    if (this.interactionTarget && !this.interactionTarget.destroyed) {
+      this.interactionTarget.nodeEl.removeClass('mod-handles');
+    }
+    this.interactionTarget = node || null;
+    if (this.interactionTarget) this.interactionTarget.nodeEl.addClass('mod-handles');
+  }
+
   /* -------------------------------------------------------------- 背景 */
 
   onPointerdown(e) {
@@ -320,6 +365,18 @@ export class CanvasInteractions extends CanvasViewport {
     const prev = new Set(this.selection);
     if (!shift) this.deselectAll();
     this.handleDragToSelect(e, shift, prev);
+  }
+
+  /** 指针移动：维护悬停手柄（原版 onPointermove → interactionHitTest，桌面端才有该监听）。 */
+  onPointermove(e) {
+    if (e.pointerType !== 'mouse') return;
+    this.interactionHitTest(e);
+  }
+
+  /** 指针离开画布：收起悬停手柄，避免手柄留在没有指针的节点上。 */
+  onPointerleave() {
+    if (this.isDragging) return;
+    this.setInteractionTarget(null);
   }
 
   onDoubleClick(e) {

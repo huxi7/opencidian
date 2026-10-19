@@ -1,11 +1,11 @@
 /**
  * [INPUT]: 依赖 ./canvas-utils.js 的 unionBBox、expandBBox、clamp；依赖 ./canvas-node.js 的 CanvasNode；依赖 ./canvas-file-node.js 的 CanvasFileNode；
- *          依赖 ./canvas-edge.js 的 CanvasEdge；依赖 ./canvas-selection.js 的 CanvasSelectionBox；依赖 ../core/menu.js 的 Menu；依赖 ../core/icons.js 的 setIcon；依赖 ../core/i18n.js 的 t
+ *          依赖 ./canvas-edge.js 的 CanvasEdge；依赖 ./canvas-selection.js 的 CanvasSelectionBox；依赖 ./canvas-help.js 的 hotkeyLabel（工具条提示里的平台快捷键文案）；依赖 ../core/menu.js 的 Menu；依赖 ../core/icons.js 的 setIcon；依赖 ../core/i18n.js 的 t
  * [OUTPUT]: 导出 buildCanvasMenu（浮动工具条 + 多选包围盒）与 alignTargets、alignNodes、distributeNodes、justifyNodes、arrangeNodes 五个纯排布运算
  * [POS]: views/ 画布选择浮动层（原版 q3）。selection 为多选包围盒（.canvas-selection.mod-group-selection），工具条挂在 .canvas-menu-container > .canvas-menu。
  *        排布运算逐字对齐原版：align 6 向取包围盒边界；distribute 按元素总宽/高平分剩余空隙（首尾不动）；justify 把每个元素拉伸到包围盒整幅；
  *        arrange 先按 y 重叠切行再行内按 x 排序，横/纵/网格三种落位。单选分组时排布对象是该组内部节点、包围盒取组框内缩 20。
- *        工具条按选中内容给按钮：删除、设置颜色、聚焦当前卡片恒显；2+ 节点给创建分组与排布菜单；单选边给方向/标签按钮；单选可编辑卡片给编辑按钮。
+ *        工具条按选中内容给按钮：删除、设置颜色、聚焦当前卡片（提示带平台快捷键后缀）恒显；2+ 节点给创建分组与排布菜单；单选边给方向/标签按钮；单选可编辑卡片给编辑按钮。
  *        按钮点击后的排布结果统一走 canvas.requestSave()，由画布的防抖链路落盘并入撤销栈。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
@@ -15,6 +15,7 @@ import { CanvasNode } from './canvas-node.js';
 import { CanvasFileNode } from './canvas-file-node.js';
 import { CanvasEdge } from './canvas-edge.js';
 import { CanvasSelectionBox } from './canvas-selection.js';
+import { hotkeyLabel } from './canvas-help.js';
 import { Menu } from '../core/menu.js';
 import { setIcon } from '../core/icons.js';
 import { t } from '../core/i18n.js';
@@ -203,7 +204,7 @@ function buildButtons(canvas, menu, selected, single, last) {
   const { menuEl, state } = menu;
   addButton(canvas, menuEl, t('plugins.canvas.action-remove'), 'lucide-trash-2', () => canvas.deleteSelection());
   addButton(canvas, menuEl, t('plugins.canvas.action-set-color'), 'lucide-palette', (ev) => openColorSubmenu(canvas, menu, ev.currentTarget, selected));
-  addButton(canvas, menuEl, `${t('plugins.canvas.action-zoom-to-selection')}\n(Shift+2)`, 'zoom-to-selection', () => canvas.zoomToSelection(), true);
+  addButton(canvas, menuEl, `${t('plugins.canvas.action-zoom-to-selection')}\n(${hotkeyLabel(['Shift', '2'])})`, 'zoom-to-selection', () => canvas.zoomToSelection(), true);
   if (!single && last instanceof CanvasNode) {
     addButton(canvas, menuEl, t('plugins.canvas.action-create-group'), 'create-group', () => {
       const box = expandBBox(unionBBox(selected.filter((el) => el instanceof CanvasNode).map((el) => el.getBBox())), 20);

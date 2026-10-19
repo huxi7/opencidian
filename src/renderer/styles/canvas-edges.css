@@ -257,21 +257,70 @@
 /* ==========================================================================
    replica additions — 原版样式表未覆盖的交互（本复刻版专用，勿混入移植段）
    ========================================================================== */
-/* resizer 与连接点只在选中/悬停时出现 */
-.canvas-node .canvas-node-resizer { display: none; }
-/* 原版 resizer 位于交互层；本复刻挂在节点内，需夺回指针事件（覆盖 .is-selected .canvas-node-resizer{pointer-events:none}） */
-.canvas-node.is-selected .canvas-node-resizer { display: block; pointer-events: all; }
-.canvas-node .canvas-node-connection-point { display: none; }
-.canvas-node.is-selected .canvas-node-connection-point,
-.canvas-node:hover .canvas-node-connection-point { display: block; }
-/* 原版圆点靠 .canvas-node-resizer:hover 显形；此处连接点不在 resizer 内，选中/悬停即显形 */
-.canvas-node.is-selected .canvas-node-connection-point::after,
-.canvas-node:hover .canvas-node-connection-point::after { opacity: 1; }
+/* 手柄归属：原版把 resizer 与连接点放进 canvas-node-interaction-layer（C5），只有被指针命中的
+   那个节点才有手柄；本复刻就近挂在节点上，用 .mod-handles 承接同一语义（见
+   canvas-interactions.interactionHitTest）。默认一律不可命中：否则每张卡片四周一圈
+   10px 的隐形热区会抢走框选、拖动与右键，卡片挨近时更是互相吃掉指针。
+   命中时挂类，手柄恢复可命中，圆点按「悬停到哪条边」逐条显形。 */
+.canvas-node-resizer {
+  pointer-events: none;
+}
+.canvas-node.mod-handles .canvas-node-resizer {
+  pointer-events: all;
+}
+/* 分组：原版分组自身不参与指针命中，但命中后它的 resizer 可命中 */
+.canvas-node-group .canvas-node-resizer {
+  pointer-events: none;
+}
+.canvas-node-connection-point {
+  pointer-events: none;
+}
+.canvas-node.mod-handles .canvas-node-connection-point {
+  pointer-events: all;
+}
 
 /* 文本卡片内容层：编辑器高度链依赖（编辑器本身样式见 canvas-nodes.css） */
 .canvas-node-content.markdown-embed > .markdown-embed-content {
   width: 100%;
   height: 100%;
+}
+
+/* 文件卡片的阅读正文（原版 app.css 16887-16905 的 .markdown-preview-view 组）：
+   左右留 size-4-4 内边距、纵向居中（首尾各一个弹性空白），正文串自身弹性撑满。 */
+.canvas-node-content.markdown-embed > .markdown-embed-content > .markdown-preview-view {
+  padding: 0 var(--size-4-4);
+  display: flex;
+  flex-direction: column;
+}
+.canvas-wrapper:not(.mod-readonly) .canvas-node-content.markdown-embed > .markdown-embed-content > .markdown-preview-view {
+  user-select: none;
+  -webkit-user-select: none;
+}
+.canvas-node-content.markdown-embed > .markdown-embed-content > .markdown-preview-view::before,
+.canvas-node-content.markdown-embed > .markdown-embed-content > .markdown-preview-view::after {
+  content: " ";
+  display: block;
+  min-height: min(calc(var(--canvas-node-height) * 0.1 - 3px), var(--size-4-4));
+  max-height: var(--size-4-4);
+  flex: 1 1 0;
+}
+.canvas-node-content.markdown-embed > .markdown-embed-content > .markdown-preview-view > .markdown-preview-sizer {
+  flex: 1 0 0;
+}
+.canvas-node-content.markdown-embed > .markdown-embed-content > .markdown-preview-view .callout {
+  mix-blend-mode: normal;
+}
+.is-focused .canvas-node-content.markdown-embed > .markdown-embed-content > .markdown-preview-view {
+  transform: translateZ(0);
+}
+/* 卡片内的 inline-title 是文件卡片的标题（原版 .inline-title 的 hover-popover/inline-embed
+   规则不覆盖 .markdown-embed，故卡片显示标题；这里只补 canvas 内的指针语义）。 */
+.canvas-node-content.markdown-embed .inline-title {
+  cursor: text;
+}
+/* 文件卡片的预览不由编辑器驱动，正文首元素的外边距会顶开居中：交给 sizer 的 flex 处理。 */
+.canvas-node-content.markdown-embed > .markdown-embed-content > .markdown-preview-view > .markdown-preview-sizer > .markdown-preview-pusher + div > :first-child {
+  margin-top: 0;
 }
 
 /* 文件卡片在无法渲染内容时的占位（非 md/图片文件、缺失文件） */

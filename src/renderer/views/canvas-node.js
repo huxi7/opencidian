@@ -2,7 +2,10 @@
  * [INPUT]: 依赖 ./canvas-utils.js 的 genId/bboxOf/nearestSide/applyCanvasColor/parseCanvasColor；依赖 ../core/i18n.js 的 t；依赖 ../core/menu.js 的 Menu；依赖 ../core/ipc.js 的 Desktop；依赖 ../core/notices.js 的 Notice；依赖 ../core/modals.js 的 FileNameModal；依赖 ../editor/editor.js 的 Editor；依赖 @codemirror/view 的 placeholder
  * [OUTPUT]: 导出 CanvasNode（基类）、CanvasContentNode、CanvasTextNode、CanvasLinkNode、CanvasDummyNode；CanvasFileNode 见 canvas-file-node.js，CanvasGroupNode 见 canvas-group-node.js
  * [POS]: views/ 画布三件套的节点层。DOM 对齐原版：nodeEl(.canvas-node) > containerEl(.canvas-node-container) > contentEl(.canvas-node-content)
- *        + contentBlockerEl + placeholderEl；resizer（data-resize）与连接点（data-side）挂在 nodeEl 上（原版在 interaction layer，本复刻就近放置，靠 CSS 控制显隐）。
+ *        + contentBlockerEl + placeholderEl；8 个 resizer（data-resize）挂在 nodeEl 上，连接点（data-side）嵌在对应边的 resizer 内（原版结构）。
+ *        手柄显隐由 canvas-interactions 的悬停命中加 .mod-handles 门控：只有指针下的卡片手柄可命中，未命中卡片的手柄一律让位给框选与拖动。
+ *        resize() 与原版 onResizePointerdown 同算法：minContainerDimension 下限、物体吸附 + 参考线、可选网格吸附、aspectRatio 分支与 selectNow。
+ *        文件与链接卡片带卡片外上方标签（原版 D5/I5.updateNodeLabel）：always 常显、hover 透明待悬停、never 不建；点标签可 Mod 新页、双击打开。
  *        setColor 把自定义色归一化为 "r,g,b" 后交给帧渲染或立即重绘，供选择浮动工具条的取色器调用。
  *        可读缩放与编辑态挂载正文；输入逐次请求防抖保存。几何与事件写回由 canvas-view 统一调度。
  *        文本卡片正文是内嵌的 CM6 实时预览编辑器（原版 P5 + L5），DOM 为 contentEl.markdown-embed > .markdown-embed-content > .markdown-source-view；
@@ -15,11 +18,15 @@
 /* Canvas nodes — mirrors the original E5 / M5 / P5 / L5 / D5 / I5 / F5 classes. */
 import { placeholder as cmPlaceholder } from '@codemirror/view';
 import { genId, bboxOf, applyCanvasColor, parseCanvasColor } from './canvas-utils.js';
+import { resizeSourceFrom } from './canvas-selection.js';
+import { uniqueSnapPoints, findSnapMatches } from './canvas-viewport.js';
 import { t } from '../core/i18n.js';
 import { Menu } from '../core/menu.js';
+import { setIcon } from '../core/icons.js';
 import { Desktop } from '../core/ipc.js';
 import { Notice } from '../core/notices.js';
 import { FileNameModal } from '../core/modals.js';
+import { IS_MAC } from '../core/keymap.js';
 import { Editor } from '../editor/editor.js';
 
 const RESIZE_SIDES = ['top', 'right', 'bottom', 'left', 'topright', 'bottomright', 'bottomleft', 'topleft'];
@@ -73,17 +80,17 @@ export class CanvasNode {
     const containerEl = this.containerEl = nodeEl.createDiv('canvas-node-container');
     containerEl.addEventListener('pointerdown', (e) => this.onPointerdown(e));
 
-    // 8 个缩放手柄（原版 4 边 + 4 角）
+    // 8 个缩放手柄（原版 4 边 + 4 角）；连接点嵌在对应边的 resizer 里（原版结构），
+    // 这样「悬停某侧手柄 ⇒ 该侧圆点显形」可以用原版那条 :hover 规则表达。
     for (const side of RESIZE_SIDES) {
       const el = nodeEl.createDiv({ cls: 'canvas-node-resizer', attr: { 'data-resize': side } });
       el.addEventListener('pointerdown', (e) => {
         if (e.target === el && e.pointerType === 'mouse') this.onResizePointerdown(e, side);
       });
-    }
-    // 4 个连接点
-    for (const side of CONNECT_SIDES) {
-      const el = nodeEl.createDiv({ cls: 'canvas-node-connection-point', attr: { 'data-side': side } });
-      el.addEventListener('pointerdown', (e) => this.onConnectionPointerdown(e, side));
+      if (CONNECT_SIDES.includes(side)) {
+        const point = el.createDiv({ cls: 'canvas-node-connection-point', attr: { 'data-side': side } });
+        point.addEventListener('pointerdown', (e) => this.onConnectionPointerdown(e, side));
+      }
     }
   }
 
@@ -210,6 +217,11 @@ export class CanvasNode {
     this.canvas.markMoved(this);
   }
 
+  /** 原版 E5.resize：只改尺寸，位置保持（媒体宽高比回写用）。 */
+  resize(rect) {
+    this.moveAndResize({ x: this.x, y: this.y, width: rect.width, height: rect.height });
+  }
+
   /* ---------------------------------------------------------------- 事件 */
 
   onPointerdown(e) {
@@ -247,46 +259,86 @@ export class CanvasNode {
     this.app.workspace.trigger('canvas:node-menu', menu, this);
   }
 
-  /** 8 向缩放：最小 50px，snapToGrid 打开时吸附网格。 */
+  /**
+   * 8 向缩放（原版 E5.onResizePointerdown）：被拖动的边受 minContainerDimension 约束，
+   * 吸附顺序与拖动一致（先物体后网格，参考线由 getSnapping 那条链路之外的 renderSnapPoints 画），
+   * 有 aspectRatio（媒体卡片）时先按比例定尺寸再按方位回推另一条边。
+   */
   onResizePointerdown(e, side) {
     if (!e.isPrimary || e.button !== 0) return;
+    if (e.pointerType !== 'mouse' && !this.canvas.selection.has(this)) return;
+    e.preventDefault();
     const canvas = this.canvas;
-    const start = canvas.posFromEvt(e);
     const orig = { x: this.x, y: this.y, width: this.width, height: this.height };
     const minDim = canvas.config.minContainerDimension;
-    this.select();
+    canvas.selectOnly(this);
     this.nodeEl.addClass('is-dragging');
     canvas.handleDragWithPan(e, {
       move: (ev) => {
         const pos = canvas.posFromEvt(ev);
-        let dx = pos.x - start.x;
-        let dy = pos.y - start.y;
-        if (canvas.options.snapToGrid) {
-          const g = canvas.gridSpacing;
-          if (side.includes('left') || side.includes('right')) dx = Math.round(dx / g) * g;
-          if (side.includes('top') || side.includes('bottom')) dy = Math.round(dy / g) * g;
+        canvas.clearSnapPoints();
+        let dx = 0;
+        let dy = 0;
+        const { source, resizeX, resizeY } = resizeSourceFrom(side, pos, orig);
+        let xMatch = null;
+        let yMatch = null;
+        if (canvas.canSnap(ev)) {
+          if (canvas.options.snapToObjects) {
+            const src = uniqueSnapPoints([bboxOf(source)]);
+            const dest = uniqueSnapPoints(candidateBoxes(canvas, this));
+            const dist = canvas.snapDistance;
+            if (resizeX) { xMatch = findSnapMatches(src, dest, dist, 'x'); if (xMatch) dx = xMatch.delta; }
+            if (resizeY) { yMatch = findSnapMatches(src, dest, dist, 'y'); if (yMatch) dy = yMatch.delta; }
+          }
+          if (canvas.options.snapToGrid) {
+            const g = canvas.gridSpacing;
+            if (resizeX && !xMatch) dx = Math.round(pos.x / g) * g - pos.x;
+            if (resizeY && !yMatch) dy = Math.round(pos.y / g) * g - pos.y;
+          }
         }
-        const rect = {
-          x: orig.x,
-          y: orig.y,
-          width: orig.width,
-          height: orig.height,
+        const px = pos.x + dx;
+        const py = pos.y + dy;
+        const box = {
+          minX: orig.x,
+          minY: orig.y,
+          maxX: orig.x + orig.width,
+          maxY: orig.y + orig.height,
         };
-        if (side.includes('left')) {
-          const newX = Math.min(orig.x + orig.width - minDim, orig.x + dx);
-          rect.width = orig.x + orig.width - newX;
-          rect.x = newX;
+        if (side.includes('top')) { box.minY = Math.min(box.maxY - minDim, py); if (box.minY !== py) { yMatch = null; dy = box.minY - pos.y; } }
+        if (side.includes('left')) { box.minX = Math.min(box.maxX - minDim, px); if (box.minX !== px) { xMatch = null; dx = box.minX - pos.x; } }
+        if (side.includes('bottom')) { box.maxY = Math.max(box.minY + minDim, py); if (box.maxY !== py) { yMatch = null; dy = box.maxY - pos.y; } }
+        if (side.includes('right')) { box.maxX = Math.max(box.minX + minDim, px); if (box.maxX !== px) { xMatch = null; dx = box.maxX - pos.x; } }
+        if (xMatch || yMatch) canvas.renderSnapPoints(xMatch, yMatch, dx, dy);
+        const rect = { x: box.minX, y: box.minY, width: box.maxX - box.minX, height: box.maxY - box.minY };
+        const ratio = this.aspectRatio;
+        if (ratio !== 0) {
+          let width = rect.width;
+          let height = rect.height;
+          if (resizeX && resizeY) {
+            const max = Math.max(width, height * ratio);
+            height = Math.max(height, width / ratio);
+            width = max;
+            if (width !== rect.width) xMatch = null;
+            else if (height !== rect.height) yMatch = null;
+          } else if (resizeX) height = width / ratio;
+          else if (resizeY) width = height * ratio;
+          if (side.includes('left')) {
+            const nextX = orig.x + orig.width - width;
+            dx += nextX - rect.x;
+            rect.x = nextX;
+          }
+          if (side.includes('top')) {
+            const nextY = orig.y + orig.height - height;
+            dy += nextY - rect.y;
+            rect.y = nextY;
+          }
+          if (side.includes('right')) dx += width - rect.width;
+          if (side.includes('bottom')) dy += height - rect.height;
+          rect.width = width;
+          rect.height = height;
         }
-        if (side.includes('right')) rect.width = Math.max(minDim, orig.width + dx);
-        if (side.includes('top')) {
-          const newY = Math.min(orig.y + orig.height - minDim, orig.y + dy);
-          rect.height = orig.y + orig.height - newY;
-          rect.y = newY;
-        }
-        if (side.includes('bottom')) rect.height = Math.max(minDim, orig.height + dy);
-        if (this.aspectRatio) rect.height = rect.width / this.aspectRatio;
         this.moveAndResize(rect);
-        this.canvas.markDirty(this);
+        canvas.markDirty(this);
       },
       end: () => canvas.requestSave(),
       cancel: () => { this.moveAndResize(orig); canvas.requestSave(); },
@@ -387,6 +439,16 @@ function expandBox(box, d) {
   return { minX: box.minX - d, minY: box.minY - d, maxX: box.maxX + d, maxY: box.maxY + d };
 }
 
+/** 缩放吸附候选：选中集合之外的全部节点（本复刻不做视口虚拟化，原版取视口内节点）。 */
+function candidateBoxes(canvas, self) {
+  const out = [];
+  for (const node of canvas.nodes.values()) {
+    if (node === self || canvas.selection.has(node)) continue;
+    out.push(bboxOf(node));
+  }
+  return out;
+}
+
 /* --------------------------------------------------------------------------
  * 内容节点基类：文本 / 文件 / 链接共用的 contentEl + placeholder 机制
  * ------------------------------------------------------------------------ */
@@ -395,6 +457,7 @@ export class CanvasContentNode extends CanvasNode {
     super(canvas, id);
     this.isContentMounted = false;
     this.placeholderText = '';
+    this.labelEl = null;
   }
 
   initialize() {
@@ -404,6 +467,49 @@ export class CanvasContentNode extends CanvasNode {
     this.placeholderEl = this.containerEl.createDiv('canvas-node-placeholder');
     this.renderPlaceholder();
   }
+
+  /* ------------------------------------------------------------ 卡片标签 */
+
+  /**
+   * 卡片外上方的小标签（原版 D5/I5.updateNodeLabel）：受插件选项 cardLabelVisibility 控制，
+   * always 常显、hover 由 .mod-hover-label 交给 CSS 悬停显隐、never 直接摘除。
+   */
+  updateNodeLabel(text) {
+    const visibility = this.canvas.options.cardLabelVisibility || 'always';
+    if (visibility === 'never') {
+      if (this.labelEl) { this.labelEl.detach(); this.labelEl = null; }
+      return;
+    }
+    let labelEl = this.labelEl;
+    if (!labelEl) {
+      labelEl = this.labelEl = this.nodeEl.createDiv('canvas-node-label');
+      labelEl.addEventListener('click', (e) => this.onLabelClick(e));
+      labelEl.addEventListener('dblclick', (e) => this.onLabelDblClick(e));
+      labelEl.addEventListener('pointerdown', (e) => this.onPointerdown(e));
+    }
+    labelEl.toggleClass('mod-hover-label', visibility === 'hover');
+    labelEl.setText(text);
+  }
+
+  /** 原版 Ng.isModEvent：中键或 Mod 单击开新标签，Mod+Alt 开分栏。 */
+  static modLeafType(e) {
+    if (e.button === 1) return 'tab';
+    const mod = IS_MAC ? e.metaKey : e.ctrlKey;
+    if (!mod) return false;
+    if (!e.altKey) return 'tab';
+    return e.shiftKey ? 'window' : 'split';
+  }
+
+  onLabelClick(e) {
+    const leafType = CanvasContentNode.modLeafType(e);
+    if (!leafType) return;
+    this.openFromLabel(leafType);
+  }
+
+  onLabelDblClick() { this.openFromLabel(false); }
+
+  /** 子类覆写：标签单击（Mod）/ 双击时打开的落点。 */
+  openFromLabel() {}
 
   renderPlaceholder() {
     if (!this.placeholderEl) return;
@@ -447,6 +553,17 @@ export class CanvasTextNode extends CanvasContentNode {
     super.initialize();
     this.contentEl.addClass('markdown-embed');
     this.initializeEditing();
+  }
+
+  /**
+   * 文本卡片的占位（原版 P5.initialize）：缩到断点以下、正文卸载时显示居中的 align-left 图标，
+   * 不显示正文摘要——摘要属于编辑器内容，不该在占位态泄漏。
+   */
+  renderPlaceholder() {
+    if (!this.placeholderEl) return;
+    if (this.placeholderEl.childElementCount) return;
+    const iconEl = this.placeholderEl.createDiv('canvas-icon-placeholder');
+    setIcon(iconEl, 'lucide-align-left');
   }
 
   isEditable() { return true; }
@@ -716,6 +833,31 @@ export class CanvasLinkNode extends CanvasContentNode {
   }
 
   startEditing() { if (this.url) Desktop.openExternal(this.url); }
+
+  /** 原版 I5.updateNodeLabel：卡片上方标签显示 URL，Mod 单击 / 双击在新窗口打开。 */
+  openFromLabel() { if (this.url) window.open(this.url, '_blank'); }
+
+  render() {
+    super.render();
+    if (!this.initialized) return;
+    this.updateNodeLabel(this.url);
+    if (this.contentEl && this.url && this.contentEl.getText() !== this.url) this.contentEl.setText(this.url);
+  }
+
+  /** 原版 I5.showMenu：换网址 / 在浏览器打开 / 复制网址 / 重新加载。 */
+  showMenu(menu) {
+    super.showMenu(menu);
+    if (this.canvas.readonly) return;
+    menu.addItem((item) => item.setSection('canvas').setTitle(t('plugins.canvas.action-change-url')).setIcon('lucide-link')
+      .onClick(() => this.canvas.promptLinkUrl(this)));
+    menu.addItem((item) => item.setSection('canvas').setTitle(t('interface.menu.open-in-browser')).setIcon('lucide-globe')
+      .onClick(() => window.open(this.url, '_blank')));
+    menu.addItem((item) => item.setSection('canvas').setTitle(t('interface.menu.copy-url')).setIcon('lucide-copy')
+      .onClick(() => {
+        navigator.clipboard.writeText(this.url);
+        new Notice(t('interface.copied', { item: 'URL' }));
+      }));
+  }
 
   getData() { return { ...super.getData(), type: 'link', url: this.url }; }
 

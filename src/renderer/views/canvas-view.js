@@ -8,7 +8,9 @@
  * [POS]: views/ 画布类链的末端：View → CanvasViewport（视口）→ CanvasInteractions（交互）→ CanvasView（装配与调度）。持有 .canvas-wrapper DOM、节点/边集合、选择集合、JSON Canvas 读写。
  *        ResizeObserver 在挂载后更新视口。节点与边几何分层；数据防抖 500ms 写回，关闭时 flush。
  *        vault modify 的外部修改重载磁盘内容并保留视口；自身写入用 _writing 标记排除，避免覆盖在途编辑。
- *        撤销/重做历史（上限 100）与写盘共用一个 requestSave；控件组含快速设置（对齐网格/对齐物体/只读）与撤销/重做。
+ *        撤销/重做历史（上限 100）与写盘共用一个 requestSave；控件组含快速设置（对齐网格/对齐物体/只读）、缩放、撤销/重做与帮助弹窗。
+ *        指针移动/离开经 onPointermove/onPointerleave 交给交互层命中测试（决定哪张卡片显手柄）；空画布占位第三行的修饰键按平台显示（macOS 为 ⌘）。
+ *        promptLinkUrl 是链接卡片「更换网址」入口：复用 LinkSuggestModal 并预填当前 URL。
  *        选择：selection 的改动统一走 updateSelection（先拍旧集合、置 selectionChanged），帧尾 applySelectionDiff 处理焦点/高亮进出，
  *        1↔多选切换不会留下「既聚焦又选中」的中间态；浮动工具条 this.menu 由帧尾按变化重绘，拖动期间隐藏。
  *        getData 按 z 升序写出节点（原版 g5），importData 读到较低 z 时重新置顶，两者共同决定文件顺序即堆叠顺序；cloneData 为克隆拖动换新 id。
@@ -84,6 +86,8 @@ export class CanvasView extends CanvasInteractions {
     this.isDragging = false;
     this.isHoldingSpace = false;
     this.pauseAnimation = 0;
+    this.pointerFrame = 0;
+    this.interactionTarget = null;
     this._saveTimer = null;
     this._savedText = null;
     this._writing = false;
@@ -155,6 +159,7 @@ export class CanvasView extends CanvasInteractions {
     this.data = this.getData();
     await this.save();
     this._resizeObserver?.disconnect();
+    this.setInteractionTarget(null);
     this.clear();
     this.cancelFrame();
   }
@@ -208,6 +213,8 @@ export class CanvasView extends CanvasInteractions {
     wrapperEl.addEventListener('keydown', (e) => this.onKeydown(e));
     wrapperEl.addEventListener('pointerdown', (e) => this.onPointerdown(e));
     wrapperEl.addEventListener('pointerdown', (e) => this.onPriorityPointerdown(e), { capture: true });
+    wrapperEl.addEventListener('pointermove', (e) => this.onPointermove(e));
+    wrapperEl.addEventListener('pointerleave', () => this.onPointerleave());
     wrapperEl.addEventListener('dblclick', (e) => this.onDoubleClick(e));
     wrapperEl.addEventListener('contextmenu', (e) => this.onContextMenu(e));
     wrapperEl.addEventListener('wheel', (e) => this.onWheel(e), { passive: false });
@@ -322,10 +329,11 @@ export class CanvasView extends CanvasInteractions {
 
   createPlaceholder() {
     if (this.canvasPlaceholderEl) return;
+    // 原版桌面端占位三行；第三行的修饰键取平台显示名（macOS 为 ⌘，原文 Lg.Mod）
     const lines = [
       t('plugins.canvas.label-drag-from-below'),
       t('plugins.canvas.label-space-drag-pan'),
-      `Mod + ${t('plugins.canvas.label-scroll-to-zoom')}`,
+      `${IS_MAC ? '⌘' : 'Ctrl'} + ${t('plugins.canvas.label-scroll-to-zoom')}`,
     ];
     this.canvasPlaceholderEl = this.canvasEl.createDiv('canvas-placeholder-message');
     lines.forEach((line, i) => {
@@ -523,6 +531,15 @@ export class CanvasView extends CanvasInteractions {
     modal.onClose = () => {
       Promise.resolve().then(() => { if (!chosen && opts.onCancel) opts.onCancel(); });
     };
+    modal.open();
+  }
+
+  /** 「更换网址」：预填当前 URL 的输入弹窗（原版 I5.showMenu 的 change url）。 */
+  promptLinkUrl(node) {
+    const modal = new LinkSuggestModal(this.app, (url) => {
+      node.setUrl(url);
+      this.requestSave();
+    }, { value: node.url, title: t('plugins.canvas.action-change-url') });
     modal.open();
   }
 

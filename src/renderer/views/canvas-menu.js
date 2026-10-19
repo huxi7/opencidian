@@ -104,13 +104,14 @@ export class FileSuggestModal extends SuggestModal {
   }
 }
 
-/** 网址输入弹窗（原版 y5）：输入合法 URL 后建链接卡片。 */
+/** 网址输入弹窗（原版 y5）：输入合法 URL 后建/改链接卡片；带 value 时用于「更换网址」。 */
 export class LinkSuggestModal extends PromptModal {
-  constructor(app, onChoose) {
+  constructor(app, onChoose, options = {}) {
     super(app, {
-      title: t('plugins.canvas.label-enter-url'),
+      title: options.title || t('plugins.canvas.label-enter-url'),
       placeholder: 'https://example.com',
       okText: t('plugins.canvas.action-add-website'),
+      value: options.value || '',
       onSubmit: (value) => {
         const url = String(value || '').trim();
         if (!url) return;

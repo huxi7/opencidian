@@ -7,6 +7,8 @@
  * [POS]: views/ 画布类链的第二层：View → CanvasViewport → CanvasInteractions → CanvasView。所有画布子视图共享这一层视口语义；
  *        节点/边通过 markMoved 请求重绘；帧内先把移动节点的关联边一并加入重绘集合（边坐标由节点推导），再统一 render。
  *        帧尾调用 applySelectionDiff 应用选择差异，并在选择/视口/被选元素发生变化时重绘浮动工具条（原版 menu.render）。缩放夹在边界内并刷新正文挂载，停止后释放动画帧。
+ *        收尾帧才切换 .mod-animating 与 --zoom-multiplier（原版时序：动画期间字号/描边/手柄尺寸停在旧值，随画布一起缩放），
+ *        并触发 layout-change 让 getState().viewState 随布局落库（原版 app.workspace.requestSaveLayout）；cancelFrame 一并清 pointerFrame。
  *        吸附取「4 角 + 中心」共 5 点（原版 D3），逐轴找最近对齐值（原版 L3）；snapToObjects=false 时不吸附、不画参考线。
  *        候选节点取全部节点而非原版的视口内节点（本复刻不做视口虚拟化），分组只与分组对齐。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
@@ -214,6 +216,7 @@ export class CanvasViewport extends View {
 
   cancelFrame() {
     if (this.frame) { window.cancelAnimationFrame(this.frame); this.frame = 0; }
+    if (this.pointerFrame) { window.cancelAnimationFrame(this.pointerFrame); this.pointerFrame = 0; }
   }
 
   /** 原版动画帧：指数平滑趋近 tx/ty/tZoom，随后刷新视口 DOM 并重绘标记过的节点与边。 */
@@ -257,8 +260,6 @@ export class CanvasViewport extends View {
         width: String(cell),
         height: String(cell),
       });
-      // 原版仅在动画结束设置 --zoom-multiplier；这里每帧设置，让字号随缩放连续变化
-      this.wrapperEl.setCssProps({ '--zoom-multiplier': String(Math.sqrt(1 / scale)) });
       this.wrapperEl.toggleClass('mod-zoomed-out', zoom <= ZOOMED_OUT_AT);
       for (const node of this.nodes.values()) node.updateBreakpoint(zoom > this.zoomBreakpoint || node.isEditing);
 
@@ -266,9 +267,15 @@ export class CanvasViewport extends View {
         this.requestFrame(now);
         this.wasAnimating = true;
       } else {
-        this.wrapperEl.removeClass('mod-animating');
+        // 原版在动画收尾这一帧才切换 mod-animating 并写 --zoom-multiplier：
+        // 动画期间字号/手柄尺寸/描边都停在旧值，随画布一起缩放，收尾才跳到新值。
+        this.wrapperEl.setCssProps({ '--zoom-multiplier': String(Math.sqrt(1 / scale)) });
+        this.wrapperEl.toggleClass('mod-animating', this.wasAnimating);
         this.wasAnimating = false;
         this.viewportChanged = false;
+        // 原版此处调 app.workspace.requestSaveLayout()：本仓库以 layout-change 触发防抖落库，
+        // 让 getState().viewState（x/y/zoom）随布局一起持久化（main.js 的 debounce 2s 兜底开销）。
+        this.app.workspace.trigger('layout-change');
       }
     }
 
@@ -291,6 +298,11 @@ export class CanvasViewport extends View {
     }
     // 原版帧尾：先应用选择差异（1↔多选的焦点/高亮切换），再让浮动工具条按需重绘。
     const selectionChanged = this.applySelectionDiff();
+    // 命中节点进入多选集合时收起手柄（原版 interactionHitTest 的 selection.size>1 分支；
+    // 选择可能在指针静止时改变，故帧尾也复核一次）
+    if (this.interactionTarget && this.selection.size > 1 && this.selection.has(this.interactionTarget)) {
+      this.setInteractionTarget(null);
+    }
     if (this.menu && (selectionChanged || viewportWasChanged || Array.from(this.selection).some((el) => movedEls.has(el)))) {
       this.menu.render(selectionChanged);
     }
