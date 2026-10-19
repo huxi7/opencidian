@@ -1,9 +1,175 @@
 /**
- * [INPUT]: 依赖正文、属性与代码高亮三个样式模块。
- * [OUTPUT]: Markdown 阅读与实时预览样式入口。
- * [POS]: index.html 加载本文件；子模块保持规则顺序。
+ * [INPUT]: 依赖正文、属性与代码高亮三个子模块。
+ * [OUTPUT]: Markdown 阅读与实时预览样式入口：三个子模块，加上嵌入对象规则（图片/音视频/PDF/笔记嵌块/附件嵌块/progress）。
+ * [POS]: index.html 加载本文件。先按 内容 → 属性 → 高亮 导入子模块，再落嵌入对象规则；嵌入对象不属于正文流式排版，且需在三个子模块之后定稿。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 @import './markdown-content.css';
 @import './markdown-properties.css';
 @import './markdown-highlight.css';
+
+/* ------------------------------------------------------------ 图片与嵌入 */
+/* app.css 11982-11992 */
+.markdown-preview-view img, .markdown-rendered img {
+  -webkit-touch-callout: default;
+  image-rendering: -webkit-optimize-contrast;
+  max-width: 100%;
+}
+.markdown-preview-view img:not([width]), .markdown-rendered img:not([width]) { outline: none; }
+/* app.css 10944-10951：非图片嵌入为块级 */
+.internal-embed:not(.image-embed) { display: block; }
+.internal-embed img:not([width]), .internal-embed audio, .internal-embed video { max-width: 100%; }
+/* app.css 9606-9622：音频播放器铺满行宽 */
+.markdown-rendered audio { max-width: 100%; outline: none; }
+audio {
+  outline: none;
+  width: 100%;
+  height: 42px;
+}
+audio::-webkit-media-controls-enclosure {
+  border-radius: calc(var(--radius-m) - 1px);
+  border: var(--border-width) solid var(--background-modifier-border);
+  background-color: var(--background-primary-alt);
+}
+audio::-webkit-media-controls-current-time-display,
+audio::-webkit-media-controls-time-remaining-display { font-family: var(--font-interface); }
+/* app.css 10279-10282 */
+.markdown-rendered video { max-width: 100%; outline: none; }
+iframe { border: 0; }
+/* app.css 10799-10815：PDF 嵌块 800px 高的带边框容器 */
+.pdf-embed,
+.internal-embed.pdf-embed:not(.image-embed) {
+  width: 100%;
+  height: 800px;
+  display: flex;
+  flex-direction: column;
+}
+.pdf-embed { overflow: hidden; position: relative; }
+.pdf-embed:not(.canvas-node-content) {
+  border: var(--border-width) solid var(--background-modifier-border);
+  border-radius: var(--radius-s);
+}
+.pdf-embed iframe { width: 100%; height: 100%; flex: 1 1 auto; }
+/* app.css 10979-10998：图片嵌入宽高由内容决定 */
+.image-embed {
+  width: fit-content;
+  padding-bottom: 3px;
+  padding-inline-end: 3px;
+}
+.image-embed .image-wrapper { display: flex; position: relative; }
+.image-embed .image-wrapper img:not([width]) { width: 100%; }
+.markdown-rendered .image-embed { display: inline-flex; max-width: 100%; }
+.markdown-rendered p > .image-embed { display: flex; }
+.markdown-rendered span.internal-embed.image-embed { display: inline-flex; }
+
+/* app.css 10854-10966：笔记嵌块 */
+.markdown-embed, .file-embed { position: relative; }
+.markdown-embed {
+  font-style: var(--embed-font-style);
+  background-color: var(--embed-background);
+  border-top: var(--embed-border-top);
+  border-inline-end: var(--embed-border-end, var(--embed-border-right));
+  border-bottom: var(--embed-border-bottom);
+  border-inline-start: var(--embed-border-start, var(--embed-border-left));
+  margin: 0;
+}
+.markdown-embed-content { height: 100%; }
+/* app.css 10858-10879：嵌块右上角链接按钮 */
+.markdown-embed-link, .file-embed-link {
+  position: absolute;
+  top: 4px;
+  inset-inline-end: 4px;
+  color: var(--icon-color);
+  opacity: var(--icon-opacity);
+  cursor: var(--cursor-link);
+  padding: var(--size-2-2);
+  border-radius: var(--radius-s);
+  display: flex;
+  align-items: center;
+  --icon-size: var(--icon-s);
+  --icon-stroke: var(--icon-s-stroke-width);
+}
+@media (hover: hover) {
+  .markdown-embed-link:hover, .file-embed-link:hover {
+    color: var(--icon-color-hover);
+    opacity: var(--icon-opacity-hover);
+    background: var(--background-modifier-hover);
+  }
+}
+/* base.css 的 .svg-icon 取 --icon-m；嵌块按钮按原版收紧到 --icon-s */
+.markdown-embed-link .svg-icon, .file-embed-link .svg-icon { width: var(--icon-s); height: var(--icon-s); }
+/* app.css 10921-10931：嵌块标题（原版 .embed-title） */
+.embed-title {
+  align-items: center;
+  display: flex;
+  gap: var(--size-4-1);
+  font-size: var(--font-text-size);
+  font-weight: calc(var(--font-weight) + var(--bold-modifier));
+  text-align: start;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: 0 0 var(--size-4-2) 0;
+}
+/* app.css 10955-10966：行内嵌块（阅读视图走 inline-embed 分支） */
+.inline-embed > .markdown-embed-title { padding: var(--embed-padding); }
+.inline-embed > .markdown-embed-content {
+  height: fit-content;
+  max-height: var(--embed-max-height);
+  overflow: auto;
+  padding: var(--embed-padding);
+}
+/* 未加载 / 未解析的嵌入 */
+.markdown-rendered .internal-embed.is-unresolved { color: var(--link-unresolved-color); opacity: var(--link-unresolved-opacity); }
+/* app.css 10891-10915：非可渲染附件的通用嵌块（.file-embed.mod-generic） */
+.file-embed {
+  position: relative;
+  display: flex;
+  justify-content: center;
+  border-radius: var(--radius-m);
+  background-color: var(--background-primary-alt);
+}
+.file-embed-title {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--size-4-2);
+}
+.file-embed-icon { color: var(--text-muted); display: flex; }
+.file-embed.mod-generic, .file-embed.mod-empty {
+  cursor: var(--cursor-link);
+  padding: var(--size-4-2);
+  color: var(--text-muted);
+  text-align: center;
+  font-size: var(--font-smaller);
+}
+@media (hover: hover) {
+  .file-embed.mod-generic:hover, .file-embed.mod-empty:hover {
+    color: var(--text-normal);
+    background-color: var(--background-secondary);
+  }
+}
+/* app.css 8597-8630：正文里的原生 <progress> */
+.markdown-rendered progress {
+  -webkit-writing-mode: horizontal-tb;
+  writing-mode: horizontal-tb;
+  appearance: none;
+  box-sizing: border-box;
+  display: inline-block;
+  height: 6px;
+  margin-bottom: 4px;
+  max-width: 100%;
+  overflow: hidden;
+  border-radius: 0px;
+  border: 0;
+  vertical-align: -0.2rem;
+}
+.markdown-rendered progress[value]::-webkit-progress-bar {
+  background-color: var(--background-secondary);
+  box-shadow: inset 0px 0px 0px 1px var(--background-modifier-border);
+  border-radius: 6px;
+  overflow: hidden;
+}
+.markdown-rendered progress[value]::-webkit-progress-value {
+  background-color: var(--interactive-accent);
+  overflow: hidden;
+}

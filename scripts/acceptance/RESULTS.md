@@ -324,3 +324,12 @@ MathJax 独立适配器子代理的41项基础/故障测试见 assets/mathjax/SO
 - 复跑：canvas 95 ✓、canvas-edit 77 ✓、canvas-selection 72 ✓、canvas-ui 107 ✓、editor-block-button 11 ✓、core-ribbon 47 ✓；六日志零 `TypeError|ReferenceError|act failed|setState failed`。
 - 截图（修复后）：浅色 `…/probe-canvas-run-result-wpPOdA/screen.png`、深色 `…/Te85yW/screen.png`、空态 `…/xQWEfc/screen.png`、帮助弹窗 `…/s7DUhp/screen.png`。
 - 剩余差异（有据未做）：链接卡不嵌 webview（既定跳过 webviewer）、分组背景图未实现、画布插件设置页缺失（选项与语义已有，缺 UI）、手柄 DOM 保留在各节点内、导出路径未逐字对齐原版截屏分支。
+
+## 阅读视图排版深挖批（2026-10-19 上午）：原版对照 20 类
+
+- 修复：H1–H6 阶梯（1.618em…1em，含字重/行高/字距）与「段落型块→标题」间距；段落 `unicode-bidi: plaintext`；首/末块边距归零（等价选择器复刻原版 el-* 容器）；外链内联 SVG 角标 + 未解析 `opacity .7` 与专属下划线；标签 `--tag-radius 2em`；列表造原版 DOM（`.list-bullet`）+ `li{margin-inline-start:3ch}` + 嵌套 `--list-indent`；任务 checkbox 16px + 勾选 mask + 完成态删除线（原版 12912-13003）；引用去自造圆角/底色；17 类 callout 色彩映射与 rgba(.1) 底色；代码 padding/pre 规格/`--code-white-space`；表格 `4px 8px`/行高 1.3/交替底色；hr 2px；脚注；图片去圆角 + `-webkit-optimize-contrast`；音视频固定规格；笔记嵌块（标题 + .markdown-embed-content + 右上打开按钮）与非可渲染附件占位（`.file-embed.mod-generic`）；progress 样式。
+- 文件拆分守规：`markdown-content.css` 352→864 触顶后，把嵌入对象段（166 行）迁至 `markdown.css` → **700 / 175**，级联安全逐条核实、截图无变化。
+- 新增永久验收 `scripts/acceptance/reading-ui.js`（**212 项**计算样式断言，浅深共用）；探针 `probe-reading.js`（`light|dark[:scrollTop]`）。
+- 复跑（主会话独立）：reading-ui 212 ✓、reading-menus 13 ✓、notes 72 ✓、editor 131 ✓、image-size 36 ✓、page-preview 16 ✓、math ✓；代理另跑 table-interaction 178 / table-widget 76 / core-views 83 / editor-block-button 11 / editor-menu 23 / editor-layout 23 全绿，15 份日志零错误。
+- 截图：浅色顶部 `…/probe-reading-run-result-f07wns/screen.png`、浅色 callout/代码/表格 `…/kpCxh1/screen.png`、浅色嵌入/脚注 `…/Zttrex/screen.png`、深色顶部 `…/QfmEa5/screen.png`、深色 callout/表格 `…/fDXpNp/screen.png`。
+- 已知差异：容器 DOM 未复刻（视觉等价选择器）、阅读滚动容器留在 `.markdown-reading-view`、表格列对齐用 style 而非 `align` 属性、嵌块打开按钮 svg 省略 width/height（同原版被 CSS 覆盖）。

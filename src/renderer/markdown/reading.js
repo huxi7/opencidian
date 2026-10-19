@@ -1,7 +1,7 @@
 /**
  * [INPUT]: 依赖 markdown-it、footnote/task-lists、Desktop、图标和 vault 路径；代码块委托 highlight.js，公式委托 math.js；转义、frontmatter 剥离与图片尺寸语法来自 source-text.js。
  * [OUTPUT]: 导出 getMarkdownIt、renderMarkdown、attachMarkdownInteractions、stripFrontmatter、scrollToSubpath、resolvePath、resolveFileUrl 与 escapeHtml
- * [POS]: markdown/ 的阅读视图渲染器，被 markdown-view.js（阅读模式）与 live-preview.js（块级 widget 内嵌 HTML）共同调用。callout 渲染为 div.callout（原版 DOM 非 blockquote）。图片尺寸语法 `|300` / `|300x200` 由 source-text.js 解析，这里负责落成 img 的 width/height 与 .image-wrapper 结构；带尺寸的图片另外带 data-source-* 区间提示，图片右键交给 source-text.js 的 fillImageContextMenu。
+ * [POS]: markdown/ 的阅读视图渲染器，被 markdown-view.js（阅读模式）与 live-preview.js（块级 widget 内嵌 HTML）共同调用。callout 渲染为 div.callout（原版 DOM 非 blockquote）。图片尺寸语法 `|300` / `|300x200` 由 source-text.js 解析，这里负责落成 img 的 width/height 与 .image-wrapper 结构；带尺寸的图片另外带 data-source-* 区间提示，图片右键交给 source-text.js 的 fillImageContextMenu。渲染后由 decorateReadingDom 补齐原版阅读 DOM：无序列表的 has-list-bullet/.list-bullet 圆点、任务项的 data-task/is-checked 与可点击复选框、脚注的 .footnote-link；笔记嵌块走原版 inline-embed 结构（标题 + 内容 + 右上角链接按钮），不可渲染附件走 .file-embed.mod-generic。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 /*
@@ -373,6 +373,23 @@ function calloutFoldIcon() {
   try { return createIcon('chevron-down').outerHTML; } catch (e) { return ''; }
 }
 
+/** 笔记嵌块右上角链接按钮图标（原版 .markdown-embed-link + lucide-maximize-2）。
+    原版 svg 自带 width/height="24"，其 CSS 同样以 --icon-size 定尺寸；
+    这里省略这两个属性，让嵌入内容里的 [width] 只可能来自图片尺寸语法。 */
+function embedLinkIcon() {
+  try {
+    const svg = createIcon('maximize-2');
+    svg.removeAttribute('width');
+    svg.removeAttribute('height');
+    return svg.outerHTML;
+  } catch (e) { return ''; }
+}
+
+/** 非可渲染附件的通用嵌块图标（原版 .file-embed-icon 用 lucide-file）。 */
+function fileEmbedIcon() {
+  try { return createIcon('file').outerHTML; } catch (e) { return ''; }
+}
+
 function defaultCalloutTitle(type) {
   const names = {
     note: 'Note', abstract: 'Abstract', summary: 'Summary', tldr: 'Tldr', info: 'Info', todo: 'Todo',
@@ -448,11 +465,14 @@ function renderEmbed(env, target, subpath, alias, token, inner) {
     // nested content is rendered asynchronously by the caller's post-process step
     const id = 'embed-' + Math.random().toString(36).slice(2);
     pendingEmbeds.push({ id, path: file.path, subpath, depth });
-    return `<span class="internal-embed markdown-embed is-loaded" data-embed-id="${id}" data-href="${escapeAttr(file.path)}">` +
-      `<span class="markdown-embed-title">${escapeHtml(file.basename)}</span>` +
-      `<span class="markdown-embed-content markdown-rendered" data-embed-mount="${id}">…</span></span>`;
+    // 原版阅读视图 embeds 走 inline-embed 分支（app.css 10955-10966）：标题 + 内容 + 右上角链接按钮
+    return `<span class="internal-embed markdown-embed is-loaded inline-embed" data-embed-id="${id}" data-href="${escapeAttr(file.path)}">` +
+      `<span class="embed-title markdown-embed-title">${escapeHtml(file.basename)}</span>` +
+      `<span class="markdown-embed-content markdown-rendered" data-embed-mount="${id}">…</span>` +
+      `<span class="markdown-embed-link" role="button" aria-label="${escapeAttr(file.path)}">${embedLinkIcon()}</span></span>`;
   }
-  return `<span class="internal-embed"><a class="internal-link" data-href="${escapeAttr(file.path)}" href="javascript:void(0)">${escapeHtml(file.basename)}</a></span>`;
+  return `<span class="internal-embed file-embed mod-generic" data-href="${escapeAttr(file.path)}">` +
+    `<span class="file-embed-title"><span class="file-embed-icon">${fileEmbedIcon()}</span>${escapeHtml(file.basename)}</span></span>`;
 }
 
 let pendingEmbeds = [];
@@ -466,6 +486,7 @@ export async function renderMarkdown(app, markdown, el, sourcePath, options = {}
   const env = { app, sourcePath, depth: options.depth || 0 };
   let html = md.render(markdown, env);
   el.innerHTML = html;
+  decorateReadingDom(el);
   const highlighting = highlightCodeBlocks(el);
   addCodeBlockCopyButtons(el);
   const mathematics = renderMathBlocks(el);
@@ -527,6 +548,32 @@ export async function renderMermaidBlocks(el) {
       }
     }
   } catch (e) { console.error('mermaid load failed', e); }
+}
+
+/**
+ * 原版阅读 DOM 修正（app.css 12149-12191 / 12984-13003）：
+ * 1. 无序列表挂 has-list-bullet，并在每个 li 首位插入 .list-bullet（0.3em 圆点由 CSS 绘制）；
+ * 2. 任务项按原版写 data-task / is-checked 并去掉 disabled，复选框因此可点击改源文本。
+ */
+function decorateReadingDom(el) {
+  for (const ul of el.querySelectorAll('ul')) {
+    ul.addClass('has-list-bullet');
+    for (const li of ul.children) {
+      if (li.tagName !== 'LI') continue;
+      if (li.querySelector(':scope > .list-bullet')) continue;
+      li.insertBefore(createDiv('list-bullet'), li.firstChild);
+    }
+  }
+  for (const li of el.querySelectorAll('li.task-list-item')) {
+    const box = li.querySelector(':scope > .task-list-item-checkbox, :scope > p > .task-list-item-checkbox');
+    if (!box) continue;
+    const done = box.checked || box.hasAttribute('checked');
+    box.removeAttribute('disabled');
+    li.setAttr('data-task', done ? 'x' : ' ');
+    li.toggleClass('is-checked', done);
+  }
+  // 脚注引用与回跳同挂 .footnote-link（app.css 11091）
+  for (const a of el.querySelectorAll('.footnote-ref > a, a.footnote-backref')) a.addClass('footnote-link');
 }
 
 /** 原版 post-processor：为每个 pre > code 添加 .copy-code-button（悬停显示，点击复制）。 */
@@ -596,6 +643,24 @@ export function attachMarkdownInteractions(app, container, getSourcePath) {
     if (tagEl) {
       ev.preventDefault();
       openTagSearch(app, tagEl.getAttr('data-tag'));
+      return;
+    }
+
+    // 笔记嵌块右上角链接按钮：原版 getLeaf(isModEvent) 打开目标文件
+    const embedLink = target.closest('.markdown-embed-link');
+    if (embedLink) {
+      ev.preventDefault();
+      const embed = embedLink.closest('.internal-embed[data-href]');
+      const href = embed && embed.getAttr('data-href');
+      if (href) app.workspace.openLinkText(href, getSourcePath ? getSourcePath() : '', ev.metaKey || ev.ctrlKey ? 'tab' : false);
+      return;
+    }
+
+    // 通用附件嵌块（.file-embed）单击打开
+    const fileEmbed = target.closest('.file-embed[data-href]');
+    if (fileEmbed) {
+      ev.preventDefault();
+      app.workspace.openLinkText(fileEmbed.getAttr('data-href'), getSourcePath ? getSourcePath() : '', false);
       return;
     }
 

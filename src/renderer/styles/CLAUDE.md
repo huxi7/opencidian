@@ -18,8 +18,8 @@ download-attachments.css: 下载附件模态。.modal.mod-scrollable-content(app
 tree.css: .tree-item 体系(collapse-icon 尺寸与旋转、tree-item-self/icon/inner/children/flair)，逐字移植自原版 app.css 7263-7287 与 9446-9591。全部树视图共用。键盘焦点环除原版 mod-active 规则外，另挂 .nav-files-container:focus 兜底（本复刻的 workspace-leaf 不写 mod-active）。
 explorer.css: .nav-* 文件树层(标题内容、nav-file-tag、拖拽高亮、容器 outline:none)，被 explorer/outline/tag 面板共用。基础结构来自 tree.css。
 editor.css: CodeMirror 与 live preview(HyperMD-*)、inline-title、media 视图。含原版 file layout（.cm-sizer/.cm-contentContainer 布局、is-readable-line-width 的 --file-line-width 居中、.cm-line padding 0、.cm-gutters folding offset）与阅读视图 sizer 居中。图片段取原版 .cm-line .image-embed（inline-flex、加成内容宽、position:relative）与其 .image-wrapper 规则，实时预览的内嵌图片因此能按 img 的 width/height 渲染。表格段（app.css 3551-3797）含 .table-editor 单元格、table-row/col-btn、table-row/col-drag-handle 与 align 属性驱动的对齐，另移植单元格选区覆盖层（is-selected 与 start/end/top/bottom 边框，app.css 3586-3607/3769-3805）、拖拽落点线 .table-drag-target（app.css 12821-12836）与 is-dragging 手柄显隐；.table-cell-editor 是本实现的单元格编辑 textarea（mod-editing 隐藏渲染内容）；表格段末尾按 app.css 3725-3740 补触屏门控：body.is-touch（部件按 (hover: none) 探测）下非激活行列手柄 display:none、编辑中的行/列手柄与授权后的加行/加列按钮常显，桌面保持 hover 显形。
-markdown.css: 阅读样式入口，按原顺序导入内容、属性与高亮规则。
-markdown-content.css: 阅读排版、表格、代码、引用与嵌入。图片段取原版 .image-embed（宽高由内容决定、右下 3px 内边距）与 .image-wrapper 规则，尺寸语法只在 img 上写 width/height，无尺寸语法时保持原始宽度。
+markdown.css: 阅读样式入口，按原顺序导入内容、属性与高亮规则；嵌入对象段（图片/音视频/PDF/笔记嵌块/附件/progress）在本文件承载，逐条对齐原版 app.css 9606-10966、11982。
+markdown-content.css: 正文流式排版（标题阶梯与间距、段落、列表与任务、引用、callout、代码、表格、hr、脚注、链接三色与标签）。列表经 markdown/reading.js 的 decorateReadingDom 造原版 DOM（.list-bullet 圆点等），首/末块边距用等价选择器复刻原版 el-* 容器规则。
 markdown-properties.css: 属性、标签与内容补充规则。
 markdown-highlight.css: 阅读、实时预览与源码共用原版 token 色彩。
 search.css: 搜索面板、backlinks、outline、tag pane 的专属样式。树基础结构来自 tree.css。

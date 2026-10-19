@@ -1,10 +1,16 @@
 /**
  * [INPUT]: 依赖 tokens.css 变量与 reading.js 阅读 DOM。
- * [OUTPUT]: 阅读排版、代码块、表格、嵌入和 callout 样式。
- * [POS]: markdown.css 的正文样式，保持原版规则次序。
+ * [OUTPUT]: 正文流式排版：容器与行宽、标题、段落与内联、链接、标签、分隔线、引用、callout、脚注、列表、任务、代码、数学、表格。
+ * [POS]: markdown.css 的第一个子模块（正文样式），每条规则标注 _analysis/obsidian-asar/app.css 行号。嵌入对象（图片/音视频/PDF/笔记嵌块/附件）与 progress 由父文件 markdown.css 承载，本文件只留指针。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
+/* ------------------------------------------------------------ 阅读容器 */
+/* app.css 4343 .markdown-reading-view：原版由 .markdown-preview-view 滚动；
+   本复刻把滚动留在 .markdown-reading-view（markdown-view.js 依赖它做跳转），
+   高度与内边距仍取原版值。 */
 .markdown-reading-view {
+  display: flex;
+  flex-direction: column;
   height: 100%;
   overflow-y: auto;
   overflow-x: hidden;
@@ -13,157 +19,264 @@
   user-select: text;
   overscroll-behavior: contain;
 }
+/* app.css 4347 .markdown-preview-view */
 .markdown-preview-view {
-  padding: var(--file-margins-y) var(--file-margins-x);
-  font-family: var(--font-text);
+  padding: var(--file-margins, var(--size-4-8));
   font-size: var(--font-text-size);
-  line-height: var(--line-height-normal, 1.5);
+  font-family: var(--font-text);
+  line-height: var(--line-height-normal);
   color: var(--text-normal);
+  position: relative;
+  overflow-wrap: break-word;
   word-wrap: break-word;
+  -webkit-user-select: text;
+  user-select: text;
   --file-margins-x: var(--size-4-8);
   --file-margins-y: var(--size-4-8);
 }
-.markdown-preview-view .markdown-preview-sizer { min-height: 100%; display: flow-root; }
-.markdown-preview-section { padding-bottom: var(--size-4-8); }
+/* app.css 4367：行宽收窄只作用于 sizer */
+.markdown-preview-view.is-readable-line-width .markdown-preview-sizer {
+  max-width: var(--file-line-width);
+  margin-left: auto;
+  margin-right: auto;
+}
+.markdown-preview-view .markdown-preview-sizer { min-height: 100%; }
+/* app.css 4378-4389：首尾外边距归零（原版按 section 的直接子 div 判定） */
+.markdown-rendered > :first-child { margin-top: 0; }
+.markdown-rendered > :last-child { margin-bottom: 0; }
+.markdown-content > :first-child { margin-top: 0; }
+.markdown-content > :last-child { margin-bottom: 0; }
+/* 属性块（原版 .mod-ui 段）之后的首个块同样无上边距 */
+.metadata-container-host + .markdown-content > :first-child { margin-top: 0; }
 
-.markdown-preview-view > .markdown-preview-sizer > .inline-title,
-.markdown-preview-view .inline-title {
-  font-size: var(--h1-size, 1.8em);
-  font-weight: var(--h1-weight, var(--font-bold));
-  line-height: var(--inline-title-line-height, 1.3);
-  margin-bottom: var(--inline-title-margin-bottom, 0.4em);
+/* app.css 4303 .inline-title */
+.inline-title {
+  color: var(--inline-title-color);
+  white-space: pre-wrap;
+  margin-block-end: var(--inline-title-margin-bottom);
+}
+.inline-title:not([data-level]) {
+  font-size: var(--inline-title-size);
+  font-weight: var(--inline-title-weight);
+  line-height: var(--inline-title-line-height);
+  font-style: var(--inline-title-style);
+  font-variant: var(--inline-title-variant);
+  font-family: var(--inline-title-font);
+  letter-spacing: -0.015em;
 }
 
-/* typography */
-.markdown-rendered p { margin-block: 0 var(--p-spacing, 0.75em); }
-.markdown-rendered h1 { font-size: var(--h1-size); font-weight: var(--h1-weight); color: var(--h1-color); line-height: var(--h1-line-height); letter-spacing: var(--h1-letter-spacing); margin: var(--heading-spacing) 0 0.5em; }
-.markdown-rendered h2 { font-size: var(--h2-size); font-weight: var(--h2-weight); color: var(--h2-color); line-height: var(--h2-line-height); letter-spacing: var(--h2-letter-spacing); margin: var(--heading-spacing) 0 0.5em; }
-.markdown-rendered h3 { font-size: var(--h3-size); font-weight: var(--h3-weight); color: var(--h3-color); line-height: var(--h3-line-height); letter-spacing: var(--h3-letter-spacing); margin: var(--heading-spacing) 0 0.4em; }
-.markdown-rendered h4 { font-size: var(--h4-size); font-weight: var(--h4-weight); color: var(--h4-color); line-height: var(--h4-line-height); margin: var(--heading-spacing) 0 0.4em; }
-.markdown-rendered h5 { font-size: var(--h5-size); font-weight: var(--h5-weight); color: var(--h5-color); line-height: var(--h5-line-height); margin: var(--heading-spacing) 0 0.4em; }
-.markdown-rendered h6 { font-size: var(--h6-size); font-weight: var(--h6-weight); color: var(--h6-color); line-height: var(--h6-line-height); margin: var(--heading-spacing) 0 0.4em; }
+/* ------------------------------------------------------------ 正文与标题 */
+/* app.css 13065 .markdown-rendered p */
+.markdown-rendered p {
+  margin-block-start: var(--p-spacing);
+  margin-block-end: var(--p-spacing);
+  unicode-bidi: plaintext;
+}
+/* app.css 11669-11673：标题通用上下边距 */
+.markdown-rendered h1,
+.markdown-rendered h2,
+.markdown-rendered h3,
+.markdown-rendered h4,
+.markdown-rendered h5,
+.markdown-rendered h6 {
+  margin-block-start: var(--p-spacing);
+  margin-block-end: var(--p-spacing);
+}
+/* app.css 11661-11664：段落型块之后的标题取 --heading-spacing（原版判 div.el-* 包装） */
+.markdown-rendered :is(p, pre, table, ul, ol, blockquote) + :is(h1, h2, h3, h4, h5, h6) {
+  margin-top: var(--heading-spacing);
+}
+/* app.css 11653-11659：列表内标题不额外撑高 */
+.markdown-rendered li h1,
+.markdown-rendered li h2,
+.markdown-rendered li h3,
+.markdown-rendered li h4,
+.markdown-rendered li h5 { margin-top: 0; margin-bottom: 0; }
+/* app.css 11674-11910：h1-h6 的字体族/字重/行高/字距 */
+.markdown-rendered h1 {
+  --font-weight: var(--h1-weight);
+  font-variant: var(--h1-variant);
+  letter-spacing: var(--h1-letter-spacing);
+  line-height: var(--h1-line-height);
+  font-size: var(--h1-size);
+  color: var(--h1-color);
+  font-weight: var(--font-weight);
+  font-style: var(--h1-style);
+  font-family: var(--h1-font);
+}
+.markdown-rendered h2 {
+  --font-weight: var(--h2-weight);
+  font-variant: var(--h2-variant);
+  letter-spacing: var(--h2-letter-spacing);
+  line-height: var(--h2-line-height);
+  font-size: var(--h2-size);
+  color: var(--h2-color);
+  font-weight: var(--font-weight);
+  font-style: var(--h2-style);
+  font-family: var(--h2-font);
+}
+.markdown-rendered h3 {
+  --font-weight: var(--h3-weight);
+  font-variant: var(--h3-variant);
+  letter-spacing: var(--h3-letter-spacing);
+  line-height: var(--h3-line-height);
+  font-size: var(--h3-size);
+  color: var(--h3-color);
+  font-weight: var(--font-weight);
+  font-style: var(--h3-style);
+  font-family: var(--h3-font);
+}
+.markdown-rendered h4 {
+  --font-weight: var(--h4-weight);
+  font-variant: var(--h4-variant);
+  letter-spacing: var(--h4-letter-spacing);
+  line-height: var(--h4-line-height);
+  font-size: var(--h4-size);
+  color: var(--h4-color);
+  font-weight: var(--font-weight);
+  font-style: var(--h4-style);
+  font-family: var(--h4-font);
+}
+.markdown-rendered h5 {
+  --font-weight: var(--h5-weight);
+  font-variant: var(--h5-variant);
+  letter-spacing: var(--h5-letter-spacing);
+  font-size: var(--h5-size);
+  line-height: var(--h5-line-height);
+  color: var(--h5-color);
+  font-weight: var(--font-weight);
+  font-style: var(--h5-style);
+  font-family: var(--h5-font);
+}
+.markdown-rendered h6 {
+  --font-weight: var(--h6-weight);
+  font-variant: var(--h6-variant);
+  letter-spacing: var(--h6-letter-spacing);
+  font-size: var(--h6-size);
+  line-height: var(--h6-line-height);
+  color: var(--h6-color);
+  font-weight: var(--font-weight);
+  font-style: var(--h6-style);
+  font-family: var(--h6-font);
+}
 .markdown-rendered h1 .heading-collapse-indicator { display: none; }
-.markdown-rendered strong { font-weight: var(--bold-weight, var(--font-bold)); color: var(--bold-color); }
-.markdown-rendered em { font-style: italic; color: var(--italic-color); }
-.markdown-rendered mark { background-color: var(--text-highlight-bg); color: inherit; padding: 0 2px; border-radius: var(--radius-s); }
-.markdown-rendered hr { border: none; border-top: 2px solid var(--hr-color, var(--background-modifier-border)); margin: var(--size-4-4) 0; }
-.markdown-rendered a.internal-link { color: var(--link-color); text-decoration-line: var(--link-decoration); border-radius: var(--radius-s); }
-.markdown-rendered a.internal-link:hover { color: var(--link-color-hover); text-decoration-line: var(--link-decoration-hover); }
-.markdown-rendered a.internal-link.is-unresolved { color: var(--link-unresolved-color); opacity: var(--link-unresolved-opacity); }
-.markdown-rendered a.external-link { color: var(--link-external-color); text-decoration-line: var(--link-external-decoration); }
-.markdown-rendered a.external-link:hover { color: var(--link-external-color-hover); }
-.markdown-rendered a.tag,
-.markdown-rendered .tag {
-  color: var(--tag-color);
+/* app.css 13049-13060：强调与高亮 */
+.markdown-rendered strong, .markdown-rendered b { font-weight: calc(var(--font-weight) + var(--bold-modifier)); color: var(--bold-color); }
+.markdown-rendered strong a, .markdown-rendered b a { font-weight: calc(var(--link-weight) + var(--bold-modifier)); }
+.markdown-rendered em, .markdown-rendered i { font-style: italic; color: var(--italic-color); font-weight: var(--italic-weight); }
+.markdown-rendered mark { background-color: var(--text-highlight-bg); color: var(--text-normal); }
+.markdown-rendered mark .internal-link { color: var(--text-normal); }
+
+/* ------------------------------------------------------------ 链接 */
+/* app.css 12241-12309 */
+.markdown-rendered a {
+  --font-weight: var(--link-weight);
+  color: var(--link-color);
+  font-weight: var(--link-weight);
+  outline: none;
+  text-decoration-line: var(--link-decoration);
+  text-decoration-thickness: var(--link-decoration-thickness);
+  cursor: var(--cursor-link);
+  transition: opacity var(--anim-duration-fast, 0.1s) ease-in-out;
+}
+.markdown-rendered a:hover { color: var(--link-color-hover); text-decoration-line: var(--link-decoration-hover); }
+.markdown-rendered .internal-link {
+  cursor: var(--cursor-link);
+  text-decoration-line: var(--link-decoration);
+  --font-weight: var(--link-weight);
+  color: var(--link-color);
+}
+.markdown-rendered .internal-link:hover { color: var(--link-color-hover); text-decoration-line: var(--link-decoration-hover); }
+.markdown-rendered .internal-link.is-unresolved {
+  color: var(--link-unresolved-color);
+  opacity: var(--link-unresolved-opacity);
+  filter: var(--link-unresolved-filter);
+  text-decoration-style: var(--link-unresolved-decoration-style);
+  text-decoration-color: var(--link-unresolved-decoration-color);
+}
+.markdown-rendered .internal-link.is-unresolved:hover {
+  opacity: 1;
+  color: var(--link-color-hover);
+  text-decoration-color: var(--link-color-hover);
+  text-decoration-line: var(--link-decoration-hover);
+}
+/* app.css 12261-12280：外链带右上角图标（原版 public/images/6155340132a851f6089e.svg） */
+.markdown-rendered .external-link,
+.external-link {
+  color: var(--link-external-color);
+  text-decoration-line: var(--link-external-decoration);
+  background-position: center right;
+  background-repeat: no-repeat;
+  background-image: linear-gradient(transparent, transparent), url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32' width='14' height='14' fill='none' stroke='%23888888' stroke-linecap='round' stroke-linejoin='round' stroke-width='9.38%25'%3E%3Cpath d='M14 9 L3 9 3 29 23 29 23 18 M18 4 L28 4 28 14 M28 4 L14 18'/%3E%3C/svg%3E");
+  background-size: 0.825em;
+  padding-inline-end: 0.9em;
+  background-position-y: 0.25em;
+  cursor: var(--cursor-link);
+  filter: var(--link-external-filter);
+}
+.markdown-rendered .external-link:hover, .external-link:hover {
+  color: var(--link-external-color-hover);
+  text-decoration-line: var(--link-external-decoration-hover);
+}
+/* app.css 12289-12295：标题内链接字重跟随标题 */
+.markdown-rendered h1 a { --link-weight: var(--h1-weight); }
+.markdown-rendered h2 a { --link-weight: var(--h2-weight); }
+.markdown-rendered h3 a { --link-weight: var(--h3-weight); }
+.markdown-rendered h4 a { --link-weight: var(--h4-weight); }
+.markdown-rendered h5 a { --link-weight: var(--h5-weight); }
+.markdown-rendered h6 a { --link-weight: var(--h6-weight); }
+
+/* ------------------------------------------------------------ 标签 */
+/* app.css 12838-12856 a.tag */
+.markdown-rendered a.tag, .markdown-rendered .tag {
   background-color: var(--tag-background);
   border: var(--tag-border-width) solid var(--tag-border-color);
   border-radius: var(--tag-radius);
+  corner-shape: var(--tag-corner-shape);
+  color: var(--tag-color);
   font-size: var(--tag-size);
-  padding: var(--tag-padding-y) var(--tag-padding-x);
-  text-decoration: none;
   font-weight: var(--tag-weight);
-  cursor: var(--cursor-link, pointer);
+  text-decoration: var(--tag-decoration);
+  padding: var(--tag-padding-y) var(--tag-padding-x);
+  line-height: 1;
+  cursor: var(--cursor-link);
 }
-.markdown-rendered a.tag:hover { color: var(--tag-color-hover); background-color: var(--tag-background-hover); }
-
-/* code */
-.markdown-rendered pre {
-  background-color: var(--code-background);
-  border-radius: var(--code-radius);
-  padding: var(--size-4-3) var(--size-4-3);
-  overflow-x: auto;
-  font-family: var(--font-monospace);
-  font-size: var(--code-size, 0.9em);
-  line-height: 1.4;
-  margin-block: var(--size-4-2) var(--size-4-4);
+.markdown-rendered a.tag:hover, .markdown-rendered .tag:hover {
+  background-color: var(--tag-background-hover);
+  border: var(--tag-border-width) solid var(--tag-border-color-hover);
+  color: var(--tag-color-hover);
+  text-decoration: var(--tag-decoration-hover);
 }
-.markdown-rendered pre > code { background: transparent; padding: 0; font-size: inherit; color: var(--code-normal); }
-.markdown-rendered code { background-color: var(--code-background); border-radius: var(--code-radius); padding: 0.15em 0.3em; font-family: var(--font-monospace); font-size: var(--code-size); color: var(--code-normal); }
-.markdown-rendered pre.is-mermaid .mermaid { display: flex; justify-content: center; background: transparent; }
-.markdown-rendered .mermaid-error { color: var(--text-error); font-family: var(--font-monospace); font-size: var(--font-ui-smaller); white-space: pre-wrap; }
 
-/* blockquote */
+/* ------------------------------------------------------------ 分隔线 */
+/* app.css 11916-11925 + hr 全局 margin */
+.markdown-rendered hr {
+  border: none;
+  border-top: var(--hr-thickness) solid;
+  border-color: var(--hr-color);
+  margin: 2rem 0;
+}
+
+/* 嵌入对象（图片/音视频/PDF/笔记嵌块/附件嵌块）与 <progress> 见 markdown.css */
+
+/* ------------------------------------------------------------ 引用 */
+/* app.css 10283-10299 */
 .markdown-rendered blockquote {
-  border-inline-start: var(--blockquote-border-thickness) solid var(--blockquote-border-color);
-  padding-inline-start: var(--size-4-3);
   color: var(--blockquote-color);
   font-style: var(--blockquote-font-style);
   background-color: var(--blockquote-background-color);
-  margin-inline: 0;
-  padding-block: 0;
-  margin-block: var(--size-4-2);
+  border-inline-start: var(--blockquote-border-thickness) solid var(--blockquote-border-color);
+  padding-top: 0;
+  padding-bottom: 0;
+  padding-inline-start: var(--size-4-6);
+  margin-block: 1em;
+  margin-inline-start: 0;
+  margin-inline-end: 0;
 }
+.markdown-rendered blockquote > :first-child { margin-top: 0; }
+.markdown-rendered blockquote > :last-child { margin-bottom: 0; }
 
-/* lists */
-.markdown-rendered ul, .markdown-rendered ol { padding-inline-start: var(--list-indent, 2em); margin-block: 0 var(--p-spacing, 0.75em); }
-.markdown-rendered li { margin-block: var(--list-spacing, 0); }
-.markdown-rendered ul > li::marker { color: var(--list-marker-color); }
-.markdown-rendered ol > li::marker { color: var(--list-marker-color); }
-.markdown-rendered ul.contains-task-list { list-style: none; padding-inline-start: var(--size-4-2); }
-.markdown-rendered li.task-list-item { display: flex; align-items: flex-start; gap: var(--size-2-2); }
-.markdown-rendered li.task-list-item > input.task-list-item-checkbox { margin-top: calc((1lh - var(--checkbox-size)) / 2); flex: 0 0 auto; }
-.markdown-rendered li.task-list-item.is-checked > *:not(input) { color: var(--text-faint); text-decoration: line-through; text-decoration-color: var(--text-faint); }
-
-/* tables */
-.markdown-rendered table {
-  border-collapse: collapse;
-  margin-block: var(--size-4-2) var(--size-4-4);
-  font-size: var(--table-text-size);
-  line-height: var(--table-line-height);
-  color: var(--table-text-color);
-}
-.markdown-rendered th, .markdown-rendered td {
-  border: var(--table-border-width) solid var(--table-border-color);
-  padding: var(--size-4-1) var(--size-4-3);
-  text-align: start;
-}
-.markdown-rendered th {
-  background-color: var(--table-header-background);
-  border-color: var(--table-header-border-color);
-  font-weight: var(--table-header-weight);
-  color: var(--table-header-color);
-}
-.markdown-rendered tbody tr:nth-child(even) { background-color: var(--table-row-alt-background); }
-
-/* images & media */
-.markdown-rendered img { max-width: 100%; border-radius: var(--image-radius, var(--radius-s)); }
-.markdown-rendered .image-embed { display: inline-flex; max-width: 100%; }
-/* 原版 app.css：图片容器宽高由内容决定，尺寸语法落在 .image-wrapper > img 上 */
-.markdown-rendered .image-embed { width: fit-content; padding-bottom: 3px; padding-inline-end: 3px; }
-.markdown-rendered .image-embed .image-wrapper { display: flex; position: relative; }
-.markdown-rendered .image-embed .image-wrapper img:not([width]) { width: 100%; }
-.markdown-rendered p > .image-embed { display: flex; }
-.markdown-rendered span.internal-embed { display: inline-flex; }
-.markdown-rendered .internal-embed.media-embed { display: flex; justify-content: center; }
-.markdown-rendered .internal-embed img { max-width: 100%; }
-.markdown-rendered .internal-embed audio, .markdown-rendered .internal-embed video { max-width: 100%; }
-
-/* embedded notes */
-.markdown-rendered .markdown-embed {
-  border-inline-start: var(--embed-border-start);
-  border-inline-end: var(--embed-border-end);
-  border-top: var(--embed-border-top);
-  border-bottom: var(--embed-border-bottom);
-  background-color: var(--embed-background);
-  padding: var(--embed-padding);
-  margin-block: var(--size-4-2);
-  border-radius: var(--embed-border-radius, var(--radius-s));
-}
-.markdown-embed-title {
-  font-weight: var(--font-semibold);
-  color: var(--text-muted);
-  font-size: var(--font-ui-small);
-  margin-bottom: var(--size-4-2);
-}
-.markdown-embed-content { max-height: var(--embed-max-height); overflow: auto; }
-.markdown-embed-content .markdown-preview-view { padding: 0; }
-
-/* footnotes */
-.markdown-rendered .footnotes { border-top: 1px solid var(--background-modifier-border); margin-top: var(--size-4-6); font-size: var(--font-smaller); color: var(--text-muted); }
-.markdown-rendered .footnotes ol { padding-inline-start: var(--size-4-4); }
-.markdown-rendered a.footnote-backref { text-decoration: none; }
-
-/* callouts — ported from the original app.css */
+/* ------------------------------------------------------------ callout（逐字移植 app.css 10331-10475） */
 .callout {
   --callout-color: var(--callout-default);
   --callout-icon: lucide-pencil;
@@ -253,9 +366,7 @@
   background-color: rgba(var(--callout-color), 0.1);
   padding: var(--callout-padding);
 }
-.callout.is-collapsible .callout-title {
-  cursor: var(--cursor);
-}
+.callout.is-collapsible .callout-title { cursor: var(--cursor); }
 .callout-title {
   padding: var(--callout-title-padding);
   display: flex;
@@ -270,65 +381,222 @@
   padding: var(--callout-content-padding);
   background-color: var(--callout-content-background);
 }
-.callout-content .callout {
-  margin-top: 20px;
-}
-.callout-icon {
-  flex: 0 0 auto;
-  display: flex;
-  align-items: center;
-}
-.callout-icon .svg-icon {
-  color: rgb(var(--callout-color));
-}
-.callout-icon::after {
-  content: "\200B";
-}
+.callout-content .callout { margin-top: 20px; }
+.callout-icon { flex: 0 0 auto; display: flex; align-items: center; }
+.callout-icon .svg-icon { color: rgb(var(--callout-color)); }
+.callout-icon::after { content: "\200B"; }
 .callout-title-inner {
   --font-weight: var(--callout-title-weight);
   font-weight: var(--font-weight);
   color: var(--callout-title-color);
 }
-.callout-fold {
-  display: flex;
+.callout-fold { display: flex; align-items: center; padding-inline-end: var(--size-4-2); }
+.callout-fold::after { content: "\200B"; }
+.callout-fold .svg-icon { transition: transform 100ms ease-in-out; }
+.callout-fold.is-collapsed .svg-icon { transform: rotate(calc(var(--direction, 1) * -1 * 90deg)); }
+.markdown-source-view.mod-cm6 .callout { margin: 0; }
+.markdown-source-view.mod-cm6 .callout-content .callout { margin: 1em 0; }
+
+/* ------------------------------------------------------------ 脚注 */
+/* app.css 11091-11110 */
+.markdown-rendered .footnotes { font-size: var(--footnote-size); }
+.markdown-rendered .footnote-link { text-decoration: none; }
+.markdown-rendered .footnote-ref { vertical-align: super; }
+.markdown-rendered .footnote-backref {
+  display: inline-block;
+  margin-inline-start: var(--size-4-1);
+  color: var(--text-faint);
+  text-decoration: none;
+}
+@media (hover: hover) {
+  .markdown-rendered .footnote-backref:hover { color: var(--text-accent); text-decoration: none; }
+}
+
+/* ------------------------------------------------------------ 列表 */
+/* app.css 12038-12063：嵌套无序列表用 disc，标记色取 --list-marker-color */
+.markdown-rendered ul ul,
+.markdown-rendered ol ul,
+.markdown-rendered ol ol ul,
+.markdown-rendered ol ul ul,
+.markdown-rendered ul ol ul,
+.markdown-rendered ul ul ul { list-style-type: disc; }
+.markdown-rendered ol { list-style-type: var(--list-numbered-style); }
+.markdown-rendered ol > li, .markdown-rendered ul > li { text-align: start; }
+.markdown-rendered ol > li::marker, .markdown-rendered ul > li::marker { color: var(--list-marker-color); }
+.markdown-rendered ol > li.is-collapsed::marker,
+.markdown-rendered ul > li.is-collapsed::marker { color: var(--list-marker-color-collapsed); }
+/* app.css 12068-12106：缩进由 li 的 margin-inline-start 决定 */
+.markdown-rendered ul, .markdown-rendered ol {
+  padding-inline-start: 0;
+  margin-block-start: var(--p-spacing);
+  margin-block-end: var(--p-spacing);
+}
+.markdown-rendered ul ul,
+.markdown-rendered ol ul,
+.markdown-rendered ul ol,
+.markdown-rendered ol ol { margin-block-start: 0; margin-block-end: 0; }
+.markdown-rendered ul li p:first-of-type, .markdown-rendered ol li p:first-of-type { margin-block-start: 0; }
+.markdown-rendered ul li p:last-of-type, .markdown-rendered ol li p:last-of-type { margin-block-end: 0; }
+.markdown-rendered ul > li, .markdown-rendered ol > li {
+  padding-top: var(--list-spacing);
+  padding-bottom: var(--list-spacing);
+  position: relative;
+  margin-inline-start: 3ch;
+}
+.markdown-rendered ol ol > li, .markdown-rendered ul ul > li { margin-inline-start: var(--list-indent); }
+/* app.css 12149-12191：无序列表用 .list-bullet 画点（0.3em 圆点） */
+.markdown-rendered .list-bullet {
+  float: inline-start;
+  margin-inline-start: -0.8em;
+}
+.list-bullet {
+  color: transparent;
+  position: relative;
+  display: inline-flex;
+  justify-content: center;
   align-items: center;
-  padding-inline-end: var(--size-4-2);
 }
-.callout-fold::after {
-  content: "\200B";
+.list-bullet:before { content: '\200B'; }
+.list-bullet:after {
+  position: absolute;
+  content: '\200B';
+  pointer-events: none;
+  color: var(--list-marker-color);
+  border-radius: var(--list-bullet-radius);
+  width: var(--list-bullet-size);
+  height: var(--list-bullet-size);
+  border: var(--list-bullet-border);
+  transform: var(--list-bullet-transform);
+  background-color: var(--list-marker-color);
+  transition: transform 0.15s, box-shadow 0.15s;
 }
-.callout-fold .svg-icon {
-  transition: transform 100ms ease-in-out;
+.markdown-rendered ul.has-list-bullet { list-style-type: '\200B'; }
+.markdown-rendered ul.has-list-bullet > li::marker { color: transparent; }
+.markdown-rendered .task-list-item > .list-bullet { display: none; }
+@media (hover: hover) {
+  .list-collapse-indicator:hover ~ .list-bullet:after,
+  .cm-fold-indicator:hover ~ .list-bullet:after,
+  .list-collapse-indicator:hover ~ .cm-formatting-list .list-bullet:after,
+  .cm-fold-indicator:hover ~ .cm-formatting-list .list-bullet:after {
+    background-color: var(--list-marker-color-hover);
+    box-shadow: 0 0 0 4px var(--background-modifier-hover);
+  }
+  li.is-collapsed .list-bullet:after,
+  .is-collapsed ~ .cm-formatting-list .list-bullet:after {
+    background-color: var(--list-marker-color-collapsed);
+    box-shadow: 0 0 0 4px var(--background-modifier-active-hover);
+  }
 }
-.callout-fold.is-collapsed .svg-icon {
-  transform: rotate(calc(var(--direction) * -1 * 90deg));
+.markdown-rendered .list-collapse-indicator { margin-inline-start: -2.65em; padding-inline-end: 2em; }
+
+/* ------------------------------------------------------------ 任务列表 */
+/* app.css 12984-13003 */
+ul > li.task-list-item { list-style: none; }
+.markdown-preview-view input[type="checkbox"].task-list-item-checkbox {
+  position: relative;
+  top: 0.2em;
+  margin-inline-end: 0.6em;
 }
-.markdown-source-view.mod-cm6 .callout {
+ul > li.task-list-item > p > .task-list-item-checkbox,
+ul > li.task-list-item > .task-list-item-checkbox { margin-inline-start: calc(var(--checkbox-size) * -1.5); }
+ul > li.task-list-item[data-task="x"],
+ul > li.task-list-item[data-task="X"] {
+  text-decoration: var(--checklist-done-decoration);
+  color: var(--checklist-done-color);
+}
+/* app.css 12912-12967：checkbox 视觉（覆盖 base.css 的通用重置） */
+.markdown-rendered input[type="checkbox"] {
+  -webkit-appearance: none;
+  appearance: none;
+  border-radius: var(--checkbox-radius);
+  border: 1px solid var(--checkbox-border-color);
+  flex-shrink: 0;
+  padding: 0;
   margin: 0;
+  width: var(--checkbox-size);
+  height: var(--checkbox-size);
+  position: relative;
+  transition: box-shadow 0.15s ease-in-out;
+  cursor: var(--cursor);
+  background-color: transparent;
 }
-.markdown-source-view.mod-cm6 .callout-content .callout {
-  margin: 1em 0;
+/* 原版 input[type=checkbox] 的 margin-inline-end: 6px 只对非任务复选框生效
+   （.markdown-preview-view .task-list-item-checkbox 的 0.6em 优先） */
+.markdown-rendered input[type="checkbox"]:not(.task-list-item-checkbox) { margin-inline-end: 6px; }
+.markdown-rendered input[type="checkbox"]:hover,
+.markdown-rendered input[type="checkbox"]:active,
+.markdown-rendered input[type="checkbox"]:focus { outline: 0; border-color: var(--checkbox-border-color-hover); }
+.markdown-rendered input[type="checkbox"]:focus-visible { box-shadow: 0 0 0 2px var(--background-modifier-border-focus); }
+.markdown-rendered input[type="checkbox"]:checked { background-color: var(--checkbox-color); border-color: var(--checkbox-color); }
+@media (hover: hover) {
+  .markdown-rendered input[type="checkbox"]:checked:hover {
+    background-color: var(--checkbox-color-hover);
+    border-color: var(--checkbox-color-hover);
+  }
+}
+.markdown-rendered input[type="checkbox"]:checked:after {
+  content: "";
+  top: -1px;
+  inset-inline-start: -1px;
+  position: absolute;
+  width: var(--checkbox-size);
+  height: var(--checkbox-size);
+  display: block;
+  background-color: var(--checkbox-marker-color);
+  -webkit-mask-position: 52% 52%;
+  -webkit-mask-size: 65%;
+  -webkit-mask-repeat: no-repeat;
+  -webkit-mask-image: url("data:image/svg+xml; utf8, <svg width=\"12px\" height=\"10px\" viewBox=\"0 0 12 8\" version=\"1.1\" xmlns=\"http://www.w3.org/2000/svg\" xmlns:xlink=\"http://www.w3.org/1999/xlink\"><g stroke=\"none\" stroke-width=\"1\" fill=\"none\" fill-rule=\"evenodd\"><g transform=\"translate%28-4.000000, -6.000000%29\" fill=\"%23000000\"><path d=\"M8.1043257,14.0367999 L4.52468714,10.5420499 C4.32525014,10.3497722 4.32525014,10.0368095 4.52468714,9.8424863 L5.24777413,9.1439454 C5.44721114,8.95166768 5.77142411,8.95166768 5.97086112,9.1439454 L8.46638057,11.5903727 L14.0291389,6.1442083 C14.2285759,5.95193057 14.5527889,5.95193057 14.7522259,6.1442083 L15.4753129,6.84377194 C15.6747499,7.03604967 15.6747499,7.35003511 15.4753129,7.54129009 L8.82741268,14.0367999 C8.62797568,14.2290777 8.3037627,14.2290777 8.1043257,14.0367999\"></path></g></g></svg>");
 }
 
-/* math */
-.markdown-rendered .math { font-family: var(--font-text); }
-.markdown-rendered .math-inline { padding: 0 2px; }
-.markdown-rendered .math-block { display: block; margin-block: var(--size-4-2); overflow-x: auto; }
-.markdown-rendered .katex-error { color: var(--text-error); }
-
-/* flashing highlight when jumping to a search hit / heading */
-.is-flashing { animation: is-flashing 1.5s ease-out; background-color: rgba(var(--text-highlight-bg-rgb), 0.6); border-radius: var(--radius-s); }
-@keyframes is-flashing { 0% { background-color: rgba(var(--text-highlight-bg-rgb), 0.9); } 100% { background-color: transparent; } }
-
-/* block ids / comments in reading view are hidden */
-.markdown-rendered .obsidian_comment { display: none; }
-
-/* nested / table wrapper scroll for wide tables */
-.markdown-rendered .table-wrapper { overflow-x: auto; }
-
-/* ------------------------------------------------ code block copy button */
-/* 原版 app.css：.copy-code-button（悬停显示） */
-.markdown-rendered pre { position: relative; }
+/* ------------------------------------------------------------ 代码 */
+/* app.css 10476-10485 行内代码 */
+.markdown-rendered code {
+  color: var(--code-normal);
+  font-family: var(--font-monospace);
+  background-color: var(--code-background);
+  border-radius: var(--code-radius);
+  font-size: var(--code-size);
+  padding: 0.15em 0.3em;
+  border: var(--code-border-width) solid var(--code-border-color);
+  -webkit-box-decoration-break: clone;
+  box-decoration-break: clone;
+}
+/* app.css 10534-10551 代码块 */
+.markdown-rendered pre {
+  position: relative;
+  padding: var(--size-4-3) var(--size-4-4);
+  min-height: 38px;
+  background-color: var(--code-background);
+  border-radius: var(--code-radius);
+  white-space: var(--code-white-space);
+  border: var(--code-border-width) solid var(--code-border-color);
+  overflow-x: auto;
+  margin-block: 1em;
+  font-family: var(--font-monospace);
+  font-size: var(--code-size);
+}
+.markdown-rendered pre code { border: none; padding: 0; background-color: transparent; white-space: inherit; }
+.markdown-rendered li > pre { margin: 0; }
+/* app.css 10649-10666 prism 代码块正文 */
+code[class*="language-"] {
+  color: var(--code-normal);
+  background: none;
+  word-wrap: break-word;
+  white-space: pre-wrap;
+  word-break: normal;
+  direction: ltr;
+  font-family: var(--font-monospace);
+  text-align: left;
+  word-spacing: normal;
+  line-height: var(--line-height-normal);
+  -webkit-hyphens: none;
+  hyphens: none;
+}
+.markdown-rendered pre > code { font-size: inherit; color: var(--code-normal); }
+.markdown-rendered pre.is-mermaid .mermaid { display: flex; justify-content: center; background: transparent; }
+.markdown-rendered .mermaid-error { color: var(--text-error); font-family: var(--font-monospace); font-size: var(--font-ui-smaller); white-space: pre-wrap; }
+/* app.css 10552-10580 复制按钮 */
 .markdown-rendered pre:not(:hover) > button.copy-code-button { display: none; }
 .markdown-rendered button.copy-code-button {
   margin: 6px;
@@ -348,5 +616,85 @@
   display: flex;
   align-items: center;
 }
-.markdown-rendered button.copy-code-button:hover { background-color: var(--background-modifier-hover); }
+@media (hover: hover) {
+  .markdown-rendered button.copy-code-button:hover { background-color: var(--background-modifier-hover); }
+}
 .markdown-rendered button.copy-code-button .svg-icon { width: var(--icon-s); height: var(--icon-s); }
+
+/* ------------------------------------------------------------ 数学 */
+/* app.css 12598-12603 + MathJax 自带 mjx-container 规则 */
+mjx-container { outline: none; }
+.markdown-rendered .math { font-family: var(--font-text); }
+.markdown-rendered .math-block { display: block; overflow-x: auto; }
+.markdown-rendered .math-error { color: var(--text-error); }
+
+/* ------------------------------------------------------------ 表格 */
+/* app.css 12629-12760 */
+.markdown-rendered table {
+  margin-block-start: var(--p-spacing);
+  margin-block-end: var(--p-spacing);
+  word-break: normal;
+  border-collapse: collapse;
+  line-height: var(--table-line-height);
+}
+.markdown-rendered td, .markdown-rendered th {
+  padding: var(--size-2-2) var(--size-4-2);
+  border: var(--table-border-width) solid var(--table-border-color);
+  max-width: var(--table-column-max-width);
+  min-width: var(--table-column-min-width);
+  vertical-align: var(--table-cell-vertical-alignment);
+}
+.markdown-rendered td { font-size: var(--table-text-size); color: var(--table-text-color); }
+.markdown-rendered th {
+  font-size: var(--table-header-size);
+  font-weight: var(--table-header-weight);
+  color: var(--table-header-color);
+  font-family: var(--table-header-font);
+  line-height: var(--line-height-tight);
+}
+.markdown-rendered th, .markdown-rendered td { text-align: start; }
+.markdown-rendered th[align="left"], .markdown-rendered td[align="left"] { text-align: start; }
+.markdown-rendered th[align="center"], .markdown-rendered td[align="center"] { text-align: center; }
+.markdown-rendered th[align="right"], .markdown-rendered td[align="right"] { text-align: end; }
+.markdown-rendered thead > tr > th, .markdown-rendered tbody > tr > td {
+  white-space: var(--table-white-space);
+  text-overflow: ellipsis;
+  overflow: hidden;
+}
+.markdown-rendered thead > tr > th > .markdown-embed,
+.markdown-rendered tbody > tr > td > .markdown-embed { white-space: normal; }
+.markdown-rendered tbody tr { background-color: var(--table-background); }
+@media (hover: hover) {
+  .markdown-rendered tbody tr:hover { background-color: var(--table-row-background-hover); }
+}
+.markdown-rendered tbody tr:nth-child(odd) { background-color: var(--table-row-alt-background); }
+@media (hover: hover) {
+  .markdown-rendered tbody tr:nth-child(odd):hover { background-color: var(--table-row-alt-background-hover); }
+}
+.markdown-rendered tbody tr > td:nth-child(2n+2) { background-color: var(--table-column-alt-background); }
+.markdown-rendered tbody tr:last-child > td { border-bottom-width: var(--table-row-last-border-width); }
+.markdown-rendered tbody tr > td:first-child { border-left-width: var(--table-column-first-border-width); }
+.markdown-rendered tbody tr > td:last-child { border-right-width: var(--table-column-last-border-width); }
+.markdown-rendered thead tr { background-color: var(--table-header-background); }
+@media (hover: hover) {
+  .markdown-rendered thead tr:hover { background-color: var(--table-header-background-hover); }
+}
+.markdown-rendered thead tr > th {
+  border-top-width: var(--table-header-border-width);
+  border-color: var(--table-header-border-color);
+}
+.markdown-rendered thead tr > th:nth-child(2n+2) { background-color: var(--table-column-alt-background); }
+.markdown-rendered thead tr > th:first-child { border-left-width: var(--table-column-first-border-width); }
+.markdown-rendered thead tr > th:last-child { border-right-width: var(--table-column-last-border-width); }
+.markdown-rendered .table-wrapper { overflow-x: auto; }
+
+/* ------------------------------------------------------------ 查询块 / 其它 */
+.markdown-rendered .obsidian_comment { display: none; }
+/* app.css 3160-3166 */
+.is-flashing {
+  transition: color 0.25s ease, background-color 0.25s ease;
+  background-color: var(--text-highlight-bg) !important;
+  color: var(--text-normal);
+  mix-blend-mode: var(--highlight-mix-blend-mode);
+  border-radius: var(--radius-s);
+}
