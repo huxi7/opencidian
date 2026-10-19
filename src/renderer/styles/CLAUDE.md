@@ -11,8 +11,8 @@ tokens.css: 设计变量入口。按序导入 foundation 与 interface，保持�
 tokens-foundation.css: 字重与前半全局变量。保留原版规则顺序。
 tokens-interface.css: 后半全局变量、明暗主题与字体族。
 base.css: 重置、滚动条(仅 body.styled-scrollbars 下生效，macOS 用系统 overlay 滚动条，逐字移植原版)、输入/按钮/开关/滑块基础样式、clickable-icon、.is-hidden。
-layout.css: 外层 workspace-root 与中心 mod-root 分开。只给中心文档应用主背景。含原版堆叠标签页段(app.css 6506-6590)：头竖排(writing-mode)、tab-container 横向滑动、pane 宽度区间。
-workspace-sidebar.css: 原版侧栏图标、库信息栏、开关与 macOS 留白。窄栏保留帮助和设置。
+layout.css: 外层 workspace-root 与中心 mod-root 分开。只给中心文档应用主背景。含原版堆叠标签页段(app.css 6506-6590)：头竖排(writing-mode)、tab-container 横向滑动、pane 宽度区间。标题栏段对齐原版：ribbon ::before 用 var(--titlebar-background)（左上 44×40 顶栏色）、ribbon 收起只换底色（--ribbon-background-collapsed）而隐藏归 .is-hidden、标签 fillet 用 border+radius 原语。
+workspace-sidebar.css: 原版侧栏图标、库信息栏、开关与 macOS 留白。窄栏保留帮助和设置。含顶栏焦点联动变量组（titlebar/ribbon/toggle/tab 容器）与 ribbon ::before 顶栏色 override。
 components.css: 菜单、弹窗、建议、通知、悬浮提示、设置外壳与快照历史。原版布局规则保持闭合。通知为右上角固定栈(app.css 7923-7978)，tooltip 含 mod-top/mod-left/mod-right 翻转与 tooltip-arrow(app.css 9324-9445)，建议弹层 .suggestion-container 取 --suggestion-background(app.css 8858-8867)。
 download-attachments.css: 下载附件模态。.modal.mod-scrollable-content(app.css 8168-8184)与 .attachments-gallery/.download-attachment-item(app.css 3248-3312)逐字移植；末尾 .download-attachment-name 是本实现补的可见文件名标签。
 tree.css: .tree-item 体系(collapse-icon 尺寸与旋转、tree-item-self/icon/inner/children/flair)，逐字移植自原版 app.css 7263-7287 与 9446-9591。全部树视图共用。键盘焦点环除原版 mod-active 规则外，另挂 .nav-files-container:focus 兜底（本复刻的 workspace-leaf 不写 mod-active）。

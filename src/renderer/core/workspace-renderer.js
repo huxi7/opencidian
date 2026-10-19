@@ -5,6 +5,8 @@
  * 视图 _rootEl 只迁移不重建；节点类型统一由 workspace-model 导入。
  * 分割方向保持 vertical 横排、horizontal 纵排。
  * 标签组的叶子挂在 .workspace-tab-container（原版 tabsContainerEl）；堆叠态的头叶排布与滑动布局由模型按状态落位。
+ * updateSidebarChrome 是折叠态外观的唯一出口：顶栏组 mod-top 归位（原版 updateFrameless）、开关迁移、
+ * 分隔条宽度/透明度、功能区 is-collapsed 底色，都在这里一次落定。
  * mount 时装载 stacked 键的序列化装饰器（layout JSON 组装在 workspace.js）。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
@@ -194,9 +196,8 @@ export function _renderTabs(workspace, tabs) {
   const side = workspace._sideOf(tabs);
   const isRoot = side === 'center';
   if (isRoot) el.addClass('mod-root');
-  else el.addClass('mod-top');
-  if (side === 'left') el.addClass('mod-top-left-space');
-  if (side === 'right') el.addClass('mod-top-right-space');
+  // mod-top / mod-top-left-space / mod-top-right-space 由 updateSidebarChrome 的
+  // syncTopTabs 统一落位（原版 updateFrameless 语义：只有分支上排的标签组带 mod-top）。
 
   const headersOuter = el.createDiv('workspace-tab-header-container');
   tabs._headersOuter = headersOuter;
@@ -677,8 +678,35 @@ function moveToggle(toggle, target, opts = {}) {
   }
 }
 
+/**
+ * 原版 updateFrameless：把 mod-top 归位到每个分支的上排标签组。
+ * 顶栏底色变量（--tab-container-background）只挂在这些组上，因此焦点态
+ * 整条顶栏（含功能区左上角）与中心标签栏必须由同一个变量驱动。
+ * 顺带清掉平台留白类，避免折叠/展开后残留（原版每轮先 remove 再 add）。
+ */
+function syncTopTabs(workspace) {
+  const groups = [];
+  const collect = (node) => {
+    if (node instanceof WorkspaceTabs) { groups.push(node); return; }
+    for (const child of node.children || []) collect(child);
+  };
+  collect(workspace.rootSplit);
+  for (const tabs of groups) {
+    if (tabs.containerEl) tabs.containerEl.removeClass('mod-top', 'mod-top-left-space', 'mod-top-right-space');
+  }
+  const walk = (node) => {
+    if (node instanceof WorkspaceTabs) { if (node.containerEl) node.containerEl.addClass('mod-top'); return; }
+    if (!node.children || !node.children.length) return;
+    // 横排（vertical）的每个孩子在同一个上排；纵排（horizontal）只有首个孩子在顶部
+    if (node.direction === 'vertical') for (const child of node.children) walk(child);
+    else walk(node.children[0]);
+  };
+  walk(workspace.rootSplit);
+}
+
 /** 左栏收起后开关移至中心标题栏，底部操作保留在功能区。 */
 export function updateSidebarChrome(workspace) {
+  syncTopTabs(workspace);
   const centerTabs = [];
   const collect = node => {
     if (node instanceof WorkspaceTabs) centerTabs.push(node);
@@ -723,18 +751,26 @@ export function updateSidebarChrome(workspace) {
       else moveToggle(toggle, target._headersOuter, { newStyle: '' });
     }
   }
-  // 折叠侧的分隔条淡出（原版 r.style.opacity：0/1；否则 1px 线会横穿标题栏红绿灯区）
+  // 折叠侧的分隔条淡出（原版 r.style.opacity：0/1；否则 1px 线会横穿标题栏红绿灯区）。
+  // 原版折叠时整个 split 连分隔条一起隐藏，不再占位；我们挂在根分割上，宽度一并归零，
+  // 否则功能区与编辑区之间会多出 1px 竖缝，并打断顶栏底边那条 1px 横线。
   const dividers = workspace._dividerHandles || {};
   const applyDivider = (el, collapsed) => {
     if (!el) return;
     el.style.opacity = collapsed ? '0' : '1';
-    // 原版折叠后分隔条随 hidden split 一起不可交互；我们挂在根分割上，显式禁用指针
-    el.style.pointerEvents = collapsed ? 'none' : '';
+    el.style.pointerEvents = collapsed ? 'none' : '';   // 折叠后不可交互
+    if (el.hasClass('mod-vertical')) el.style.width = collapsed ? '0px' : '';
   };
   applyDivider(dividers.left, workspace.leftSplit.collapsed);
   applyDivider(dividers.right, workspace.rightSplit.collapsed);
+  // 原版 updateFrameless：开关宿主与折叠侧首组都带平台留白类（红绿灯净空）
+  for (const [group, key] of [[leftTabs, 'mod-top-left-space'], [rightTabs, 'mod-top-right-space']]) {
+    if (group && group.containerEl) group.containerEl.addClass(key);
+  }
   if (left?.containerEl) left.containerEl.addClass('mod-top-left-space');
   if (right?.containerEl) right.containerEl.addClass('mod-top-right-space');
+  // 原版 Ribbon.setCollapsedState：收起只换功能区底色（--ribbon-background-collapsed），不隐藏
+  if (workspace.ribbonEl) workspace.ribbonEl.toggleClass('is-collapsed', workspace.leftSplit.collapsed);
   if (!workspace._ribbonSettingsFallback) {
     workspace._ribbonSettingsFallback = createDiv('sidebar-profile-fallback');
     const actions = [

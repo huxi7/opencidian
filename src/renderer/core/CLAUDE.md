@@ -30,7 +30,7 @@ workspace.js: 布局装配、导航与序列化。新文档进入中心，侧栏
 workspace-sidebar.js: 固定工具映射与关闭判定。恢复旧布局遗漏的入口，插件禁用才撤销对应工具。
 workspace-profile.js: 稳定的库名、帮助与设置入口。每次展开读取库注册表，菜单调用真实打开库 IPC。
 workspace-model.js: 分割、标签组与叶子模型。视图切换依次关闭旧视图、装载新视图。标签组持有堆叠状态(原版 VD.isStacked)：setStacked 落 mod-stacked 类；标签列表菜单、头叶排布与滑动布局(updateTabDisplay/updateSlidingTabs/scrollIntoView)同层放置。installStackedSerialization 在挂载时给 layout JSON 补 stacked 键(JSON 组装在 workspace.js)。
-workspace-renderer.js: 分别渲染文档标签和固定工具图标。稳定挂载底栏及左右开关，功能区支持鼠标与键盘。 叶子宿主是 .workspace-tab-container；标签头落位与堆叠排布由标签组的 updateTabDisplay 决定。 侧栏开关迁移用原版 y() 的 FLIP（幽灵+偏移动画，140ms swing）；根分割边界分隔条带 data-divider-side，折叠时 opacity 0 + pointer-events none（防 1px 线穿入标题栏红绿灯区）。
+workspace-renderer.js: 分别渲染文档标签和固定工具图标。稳定挂载底栏及左右开关，功能区支持鼠标与键盘。 叶子宿主是 .workspace-tab-container；标签头落位与堆叠排布由标签组的 updateTabDisplay 决定。 syncTopTabs 统一 mod-top/-left/-right-space 归位（原版 updateFrameless）；updateSidebarChrome 是侧栏折叠态外观的唯一出口（divider 宽 0、ribbon is-collapsed、焦点色联动）。 侧栏开关迁移用原版 y() 的 FLIP（幽灵+偏移动画，140ms swing）。
 workspace-interactions.js: 仅中心文档可关闭、新建、拆分或拖拽。侧栏图标不接入文档菜单。
 workspace-regression.js: 19 组内存回归。覆盖导航、分栏、恢复、固定入口与库栏身份。
 plugins.js: PluginManager(内部+社区插件)与 buildObsidianApi() shim。内部插件模块经 plugins-registry.js 汇总。安全模式对齐原版：localStorage 键 enable-plugin-<appId>（null=未表态，库内已有插件时弹信任模态 mod-trust-folder）；setEnable(false) 只卸载保留 community-plugins.json，disableCommunityPlugin 才从配置移除；enableCommunityPlugin 有安全模式守卫。插件设置页经 manifest.module.settingTab(app, containerEl) 由设置宿主打开。

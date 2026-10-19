@@ -5,6 +5,8 @@
  * 原版段逐字保留；适配段覆盖后加载的通用标签规则。
  * mod-sidedock 限定侧栏；workspace-root 只承载外层分割。
  * 开关由渲染器迁移到可见 header；左底条只挂左 split。
+ * 折叠只换 ribbon 底色（渲染器给 ribbon 加 is-collapsed）；隐藏由 show-ribbon 控制。
+ * ribbon::before 顶部填色恒为 --titlebar-background，保证与标签栏底色接缝一致。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 
@@ -300,13 +302,10 @@ body.workspace.mod-macos.is-hidden-frameless:not(.is-popout-window) .workspace-t
   padding-right: 38px;
 }
 
-/* 原版 4402 的顶部填色不能被 layout 的 transparent 抹去。
- * 折叠侧栏只换 ribbon 背景；隐藏 ribbon 仍由 show-ribbon 控制。 */
+/* 原版 4402 的顶部填色不能被 layout 的通用 ribbon 规则抹去。
+ * 收起侧栏只换 ribbon 底色（原版 4429 的 is-collapsed 段），隐藏仍由 show-ribbon 控制。 */
 body.workspace .workspace-ribbon.mod-left::before {
   background-color: var(--titlebar-background);
-}
-body.workspace.show-ribbon .workspace-ribbon.mod-left.is-collapsed {
-  display: flex;
 }
 
 /* 原版 6086-6088：侧栏叶子始终使用 secondary。

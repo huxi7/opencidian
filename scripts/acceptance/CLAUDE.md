@@ -29,7 +29,7 @@ editor-race.js: 切文件竞态与撤销栈边界：挂起 cachedRead 确定性�
 editor.js: 模式、折叠、高亮和滚动。
 file-explorer-multi.js: 文件树多选：Alt 切换/Shift 范围/空白清空、↑↓ 焦点、Delete 删除（逐项确认）、多选拖动载荷 items、多选右键菜单（新建文件夹含选中项/移动/删除）。
 editor-block-button.js: 块 widget（代码/数学/Mermaid）的 edit-block-button：默认隐藏、悬停显形、点击把光标放回源码。
-sidebar-chrome.js: 侧栏折叠/展开：折叠侧分隔条不穿入红绿灯区（opacity+pointer-events）、toggle 迁移归属与 140ms FLIP 动画、幽灵清理。
+sidebar-chrome.js: 侧栏折叠/展开：折叠侧分隔条不穿入红绿灯区、toggle 迁移归属与 140ms FLIP 动画、幽灵清理；35 项计算样式锁——ribbon 收起底色（background-primary）、::before 解析色=titlebar-background、焦点联动变量链、mod-top 链、44px 内边距、标签 fillet 几何、展开还原。
 editor-layout.js: 行宽布局：sizer/contentContainer 结构、700px 居中、行内标题同列、设置联动、阅读视图居中、折叠全关后开行号 gutter 正常挂载。
 editor-paste.js: 剪贴板图片粘贴（截图 File / HTML data URL）落盘与嵌入、文本粘贴不误伤、文件树根目录外部文件拖入。
 reading-menus.js: 阅读视图右键菜单：内部链接（新标签页/新标签组/重命名）、外链（复制链接/浏览器打开）、图片复制、笔记/音视频/PDF 嵌块菜单、未解析链接创建文件。
