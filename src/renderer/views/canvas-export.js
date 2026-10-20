@@ -1,6 +1,6 @@
 /**
  * [INPUT]: 依赖 ./canvas-utils.js 的 unionBBox/expandBBox/sidePoint/offsetPoint/bezierFor/SIDE_ROTATION；
- *          依赖 ./canvas-node.js 的 CanvasLinkNode；依赖 ./canvas-group-node.js 的 CanvasGroupNode；依赖 ./canvas-file-node.js 的 CanvasFileNode；
+ *          依赖 ./canvas-link-node.js 的 CanvasLinkNode；依赖 ./canvas-group-node.js 的 CanvasGroupNode；依赖 ./canvas-file-node.js 的 CanvasFileNode；
  *          依赖 ./canvas-export-dialog.js 的 CanvasExportModal；依赖 ../core/i18n.js 的 t；
  *          依赖 ../core/notices.js 的 Notice；依赖 ../core/ipc.js 的 Desktop；依赖 ../core/keymap.js 的 IS_MAC
  * [OUTPUT]: 导出 renderCanvasImage(canvas, opts)、canvasExportMetrics(canvas, opts)、exportCanvasImage(canvas, opts)、saveCanvasImage(canvas, opts)
@@ -8,8 +8,9 @@
  *        边取 .canvas-display-path 计算描边色，卡片取 .canvas-node-container 计算底色/边框/圆角），是纯函数、不弹对话框，供验收直接断言。
  *        opts 逐条对齐原版 generateHDImage 的选项：frame 'full'（全画布，外扩 100）| 'viewport'（当前视口，倍率取画布缩放，不画水印）、
  *        scale（输出倍率，缺省 1；受 MAX_SIZE 4096 上限约束）、showLogo（左下角应用标记）、privacyMode（正文改灰条占位，原版 .is-text-garbled 的等价物）。
+ *        opts.images 是可选的分组背景图 Map（node → HTMLImageElement）；real export 由 saveCanvasImage 预载后注入，纯函数模式不等待网络。
  *        exportCanvasImage 是命令与面板菜单入口：空画布提示 msg-export-failed-empty-canvas → 设置弹窗（取消返回 null）→ saveCanvasImage 落盘。
- *        saveCanvasImage 走视图的 promptImageSavePath（原版 dialog.showSaveDialog）→ 写 PNG → 通知带「在访达中显示」。
+ *        saveCanvasImage 走视图的 promptImageSavePath（原版 dialog.showSaveDialog）→ 预载分组背景图 → 写 PNG → 通知带「在访达中显示」。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 /* Canvas image export — offscreen 2D canvas renderer + options modal + save dialog (original generateHDImage). */
@@ -17,7 +18,7 @@ import {
   unionBBox, expandBBox, sidePoint, offsetPoint, bezierFor, SIDE_ROTATION,
 } from './canvas-utils.js';
 import { CanvasGroupNode } from './canvas-group-node.js';
-import { CanvasLinkNode } from './canvas-node.js';
+import { CanvasLinkNode } from './canvas-link-node.js';
 import { CanvasFileNode } from './canvas-file-node.js';
 import { CanvasExportModal } from './canvas-export-dialog.js';
 import { t } from '../core/i18n.js';
@@ -73,7 +74,7 @@ function exportBBox(canvas, opts) {
 /**
  * 把画布画成 PNG，范围与选项见 opts：边 + 全部节点 + 可选水印。
  * @param {CanvasView} canvas
- * @param {{frame?:string, scale?:number, maxSize?:number, padding?:number, box?:object, showLogo?:boolean, privacyMode?:boolean}} [opts]
+ * @param {{frame?:string, scale?:number, maxSize?:number, padding?:number, box?:object, showLogo?:boolean, privacyMode?:boolean, images?:Map}} [opts]
  * @returns {{dataURL:string, width:number, height:number, scale:number}|null} 空画布返回 null
  */
 export function renderCanvasImage(canvas, opts = {}) {
@@ -94,7 +95,7 @@ export function renderCanvasImage(canvas, opts = {}) {
   // 边在节点之下（原版 .canvas-edges 先于 .canvas-node 挂载）
   for (const edge of canvas.edges.values()) drawEdge(ctx, edge, toImage, scale);
   const ordered = Array.from(canvas.nodes.values()).sort((a, b) => a.zIndex - b.zIndex);
-  for (const node of ordered) drawNode(ctx, node, toImage, scale, { privacyMode });
+  for (const node of ordered) drawNode(ctx, node, toImage, scale, { privacyMode, images: opts.images });
   if (showLogo) drawLogo(ctx, width, height);
   return { dataURL: canvasEl.toDataURL('image/png'), width, height, scale };
 }
@@ -134,7 +135,8 @@ function promptCanvasExportOptions(canvas) {
 
 /** 确认后的落盘链路：渲染 → 保存对话框 → 写 PNG → 通知「在访达中显示」。 */
 export async function saveCanvasImage(canvas, options) {
-  const image = renderCanvasImage(canvas, options);
+  const images = options && options.images ? options.images : await loadGroupBackgrounds(canvas);
+  const image = renderCanvasImage(canvas, { ...options, images });
   if (!image) {
     new Notice(t('plugins.canvas.msg-export-failed-empty-canvas'));
     return null;
@@ -254,6 +256,10 @@ function drawNode(ctx, node, toImage, scale, opts) {
     ctx.fillStyle = background;
     ctx.fill();
   }
+  if (node instanceof CanvasGroupNode && opts.images && node.bgPath) {
+    const image = opts.images.get(node);
+    if (image) drawGroupBackground(ctx, node, image, origin, width, height, scale, radius);
+  }
   ctx.strokeStyle = style ? style.borderTopColor : 'rgb(192, 192, 192)';
   ctx.lineWidth = style ? Math.max(1, parseFloat(style.borderTopWidth) * scale) : 1;
   ctx.stroke();
@@ -287,6 +293,57 @@ function nodeBackground(node, style) {
     if (tint && tint !== 'rgba(0, 0, 0, 0)') return tint;
   }
   return style ? style.backgroundColor : 'rgb(255, 255, 255)';
+}
+
+/**
+ * 分组背景图：cover 居中裁切，repeat 以图片固有像素平铺（随导出倍率放大）。
+ * 绘制范围限制在圆角框内，边框与标签仍在图片之上。
+ */
+function drawGroupBackground(ctx, node, image, origin, width, height, scale, radius) {
+  const iw = image.naturalWidth || image.width;
+  const ih = image.naturalHeight || image.height;
+  if (!iw || !ih) return;
+  ctx.save();
+  roundRectPath(ctx, origin.x, origin.y, width, height, radius);
+  ctx.clip();
+  if (node.bgStyle === 'repeat') {
+    const pattern = ctx.createPattern(image, 'repeat');
+    if (pattern) {
+      ctx.fillStyle = pattern;
+      ctx.translate(origin.x, origin.y);
+      ctx.scale(scale, scale);
+      ctx.fillRect(0, 0, width / scale, height / scale);
+    }
+  } else {
+    const boxRatio = width / height;
+    const imageRatio = iw / ih;
+    let sx = 0; let sy = 0; let sw = iw; let sh = ih;
+    if (imageRatio > boxRatio) {
+      sw = ih * boxRatio;
+      sx = (iw - sw) / 2;
+    } else {
+      sh = iw / boxRatio;
+      sy = (ih - sh) / 2;
+    }
+    ctx.drawImage(image, sx, sy, sw, sh, origin.x, origin.y, width, height);
+  }
+  ctx.restore();
+}
+
+/** 真实导出前预载分组背景（原版浏览器截图天然包含背景图；离屏 2D 画布需要显式等待图片解码）。 */
+async function loadGroupBackgrounds(canvas) {
+  const images = new Map();
+  const groups = Array.from(canvas.nodes.values()).filter((node) => node instanceof CanvasGroupNode && node.bgFile);
+  await Promise.all(groups.map(async (node) => {
+    const image = new Image();
+    image.src = canvas.app.vault.adapter.getResourcePath(node.bgFile.path);
+    try {
+      if (image.decode) await image.decode();
+      else await new Promise((resolve, reject) => { image.onload = resolve; image.onerror = reject; });
+      images.set(node, image);
+    } catch (e) { /* 图片损坏或路径失效时不阻断导出，保留分组底色 */ }
+  }));
+  return images;
 }
 
 function nodeFont(node, scale) {

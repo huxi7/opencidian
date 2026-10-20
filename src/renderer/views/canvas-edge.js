@@ -227,6 +227,7 @@ export class CanvasEdge {
   onClick(e) {
     const canvas = this.canvas;
     if (e.button !== 0 || canvas.readonly) return;
+    canvas.wrapperEl.focus({ preventScroll: true });
     if (e.shiftKey) canvas.toggleSelect(this);
     else if (canvas.selection.size === 1 && canvas.selection.has(this)) this.editLabel();
     else canvas.selectOnly(this);

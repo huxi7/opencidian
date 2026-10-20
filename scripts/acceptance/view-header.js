@@ -77,6 +77,7 @@ check(!!header,'活动叶有 view-header');
 const kids=[...header.children].map((el)=>String(el.className).split(' ')[0]);
 check(kids.join('|')==='view-header-left|view-header-title-container|view-actions',
   'view-header 子块顺序=left/title-container/actions :: '+kids.join('|'));
+check(getComputedStyle(header).flexShrink==='1','view-header flex-shrink=1（原版 flex:0 1 auto，阅读区满高时缩到 38px）');
 check(!!header.querySelector(':scope > .view-header-left > .view-header-nav-buttons'),'left 内含 view-header-nav-buttons');
 const container=header.querySelector(':scope > .view-header-title-container');
 const parentEl=container.querySelector(':scope > .view-header-title-parent');

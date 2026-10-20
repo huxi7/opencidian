@@ -61,6 +61,8 @@
       '## 一个很长的标题，用来确认右侧大纲在窄栏中自然换行而且保留完整文字', '', '结束。',
     ];
     const note = await app.vault.create(`${folder}/右栏验收.md`, lines.join('\n'));
+    check(workspace.rightSplit.collapsed === true, '新库默认右栏收起（原版）');
+    check(workspace.leftSplit.collapsed === false, '新库默认左栏展开');
     const linked = await app.vault.create(`${folder}/链接来源.md`, `# 链接来源\n\n首条 [[${note.path}]] 引用。\n\n第二条 [[${note.path}#重复标题|标题别名]] 引用。\n`);
     const unlinked = await app.vault.create(`${folder}/提及来源.md`, '# 提及来源\n\n这里提到右栏验收，但尚未建立链接。\n');
     const blank = await app.vault.create(`${folder}/没有标题.md`, '只有正文，没有标题。\n');
@@ -204,6 +206,19 @@
       }
     }
     await workspace.openFile(note);
+    const statusItem = document.querySelector('.status-bar .status-bar-item.plugin-backlink');
+    check(!!statusItem && /\d+ 条反向链接/.test(statusItem.textContent), '状态栏显示反链数：' + (statusItem && statusItem.textContent));
+    const beforeStatus = parseInt((statusItem.textContent.match(/\d+/) || ['0'])[0], 10);
+    const statusSource = await app.vault.create(`${folder}/状态栏来源.md`, `# 状态栏来源\n\n[[${note.basename}]]\n`);
+    await metadata.parseFile(statusSource);
+    metadata.rebuildIndices();
+    metadata.trigger('resolved');
+    await wait(250);
+    const afterStatus = parseInt((statusItem.textContent.match(/\d+/) || ['0'])[0], 10);
+    check(afterStatus > beforeStatus, '反链状态栏随 resolved 更新：' + beforeStatus + '→' + afterStatus);
+    statusItem.click();
+    await wait(160);
+    check(workspace.rightSplit.collapsed === false, '点击反链状态栏展开右栏');
     const finalBacklink = await workspace.ensureSideLeaf('backlink', 'right', { reveal: true });
     const finalOutline = await workspace.ensureSideLeaf('outline', 'right', { reveal: true });
     workspace.revealLeaf(result.screenshotView === 'backlink' ? finalBacklink : finalOutline);

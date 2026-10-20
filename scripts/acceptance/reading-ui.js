@@ -30,6 +30,7 @@ const NOTE=[
 '> 引用行一','> 引用行二','',
 '- 无序项一','- 无序项二','\t- 嵌套项','','1. 有序项一','2. 有序项二','',
 '- [ ] 未完成任务','- [x] 已完成任务','',
+'> [!note] Note','> note 内容','',
 '> [!info] Info','> info 内容','','> [!warning] Warning','> warning 内容','',
 '> [!success] Success','> success 内容','','> [!error] Error','> error 内容','',
 '```js','const x = 1;','```','',
@@ -153,7 +154,12 @@ for(const [type,varName] of [['info','--callout-info'],['warning','--callout-war
   near(getComputedStyle(elOf(sel+' > .callout-title')).lineHeight,px(cs(sel,'fontSize'))*1.3,type+' 标题行高 = --line-height-tight');
   if(type==='info'){
     near(cs('.callout > .callout-content','paddingTop'),varPx('--callout-content-padding',el),'callout 内容区无内边距 = --callout-content-padding（0）');
+    const content=elOf(sel+' > .callout-content');
+    const body=content.querySelector('p');
+    check(!body.querySelector('br'),'callout 正文开头无 <br>（标题行换行已剥离）');
+    near(content.getBoundingClientRect().height,body.getBoundingClientRect().height+32,'callout 内容区高度 = 段落 + 上下 16px，无额外空行');
   }
+check(elOf('.callout[data-callout="note"] .callout-icon .svg-icon').classList.contains('lucide-pencil'),'note callout 图标 = lucide-pencil（非 edit-3 别名）');
 }
 
 /* -------------------------------------------------- 7. 代码（app.css 10476-10580 / 10649-10666） */
@@ -171,7 +177,8 @@ check(cs('pre','backgroundColor')===rgb(cssVar('--code-background')),'代码块�
 check(cs('pre > code','backgroundColor')==='rgba(0, 0, 0, 0)','代码块内 code 背景透明（app.css 10545）');
 check(px(cs('pre > code','paddingInlineStart'))===0&&cs('pre > code','borderTopWidth')==='0px','代码块内 code 无内边距与描边');
 check(cs('pre','fontFamily').includes('monospace'),'代码块字体 = --font-monospace');
-near(elOf('pre code[class*="language-"]').getBoundingClientRect().width>0?cs('pre code[class*="language-"]','lineHeight'):0,px(cs('pre','fontSize'))*1.5,'代码行高 = --line-height-normal（app.css 10659）');
+near(cs('pre','lineHeight'),px(cs('pre','fontSize'))*1.5,'代码块行框 = 正文 16/24（pre 不缩字号）');
+near(elOf('pre code[class*="language-"]').getBoundingClientRect().width>0?cs('pre code[class*="language-"]','lineHeight'):0,px(cs('pre code[class*="language-"]','fontSize'))*1.5,'代码正文行高 = --line-height-normal（14×1.5，app.css 10659）');
 check(all('pre code span.token').length>0,'代码已按 token 类高亮（app.css 10660 起）');
 
 /* -------------------------------------------------- 8. 表格（app.css 12629-12760） */

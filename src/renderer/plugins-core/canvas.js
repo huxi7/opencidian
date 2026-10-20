@@ -12,7 +12,7 @@
  */
 /* Core plugin: canvas — view registration + commands. */
 import { CanvasView } from '../views/canvas-view.js';
-import { CanvasTextNode } from '../views/canvas-node.js';
+import { CanvasTextNode } from '../views/canvas-text-node.js';
 import { t } from '../core/i18n.js';
 import { IS_MAC } from '../core/keymap.js';
 

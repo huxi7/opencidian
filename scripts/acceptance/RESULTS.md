@@ -364,7 +364,7 @@ MathJax 独立适配器子代理的41项基础/故障测试见 assets/mathjax/SO
 - 全量主循环（58 场景、`--no-screenshot`）：57 直过；`graph` 一次悬停命中时序假红——单独复跑 2 次均 72/72；该断言已加有限重试（20×50ms），再复跑 3 次 72/72。最终 **58/58 通过**。
 - 日志：`/tmp/opensidian-full-1020-091832/`（`summary.txt` + 每场景 run.log）；graph 复核 `graph-run-result-CMQvZ3 / I3qbUi / t1IxsH / BLzCGu / FB9tI9`。
 - 视觉证据：`_analysis/drag-drop-114/`、`_analysis/tokens-114/`、`_analysis/motion-114/`；starter 截图见 `vault-switcher-run-result-7C2D4x/`。
-- 已知差异：通知出场 easing（`core/notices.js` 未动）；菜单宽度 180/360 保留；starter 品牌/版本文本与浅色仅验收钩子；`--file-header-justify` 保持居中待产品拍板。
+- 已知差异：通知出场 easing 已在 2026-10-20 UI 收口修为 ease-in-out；菜单宽度 180/360 保留；starter 品牌/版本文本与浅色仅验收钩子；`--file-header-justify` 已按桌面原版改为 start。
 
 ## 编辑区几何 + 标签落点/开合 + 模式切换（2026-10-20 · 58/58）
 
@@ -386,3 +386,21 @@ MathJax 独立适配器子代理的41项基础/故障测试见 assets/mathjax/SO
 - 断言：editor-menu 42→49、page-preview 16→21、settings-window +红绿灯；editor 131、menu-family 57、quick-switcher 130、theme-tokens 785、reading-ui 212、view-header 73、modal-ui 6、drag-drop 79 全绿。
 - 全量 58：主循环 55/56 直过（`vault-switcher` 漏传 `--seed-vaults 3`，复跑 142 项全过），`settings-restart` / `graph-persist-read` 链式通过 → **58/58**。日志 `/tmp/opensidian-full-1020-122223/`、`/tmp/obs-copy-acceptance/vault-switcher-run-result-X4JBot/`。
 - 证据：`_analysis/page-preview-114/`、`_analysis/settings-window-114/`。
+
+## 1.14.4 UI 收口（2026-10-20 · 定向）
+
+- 布局：默认只开左栏；文件树无仓库名根标题、根级 y=84；`nav-header` 15px、五按钮居中 x=120/150/180/210/240；右栏收起时右上开关 fixed、标签栏 38px 右侧留白；库信息栏 41.9px。
+- 功能区：删除文件列表按钮，顺序 quick-switch→graph→canvas→daily→templates→command，gap 6、步长 30；Bases 按约定跳过。
+- 阅读/编辑器：view-header 38px flex 收窄；callout note 图标 `lucide-pencil` 且无标题 softbreak；pre 16/24、pre code 14/21；普通变量不再着色。
+- 状态栏反链条目 + 通知出场 `ease-in-out`；侧栏 chrome 抽到 `workspace-sidebar-chrome.js`（renderer 810→642 行）。
+- 定向断言：reading-ui 219、sidebar 98、sidebar-shell 61、sidebar-chrome 82、file-explorer-multi 80、core-views 83、view-header 74、menu-family 57、theme-tokens 785、editor 131、core-ribbon 47、appearance 34、audio-recorder 72、basic-plugins 6、dialogs 8。
+- 真实指针验证子菜单动作、右栏开关、反链状态栏、tooltip；全量 58 待白板子代理合入。
+
+
+## 白板深挖 + 全量回归（2026-10-20）
+
+- 链接卡 webview（标题回写/重载/断点保活/iframe 回退）、分组背景图 cover|ratio|repeat、md 文件卡内嵌 CM6 编辑与 400ms 写回、滚轮语义、画布剪贴板与拖入建卡、拖动阴影/文本卡占位/缺失文件警告/节点聚焦键盘语义、导出分组背景。
+- 断言：canvas 96、canvas-edit 91、canvas-selection 72、canvas-ui 145、core-views 83、menu-family 57。
+- 全量 56 场景 / 58 次执行（含 settings-restart、graph-persist-read 链式复跑）：**56/56 通过，3525 断言**。日志 `/tmp/opensidian-full-1020-ui/`，汇总 `summary-clean.txt`；`vault-switcher --seed-vaults 3` 142 项，`graph-perf --nodes 1000` 4 项。
+- 证据：`_analysis/canvas-114/audit.md`、`screens/after-board-light.png`、`after-board-dark.png`。
+- 未完成：画布设置页、右键拖拽平移、分组背景文件重命名/删除监听、链接卡 UA/离线占位、导出链接卡网页画面。

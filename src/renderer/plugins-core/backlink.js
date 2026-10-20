@@ -1,12 +1,13 @@
 /**
  * [INPUT]: View 生命周期、workspace 当前文件、metadataCache 反链索引与 DOM 图标。
- * [OUTPUT]: 导出 BacklinkView、findLinkContexts 与插件 create。
+ * [OUTPUT]: 导出 BacklinkView、findLinkContexts 与插件 create；插件在状态栏维护当前文件反链计数条目。
  * [POS]: 右栏反链视图。复用搜索结果结构，关闭时释放订阅与重绘计时器。
  *        链接文件行与未链接提及行右键弹原版链接菜单（workspace.buildLinkMenu + handleLinkContextMenu）。
+ *        状态栏条目按 resolvedLinks 汇总反链数，点击展开右栏反链（原版 updateBacklinks）。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 import { View } from '../core/view.js';
-import { t } from '../core/i18n.js';
+import { t, getNouns } from '../core/i18n.js';
 import { setIcon } from '../core/icons.js';
 
 export const nameKey = 'plugins.backlinks';
@@ -292,8 +293,35 @@ function findContextsByName(app, sourceFile, name) {
 }
 
 export function create(app) {
+  let statusEl = null;
+
+  /** 原版 updateBacklinks：statusBar 显示当前文件的反链数，点击打开右栏反链。 */
+  function updateStatus() {
+    if (!statusEl) return;
+    const file = app.workspace.getActiveFile();
+    if (!file) { statusEl.setText(''); statusEl.toggle(false); return; }
+    const resolved = app.metadataCache.resolvedLinks || {};
+    let count = 0;
+    const target = file.path;
+    for (const source of Object.keys(resolved)) {
+      if (source === target) continue;
+      const entry = resolved[source];
+      if (entry && entry[target]) count += entry[target];
+    }
+    statusEl.setText(getNouns().backlink(count));
+    statusEl.toggle(true);
+  }
+
   return {
     onload() {
+      statusEl = app.workspace.statusBar.createDiv('status-bar-item plugin-backlink mod-clickable');
+      statusEl.addEventListener('click', () => {
+        app.workspace.ensureSideLeaf('backlink', 'right', { active: true, reveal: true });
+      });
+      app.workspace.on('file-open', updateStatus);
+      app.workspace.on('active-leaf-change', updateStatus);
+      app.metadataCache.on('resolved', updateStatus);
+      updateStatus();
       app.viewRegistry.registerView('backlink', (leaf) => new BacklinkView(leaf));
       app.commands.addCommand({
         id: 'backlink:open',
@@ -323,6 +351,7 @@ export function create(app) {
     },
     onunload() {
       app.viewRegistry.unregisterView('backlink');
+      if (statusEl) { statusEl.detach(); statusEl = null; }
     },
     deregister(app) {
       app.viewRegistry.unregisterView('backlink');

@@ -1,6 +1,6 @@
 /**
  * [INPUT]: Element.prototype 的 createDiv/addEventListener/offsetHeight 等原语(dom.js)。
- * [OUTPUT]: 导出 Notice(构造即滑入、点按关闭、hover 暂停、翻转为 margin-top 收拢)。
+ * [OUTPUT]: 导出 Notice(构造即 100ms 滑入、点按关闭、hover 暂停、120ms ease-in-out 翻转为 margin-top 收拢)。
  * [POS]: 右上角通知栈。容器随最后一个通知一起摘除；所有调用方沿用原 API。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
@@ -79,14 +79,14 @@ export class Notice {
       }
     };
     if (!el.isConnected) { remove(); return; }
-    // 出场：120ms 内 opacity → 0，margin-top 收拢自身高度
+    // 出场：120ms ease-in-out 内 opacity → 0，margin-top 收拢自身高度（原版 qw 默认缓动）
     const styles = getComputedStyle(el);
     let collapse = -el.offsetHeight;
     const marginBottom = parseInt(styles.marginBottom, 10);
     if (!isNaN(marginBottom)) collapse -= marginBottom;
     el.style.animation = 'none';
     void el.offsetHeight;
-    el.style.transition = 'opacity 120ms ease-out, margin-top 120ms ease-out';
+    el.style.transition = 'opacity 120ms ease-in-out, margin-top 120ms ease-in-out';
     el.style.opacity = '1';
     el.style.marginTop = '0px';
     void el.offsetHeight;

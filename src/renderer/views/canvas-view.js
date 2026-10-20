@@ -1,9 +1,10 @@
 /**
  * [INPUT]: 依赖 ./canvas-interactions.js 的 CanvasInteractions（类链基类）；依赖 ../core/i18n.js 的 t；依赖 ../core/icons.js 的 setIcon；依赖 ../core/notices.js 的 Notice；依赖 ../core/ipc.js 的 Desktop；依赖 ../core/keymap.js 的 IS_MAC；
  *          依赖 ./canvas-utils.js 的 genId、boxesIntersect、expandBBox、nearestSide、rectFromPos、distanceToBox、rectOf、MultiMap；
- *          依赖 ./canvas-node.js 的 CanvasNode/CanvasTextNode/CanvasLinkNode/CanvasDummyNode；依赖 ./canvas-group-node.js 的 CanvasGroupNode；依赖 ./canvas-file-node.js 的 CanvasFileNode；依赖 ./canvas-edge.js 的 CanvasEdge；
+ *          依赖 ./canvas-node.js 的 CanvasNode/CanvasDummyNode；依赖 ./canvas-text-node.js 的 CanvasTextNode；依赖 ./canvas-link-node.js 的 CanvasLinkNode；依赖 ./canvas-group-node.js 的 CanvasGroupNode；依赖 ./canvas-file-node.js 的 CanvasFileNode；依赖 ./canvas-edge.js 的 CanvasEdge；
  *          依赖 ./canvas-menu.js 的 FileSuggestModal/LinkSuggestModal/JumpToGroupModal/installCanvasViewActions；
- *          依赖 ./canvas-controls.js 的 buildCardMenu/buildControls（建卡菜单与控件组的 DOM 构建）；依赖 ./canvas-arrange.js 的 buildCanvasMenu（选择浮动工具条与多选包围盒）；依赖 ./canvas-export.js 的 renderCanvasImage/exportCanvasImage
+ *          依赖 ./canvas-controls.js 的 buildCardMenu/buildControls（建卡菜单与控件组的 DOM 构建）；依赖 ./canvas-arrange.js 的 buildCanvasMenu（选择浮动工具条与多选包围盒）；依赖 ./canvas-export.js 的 renderCanvasImage/exportCanvasImage；
+ *          依赖 ./canvas-clipboard.js 的 handleCanvasCopy/handleCanvasCut/handleCanvasPaste；依赖 ./canvas-drop.js 的 installCanvasDrop
  * [OUTPUT]: 导出 CanvasView 类（含 renderCanvasImage 渲染入口、generateHDImage 导出入口与 promptImageSavePath 保存对话框入口）
  * [POS]: views/ 画布类链的末端：View → CanvasViewport（视口）→ CanvasInteractions（交互）→ CanvasView（装配与调度）。持有 .canvas-wrapper DOM、节点/边集合、选择集合、JSON Canvas 读写。
  *        ResizeObserver 在挂载后更新视口。节点与边几何分层；数据防抖 500ms 写回，关闭时 flush。
@@ -15,6 +16,7 @@
  *        1↔多选切换不会留下「既聚焦又选中」的中间态；浮动工具条 this.menu 由帧尾按变化重绘，拖动期间隐藏。
  *        getData 按 z 升序写出节点（原版 g5），importData 读到较低 z 时重新置顶，两者共同决定文件顺序即堆叠顺序；cloneData 为克隆拖动换新 id。
  *        只读标记按原版 localDataManager 存 localStorage('canvas-<路径>')，重命名迁移、删除清理；切换只读时逐节点通知正文（onReadonlyChange）。
+ *        剪贴板与拖入：copy/cut/paste 监听挂在 wrapper（canvas-clipboard.js），文件树/系统文件/URL/文本 drop 由 canvas-drop.js 处理。
  *        导出图片：绘制在 canvas-export.js，选项弹窗在 canvas-export-dialog.js；本类只提供 renderCanvasImage（可测试）、generateHDImage（命令/面板菜单入口）
  *        与 promptImageSavePath（保存对话框，验收场景替换它即可跳过原生对话框）。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
@@ -32,8 +34,12 @@ import {
   genId, boxesIntersect, containsBox, expandBBox, nearestSide, rectFromPos, distanceToBox, rectOf, MultiMap,
 } from './canvas-utils.js';
 import {
-  CanvasNode, CanvasTextNode, CanvasLinkNode, CanvasDummyNode,
+  CanvasNode, CanvasDummyNode,
 } from './canvas-node.js';
+import { CanvasTextNode } from './canvas-text-node.js';
+import { CanvasLinkNode } from './canvas-link-node.js';
+import { handleCanvasCopy, handleCanvasCut, handleCanvasPaste } from './canvas-clipboard.js';
+import { installCanvasDrop } from './canvas-drop.js';
 import { CanvasGroupNode } from './canvas-group-node.js';
 import { CanvasFileNode } from './canvas-file-node.js';
 import { loadCanvasLocalData, saveCanvasLocalData, migrateCanvasLocalData, dropCanvasLocalData } from './canvas-local-data.js';
@@ -217,7 +223,11 @@ export class CanvasView extends CanvasInteractions {
     wrapperEl.addEventListener('pointerleave', () => this.onPointerleave());
     wrapperEl.addEventListener('dblclick', (e) => this.onDoubleClick(e));
     wrapperEl.addEventListener('contextmenu', (e) => this.onContextMenu(e));
+    wrapperEl.addEventListener('copy', (e) => handleCanvasCopy(this, e));
+    wrapperEl.addEventListener('cut', (e) => handleCanvasCut(this, e));
+    wrapperEl.addEventListener('paste', (e) => handleCanvasPaste(this, e));
     wrapperEl.addEventListener('wheel', (e) => this.onWheel(e), { passive: false });
+    installCanvasDrop(this);
   }
 
   /* ---------------------------------------------------------------- 数据 */
@@ -639,7 +649,13 @@ export class CanvasView extends CanvasInteractions {
 
   saveOptions() {
     try {
-      this.app.settings.savePluginData('canvas.json', { snapToGrid: this.options.snapToGrid, snapToObjects: this.options.snapToObjects });
+      const data = {
+        snapToGrid: this.options.snapToGrid,
+        snapToObjects: this.options.snapToObjects,
+      };
+      if (this.options.defaultWheelBehavior !== undefined) data.defaultWheelBehavior = this.options.defaultWheelBehavior;
+      if (this.options.cardLabelVisibility !== undefined) data.cardLabelVisibility = this.options.cardLabelVisibility;
+      this.app.settings.savePluginData('canvas.json', data);
     } catch (e) { /* 选项写盘失败不影响使用 */ }
   }
 

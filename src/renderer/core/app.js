@@ -2,6 +2,7 @@
  * [INPUT]: Vault、Settings、MetadataCache、Workspace、命令、插件与桌面 IPC。
  * [OUTPUT]: 导出 App，装配启动、外观、事件与布局保存。
  * [POS]: 应用组合根。新建和修改进入元数据解析，启动修复固定侧栏入口。isSettingsWindow（1.14.4 设置独立窗口）只跳过看门狗/后台索引/布局加载，其余状态照常装配。
+ *        新库默认只展开左栏（右栏反链/大纲收起）；body 补 obsidian-app 与 show-inline-title，不再挂 body.is-folding。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 /*
@@ -51,6 +52,7 @@ export class App extends Events {
 
     // 原版：非 macOS 平台给 body 加 styled-scrollbars（macOS 用系统 overlay 滚动条）
     const isMac = navigator.platform.startsWith('Mac') || navigator.userAgent.includes('Macintosh');
+    document.body.addClass('obsidian-app');
     if (!isMac) document.body.addClass('styled-scrollbars');
 
     // vault identity from main process
@@ -208,7 +210,7 @@ export class App extends Events {
     const statusBar = this.workspace.statusBar;
     if (statusBar) statusBar.toggle(config.showStatusBar !== false);
     // 行宽（readableLineLength）由 MarkdownView 挂在视图元素上，见 views/markdown-view.js
-    document.body.toggleClass('is-folding', settings.foldHeading !== false);
+    document.body.toggleClass('show-inline-title', this.settings.appSettings.showInlineTitle !== false);
     // 自定义主题与 CSS 代码片段
     this._applyCustomCss();
   }
@@ -331,9 +333,9 @@ export class App extends Events {
     ws.centerSplit.insertChild(0, centerTabs);
     const centerLeaf = ws.createLeafInTabGroup(centerTabs);
     await centerLeaf.setViewState({ type: 'empty' });
+    ws.rightSplit.collapsed = true;   // 原版新库默认只开左栏，右栏（反链/大纲/标签）收起
     ws.render();
     this.workspace.showSidebar('left');
-    this.workspace.showSidebar('right');
     ws.setActiveLeaf(centerLeaf, { focus: false });
     // activate explorer leaf as sidebar active
     ws.setActiveLeaf(explorerLeaf, { focus: false });

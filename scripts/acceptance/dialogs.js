@@ -83,6 +83,12 @@ noticeEl.dispatchEvent(new MouseEvent('mouseenter'));
 await wait(4500);ok(container.isConnected,'notice persists while hovered');
 noticeEl.dispatchEvent(new MouseEvent('mouseleave'));
 await wait(5500);ok(!document.querySelector('.notice-container'),'notice container removed when empty');
-void notice;checks.push('notice layout + hover pause');
+const exitNotice=new Notice('Exit easing probe',0);
+await wait(30);
+exitNotice.hide();
+ok(exitNotice.containerEl.style.transition.includes('ease-in-out'),'notice exit easing=ease-in-out（原版 qw 默认值）');
+ok(exitNotice.containerEl.style.transition.includes('120ms'),'notice exit duration=120ms');
+await wait(160);
+void notice;checks.push('notice layout + hover pause + exit easing');
 return {pass:true,checks};
 })()

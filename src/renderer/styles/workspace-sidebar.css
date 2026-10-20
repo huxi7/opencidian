@@ -182,7 +182,7 @@ body:not(.is-mobile) .workspace-split.mod-left-split .workspace-sidedock-vault-p
   background-color: transparent;
   padding: 0;
   margin: 0;
-  border-radius: var(--radius-s);
+  border-radius: var(--tab-radius);
   corner-shape: var(--corner-shape);
 }
 .mod-left-split .workspace-tab-header-container .workspace-tab-header:before,
@@ -322,6 +322,11 @@ body.workspace .workspace-ribbon.mod-left::before {
   background-color: var(--divider-color);
   flex: 0 0 auto;
 }
+/* 原版分隔线画在容器边框上，不占布局宽度；复刻手柄覆盖下一位像素，避免中心区整体右移 1px */
+.workspace-root > .workspace-leaf-resize-handle.mod-vertical,
+.workspace-split.mod-sidedock > .workspace-leaf-resize-handle.mod-vertical {
+  margin-inline-end: calc(0px - var(--divider-width));
+}
 .workspace-root > .workspace-leaf-resize-handle:hover,
 .workspace-split.mod-sidedock > .workspace-leaf-resize-handle:hover,
 body.is-resizing .workspace-root > .workspace-leaf-resize-handle,
@@ -340,7 +345,7 @@ body.is-resizing .workspace-split.mod-sidedock > .workspace-leaf-resize-handle {
  * 原版 6216 两侧各 8px，加 16px 图标（--icon-m）得到自然宽度 32px。 */
 .workspace-split.mod-sidedock .workspace-tab-header-container .workspace-tab-header {
   border: 0;
-  flex: 0 0 auto;
+  flex: 0 1 auto;
   width: auto;
   max-width: none;
 }
@@ -348,7 +353,7 @@ body.is-resizing .workspace-split.mod-sidedock > .workspace-leaf-resize-handle {
   gap: var(--size-2-1);
   height: 100%;
   width: 100%;
-  padding: 0 8px;
+  padding: 0 6px;
   border-radius: var(--tab-radius);
   corner-shape: var(--corner-shape);
   justify-content: center;

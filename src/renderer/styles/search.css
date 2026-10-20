@@ -236,11 +236,7 @@
 
 /* sidebar pane header shared row */
 .nav-header {
-  display: flex;
-  align-items: center;
-  gap: var(--size-2-2);
+  display: block;
   /* 内边距归 explorer.css 的原版 .nav-header 规则（8px）；此处不再复写，避免 1.14 之外的 8/12/4 组合 */
   flex: 0 0 auto;
-  color: var(--text-muted);
-  font-size: var(--font-ui-smaller);
 }

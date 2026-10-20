@@ -2,6 +2,7 @@
  * [INPUT]: 依赖 CM6 已安装语言目录与 Lezer 标签、语法树高亮。
  * [OUTPUT]: 导出 codeHighlighter、codeLanguageName、highlightCodeElement、highlightCodeBlocks、cancelCodeHighlight。
  * [POS]: markdown/ 的代码高亮入口。阅读与实时预览共用解析器缓存和 token 类。
+ *        普通变量名不产出 token，对齐原版 Prism JS（`const a` 的 a 保持正文色）。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 import { LanguageDescription } from '@codemirror/language';
@@ -18,7 +19,6 @@ export const codeHighlighter = tagHighlighter([
   { tag: tags.number, class: 'token number' },
   { tag: tags.bool, class: 'token boolean' },
   { tag: tags.atom, class: 'token constant' },
-  { tag: tags.variableName, class: 'token variable' },
   { tag: tags.propertyName, class: 'token property' },
   { tag: tags.attributeName, class: 'token attr-name' },
   { tag: tags.attributeValue, class: 'token attr-value' },

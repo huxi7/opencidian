@@ -50,7 +50,7 @@ await app.vault.createBinary('资产.png',Uint8Array.from(atob(PNG_BASE64),(c)=>
 await app.vault.createBinary('损坏.png',Uint8Array.from(atob(PNG_BASE64),(c)=>c.charCodeAt(0))).then(f=>app.vault.modifyBinary(f,Uint8Array.from([1,2,3,4,5,6,7,8])));
 const canvas={nodes:[
   {id:'g1',type:'group',label:'分组一',x:-560,y:-360,width:960,height:700},
-  {id:'g2',type:'group',label:'内组',x:-520,y:200,width:420,height:260},
+  {id:'g2',type:'group',label:'内组',x:-520,y:200,width:420,height:260,background:'资产.png',backgroundStyle:'cover'},
   {id:'t1',type:'text',text:'# 卡片\n\n正文 **粗体** 与 $x^2$ 数学\n\n- 列表项\n- 第二项',x:-500,y:-280,width:360,height:230},
   {id:'t2',type:'text',text:'色卡',color:'4',x:-100,y:-280,width:220,height:160},
   {id:'i1',type:'file',file:'资产.png',x:160,y:-280,width:220,height:200},

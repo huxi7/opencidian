@@ -64,6 +64,7 @@
   font-family: var(--inline-title-font);
   letter-spacing: -0.015em;
 }
+body:not(.show-inline-title) .inline-title:not([data-level]) { display: none; }
 
 /* ------------------------------------------------------------ 正文与标题 */
 /* app.css 13065 .markdown-rendered p */
@@ -574,7 +575,6 @@ ul > li.task-list-item[data-task="X"] {
   overflow-x: auto;
   margin-block: 1em;
   font-family: var(--font-monospace);
-  font-size: var(--code-size);
 }
 .markdown-rendered pre code { border: none; padding: 0; background-color: transparent; white-space: inherit; }
 .markdown-rendered li > pre { margin: 0; }
@@ -593,7 +593,7 @@ code[class*="language-"] {
   -webkit-hyphens: none;
   hyphens: none;
 }
-.markdown-rendered pre > code { font-size: inherit; color: var(--code-normal); }
+.markdown-rendered pre > code { color: var(--code-normal); }
 .markdown-rendered pre.is-mermaid .mermaid { display: flex; justify-content: center; background: transparent; }
 .markdown-rendered .mermaid-error { color: var(--text-error); font-family: var(--font-monospace); font-size: var(--font-ui-smaller); white-space: pre-wrap; }
 /* app.css 10552-10580 复制按钮 */

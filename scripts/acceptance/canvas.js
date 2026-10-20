@@ -139,7 +139,7 @@ ok(localStorage.getItem('canvas-'+f.path)===null,'readonly cleared from local da
 reopened.selectAll();reopened.deleteSelection();await wait(60);
 const gA=reopened.createTextNode({pos:{x:100,y:100},size:{width:100,height:100},text:'Guide A',focus:false,save:false});
 const gB=reopened.createTextNode({pos:{x:400,y:300},size:{width:100,height:100},text:'Guide B',focus:false,save:false});
-reopened.createGroupNode({pos:{x:2000,y:1600},size:{width:400,height:300},label:'Guide Group',focus:false,save:false});
+const guideGroup=reopened.createGroupNode({pos:{x:2000,y:1600},size:{width:400,height:300},label:'Guide Group',focus:false,save:false});
 reopened.createLinkNode({pos:{x:2600,y:2000},size:{width:200,height:100},url:'https://example.com',focus:false,save:false});
 reopened.createEdge({side:'right',node:gA,end:'none'},{side:'left',node:gB,end:'arrow'},false);
 ok(reopened.nodes.size===4&&reopened.edges.size===1,'guide fixtures replace canvas content');
@@ -163,6 +163,14 @@ const cappedImage=reopened.renderCanvasImage({maxSize:1024});
 ok(cappedImage.width<=1024&&cappedImage.height<=1024&&cappedImage.width>0,'export size capped by maxSize');
 const drawn=await countNonBackgroundPixels(cappedImage);
 ok(drawn>0,'export image contains drawn pixels');
+// 分组背景图：真实导出由 saveCanvasImage 预载；纯渲染用 opts.images 注入同一张图
+guideGroup.bgPath='资产.png';guideGroup.bgStyle='cover';
+const redCanvas=document.createElement('canvas');redCanvas.width=2;redCanvas.height=2;
+const redCtx=redCanvas.getContext('2d');redCtx.fillStyle='#ff0000';redCtx.fillRect(0,0,2,2);
+const redImage=new Image();redImage.src=redCanvas.toDataURL('image/png');await new Promise((res,rej)=>{redImage.onload=res;redImage.onerror=rej});
+const withGroupBg=reopened.renderCanvasImage({images:new Map([[guideGroup,redImage]])});
+ok(withGroupBg.dataURL!==fullImage.dataURL,'分组背景图进入导出渲染');
+guideGroup.bgPath='';
 // ---- 导出弹窗：范围/缩放/水印/隐私四项设置，取消不落盘 ----
 let saveCalls=0;
 const exportPath=app.vaultPath+'/Export Dialog.png';

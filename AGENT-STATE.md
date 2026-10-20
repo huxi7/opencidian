@@ -481,10 +481,10 @@ node --experimental-vm-modules src/renderer/core/workspace-regression.js
 - 派子代理做逆向类任务时，prompt 写明“证据优先级：REA 工具 > grep”。
 
 未完成/已知缺口（后续）：
-- 画布：CM6 卡片编辑已完成（canvas-edit 58 项）；**空间索引/视口虚拟化仍未做**；卡片内编辑命令（Mod+B 等）no-op（需 workspace.activeEditor 语义）；canvas-node.js/canvas-view.js 787~797 行贴顶。
+- 画布：CM6 卡片编辑、链接卡 webview、剪贴板、文件树/系统拖入、分组背景图已完成（canvas-view 767 行）；**空间索引/视口虚拟化仍未做**；剩余：画布设置页、右键拖拽平移、分组背景文件重命名/删除监听、链接卡 UA/离线占位、导出网页画面截图。卡片内 editor:* 已接 activeEditor。
 - 图谱：力学 worker 化已完成（`97389f7`：protocol 1:1 + 三级回退 + 共享内核 graph-force.js；graph-worker 55 项；未跨源隔离环境自动走 transfer）；剩余：触屏拖拽重排、"已悬停时再按 Mod"的延迟监听、真机 SAB 未实测。
 - 表格：手柄拖拽重排、单元格矩形选择、Tab 换格、单元格原位置编辑未做（其余已齐）。
-- 编辑器/阅读：链接路径 tooltip、图片尺寸语法未逐项核对；卡片内命令 no-op（见画布行）。
+- 编辑器/阅读：链接路径 tooltip、图片尺寸语法未逐项核对；卡片内 editor:* 已接 activeEditor（canvas-edit 覆盖）。
 - 核心插件：slash-command/webviewer/bases/markdown-importer/publish/sync 按约定跳过；audio-recorder 真机麦克风仍需手点一次。
 - 第三方插件：宿主/设置页/信任模态已整体移除，不加载任何第三方代码；`.obsidian/plugins` 与 community-plugins.json 不读不写（不破坏用户数据）。
 - 系统级：electron-builder 打包已完成（dmg/zip + 打包版冒烟；未签名，`identity: null`；正式分发需证书与公证）。自动更新仍未做（LICENSE 已定 MIT）。
@@ -539,3 +539,32 @@ node --experimental-vm-modules src/renderer/core/workspace-regression.js
 - **红绿灯**：Electron 33 改用 `setWindowButtonPosition`；旧 API 调用无效，窗口停在 `(19,12)`。新增 `core/window-chrome.js` 按原版公式计算；设置窗口创建选项即写 `(10,8)`，`is-popout-modal` 生效后与缩放后重算（主窗 40px → `(14,12)`）。验收直接读 `getWindowButtonPosition()` 断言。证据 `_analysis/settings-window-114/`。
 - **验收**：editor 131、editor-menu 49（真实鼠标子菜单：加粗/1级标题/表格、右键选区恢复、系统剪贴板）、page-preview 21、settings-window 17、menu-family 57、quick-switcher 130、theme-tokens 785、reading-ui 212、view-header 73、modal-ui 6、drag-drop 79 全绿。
 - **全量 58**：主循环 56 场景 55 直过；`vault-switcher` 首次漏传 `--seed-vaults 3`（harness 参数，不是产品回归），带参数复跑 142 项全过；`settings-restart`、`graph-persist-read` 链式通过 → **58/58**。日志 `/tmp/opensidian-full-1020-122223/`，vault-switcher 复跑 `/tmp/obs-copy-acceptance/vault-switcher-run-result-X4JBot/`。
+
+## 21. 1.14.4 UI 收口（2026-10-20 · 定向）
+
+- 默认布局：新库只展开左栏，右栏反链/大纲收起；`showSidebar` 可再展开，不再写 inline `display:none`。
+- 文件树：删除仓库名根标题，根级文件 y=84、缩进归零；`.nav-header` 恢复 block/15px，按钮行 100% 宽且水平居中（x=120/150/180/210/240）；删除多余的文件列表功能区按钮（原版首个按钮是快速切换）。
+- 侧栏：标签 28×25、radius 8、带 `tappable`；左右 split 补 `mod-primary-split`/`mod-secondary-split`；左右开关 28×39；右栏收起时开关 fixed 在右上，标签栏保留 38px 右侧留白；库信息栏 41.9px、库名 13/16.9。
+- 功能区：顺序改为快速切换→图谱→白板→日记→模板→命令面板；gap 6px，纵向步长 30px；Bases 入口按约定跳过。
+- 阅读区：`.view-header` 恢复 `flex: 0 1 auto`（阅读区满高时 38px）；inline title/h1/p/callout/table/pre 几何对齐；callout `note` 图标改 `lucide-pencil`，标题行 softbreak 剥离（内容 100.8）；`pre` 16/24、`pre code` 14/21；普通变量不再产出 `token variable`（对齐 Prism JS）。
+- 状态栏：新增反链计数条目（0 也显示，点击展开右栏）；属性 0 隐藏；字数条目无点击。
+- 通知：出场 easing 改为 `ease-in-out`（原版 qw 默认），120ms。
+- 重构：侧栏折叠 chrome 从 `workspace-renderer.js` 抽到 `workspace-sidebar-chrome.js`（810→642 行，新文件 182 行）。
+- 定向验收：reading-ui 219、sidebar 98、sidebar-shell 61、sidebar-chrome 82、file-explorer-multi 80、core-views 83、view-header 74、menu-family 57、theme-tokens 785、editor 131、core-ribbon 47、appearance 34、audio-recorder 72、basic-plugins 6、dialogs 8 全绿。
+- 真实指针：文件菜单→复制路径→子菜单「基于库的相对路径」写入剪贴板 `Beta.md`；重命名、关闭标签、右栏开关、反链状态栏、快速切换、设置、1400ms tooltip 全部通过。
+- 全量回归见第 22 节。
+
+
+## 22. 白板深挖 + 全量回归（2026-10-20）
+
+- 审计文档 `_analysis/canvas-114/audit.md`，浅深实拍 `_analysis/canvas-114/screens/after-board-{light,dark}.png`。
+- 链接卡：Electron webview 内嵌网页预览，标题回写、重载、断点以下保持加载；webviewTag 不可用时同尺寸 iframe 回退。
+- 分组背景图：`cover / ratio / repeat` 三态，设置/替换/移除菜单，按图片比例收高。
+- md 文件卡：双击进入卡片内 CM6 编辑，400ms 防抖写回，Escape / Mod+Enter / 失焦退出并立即恢复预览；活动编辑器登记后 `editor:*` 命令命中卡片正文。
+- 滚轮：默认平移，Ctrl/Mod 或 Space 缩放；`defaultWheelBehavior=zoom` 反转；离散滚轮与 macOS 触控板捏合缩放。
+- 剪贴板：`obsidian/canvas` payload（nodes/edges/center），粘贴偏移、克隆 ID、内部边重映射；外部文件/URL/文本粘贴建卡。
+- 拖入：文件树 file/folder/files、系统文件、URL、文本建卡；文件卡按 10 列、列间 45px 排布。
+- 修复：拖动阴影令牌、文本卡占位全幅底色、未编辑卡露 `#`/列表符号、缺失文件警告图标、导出分组背景、节点/边点击聚焦 wrapper 以恢复键盘语义。
+- 验收：canvas 96、canvas-edit 91、canvas-selection 72、canvas-ui 145、core-views 83、menu-family 57 全绿；单文件 ≤800 行（canvas-view 767、canvas-interactions 706、canvas-edge 393）。
+- **全量 56 场景 / 58 次执行**：全绿，3525 断言。日志 `/tmp/opensidian-full-1020-ui/`，干净汇总 `summary-clean.txt`；`vault-switcher --seed-vaults 3` 142 项；`settings-restart` / `graph-persist-read` 链式通过；`graph-perf --nodes 1000` 4 项。
+- 未完成：画布设置页（未动 settings-view）、右键拖拽平移（需先验平台 contextmenu 顺序）、分组背景文件重命名/删除监听、链接卡站点 UA 特判与离线失败占位、导出链接卡网页画面（webview 离屏截图管线）。

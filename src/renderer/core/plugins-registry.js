@@ -2,6 +2,7 @@
  * [INPUT]: 依赖 ../plugins-core/*.js 的全部核心插件模块
  * [OUTPUT]: 导出 corePluginModules（id → 模块对象的汇总表）
  * [POS]: core/ 的核心插件注册表。PluginManager.loadInternalPlugins 经 loadCoreModules 消费它；模块 id 必须与 .obsidian/core-plugins.json 的键一致。
+ *        对象顺序即加载顺序，也决定功能区按钮顺序（switcher→graph→canvas→daily→templates→command-palette）；改动前核对 1.14.4 功能区。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 /* Core plugin registry — every internal plugin module keyed by its plugin id.
@@ -10,8 +11,8 @@
  * the original app uses in <vault>/.obsidian/core-plugins.json).
  */
 import * as fileExplorer from '../plugins-core/file-explorer.js';
-import * as commandPalette from '../plugins-core/command-palette.js';
 import * as switcher from '../plugins-core/switcher.js';
+import * as commandPalette from '../plugins-core/command-palette.js';
 import * as backlink from '../plugins-core/backlink.js';
 import * as outgoingLink from '../plugins-core/outgoing-link.js';
 import * as properties from '../plugins-core/properties.js';
@@ -36,7 +37,6 @@ import * as audioRecorder from '../plugins-core/audio-recorder.js';
 
 export const corePluginModules = {
   'file-explorer': fileExplorer,
-  'command-palette': commandPalette,
   'switcher': switcher,
   'backlink': backlink,
   'outgoing-link': outgoingLink,
@@ -51,6 +51,7 @@ export const corePluginModules = {
   'bookmarks': bookmarks,
   'daily-notes': dailyNotes,
   'templates': templates,
+  'command-palette': commandPalette,
   'note-composer': noteComposer,
   'file-recovery': fileRecovery,
   'random-note': randomNote,

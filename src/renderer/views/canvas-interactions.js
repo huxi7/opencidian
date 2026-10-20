@@ -16,7 +16,7 @@
 import { CanvasViewport } from './canvas-viewport.js';
 import { CanvasNode } from './canvas-node.js';
 import { CanvasSelectionBox } from './canvas-selection.js';
-import { clamp, containsBox, unionBBox, expandBBox, bboxOf, rectFromBBox } from './canvas-utils.js';
+import { clamp, containsBox, unionBBox, expandBBox, bboxOf, boxesIntersect, rectFromBBox } from './canvas-utils.js';
 import { Menu } from '../core/menu.js';
 import { IS_MAC } from '../core/keymap.js';
 import { t } from '../core/i18n.js';
@@ -174,12 +174,19 @@ export class CanvasInteractions extends CanvasViewport {
 
   onWheel(e) {
     if (this.isDragging || e.defaultPrevented) return;
+    const behavior = this.options.defaultWheelBehavior;
     const zoomIntent = e.ctrlKey || e.metaKey;
-    const discreteWheel = Math.abs(e.wheelDeltaY) === 240 && e.wheelDeltaX === 0;
     let zooming = zoomIntent || this.isHoldingSpace;
-    if (discreteWheel) zooming = true;
-    else if (!zoomIntent && !this.isHoldingSpace) zooming = false;
-
+    const discreteWheel = Math.abs(e.wheelDeltaY) === 240 && e.wheelDeltaX === 0;
+    // 原版：defaultWheelBehavior=zoom 时滚轮缩放（离散鼠标滚轮仍平移）；默认 pan 时滚轮平移。
+    if (behavior === 'zoom') zooming = discreteWheel ? false : !zooming;
+    // macOS 触控板捏合表现为 ctrl+wheel 且两轴增量为 0：按当前选择/指针下卡片智能缩放。
+    const isMac = navigator.platform.startsWith('Mac') || navigator.userAgent.includes('Macintosh');
+    if (isMac && e.ctrlKey && e.deltaX === 0 && e.deltaY === 0) {
+      e.preventDefault();
+      this.smartZoom(e);
+      return;
+    }
     e.preventDefault();
     let deltaX = e.deltaX;
     let deltaY = e.deltaY;
@@ -188,7 +195,6 @@ export class CanvasInteractions extends CanvasViewport {
 
     if (zooming) {
       let amount = -deltaY / 300;
-      const isMac = navigator.platform.startsWith('Mac');
       if (isMac && !Number.isInteger(deltaY)) amount *= 2;
       this.zoomBy(amount, deltaY < 0 ? this.domPosFromEvt(e) : undefined);
       this.pauseAnimation = Date.now() + 200;
@@ -201,6 +207,24 @@ export class CanvasInteractions extends CanvasViewport {
       this.markViewportChanged();
     }
     this.finishViewportAnimation = true;
+  }
+
+  /** 原版 smartZoom：先看指针是否落在多选包围盒内，否则取指针下面积最小的卡片，再否则总览全局。 */
+  smartZoom(e) {
+    const pos = this.posFromEvt(e);
+    const pointBox = { minX: pos.x, minY: pos.y, maxX: pos.x, maxY: pos.y };
+    if (this.menu && this.selection.size > 0 && this.menu.selection.bbox
+      && boxesIntersect(this.menu.selection.bbox, pointBox)) {
+      this.zoomToSelection();
+      return;
+    }
+    const hits = this.getIntersectingNodes(pointBox);
+    if (hits.length) {
+      hits.sort((a, b) => a.width * a.height - b.width * b.height);
+      this.zoomToBbox(hits[0].getBBox());
+      return;
+    }
+    this.zoomToFit();
   }
 
   /* ------------------------------------------------------------ 背景平移 */
@@ -361,6 +385,7 @@ export class CanvasInteractions extends CanvasViewport {
   onPointerdown(e) {
     if (e.pointerType !== 'mouse' || e.button !== 0) return;
     if (e.target !== this.wrapperEl) return;
+    this.wrapperEl.focus({ preventScroll: true });
     const shift = e.shiftKey;
     const prev = new Set(this.selection);
     if (!shift) this.deselectAll();
@@ -474,6 +499,7 @@ export class CanvasInteractions extends CanvasViewport {
   /** 拖动选中节点（分组会带上内部节点；mac 按住 Alt / 其他平台按住 Ctrl 改为克隆整组）。 */
   handleSelectionDrag(e, nodeEl, node) {
     if (this.readonly) return;
+    if (document.activeElement !== this.wrapperEl) this.wrapperEl.focus({ preventScroll: true });
     const start = this.posFromEvt(e);
     if (node && !this.selection.has(node)) this.selectOnly(node);
     const items = new Set();

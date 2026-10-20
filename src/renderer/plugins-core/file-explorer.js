@@ -2,7 +2,8 @@
  * [INPUT]: 依赖 ../core/view.js 的 View；依赖 ../core/i18n.js 的 t/tt；依赖 ../core/icons.js 的 setIcon；依赖 ../core/menu.js 的 Menu；依赖 ../core/notices.js 的 Notice；依赖 ../core/vault.js 的 TFile/TFolder/normalizePath/parentPathOf；依赖 ../core/keymap.js 的 IS_MAC；依赖 ./file-explorer-selection.js 的 FileTreeSelection/isModEvent；依赖 ./file-explorer-drag.js 的拖拽生命周期；依赖 ./file-explorer-multi.js 的多选菜单与批量命令；依赖 ./file-explorer-toolbar.js 的 createExplorerToolbar/syncExplorerToolbar/SORT_ORDER_IDS
  * [OUTPUT]: 导出 FileExplorerView 与插件注册（左侧栏 'file-explorer' 视图）
  * [POS]: plugins-core/ 的导航面板。DOM 逐字对齐原版：tree-item nav-folder > tree-item-self nav-folder-title.is-clickable > (tree-item-icon.collapse-icon[+right-triangle] + tree-item-inner nav-folder-title-content)。折叠状态同时写在 nav-folder 与 collapse-icon 上（原版 _L() 语义）。文件标题显示去扩展名 basename，非 md 文件追加 nav-file-tag。
- *        面板头按原版 QL：.nav-header 是内容块第一个子块（固定在树上方，不随树滚动），按钮行与排序菜单由 file-explorer-toolbar.js 建，本文件只持 _autoReveal/_allCollapsed 状态并调用 syncExplorerToolbar 渲染。
+ *        根级文件直接挂匿名容器，不渲染仓库名根标题（原版桌面无根节点标题行）；1.14.4 文件列表没有功能区按钮。
+ *        面板头按原版 QL：.nav-header 是内容块第一个子块（固定在树上方，不随树滚动），按钮行宽 100%、五钮水平居中，排序菜单由 file-explorer-toolbar.js 建，本文件只持 _autoReveal/_allCollapsed 状态并调用 syncExplorerToolbar 渲染。
  *        排序菜单按原版三分组（名称/修改时间/创建时间），组后各插分隔线；自动显示开启时才在 file-open / 活动叶切换时展开祖先并滚入视野。
  *        选择集与键盘由 FileTreeSelection 持有（Alt 切换 / Shift 范围 / 方向键 / Delete），本文件只提供 DOM 与动作（打开、折叠、重命名、删除、菜单）。
  *        拖动生命周期与落点全部委派 file-explorer-drag.js：幽灵、body.is-grabbing、选择集源态、750ms 展开、根落点。
@@ -174,11 +175,8 @@ export class FileExplorerView extends View {
     const scrollTop = this.treeEl.parentElement ? this.treeEl.parentElement.scrollTop : 0;
     this.treeEl.empty();
     const root = this.app.vault.getRoot();
-    const rootEl = this.treeEl.createDiv('tree-item nav-folder mod-root');
-    const rootTitle = rootEl.createDiv('tree-item-self nav-folder-title is-clickable');
-    rootTitle.setAttr('data-path', '/');
-    rootTitle.createDiv({ cls: 'tree-item-inner nav-folder-title-content' }).setText(this.app.vault.getName());
-    const children = rootEl.createDiv('tree-item-children nav-folder-children');
+    // 原版桌面文件树不渲染根节点标题；根级文件直接挂在匿名容器里。
+    const children = this.treeEl.createDiv();
     this._renderChildren(root, children);
     if (this.treeEl.parentElement) this.treeEl.parentElement.scrollTop = scrollTop;
     this._selection.apply();
@@ -624,14 +622,11 @@ export function create(app) {
   return {
     onload() {
       app.viewRegistry.registerView('file-explorer', (leaf) => new FileExplorerView(leaf));
-      this._ribbonIcon = app.workspace.addRibbonItem('folder-closed', t('plugins.file-explorer.name') || 'Files', () => {
-        app.workspace.ensureSideLeaf('file-explorer', 'left', { reveal: true });
-      });
+      // 原版 1.14.4 的文件列表没有功能区按钮；首个按钮属于快速切换。
       this.registerCommands(app);
     },
     onunload() {
       app.viewRegistry.unregisterView('file-explorer');
-      if (this._ribbonIcon) this._ribbonIcon.detach();
     },
     registerCommands(app) {
       const withView = (fn) => {

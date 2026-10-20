@@ -342,19 +342,18 @@
 }
 .canvas-file-name { font-size: var(--font-ui-medium); }
 
-/* 链接卡片：显示 URL 文本，点击后交给系统浏览器 */
+/* 链接卡片：卡片内是网页预览（webview；不可用时同尺寸 iframe），点击交给网页自身 */
 .canvas-node-content.canvas-link-content {
   display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: var(--size-4-4);
-  color: var(--text-muted);
-  font-size: var(--font-ui-medium);
-  text-align: center;
-  overflow-wrap: anywhere;
-  cursor: pointer;
+  padding: 0;
+  overflow: hidden;
+  background-color: var(--background-primary);
 }
-.canvas-node-content.canvas-link-content:hover {
-  color: var(--color-accent);
-  text-decoration: underline;
+.canvas-node-content.canvas-link-content webview.canvas-link,
+.canvas-node-content.canvas-link-content iframe.canvas-link {
+  display: flex;
+  width: 100%;
+  height: 100%;
+  border: 0;
+  background-color: var(--background-primary);
 }

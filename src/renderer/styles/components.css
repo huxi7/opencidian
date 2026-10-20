@@ -319,7 +319,7 @@ body.is-settings-window .status-bar { display: none; }
   align-items: end;
 }
 /* 原版 1.14.4 app.css:9088-9108 | 通知：padding 8/12、radius-m、shadow-s、
-   等宽数字；入场 transform 100ms ease-in-out（由 JS 触发）。 */
+   等宽数字；入场 transform 100ms、出场 opacity/margin-top 120ms，均 ease-in-out（由 JS 触发）。 */
 .notice {
   display: flex; flex-direction: column; gap: var(--size-4-2);
   corner-shape: var(--corner-shape);

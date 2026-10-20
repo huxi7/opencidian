@@ -1,7 +1,7 @@
 /**
  * [INPUT]: 依赖 markdown-it、footnote/task-lists、Desktop、图标和 vault 路径；代码块委托 highlight.js，公式委托 math.js；转义、frontmatter 剥离与图片尺寸语法来自 source-text.js。
  * [OUTPUT]: 导出 getMarkdownIt、renderMarkdown、attachMarkdownInteractions、stripFrontmatter、scrollToSubpath、resolvePath、resolveFileUrl 与 escapeHtml
- * [POS]: markdown/ 的阅读视图渲染器，被 markdown-view.js（阅读模式）与 live-preview.js（块级 widget 内嵌 HTML）共同调用。callout 渲染为 div.callout（原版 DOM 非 blockquote）。图片尺寸语法 `|300` / `|300x200` 由 source-text.js 解析，这里负责落成 img 的 width/height 与 .image-wrapper 结构；带尺寸的图片另外带 data-source-* 区间提示，图片右键交给 source-text.js 的 fillImageContextMenu。渲染后由 decorateReadingDom 补齐原版阅读 DOM：无序列表的 has-list-bullet/.list-bullet 圆点、任务项的 data-task/is-checked 与可点击复选框、脚注的 .footnote-link；笔记嵌块走原版 inline-embed 结构（标题 + 内容 + 右上角链接按钮），不可渲染附件走 .file-embed.mod-generic。
+ * [POS]: markdown/ 的阅读视图渲染器，被 markdown-view.js（阅读模式）与 live-preview.js（块级 widget 内嵌 HTML）共同调用。callout 渲染为 div.callout（原版 DOM 非 blockquote），标题行 softbreak 剥离且图标走 lucide- 原名（note=pencil，不走 pencil→edit-3 别名）。图片尺寸语法 `|300` / `|300x200` 由 source-text.js 解析，这里负责落成 img 的 width/height 与 .image-wrapper 结构；带尺寸的图片另外带 data-source-* 区间提示，图片右键交给 source-text.js 的 fillImageContextMenu。渲染后由 decorateReadingDom 补齐原版阅读 DOM：无序列表的 has-list-bullet/.list-bullet 圆点、任务项的 data-task/is-checked 与可点击复选框、脚注的 .footnote-link；笔记嵌块走原版 inline-embed 结构（标题 + 内容 + 右上角链接按钮），不可渲染附件走 .file-embed.mod-generic。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 /*
@@ -331,6 +331,16 @@ function installCallouts(md) {
       if (fold === '-') token.attrJoin('class', 'is-collapsed');
       tokens[closeIdx].meta = { callout: true };
       first.content = first.content.slice(m[0].length);
+      // 标题行末的换行在 markdown-it 中成为 softbreak；原版 callout 正文前没有 <br>。
+      // 删掉标题留下的空 text 与紧随其后的 softbreak，正文首段才与 1.14.4 同构。
+      if (first.content === '' && inline.children[0] === first) {
+        let remove = 1;
+        if (inline.children[1] && inline.children[1].type === 'softbreak') remove = 2;
+        inline.children.splice(0, remove);
+      }
+      if (inline.children.length && inline.children[0].type === 'text') {
+        inline.children[0].content = inline.children[0].content.replace(/^[ \t]+/, '');
+      }
       const titleToken = new state.Token('html_block', '', 0);
       titleToken.block = true;
       titleToken.content = `<div class="callout-title" data-callout-title="${escapeAttr(type)}"><div class="callout-icon">${calloutIcon(type)}</div><div class="callout-title-inner">${escapeHtml(title || defaultCalloutTitle(type))}</div>${fold ? `<div class="callout-fold${fold === '-' ? ' is-collapsed' : ''}">${calloutFoldIcon()}</div>` : ''}</div><div class="callout-content"${fold === '-' ? ' style="display: none;"' : ''}>`;
@@ -338,7 +348,7 @@ function installCallouts(md) {
       closeToken.block = true;
       closeToken.content = '</div>';
       let insertAt = i + 1;
-      if (first.content.trim() === '' && inline.children.length === 1) {
+      if (inline.children.length === 0) {
         // the title line carried the whole first paragraph — drop the empty one
         tokens.splice(insertAt, 3);
         closeIdx -= 3;
@@ -408,7 +418,7 @@ function calloutIcon(type) {
   };
   const name = icons[type] || 'pencil';
   try {
-    const svg = createIcon(name);
+    const svg = createIcon('lucide-' + name);
     return svg.outerHTML;
   } catch (e) { return ''; }
 }

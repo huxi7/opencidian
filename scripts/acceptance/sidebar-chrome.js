@@ -36,6 +36,10 @@ check(ribbonSvgStyle.transitionProperty.includes('opacity')&&ribbonSvgStyle.tran
   '功能区图标透明度过渡 140ms（原版 8352）');
 const sideTabIcon=document.querySelector('.mod-sidedock .workspace-tab-header-inner-icon svg.svg-icon');
 check(!!sideTabIcon&&Math.round(sideTabIcon.getBoundingClientRect().width)===16,'侧栏标签图标 16px（--icon-m）');
+const sideTabEl=sideTabIcon&&sideTabIcon.closest('.workspace-tab-header');
+check(!!sideTabEl&&Math.round(sideTabEl.getBoundingClientRect().width)===28,'侧栏标签宽 28px（原版图标 16 + 左右 6）');
+check(!!sideTabEl&&getComputedStyle(sideTabEl).borderRadius==='8px','侧栏标签圆角 = --tab-radius（macOS 8px）');
+check(!!sideTabEl&&sideTabEl.classList.contains('tappable'),'侧栏标签带 tappable 类（原版）');
 const toggleSvg=document.querySelector('.sidebar-toggle-button svg.svg-icon');
 check(!!toggleSvg&&Math.round(toggleSvg.getBoundingClientRect().width)===16,'侧栏开关图标 16px（--icon-m）');
 
@@ -71,6 +75,7 @@ check(handlesShown('left')===1,'展开后左侧分隔条恢复');
 check(handlesInLightBox()===0,'展开态分隔条也在红绿灯区外');
 
 // ---------------------------------------------------------------- 右侧
+if (ws.rightSplit.collapsed) { ws.toggleSidebar('right'); await wait(300); }
 ws.toggleSidebar('right');
 await wait(300);
 check(handlesShown('right')===0,'右栏收起后右侧分隔条隐藏');
@@ -165,6 +170,33 @@ check(feView._autoRevealBtn&&feView._autoRevealBtn.hasClass('is-active')===!!feV
   '自动显示按钮 is-active 跟随 _autoReveal 状态');
 check(feView._collapseAllBtn&&String(feView._collapseAllBtn.getAttribute('aria-label')).length>0,
   '全部折叠按钮带 aria-label（工具提示）');
+const navButtonsRect=navButtons().getBoundingClientRect();
+const navBtnEls=[...navButtons().querySelectorAll('.nav-action-button')];
+const firstBtnRect=navBtnEls[0].getBoundingClientRect();
+const lastBtnRect=navBtnEls[navBtnEls.length-1].getBoundingClientRect();
+check(Math.abs((firstBtnRect.left+lastBtnRect.right)/2-(navButtonsRect.left+navButtonsRect.right)/2)<1,
+  '文件列表头五按钮水平居中（原版 .nav-buttons-container justify-content:center）');
+check(Math.round(navButtonsRect.width)===Math.round(navHeader().getBoundingClientRect().width-16),
+  '按钮行占满 .nav-header 内容宽（原版 width:auto）');
+check(!feView.treeEl.querySelector('.nav-folder.mod-root'),'文件树不渲染根节点标题（原版桌面）');
+const firstRow=feView.treeEl.querySelector('.nav-file-title[data-path], .nav-folder-title[data-path]');
+if(firstRow){
+  const rowRect=firstRow.getBoundingClientRect();
+  const treeRect=feView.container.getBoundingClientRect();
+  check(Math.abs(rowRect.left-(treeRect.left+12))<1,'根级行左缘 = 容器 padding 12px');
+  check(Math.abs(rowRect.top-(treeRect.top+4))<1,'根级行顶缘 = 容器 padding 4px（无根标题占位）');
+}
+const visibleRibbon=[...document.querySelectorAll('.side-dock-ribbon-action')].filter((el)=>el.getBoundingClientRect().width>0);
+check(visibleRibbon.length>=6,'功能区至少六个可见动作（快速切换/图谱/白板/日记/模板/命令）');
+const ribbonLabels=visibleRibbon.map((el)=>el.getAttribute('aria-label'));
+check(ribbonLabels[0]==='打开快速切换'&&ribbonLabels[1]==='查看关系图谱'&&ribbonLabels[2]==='新建白板'
+  &&ribbonLabels[3]==='打开/创建今天的日记'&&ribbonLabels[4]==='插入模板'&&ribbonLabels[5]==='打开命令面板',
+  '功能区顺序 quick-switch/graph/canvas/daily/templates/command :: '+ribbonLabels.join('|'));
+if(visibleRibbon.length>1){
+  const y0=visibleRibbon[0].getBoundingClientRect().y;
+  const y1=visibleRibbon[1].getBoundingClientRect().y;
+  check(Math.round(y1-y0)===30,'功能区按钮纵向步长 30px（24 高 + 6 gap）');
+}
 
 // 排序菜单：三组 × 2 项 + 组后分隔线（原版 QL.addSortButton，app.js:1473296）
 feView._sortBtn.click();

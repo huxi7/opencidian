@@ -119,6 +119,7 @@
   app.setting.close(); await pause(180);
   workspace.leftSidebarToggleEl.click(); await pause(320);
   check(!workspace.leftSplit.collapsed && visible(profile()), '重新展开恢复库信息栏');
+  if (workspace.rightSplit.collapsed) { workspace.showSidebar('right'); await pause(320); }
   workspace.rightSidebarToggleEl.click(); await pause(320);
   check(workspace.rightSplit.collapsed && visible(workspace.rightSidebarToggleEl), '右栏收起后保留开关');
   workspace.rightSidebarToggleEl.click(); await pause(320);

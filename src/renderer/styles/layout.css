@@ -111,7 +111,7 @@ body.is-frameless.is-hidden-frameless:not(.mod-macos) .titlebar-button-container
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: var(--size-2-2);
+  gap: var(--size-2-3);
 }
 .side-dock-settings { margin-top: auto; }
 .side-dock-ribbon-action { padding: var(--size-4-2); }
@@ -629,7 +629,7 @@ body.is-focused .workspace-tab-header-container .workspace-tab-header.is-highlig
   position: relative;
   gap: var(--size-4-2);
   padding: 0 var(--size-4-3);
-  flex: 0 0 auto;
+  flex: 0 1 auto;   /* 原版：与 100% 高的阅读区竞争高度，头缩到 38px */
 }
 .is-focused .workspace-leaf.mod-active .view-header { background-color: var(--file-header-background-focused); }
 .workspace-split.mod-left-split .view-header,
@@ -793,6 +793,8 @@ body:not(.is-fullscreen) .status-bar { padding-right: var(--size-4-2); }
   line-height: 1;
   white-space: nowrap;
 }
+.status-bar-item.plugin-editor-status,
+.status-bar-item.plugin-sync { min-height: 18px; }
 .status-bar-item.mod-clickable { cursor: var(--cursor, pointer); }
 .status-bar-item.mod-clickable:hover { background-color: var(--background-modifier-hover); color: var(--text-normal); }
 .status-bar-item.plugin-editor-status { padding: 0 var(--size-2-2); }

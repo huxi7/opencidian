@@ -6,7 +6,7 @@
  *        always/hover/never 三态、文本卡占位图标、md 卡正文 padding 与弹性留白、图片卡宽高比回写、损坏媒体与缺文件占位、
  *        着色卡 rgba(...,0.07)）、边（双 path、箭头多边形顶点、普通/聚焦/交互描边宽度、标签字号与最大宽度）、
  *        交互（悬停 mod-handles 门控与手柄命中、连接点嵌在该侧 resizer 内、单选 focus 环与置顶、多选包围盒与工具条、
- *        只读、缩放断点下的占位与标签隐藏）、帮助弹窗与空画布占位三行。
+ *        只读、缩放断点下的占位与标签隐藏、滚轮平移/缩放与智能缩放、剪贴板复制/剪切/粘贴与内部/外部/URL/文本拖入）、帮助弹窗与空画布占位三行。
  *        数值一律对照原版 app.css/app.js 的取值（如 stroke-width: calc(2px * var(--zoom-multiplier))、分组 z = -w*h）。
  *        仅由 run.mjs 在带标记的临时库执行，不做视觉验收。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
@@ -153,6 +153,23 @@
   ok(labelOf(node('i1')) && labelOf(node('i1')).textContent === '资产.png', '非 md 卡片标签取全名');
   ok(labelOf(node('l1')) && labelOf(node('l1')).textContent === 'https://obsidian.md', '链接卡片标签显示网址');
   ok(!labelOf(node('t1')), '文本卡片无卡片标签');
+  // 链接卡：正文是 webview（Electron webviewTag 可用时），地址写入 src，标题事件回写标签
+  const linkCard = node('l1');
+  const linkFrame = linkCard.contentEl.querySelector('webview.canvas-link, iframe.canvas-link');
+  ok(!!linkFrame && linkCard.useWebview === true, '链接卡正文是内嵌 webview');
+  ok(/^https:\/\/obsidian\.md\/?$/.test(linkFrame.src || linkFrame.getAttribute('src') || ''), 'webview src 为链接地址');
+  const titleEvent = new Event('page-title-updated');
+  Object.defineProperty(titleEvent, 'title', { value: 'Obsidian' });
+  linkFrame.dispatchEvent(titleEvent);
+  await wait(60);
+  ok(labelOf(linkCard).textContent === 'Obsidian', '网页标题回写卡片标签');
+  linkCard.frameTitle = '';
+  linkCard.updateNodeLabel(linkCard.url);
+  // 正文常驻 CM6：只读光标停在无 markdown 记号的空行，开局不露 # / 列表符号
+  ok(!linkCard.contentEl.textContent.includes('https://'), '链接卡正文不再显示 URL 文本');
+  const t1Card = node('t1');
+  ok(t1Card.editor && !t1Card.editorEl.textContent.includes('# 卡片'), '未编辑文本卡不显示 markdown 标题记号');
+  ok(t1Card.editorEl.textContent.includes('卡片'), '未编辑文本卡仍显示标题正文');
   // 标签三态：always 可见 → hover 加 mod-hover-label → never 直接移除
   view.options.cardLabelVisibility = 'hover';
   all().forEach((n) => { if (n.render) n.render(); });
@@ -177,6 +194,9 @@
   ok(t1.placeholderEl && t1.placeholderEl.isConnected, '文本卡缩到断点以下挂占位元素');
   ok(iconOf(t1.placeholderEl.querySelector('.canvas-icon-placeholder')) === 'lucide-align-left' && t1.placeholderEl.textContent === '',
     '文本卡占位是 lucide-align-left 图标而非正文');
+  const placeholderFill = rgba(bg(t1.placeholderEl));
+  ok(placeholderFill && near(placeholderFill.a, 0.1, 0.005), '文本卡占位底色为卡片色 10% 全幅平铺');
+  ok(getComputedStyle(t1.placeholderEl, '::after').content === 'none', '文本卡占位没有内缩伪元素');
   ok(css(labelOf(f1), 'display') === 'none', '缩到断点以下隐藏卡片标签');
   ok(css(g1.labelEl, 'display') !== 'none', '缩到断点以下保留分组标签');
   ok(near(parseFloat(patternEl.getAttribute('width')), view.gridSpacing * view.scale, 0.01) && view.gridSpacing === 160,
@@ -212,6 +232,22 @@
   const missingCard = node('m1');
   ok(iconOf(missingCard.nodeEl.querySelector('.canvas-file-placeholder .canvas-icon-placeholder')) === 'lucide-file-question'
     && missingCard.nodeEl.querySelector('.canvas-file-name').textContent === '不存在.md', '缺文件卡片退化为疑问文件占位');
+  const missingLabel = labelOf(missingCard);
+  ok(!!missingLabel && iconOf(missingLabel) === 'lucide-alert-triangle' && missingLabel.textContent === '不存在.md',
+    '缺文件卡片标签是警告图标 + 路径');
+  // 分组背景：repeat 写内联平铺；ratio 读取图片 2:1 后把 200x160 收成 200x100
+  const bgGroup = view.createGroupNode({ pos: { x: 900, y: 900 }, size: { width: 200, height: 160 }, label: '背景组', save: false, focus: false });
+  const asset = app.vault.getAbstractFileByPath('资产.png');
+  bgGroup.setBackgroundFile(asset);
+  bgGroup.setBackgroundStyle('repeat');
+  await until(() => bgGroup.contentEl.style.backgroundImage.includes('app://'), '分组背景图写入 contentEl');
+  ok(bgGroup.contentEl.style.backgroundRepeat === 'repeat' && bgGroup.contentEl.style.backgroundSize === 'auto',
+    '分组背景 repeat 样式写为平铺');
+  ok(bgGroup.getData().background === '资产.png' && bgGroup.getData().backgroundStyle === 'repeat', '分组背景路径与样式进入 getData');
+  bgGroup.setBackgroundStyle('ratio');
+  await until(() => bgGroup.height === 100, '分组背景 ratio 按图片 2:1 收高');
+  ok(bgGroup.width === 200, '分组背景 ratio 保留宽度');
+  view.removeNode(bgGroup);
   // 着色卡：is-themed + 主题色 0.07 透明背景
   const themed = node('t2');
   ok(themed.nodeEl.hasClass('is-themed') && themed.nodeEl.hasClass('mod-canvas-color-4'), '着色卡带 is-themed 与颜色类');
@@ -263,7 +299,7 @@
   const topResizer = t1El.nodeEl.querySelector('.canvas-node-resizer[data-resize="top"]');
   const topPoint = topResizer.querySelector('.canvas-node-connection-point[data-side="top"]');
   ok(!!topPoint, '连接点是该侧手柄的子元素（原版 DOM）');
-  ok(css(topPoint, 'pointer-events') === 'all' && css(topPoint, 'opacity') === '0' || true, '连接点可命中且静止态圆点不可见');
+  ok(css(topPoint, 'pointer-events') === 'all', '连接点可命中');
   ok(getComputedStyle(topPoint, '::after').opacity === '0', '连接点圆点静止态 opacity 为 0');
   // 单选：focus 环 + 置顶
   view.selectOnly(t1El);
@@ -274,6 +310,10 @@
   ok(ringShadow.includes(String(accent.r)) && css(t1El.nodeEl.querySelector('.canvas-node-container'), 'border-color') === `rgb(${accent.r}, ${accent.g}, ${accent.b})`,
     '选中卡片描边取主题强调色');
   ok(Number(css(t1El.nodeEl, 'z-index')) > Number(css(node('m1').nodeEl, 'z-index')), '选中卡片置顶');
+  t1El.nodeEl.addClass('is-dragging');
+  const dragShadow = css(t1El.nodeEl.querySelector('.canvas-node-container'), 'box-shadow');
+  t1El.nodeEl.removeClass('is-dragging');
+  ok(dragShadow.includes('24.7px') && dragShadow.includes('30px') && !dragShadow.includes('2px 10px'), '拖动阴影取 --shadow-l（原版 --shadow-drag）');
   const toolbar = Array.from(view.menu.menuEl.querySelectorAll('button.clickable-icon'));
   ok(toolbar.length === 4 && toolbar.map((b) => iconOf(b)).join('|') === 'lucide-trash-2|lucide-palette|zoom-to-selection|lucide-edit',
     '单选卡片工具条：移除/颜色/聚焦/编辑');
@@ -311,7 +351,153 @@
   await wait(140);
   ok(iconOf(view.quickSettingsButton) === 'lucide-settings' && !wrapperEl.hasClass('mod-readonly'), '退出只读恢复设置图标');
 
-  /* ------------------------------------------------------ F 帮助与空画布 */
+  /* --------------------------------------------------- E2 滚轮平移/缩放语义 */
+  view.deselectAll();
+  await wait(80);
+  const wheelAt = (init) => {
+    const r = wrapperEl.getBoundingClientRect();
+    wrapperEl.dispatchEvent(new WheelEvent('wheel', {
+      bubbles: true, cancelable: true, clientX: r.left + 12, clientY: r.top + 12, ...init,
+    }));
+  };
+  const panBefore = view.ty;
+  const panScale = view.scale;
+  wheelAt({ deltaX: 0, deltaY: 100 });
+  await wait(100);
+  ok(view.ty !== panBefore && near(view.scale, panScale, 1e-6), '默认滚轮平移画布且不缩放');
+  const zoomBefore = view.scale;
+  wheelAt({ ctrlKey: true, deltaX: 0, deltaY: -120 });
+  await wait(320);
+  ok(view.scale > zoomBefore, 'Ctrl/Mod + 滚轮缩放画布');
+  view.options.defaultWheelBehavior = 'zoom';
+  const prefZoomBefore = view.scale;
+  wheelAt({ deltaX: 0, deltaY: -60 });
+  await wait(320);
+  ok(view.scale > prefZoomBefore, 'defaultWheelBehavior=zoom 时普通滚轮改为缩放');
+  view.options.defaultWheelBehavior = 'pan';
+  if (IS_MAC) {
+    let smartCalls = 0;
+    const originalFit = view.zoomToFit;
+    const originalBbox = view.zoomToBbox;
+    view.zoomToFit = () => { smartCalls += 1; };
+    view.zoomToBbox = () => { smartCalls += 1; };
+    view.deselectAll();
+    const r = wrapperEl.getBoundingClientRect();
+    view.onWheel({ defaultPrevented: false, ctrlKey: true, deltaX: 0, deltaY: 0,
+      clientX: r.left + 12, clientY: r.top + 12, preventDefault() {} });
+    await wait(60);
+    ok(smartCalls === 1, 'macOS 触控板捏合在空白处触发总览缩放');
+    view.zoomToFit = originalFit;
+    view.zoomToBbox = originalBbox;
+  }
+
+  /* ------------------------------------------------ E3 剪贴板复制/剪切/粘贴 */
+  const clipboardEvent = (type, data) => {
+    const event = new ClipboardEvent(type, { bubbles: true, cancelable: true });
+    Object.defineProperty(event, 'clipboardData', { value: data });
+    return event;
+  };
+  const copySource = [node('t1'), node('f1')];
+  view.updateSelection((set) => { copySource.forEach((n) => set.add(n)); });
+  view.wrapperEl.focus();
+  const copyData = new DataTransfer();
+  wrapperEl.dispatchEvent(clipboardEvent('copy', copyData));
+  const payload = JSON.parse(copyData.getData('obsidian/canvas') || 'null');
+  ok(payload && payload.nodes.length === 2 && payload.edges.length === 1, '复制写入 obsidian/canvas 节点与内部边');
+  ok(!!payload.center && Number.isFinite(payload.center.x) && Number.isFinite(payload.center.y), '复制 payload 带选中并集中心');
+  const nodesBeforePaste = view.nodes.size;
+  const edgesBeforePaste = view.edges.size;
+  const originalPosCenter = view.posCenter;
+  view.posCenter = () => ({ x: payload.center.x + 200, y: payload.center.y + 100 });
+  const pasteData = new DataTransfer();
+  pasteData.setData('obsidian/canvas', JSON.stringify(payload));
+  wrapperEl.dispatchEvent(clipboardEvent('paste', pasteData));
+  await wait(220);
+  view.posCenter = originalPosCenter;
+  ok(view.nodes.size === nodesBeforePaste + 2 && view.edges.size === edgesBeforePaste + 1, '粘贴克隆节点与内部边');
+  const pastedNodes = Array.from(view.selection).filter((el) => el instanceof Object && el.getData);
+  ok(pastedNodes.length === 2, '粘贴后选中新节点');
+  const pastedText = Array.from(view.nodes.values()).find((n) => n.id !== node('t1').id && n.text === node('t1').text);
+  ok(!!pastedText && near(pastedText.x, node('t1').x + 200, 0.01) && near(pastedText.y, node('t1').y + 100, 0.01),
+    '粘贴按 payload center 与指针中心偏移');
+  const cutData = new DataTransfer();
+  wrapperEl.dispatchEvent(clipboardEvent('cut', cutData));
+  await wait(180);
+  ok(view.nodes.size === nodesBeforePaste && view.edges.size === edgesBeforePaste, '剪切删除选中克隆节点与内部边');
+  ok(!!cutData.getData('obsidian/canvas'), '剪切同时写入剪贴板');
+  const urlData = new DataTransfer();
+  urlData.setData('text/plain', 'https://example.org/clipboard');
+  wrapperEl.dispatchEvent(clipboardEvent('paste', urlData));
+  await wait(180);
+  const pastedLink = Array.from(view.nodes.values()).find((n) => n.url === 'https://example.org/clipboard');
+  ok(!!pastedLink, '纯文本 URL 粘贴为链接卡');
+  const textData = new DataTransfer();
+  textData.setData('text/plain', 'clipboard text node');
+  wrapperEl.dispatchEvent(clipboardEvent('paste', textData));
+  await wait(180);
+  const pastedTextNode = Array.from(view.nodes.values()).find((n) => n.text === 'clipboard text node');
+  ok(!!pastedTextNode, '纯文本粘贴为文本卡');
+  if (pastedLink) view.removeNode(pastedLink);
+  if (pastedTextNode) view.removeNode(pastedTextNode);
+  await wait(80);
+  const clipboardFileCount = view.nodes.size;
+  view.wrapperEl.focus();
+  const pastedFileData = new DataTransfer();
+  pastedFileData.items.add(new File(['pasted bytes'], 'Pasted.txt', { type: 'text/plain' }));
+  wrapperEl.dispatchEvent(clipboardEvent('paste', pastedFileData));
+  await until(() => view.nodes.size === clipboardFileCount + 1, '外部剪贴板文件粘贴建文件卡');
+  const pastedFileNode = Array.from(view.nodes.values()).find((n) => n.file && n.file.name === 'Pasted.txt');
+  ok(!!pastedFileNode && !!app.vault.getFiles().find((f) => f.name === 'Pasted.txt'), '剪贴板文件写入仓库并建卡');
+  if (pastedFileNode) view.removeNode(pastedFileNode);
+  await wait(80);
+
+  /* --------------------------------------------------- E4 拖入建卡 */
+  const dragAt = (type, data, world) => {
+    const dom = view.domFromPos(world);
+    return new DragEvent(type, {
+      bubbles: true, cancelable: true, dataTransfer: data,
+      clientX: dom.x + view.canvasRect.cx, clientY: dom.y + view.canvasRect.cy,
+    });
+  };
+  const fileDropWorld = { x: 1200, y: 1200 };
+  const fileDrag = new DataTransfer();
+  fileDrag.setData('text/plain', JSON.stringify({ path: 'Note.md', type: 'file' }));
+  const dragOver = dragAt('dragover', fileDrag, fileDropWorld);
+  wrapperEl.dispatchEvent(dragOver);
+  ok(dragOver.defaultPrevented, '文件拖入 dragover 被接收');
+  const fileCountBefore = Array.from(view.nodes.values()).filter((n) => n.filePath === 'Note.md').length;
+  wrapperEl.dispatchEvent(dragAt('drop', fileDrag, fileDropWorld));
+  await until(() => Array.from(view.nodes.values()).filter((n) => n.filePath === 'Note.md').length === fileCountBefore + 1, '内部文件拖入建文件卡');
+  const droppedFile = Array.from(view.nodes.values()).find((n) => n.filePath === 'Note.md' && n.id !== node('f1').id);
+  ok(!!droppedFile && view.selection.has(droppedFile) && near(droppedFile.x, fileDropWorld.x, 1), '拖入文件卡落在指针处并被选中');
+  view.removeNode(droppedFile);
+  const externalDrag = new DataTransfer();
+  externalDrag.items.add(new File(['dropped bytes'], 'Dropped.txt', { type: 'text/plain' }));
+  const nodesBeforeExternal = view.nodes.size;
+  wrapperEl.dispatchEvent(dragAt('drop', externalDrag, { x: 1400, y: 1200 }));
+  await until(() => view.nodes.size === nodesBeforeExternal + 1, '外部文件拖入建文件卡');
+  const externalFile = app.vault.getFiles().find((f) => f.name === 'Dropped.txt');
+  ok(!!externalFile, '外部文件写入仓库');
+  const externalNode = Array.from(view.nodes.values()).find((n) => n.file === externalFile);
+  ok(!!externalNode, '外部文件卡指向导入的附件');
+  if (externalNode) view.removeNode(externalNode);
+  const urlDrag = new DataTransfer();
+  urlDrag.setData('text/uri-list', 'https://example.com/dropped');
+  wrapperEl.dispatchEvent(dragAt('drop', urlDrag, { x: 1600, y: 1200 }));
+  await wait(180);
+  const droppedLink = Array.from(view.nodes.values()).find((n) => n.url === 'https://example.com/dropped');
+  ok(!!droppedLink, 'URL 拖入建链接卡');
+  if (droppedLink) view.removeNode(droppedLink);
+  const textDrag = new DataTransfer();
+  textDrag.setData('text/plain', 'dropped text');
+  wrapperEl.dispatchEvent(dragAt('drop', textDrag, { x: 1800, y: 1200 }));
+  await wait(180);
+  const droppedText = Array.from(view.nodes.values()).find((n) => n.text === 'dropped text');
+  ok(!!droppedText, '文本拖入建文本卡');
+  if (droppedText) view.removeNode(droppedText);
+  await wait(80);
+
+
   const helpButton = Array.from(view.canvasControlsEl.querySelectorAll('.canvas-control-item')).pop();
   helpButton.dispatchEvent(new MouseEvent('click', { bubbles: true }));
   await wait(220);

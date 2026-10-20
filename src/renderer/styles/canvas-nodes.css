@@ -40,7 +40,7 @@ body.theme-dark {
   top: 0;
   --resizer-size: 20px;
   --shadow-stationary: 0px 0.5px 1px 0.5px rgba(0, 0, 0, 0.1);
-  --shadow-drag: 0px 2px 10px rgba(0, 0, 0, 0.1);
+  --shadow-drag: var(--shadow-l);
   --shadow-border-accent: 0 0 0 2px var(--color-accent);
   --zoom-multiplier: 1;
   background-color: var(--canvas-background);
@@ -321,16 +321,6 @@ body:not(.is-ios) .canvas-wrapper.mod-animating .canvas-node-label {
   padding: var(--size-4-6);
   font-size: 32px;
   font-weight: var(--font-semibold);
-}
-.canvas-node-placeholder::after {
-  border-radius: var(--radius-s);
-  content: ' ';
-  display: block;
-  position: absolute;
-  top: var(--size-4-4);
-  right: var(--size-4-4);
-  bottom: var(--size-4-4);
-  left: var(--size-4-4);
   background-color: rgba(var(--canvas-color), 0.1);
 }
 .canvas-icon-placeholder {

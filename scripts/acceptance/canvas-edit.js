@@ -235,6 +235,32 @@
   app.workspace.setActiveLeaf(view.leaf, { focus: true });
   await wait(80);
 
+  // ---- 文件卡片内编辑：双击 md 卡进 CM6，输入写回真实文件，Escape 恢复预览 ----
+  const cardNote = await app.vault.create('Card Note.md', '# Card\n\noriginal body');
+  const fileCard = view.createFileNode({ pos: { x: 700, y: 0 }, size: { width: 360, height: 240 }, file: cardNote, focus: false });
+  await wait(220);
+  check(!!fileCard.previewEl && fileCard.contentEl.textContent.includes('original body'), '文件卡先渲染 markdown 预览');
+  fileCard.contentEl.dispatchEvent(new MouseEvent('dblclick', { bubbles: true, cancelable: true }));
+  await until(() => !!fileCard.editor, '双击 md 文件卡挂载卡片内编辑器');
+  check(fileCard.isEditing && fileCard.contentEl.querySelector('.cm-editor'), '文件卡进入卡片内编辑态');
+  check(fileCard.editor.cm.contentDOM.getAttribute('contenteditable') === 'true', '文件卡编辑器可写');
+  await until(() => fileCard.editor.getValue().includes('original body'), '文件卡编辑器载入文件正文');
+  check(app.workspace.getActiveEditor() === fileCard, '文件卡编辑登记为活动编辑器');
+  check(app.workspace.getActiveEditor().file === cardNote && fileCard.getMode() === 'source', '活动编辑器文件是被编辑的笔记');
+  fileCard.editor.setSelection({ line: 0, ch: 2 }, { line: 0, ch: 6 });
+  check(app.commands.executeCommandById('editor:toggle-bold') === true, 'editor 命令作用在文件卡编辑器');
+  await wait(120);
+  check(fileCard.editor.getValue().startsWith('# **Card**'), '文件卡选区被加粗包裹');
+  fileCard.editor.setValue('# Card\n\nedited in canvas');
+  await wait(700);
+  check((await app.vault.read(cardNote)).includes('edited in canvas'), '文件卡输入写回真实笔记');
+  key(fileCard.editorEl, 'Escape');
+  await until(() => !fileCard.isEditing, 'Escape 退出文件卡编辑');
+  check(!fileCard.editor && !fileCard.contentEl.querySelector('.cm-editor'), '退出后销毁文件卡编辑器');
+  check(!!fileCard.previewEl && fileCard.contentEl.textContent.includes('edited in canvas'), '退出后恢复渲染预览并显示新正文');
+  check(app.workspace.getActiveEditor() === null, '退出文件卡编辑后清空活动编辑器登记');
+  view.removeNode(fileCard);
+
   // ---- 关闭视图：销毁编辑器实例与 DOM ----
   const liveEditor = node.editor;
   const editorPrototype = Object.getPrototypeOf(liveEditor);
