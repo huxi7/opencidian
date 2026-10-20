@@ -242,7 +242,7 @@ body {
   --file-header-background: var(--background-primary);
   --file-header-background-focused: var(--background-primary);
   --file-header-border: var(--border-width) solid transparent;
-  --file-header-justify: center;
+  --file-header-justify: start;
   --header-height: 40px;
   /* Relative font sizes */
   --font-smallest: 0.8em;

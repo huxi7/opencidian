@@ -514,3 +514,15 @@ node --experimental-vm-modules src/renderer/core/workspace-regression.js
   4. **仓库切换窗口**：`starter.js` 493 行重写为 1.14.4（800×650/titlebar 30/列表 280/行高 76.49/设置组 448/语言行 70/按钮 100×30），行菜单（重命名/移动/复制 ID/访达/移除）、打开/新建两屏、空态；原版无当前库标识、无移除二次确认。`vault-switcher` 142 项（主窗 13 + starter 129）。
 - 全量主循环 58 场景（`--no-screenshot`）：57 直过；`graph` 一次悬停命中时序假红，单独复跑 2 次 72/72，断言加 20×50ms 有限重试后再跑 3 次 72/72 → 最终 **58/58**。日志 `/tmp/opensidian-full-1020-091832/`。
 - 构建通过；CSS 括号平衡；文档回环：starter.html/css 补 L3，renderer/main/editor/acceptance/styles L2 同步。
+
+## 19. 编辑区几何 + 标签落点/开合 + 模式切换复核（2026-10-20）
+
+- **原版实测**（隔离实例 Obsidian 1.14.4，CDP 读计算值）：编辑态没有 `.cm-gutters` DOM；标题与正文同左缘；H1 `padding-top: 16px`（`--p-spacing`）、`line-height: 31.0656px`（1.2）；桌面 `--file-header-justify: start`。
+- 修复：
+  - 视图头标题改左对齐（`tokens-foundation.css` `--file-header-justify: start`，view-header 断言同步）。
+  - 编辑区：折叠 gutter 绝对定位（`position: absolute !important` + `translateX(calc(-100% - 6px))`）不占正文宽；标题行按 hN 行高（H1 1.2）与 `--p-spacing` 16px 段前距（源码模式归零）。实测标题/正文左缘 377/377。
+  - 标签落点：删除自造 `is-tab-drop-before/after` 3px 实心 accent 内阴影，改用原版 `workspace-drop-overlay` 10px 竖条（`::before` 内缩 3px、radius-m、50% accent；`getTabInsertLocation` x-5）。
+  - 标签开合：新增 `core/tab-animation.js`，按原版 `updateTabDisplay` 200ms ease-in-out 宽度+透明度补间；新头 0→自然宽，关闭留克隆收窄淡出；首次渲染跳过。
+  - 模式切换：头部按钮 / 状态栏菜单 / 更多选项 / Cmd+E 四入口全通过（真实指针命中 + 双向切换）；view-header 增加永久断言。
+- 验收：editor-layout 26、view-header 73、drag-drop 79、editor 131、stacked-tabs 49、sidebar-chrome 73、core-views 83、theme-tokens 785 全绿。
+- 全量主循环 58 场景（`--no-screenshot`）：**58/58 通过、0 失败**。日志 `/tmp/opensidian-full-1020-111628/`。

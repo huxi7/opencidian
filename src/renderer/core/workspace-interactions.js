@@ -132,6 +132,16 @@ function overlayAtRect(node, rect) {
   node.addClass('mod-active');
 }
 
+/** 标签栏落点复用 workspace-drop-overlay（原版 dragManager.showOverlay 的同一元素）。 */
+function tabOverlayEl(workspace) {
+  let el = workspace._tabDropOverlay;
+  if (!el || !el.isConnected) {
+    el = workspace.containerEl.createDiv('workspace-drop-overlay');
+    workspace._tabDropOverlay = el;
+  }
+  return el;
+}
+
 /**
  * 原版 onDragLeaf 的 ghost：drag-ghost mod-leaf（图标 + 标题），setDragImage(0,0)。
  * Chromium 需要元素在 DOM 中渲染过，截图后即可摘除。
@@ -181,8 +191,7 @@ export function _setupTabDrag(workspace, header, leaf) {
   const bar = header.parentElement;
   if (bar && !bar._dropBound) {
     bar._dropBound = true;
-    const headersOf = () => Array.from(bar.children).filter((el) => el.hasClass('workspace-tab-header'));
-    const clearIndicators = () => { for (const h of headersOf()) h.removeClass('is-tab-drop-before', 'is-tab-drop-after'); };
+    const clearIndicators = () => { workspace._clearLeafDropIndicators(); };
     bar.addEventListener('dragover', (ev) => {
       const drag = workspace._dragData;
       if (!drag || !drag.leaf) return;
@@ -196,19 +205,13 @@ export function _setupTabDrag(workspace, header, leaf) {
       const tabsEl = bar.closest('.workspace-tabs');
       const tabs = tabsEl && tabsEl._tabs;
       if (!tabs) return;
-      drag.dropIndex = _tabInsertInfo(tabs, ev.clientX).index;
+      // 原版 getTabInsertLocation + showOverlay：10px 竖条贴在插入缝，::before 内缩 3px、半径 m、50% accent
+      const info = _tabInsertInfo(tabs, ev.clientX);
+      drag.dropIndex = info.index;
+      overlayAtRect(tabOverlayEl(workspace), info.rect);
       const hovered = ev.target && ev.target.closest ? ev.target.closest('.workspace-tab-header') : null;
-      clearIndicators();
-      if (hovered && hovered._leaf && hovered._leaf !== drag.leaf) {
-        const rect = hovered.getBoundingClientRect();
-        drag.dropTarget = hovered;
-        drag.dropAfter = ev.clientX >= rect.left + rect.width / 2;
-        hovered.toggleClass('is-tab-drop-before', !drag.dropAfter);
-        hovered.toggleClass('is-tab-drop-after', drag.dropAfter);
-      } else {
-        drag.dropTarget = null;
-        drag.dropAfter = false;
-      }
+      drag.dropTarget = hovered && hovered._leaf && hovered._leaf !== drag.leaf ? hovered : null;
+      drag.dropAfter = false;
     });
     bar.addEventListener('dragleave', (ev) => {
       if (!bar.contains(ev.relatedTarget)) {
@@ -348,8 +351,6 @@ export function _clearLeafDropIndicators(workspace) {
 
 export function _clearDropIndicators(workspace) {
   workspace._clearLeafDropIndicators();
-  workspace.containerEl.findAll('.workspace-tab-header.is-tab-drop-before, .workspace-tab-header.is-tab-drop-after')
-    .forEach((el) => el.removeClass('is-tab-drop-before', 'is-tab-drop-after'));
   workspace._tabDropTarget = null;
 }
 

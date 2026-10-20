@@ -365,3 +365,11 @@ MathJax 独立适配器子代理的41项基础/故障测试见 assets/mathjax/SO
 - 日志：`/tmp/opensidian-full-1020-091832/`（`summary.txt` + 每场景 run.log）；graph 复核 `graph-run-result-CMQvZ3 / I3qbUi / t1IxsH / BLzCGu / FB9tI9`。
 - 视觉证据：`_analysis/drag-drop-114/`、`_analysis/tokens-114/`、`_analysis/motion-114/`；starter 截图见 `vault-switcher-run-result-7C2D4x/`。
 - 已知差异：通知出场 easing（`core/notices.js` 未动）；菜单宽度 180/360 保留；starter 品牌/版本文本与浅色仅验收钩子；`--file-header-justify` 保持居中待产品拍板。
+
+## 编辑区几何 + 标签落点/开合 + 模式切换（2026-10-20 · 58/58）
+
+- 原版实测（隔离实例 Obsidian 1.14.4 + CDP）：编辑态无 `.cm-gutters`；标题/正文同左缘；H1 段前 16px、行高 1.2；桌面 `--file-header-justify: start`。
+- 修复：折叠 gutter 绝对定位不占正文宽；hN 行高与 `--p-spacing` 段前距；视图头标题左对齐；标签落点改 `workspace-drop-overlay` 10px 竖条（`::before` 内缩 3px/50% accent）；新增 `core/tab-animation.js` 200ms 标签开合补间。
+- 断言：editor-layout 23→26、view-header 68→73、drag-drop 76→79（真实指针命中、落点几何/透明度、开合动画、四入口模式切换）。
+- 全量主循环 58 场景（`--no-screenshot`）：**58/58 通过、0 失败**。日志 `/tmp/opensidian-full-1020-111628/`。
+- 证据：`_analysis/editor-layout-114/README.md`（原版/修复前后数值）、`after-dark.png`、`tab-drop-overlay.png`。

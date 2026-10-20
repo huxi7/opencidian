@@ -16,6 +16,7 @@ import { createVaultProfile } from './workspace-profile.js';
 import { Desktop, ipcOn } from './ipc.js';
 import { setIcon } from './icons.js';
 import { renderViewHeader, fillViewHeader, syncNavButtons } from './view-header.js';
+import { animateTabIn, animateTabOut } from './tab-animation.js';
 
 export function mount(workspace, container) {
   workspace.containerEl = container;
@@ -401,14 +402,27 @@ export function _createTabHeader(workspace, leaf) {
 export function _syncTabsHeaders(workspace, tabs) {
   const inner = tabs._headersInner;
   if (!inner) return;
+  const known = tabs._animatedLeaves;
+  const current = new Set(tabs.children);
+  const animate = !!known && !tabs.isStacked;
   // remove headers of removed leaves（堆叠态的头在 tab-container 里，两处都要清）
   const containers = [inner, tabs._tabContainerEl].filter(Boolean);
   for (const container of containers) {
     for (const h of Array.from(container.children)) {
-      if (h._leaf && !tabs.children.includes(h._leaf)) h.detach();
+      if (!h._leaf || tabs.children.includes(h._leaf)) continue;
+      // 原版 updateTabDisplay：关闭/移出的标签在旧位置留一个克隆收窄 200ms
+      if (animate && known.has(h._leaf)) animateTabOut(h, container);
+      h.detach();
     }
   }
   tabs.syncHeaderOrder();
+  // 新增/移入的标签从 0 宽展开；首次渲染不播动画
+  if (animate) {
+    for (const leaf of tabs.children) {
+      if (!known.has(leaf) && leaf._tabHeaderEl) animateTabIn(leaf._tabHeaderEl);
+    }
+  }
+  tabs._animatedLeaves = current;
 }
 
 export function _syncTabsVisibility(workspace, tabs) {

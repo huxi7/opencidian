@@ -45,8 +45,10 @@ check(getComputedStyle(sizer).maxWidth==='700px','sizer 应用 max-width: var(--
 const line=content.querySelector('.cm-line');
 check(getComputedStyle(line).paddingLeft==='0px','行无额外水平内边距（中文位置不再右移）');
 const lr=line.getBoundingClientRect();
-check(lr.left>sr.left&&lr.right<=sr.right+1,'行文本位于行宽列内');
-check(near(view.inlineTitleEdit.getBoundingClientRect().left,sr.left,2),'行内标题与行宽列左对齐');
+check(near(lr.left,sr.left,1)&&lr.right<=sr.right+1,'行文本与 sizer 同左缘并位于行宽列内');
+check(near(view.inlineTitleEdit.getBoundingClientRect().left,lr.left,1),'行内标题与正文同左缘（gutter 不占正文宽度）');
+check(getComputedStyle(line).paddingTop==='16px','标题行段前距 16px（原版 --p-spacing）:: '+getComputedStyle(line).paddingTop);
+check(getComputedStyle(line).lineHeight==='31.0656px','H1 行高 1.2（原版 --h1-line-height）:: '+getComputedStyle(line).lineHeight);
 check(view.editor.sizerEl===sizer&&view.editor.contentContainerEl===cc,'Editor 暴露 sizerEl/contentContainerEl');
 
 // ---- 设置联动
@@ -82,6 +84,7 @@ app.settings.updateAppSettings({showLineNumber:true});
 await wait(200);
 check(!!view.editor.cm.dom.querySelector('.cm-lineNumbers'),'折叠全关后开启行号：gutter 正常挂载');
 check(!!scroller.querySelector(':scope > .cm-sizer > .cm-contentContainer > .cm-gutters'),'gutter 容器位于 .cm-contentContainer 内');
+check(getComputedStyle(scroller.querySelector('.cm-gutters')).position==='absolute','gutter 绝对定位，不占正文宽度（原版无 gutter 偏移）');
 app.settings.updateAppSettings({showLineNumber:false,foldHeading:true,foldIndent:true});
 return {pass:true,checks};
 })()

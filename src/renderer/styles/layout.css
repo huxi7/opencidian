@@ -554,9 +554,7 @@ body.is-focused .workspace-tab-header-container .workspace-tab-header.is-highlig
   display: none;
 }
 
-/* 拖拽落点：标签插入指示（原版 getTabInsertLocation 的插入带） */
-.workspace-tab-header.is-tab-drop-before { box-shadow: inset 3px 0 0 0 var(--interactive-accent); }
-.workspace-tab-header.is-tab-drop-after { box-shadow: inset -3px 0 0 0 var(--interactive-accent); }
+/* 拖拽落点：复用原版 workspace-drop-overlay（10px 竖条，::before 内缩 3px、radius-m、50% accent） */
 
 /* 原版 6014-6036：叶子落点覆盖层（100ms 过渡 + 半透明 accent 块） */
 .workspace-drop-overlay {

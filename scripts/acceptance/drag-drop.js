@@ -204,7 +204,8 @@
   await pause(80);
   const leafB = await workspace.openFile(tB, { newLeaf: 'tab' });
   const leafC = await workspace.openFile(tC, { newLeaf: 'tab' });
-  await pause(120);
+  check(leafC._tabHeaderEl.getAnimations().some((a) => a.effect && a.effect.getTiming().duration === 200), '新标签头有 200ms 开启动画（原版 updateTabDisplay）');
+  await pause(320);
   const group1 = leafC.parent;
   const headerA = leafA._tabHeaderEl;
   const headerB = leafB._tabHeaderEl;
@@ -222,7 +223,13 @@
   check(!!tabGhost && !!tabGhost.querySelector('.drag-ghost-icon svg') && /Tab-C|C/.test(tabGhost.textContent), '标签 ghost 是 drag-ghost.mod-leaf + 图标 + 标题');
   const tabOver = dragOver(headerA, tabDt, aRect.left + 2, aRect.top + aRect.height / 2);
   check(tabOver.defaultPrevented, '标签 dragover 被接收');
-  check(headerA.hasClass('is-tab-drop-before'), '同组重排显示 is-tab-drop-before 指示线');
+  const tabOverlay = () => document.querySelector('.workspace-drop-overlay.mod-active');
+  const ov1 = tabOverlay();
+  check(!!ov1, '同组重排显示 workspace-drop-overlay 落点');
+  const ov1Rect = ov1.getBoundingClientRect();
+  check(Math.abs(ov1Rect.left - (aRect.left - 5)) <= 1.01 && Math.abs(ov1Rect.width - 10) <= 0.5 && Math.abs(ov1Rect.height - aRect.height) <= 1.01,
+    '落点=10px 竖条贴 A 左缝（x=A.left-5，高度=标签高）');
+  check(getComputedStyle(ov1, '::before').opacity === '0.5', '落点 ::before 50% accent（原版 workspace-drop-overlay）');
   check(document.body.hasClass('is-grabbing'), '标签拖拽 body.is-grabbing');
   dropOn(headerA, tabDt, aRect.left + 2, aRect.top + aRect.height / 2);
   dragEnd(headerC, tabDt);
@@ -231,7 +238,7 @@
   check(orderAfter.indexOf('Tab-C') === orderAfter.indexOf('Tab-A') - 1, '同组重排模型顺序：C 在 A 之前');
   check(JSON.stringify(headerOrder()) === JSON.stringify(orderAfter), '同组重排 DOM 头顺序跟随模型');
   check(workspace.activeLeaf === leafC, '重排后活动标签是被拖标签');
-  check(!document.querySelector('.is-tab-drop-before, .is-tab-drop-after'), 'drop 后指示线清理');
+  check(!tabOverlay(), 'drop 后落点清理');
   check(!document.body.hasClass('is-grabbing'), 'drop 后 body.is-grabbing 清理');
   check(!document.querySelector('body > .drag-ghost.mod-leaf'), 'drop 后标签 ghost 清理');
 
@@ -240,10 +247,14 @@
   const tabDt2 = dataTransfer();
   dragStart(headerC, tabDt2, cRect.x, cRect.y);
   dragOver(headerB, tabDt2, bRect.right - 2, bRect.top + bRect.height / 2);
-  check(headerB.hasClass('is-tab-drop-after'), '右半区显示 is-tab-drop-after 指示线');
+  await pause(130);   // 原版 overlay 有 100ms transition
+  const ov2 = tabOverlay();
+  const ov2r = ov2 ? ov2.getBoundingClientRect() : null;
+  check(!!ov2 && Math.abs(ov2.getBoundingClientRect().left - (bRect.right - 5)) <= 1.01,
+    '右半区落点贴在 B 右缝 :: overlay=' + (ov2r ? ov2r.left.toFixed(2) + '/' + ov2r.width.toFixed(2) : 'none') + ' expected=' + (bRect.right - 5).toFixed(2) + ' b.right=' + bRect.right.toFixed(2));
   dragEnd(headerC, tabDt2);
   await pause(40);
-  check(!headerB.hasClass('is-tab-drop-after'), 'dragend 清理 after 指示线');
+  check(!tabOverlay(), 'dragend 清理落点');
 
   // 固定标签禁拖
   leafB.pinned = true;

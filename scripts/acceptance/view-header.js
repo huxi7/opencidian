@@ -85,6 +85,23 @@ check(!!container&&!!parentEl&&!!titleEl,'title-container / title-parent / title
 check(parentEl.nextElementSibling===titleEl,'面包屑在标题之前（DOM 相邻）');
 check(titleEl.textContent==='Deep Note','标题取 getDisplayText=文件名 basename');
 
+/* ------------------------------------------------------- 模式切换（1.14.4 头部书/笔按钮） */
+const modeBtn=[...header.querySelectorAll('.view-actions .view-action')]
+  .find((el)=>/切换至阅读|切换至编辑|switch to (read|edit)/i.test(el.getAttr('aria-label')||''));
+check(!!modeBtn&&getComputedStyle(modeBtn).display!=='none','view-actions 含可见的模式切换钮');
+const mbRect=modeBtn.getBoundingClientRect();
+const mbHit=document.elementFromPoint(mbRect.left+mbRect.width/2,mbRect.top+mbRect.height/2);
+check(!!mbHit&&!!mbHit.closest('.view-actions'),'模式切换钮可被真实指针命中');
+modeBtn.click();
+await wait(320);
+check(deepLeaf.view.mode==='preview','头部模式钮切到阅读视图');
+check(getComputedStyle(deepLeaf.view.readingEl).display!=='none'&&getComputedStyle(deepLeaf.view.sourceEl).display==='none','阅读视图显示、编辑视图隐藏');
+[...header.querySelectorAll('.view-actions .view-action')]
+  .find((el)=>/切换至阅读|切换至编辑|switch to (read|edit)/i.test(el.getAttr('aria-label')||''))
+  .click();
+await wait(320);
+check(deepLeaf.view.mode==='live','头部模式钮切回编辑视图');
+
 /* ---------------------------------------------------------------- 面包屑 */
 const crumbs=[...parentEl.querySelectorAll('.view-header-breadcrumb')].map((el)=>el.textContent);
 const seps=[...parentEl.querySelectorAll('.view-header-breadcrumb-separator')].map((el)=>el.textContent);
@@ -129,10 +146,10 @@ const rootTitle=rootHeaderEl.querySelector('.view-header-title');
 const rootContainer=rootHeaderEl.querySelector('.view-header-title-container');
 check(rootParent.children.length===0,'根目录文件的面包屑容器为空');
 check(getComputedStyle(rootParent).display==='none',':empty 时面包屑容器 display:none（原版 4614）');
-check(getComputedStyle(rootContainer).justifyContent==='center','标题容器 justify-content=center（--file-header-justify）');
+check(getComputedStyle(rootContainer).justifyContent==='start','标题容器 justify-content=start（--file-header-justify，桌面 1.14.4）');
 const rc=rootContainer.getBoundingClientRect(), rt=rootTitle.getBoundingClientRect();
-check(Math.abs((rt.left+rt.right)/2-(rc.left+rc.right)/2)<=2,
-  '无面包屑时标题几何居中（偏差 '+Math.abs((rt.left+rt.right)/2-(rc.left+rc.right)/2).toFixed(1)+'px）');
+check(Math.abs(rt.left-rc.left)<=2,
+  '无面包屑时标题贴容器左缘（偏差 '+Math.abs(rt.left-rc.left).toFixed(1)+'px）');
 check(getComputedStyle(rootTitle).textOverflow==='ellipsis'&&getComputedStyle(rootTitle).whiteSpace==='pre',
   '标题单行省略（text-overflow: ellipsis / white-space: pre）');
 
