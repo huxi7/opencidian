@@ -1,3 +1,9 @@
+<!--
+[INPUT]: styles/{fonts,tokens,base,components,settings,starter}.css 与 dist/starter.js。
+[OUTPUT]: 仓库选择窗口文档（仅 starter 窗口加载）。
+[POS]: renderer 第二窗口宿主；主窗口用 index.html，两者共享 tokens/components/settings 样式。
+[PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
+-->
 <!DOCTYPE html>
 <html>
 <head>
@@ -7,6 +13,8 @@
 	<link href="styles/fonts.css" type="text/css" rel="stylesheet"/>
 	<link href="styles/tokens.css" type="text/css" rel="stylesheet"/>
 	<link href="styles/base.css" type="text/css" rel="stylesheet"/>
+	<link href="styles/components.css" type="text/css" rel="stylesheet"/>
+	<link href="styles/settings.css" type="text/css" rel="stylesheet"/>
 	<link href="styles/starter.css" type="text/css" rel="stylesheet"/>
 </head>
 <body class="theme-dark starter is-frameless is-hidden-frameless">

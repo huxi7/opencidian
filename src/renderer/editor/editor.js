@@ -2,6 +2,7 @@
  * [INPUT]: 依赖 CM6、folding.js 折叠策略、live-preview.js 装饰与 markdown/highlight.js 语义颜色。
  * [OUTPUT]: 导出 Editor、EditorState、EditorView、ViewPlugin；Editor.setFolding 热切换标题与缩进折叠；Editor.setValue 整弹重建 state（撤销栈不跨文档边界）。
  * [POS]: editor/ 的 CM6 包装层。构造原版 file layout DOM（.cm-sizer/.cm-contentContainer）。独立 Compartment 保留文档与撤销栈；位置采用零基 {line, ch}。
+ *        拖放：payload.type=file 插入单条链接；type=files 按 items 顺序插入全部文件链接（原版 IR）。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 /*
@@ -281,12 +282,24 @@ export class Editor {
     }
     let payload = null;
     try { payload = JSON.parse(dt.getData('text/plain')); } catch (e) { payload = null; }
+    const pos = view.posAtCoords({ x: event.clientX, y: event.clientY });
+    const from = pos == null ? view.state.selection.main.head : pos;
+    // 原版 IR：type=files 时按顺序插入全部文件链接，type=file 插入单条
+    if (payload && payload.type === 'files' && Array.isArray(payload.items)) {
+      const files = payload.items
+        .filter((item) => item && item.type === 'file')
+        .map((item) => this.app.vault.getFileByPath(item.path))
+        .filter(Boolean);
+      if (!files.length) return false;
+      event.preventDefault();
+      const links = files.map((file) => this.app.fileManager.generateMarkdownLink(file, this.sourcePath || '', '', '', undefined)).join('\n');
+      view.dispatch({ changes: { from, insert: links }, selection: { anchor: from + links.length } });
+      return true;
+    }
     if (!payload || typeof payload.path !== 'string' || payload.type !== 'file') return false;
     const file = this.app.vault.getFileByPath(payload.path);
     if (!file) return false;
     event.preventDefault();
-    const pos = view.posAtCoords({ x: event.clientX, y: event.clientY });
-    const from = pos == null ? view.state.selection.main.head : pos;
     const link = this.app.fileManager.generateMarkdownLink(file, this.sourcePath || '', '', '', undefined);
     view.dispatch({ changes: { from, insert: link }, selection: { anchor: from + link.length } });
     return true;

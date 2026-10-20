@@ -27,13 +27,15 @@ menu.js: Menu/MenuItem。上下文菜单、子菜单、键盘导航；分节语�
 file-menu.js: 文件菜单补全层。app 级 file-menu/files-menu 监听：复制路径▸（Obsidian URL/基于库的相对路径/绝对路径）、默认应用打开/在访达中显示、移动到…（复用 file-explorer-multi 的移动弹窗）；popout 新窗口项受窗口能力门控，本复刻不提供。
 suggest.js: 文件与命令建议。输入位于结果前，选择结果与取消关闭分开结算。输入容器带 .search-input-clear-button(非空清空并触发 input，空则关闭)。键盘：上下、PageUp/PageDown(按实测行高整页跳跃)、Home/End、Enter/auxclick、macOS Ctrl+p/n；isComposing 抑制。空态文案 emptyStateText（默认 'No results found.'，子类覆盖），空查询可用 noRecentFilesText 单独文案。
 view.js: View 基类(load/onOpen/onClose/getState/setState/_rootEl 契约) + ViewRegistry。
-workspace.js: 布局装配、导航与序列化。新文档进入中心，侧栏工具禁止用户关闭。恢复布局后按插件状态补齐入口。 侧栏收展：140ms 宽度补间（原版 DD=140ms+swing）、类切换替代重建 DOM（保住 toggle 以做 FLIP）、类切换后立即迁移开关并淡出边界分隔条。 活动编辑器（原版 activeEditor）：getActiveEditor 取登记项（画布卡片宿主，形状 { editor, file, containerEl }）否则回落活动叶子的编辑器视图；setActiveEditor 不登记 markdown 视图、unsetActiveEditor(无参或同项) 清空；切换活动叶子即清空登记。
+workspace-tab-move.js: 标签组搬移层。moveLeafToTabs 搬既有叶子与 DOM（同组重排/跨组移动都不重开视图），源组搬空交 _removeTabsNode 收敛；createTabsBySplit 只建目标分割与空标签组。
+workspace-serialize.js: 布局序列化层。serializeNode/getLayout 递归经 workspace.serializeNode，保留 installStackedSerialization 对 tabs 的 stacked 键装饰。
+workspace.js: 布局装配、导航与序列化入口。新文档进入中心，侧栏工具禁止用户关闭。恢复布局后按插件状态补齐入口。 moveLeafToTabs/createTabsBySplit 委托 workspace-tab-move.js，序列化委托 workspace-serialize.js。 侧栏收展：140ms 宽度补间（原版 DD=140ms+swing）、类切换替代重建 DOM（保住 toggle 以做 FLIP）、类切换后立即迁移开关并淡出边界分隔条。 活动编辑器（原版 activeEditor）：getActiveEditor 取登记项（画布卡片宿主，形状 { editor, file, containerEl }）否则回落活动叶子的编辑器视图；setActiveEditor 不登记 markdown 视图、unsetActiveEditor(无参或同项) 清空；切换活动叶子即清空登记。
 workspace-sidebar.js: 固定工具映射与关闭判定。恢复旧布局遗漏的入口，插件禁用才撤销对应工具。
 workspace-profile.js: 稳定的库名、帮助与设置入口。每次展开读取库注册表，菜单调用真实打开库 IPC。
 workspace-model.js: 分割、标签组与叶子模型。视图切换依次关闭旧视图、装载新视图。标签组持有堆叠状态(原版 VD.isStacked)：setStacked 落 mod-stacked 类；标签列表菜单、头叶排布与滑动布局(updateTabDisplay/updateSlidingTabs/scrollIntoView)同层放置。installStackedSerialization 在挂载时给 layout JSON 补 stacked 键(JSON 组装在 workspace.js)。
-workspace-renderer.js: 分别渲染文档标签和固定工具图标。稳定挂载底栏及左右开关，功能区支持鼠标与键盘。 叶子宿主是 .workspace-tab-container；标签头落位与堆叠排布由标签组的 updateTabDisplay 决定；view-header 委托 view-header.js。 标签栏「+」「⌄」按 1.14.4 结构：外层 div 定位、内层 span.clickable-icon 承按钮盒。 syncTopTabs 统一 mod-top/-left/-right-space 归位（原版 updateFrameless）；updateSidebarChrome 是侧栏折叠态外观的唯一出口（divider 宽 0、ribbon is-collapsed、焦点色联动）。 侧栏开关迁移用原版 y() 的 FLIP（幽灵+偏移动画，140ms swing）。
+workspace-renderer.js: 分别渲染文档标签和固定工具图标。稳定挂载底栏及左右开关，功能区支持鼠标与键盘。 叶子宿主是 .workspace-tab-container；标签头落位与堆叠排布由标签组的 updateTabDisplay 决定；非堆叠态 _syncTabsHeaders 调 tabs.syncHeaderOrder() 按 children 顺序重排标签头 DOM，模型顺序即视觉顺序；view-header 委托 view-header.js。 标签栏「+」「⌄」按 1.14.4 结构：外层 div 定位、内层 span.clickable-icon 承按钮盒。 syncTopTabs 统一 mod-top/-left/-right-space 归位（原版 updateFrameless）；updateSidebarChrome 是侧栏折叠态外观的唯一出口（divider 宽 0、ribbon is-collapsed、焦点色联动）。 侧栏开关迁移用原版 y() 的 FLIP（幽灵+偏移动画，140ms swing）。
 view-header.js: 视图头构造与填充（原版 View 构造器，1.14.4 app.js:1236469）。三块：left 导航钮（←→，checkCallback 门控；空视图同样渲染）、title-container（父路径面包屑 span+“/”分隔，点击在文件树揭示、右键文件夹菜单；标题居中 + mod-fade 三态）、actions。fillViewHeader 同时同步导航禁用态与 actions 重绘。
-workspace-interactions.js: 仅中心文档可关闭、新建、拆分或拖拽。侧栏图标不接入文档菜单。
+workspace-interactions.js: 仅中心文档可关闭、新建、拆分或拖拽。侧栏图标不接入文档菜单。 标签落点按原版 getTabInsertLocation 求 index；落点指示 is-tab-drop-before/after、body.is-grabbing、ghost 清理；跨组/分割移动委托 workspace.moveLeafToTabs；覆盖层边缘 max(尺寸/3,40)、center 为 10px 标签插入条。
 workspace-regression.js: 19 组内存回归。覆盖导航、分栏、恢复、固定入口与库栏身份。
 plugins.js: PluginManager(内部插件宿主)。核心插件模块经 plugins-registry.js 汇总，启停写 core-plugins.json；插件设置页经 manifest.module.settingTab(app, containerEl) 由设置宿主打开。不扫描 .obsidian/plugins、不加载任何第三方代码（社区插件宿主、shim、安全模式与信任模态已整体移除）。
 plugins-registry.js: corePluginModules 汇总表(id → 模块)。新增核心插件必须登记在此；已含出链(outgoing-link)、属性(properties)与录音机(audio-recorder)。

@@ -1,3 +1,9 @@
+/**
+ * [INPUT]: 依赖 tokens-*.css 的设计变量；被 layout/components/settings 等模块叠加。
+ * [OUTPUT]: 全局 reset、排版、svg 图标、clickable-icon、输入框、按钮与 focus 态。
+ * [POS]: 样式基座。所有组件先吃这里的基础态；hover/active 的过渡事实源是原版 1.14.4 app.css。
+ * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
+ */
 /* ==========================================================================
    base.css — resets, typography defaults, primitives (icons, buttons, inputs)
    ========================================================================== */
@@ -18,9 +24,9 @@ body {
   font-family: var(--font-interface);
   font-size: var(--font-ui-medium);
   font-weight: var(--font-normal);
-  line-height: var(--line-height-normal, 1.5);
+  line-height: var(--line-height-tight, 1.3);
   background-color: var(--background-secondary);
-  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
   -webkit-user-select: none;
   user-select: none;
   -webkit-tap-highlight-color: transparent;
@@ -69,24 +75,62 @@ svg.svg-icon {
 .is-unloaded { display: none; }
 .mobile-only { display: none; }
 
+/* 原版 1.14.4 app.css:8341-8414 | clickable-icon。
+   底色/文字瞬时切换；只有 svg 的 opacity 走 140ms 过渡。
+   1.14.4 的 active 态是 --icon-color-focused（不是 accent），is-active 才用 accent+active-hover 底。 */
 .clickable-icon {
+  -webkit-app-region: no-drag;
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: var(--size-2-2);
+  padding: var(--size-2-2) var(--size-2-3);
   margin: 0;
   cursor: var(--cursor, pointer);
   color: var(--icon-color);
-  opacity: var(--icon-opacity);
+  height: auto;
   border-radius: var(--clickable-icon-radius, var(--radius-s));
-  transition: opacity var(--anim-duration-superfast), background-color var(--anim-duration-superfast);
+  corner-shape: var(--corner-shape);
   background-color: transparent;
   border: none;
 }
-.clickable-icon:hover { color: var(--icon-color-hover); opacity: var(--icon-opacity-hover); background-color: var(--background-modifier-hover); }
-.clickable-icon:active { color: var(--icon-color-active); opacity: var(--icon-opacity-active); }
-.clickable-icon.clickable-icon { padding: var(--size-2-2); }
-.clickable-icon.is-active { opacity: var(--icon-opacity-active, 1); color: var(--icon-color-active); }
+.clickable-icon svg {
+  opacity: var(--icon-opacity);
+  transition: opacity var(--anim-duration-fast) ease-in-out;
+}
+@media (hover: hover) {
+  .clickable-icon:hover {
+    box-shadow: none;
+    color: var(--icon-color-hover);
+    background-color: var(--background-modifier-hover);
+  }
+  .clickable-icon:hover svg { opacity: var(--icon-opacity-hover); }
+  .clickable-icon.has-active-menu,
+  .clickable-icon:active {
+    color: var(--icon-color-focused);
+    background-color: var(--background-modifier-hover);
+  }
+  .clickable-icon.has-active-menu svg,
+  .clickable-icon:active svg { opacity: var(--icon-opacity-hover); }
+}
+.clickable-icon.is-active {
+  color: var(--icon-color-active);
+  background-color: var(--background-modifier-active-hover);
+}
+.clickable-icon.is-active svg { opacity: var(--icon-opacity-hover); }
+@media (hover: hover) {
+  .clickable-icon.is-active:hover { background-color: var(--background-modifier-active-hover); }
+}
+.clickable-icon:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--background-modifier-border-focus); }
+.clickable-icon[aria-disabled='true'] {
+  background-color: unset;
+  color: var(--text-muted);
+  opacity: 0.4;
+}
+@media (hover: hover) {
+  .clickable-icon[aria-disabled='true']:hover { background-color: unset; }
+}
+.clickable-icon.mod-warning { color: var(--text-warning); }
+.setting-item-control .clickable-icon { padding: var(--size-2-2); }
 
 svg.svg-icon path { fill: none; }
 
@@ -147,36 +191,69 @@ select,
   -webkit-user-select: text;
   user-select: text;
   width: 100%;
-  transition: box-shadow var(--anim-duration-superfast), border-color var(--anim-duration-superfast);
+  /* 原版桌面 --input-transition: none；悬停时才挂 140ms 的 box-shadow/border 过渡（app.css:8598-8618） */
+  transition: var(--input-transition, none);
 }
 textarea { height: auto; min-height: var(--input-height, 30px); resize: vertical; line-height: var(--line-height-tight, 1.3); }
-input:hover, textarea:hover, select:hover, .text-input:hover { border-color: var(--background-modifier-border-hover); }
-input:focus, textarea:focus, select:focus, .text-input:focus {
+@media (hover: hover) {
+  input:where(:not(:disabled)):hover,
+  textarea:where(:not(:disabled)):hover,
+  select:where(:not(:disabled)):hover,
+  .text-input:where(:not(:disabled)):hover {
+    background-color: var(--background-modifier-form-field-hover);
+    border-color: var(--background-modifier-border-hover);
+    transition: box-shadow var(--anim-duration-fast) ease-in-out, border var(--anim-duration-fast) ease-in-out;
+  }
+}
+/* 原版：active/focus/focus-visible 均加 2px 焦点环（app.css:8679-8695） */
+input:focus, textarea:focus, .text-input:focus,
+input:active, textarea:active, .text-input:active,
+input:focus-visible, textarea:focus-visible, .text-input:focus-visible {
   border-color: var(--background-modifier-border-focus);
-  box-shadow: 0 0 0 var(--input-border-width-focus, 2px) rgba(var(--color-accent-rgb, 127, 109, 242), 0.25);
+  box-shadow: 0 0 0 var(--input-border-width-focus, 2px) var(--background-modifier-border-focus);
+}
+select:focus, select:active { border-color: var(--background-modifier-border-focus); }
+select:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--background-modifier-border-focus);
 }
 input::placeholder, textarea::placeholder { color: var(--input-placeholder-color, var(--text-faint)); }
 input[type="checkbox"] { width: auto; height: auto; }
 input[type="search"]::-webkit-search-cancel-button { display: none; }
 
+/* 原版 1.14.4 app.css:7527-7570 | 桌面按钮无过渡（--button-transition: none），
+   clickable-icon 按钮不吃按钮底色；focus-visible 用 3px 焦点环。 */
 button {
-  background-color: var(--interactive-normal, var(--background-modifier-form-field));
+  --text-color: var(--text-normal);
+  -webkit-app-region: no-drag;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-color);
   border: none;
-  border-radius: var(--input-radius, var(--radius-s));
-  color: var(--text-normal);
-  padding: 4px 12px;
+  border-radius: var(--button-radius, var(--input-radius, var(--radius-s)));
+  corner-shape: var(--button-corner-shape, var(--corner-shape));
+  padding: var(--size-4-1) var(--size-4-3);
   height: var(--input-height, 30px);
   font-size: var(--font-ui-small);
+  font-weight: var(--input-font-weight, var(--font-normal));
   cursor: var(--cursor, pointer);
-  transition: background-color var(--anim-duration-superfast);
-  -webkit-app-region: no-drag;
+  font-family: inherit;
+  white-space: nowrap;
+  outline: none;
+  user-select: none;
+  transition: var(--button-transition, none);
 }
-button:hover { background-color: var(--interactive-hover); }
-button:active { transform: none; }
+button:not(.clickable-icon) {
+  background-color: var(--interactive-normal);
+  box-shadow: var(--input-shadow);
+}
+button:not(.clickable-icon):hover { background-color: var(--interactive-hover); box-shadow: var(--input-shadow-hover); }
+button:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--background-modifier-border-focus); }
 button.mod-cta { background-color: var(--interactive-accent); color: var(--text-on-accent); }
 button.mod-cta:hover { background-color: var(--interactive-accent-hover); }
 button.mod-warning { background-color: var(--background-modifier-error); color: var(--text-on-accent); }
-button:disabled { opacity: 0.5; cursor: not-allowed; }
+button[disabled], button[aria-disabled="true"], button[disabled="true"] { opacity: 0.7; cursor: not-allowed; }
 
 /* checkbox (Obsidian's square) */
 input[type="checkbox"]:not(.task-list-item-checkbox) {
@@ -204,7 +281,7 @@ input[type="checkbox"]:not(.task-list-item-checkbox):checked::after {
 
 /* focus outlines */
 :focus-visible { outline: 2px solid var(--background-modifier-border-focus); outline-offset: 1px; }
-.cm-editor :focus-visible, input:focus-visible, textarea:focus-visible { outline: none; }
+.cm-editor :focus-visible, input:focus-visible, textarea:focus-visible, select:focus-visible { outline: none; }
 
 /* selection */
 ::selection { background-color: var(--text-selection); }

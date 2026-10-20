@@ -207,7 +207,7 @@
   const dragEl = title(file.c.path);
   dragEl.dispatchEvent(new DragEvent('dragstart', { bubbles: true, cancelable: true, dataTransfer: dt }));
   const payload = JSON.parse(dt.getData('text/plain'));
-  check(payload.path === file.c.path && payload.type === 'file', '拖动载荷保留 path/type 单项字段');
+  check(payload.path === file.c.path && payload.type === 'files', '拖动载荷保留 path 单项字段，多选 type=files（原版 dragFiles）');
   check(Array.isArray(payload.items) && payload.items.length === 2
     && payload.items.some((it) => it.path === file.c.path) && payload.items.some((it) => it.path === file.d.path),
     '拖动载荷 items 包含全部选中项');

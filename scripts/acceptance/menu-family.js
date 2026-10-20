@@ -3,13 +3,15 @@
  * [OUTPUT]: 返回菜单家族断言（文件树文件/文件夹/根、标签页、侧栏标题、属性行、反链条目、链接菜单）；失败抛出异常。
  * [POS]: menu-family 场景。对照 1.14.4 bundle 的分节表与项序：file-explorer onFileContextMenu（title/open/action-primary/action/info/info.copy/view/system/danger）、
  *        app 级 file-menu（复制路径子菜单 + system + 移动到…）、WorkspaceLeaf.onOpenTabHeaderMenu（close/pane/action/find）、
- *        metadata-editor showPropertyMenu（danger 移除）、搜索结果条目 handleLinkContextMenu。
+ *        metadata-editor showPropertyMenu（danger 移除）、搜索结果条目 handleLinkContextMenu；
+ *        并锁住菜单无开合动画、8px 项间距、label/disabled 不吃悬停底色。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 (async()=>{
 const checks=[];
 const check=(ok,msg)=>{if(!ok)throw Error('✗ '+msg);checks.push(msg);};
 const wait=ms=>new Promise(r=>setTimeout(r,ms));
+const colorOf=(name)=>{const probe=document.createElement('div');probe.style.color='var('+name+')';document.body.appendChild(probe);const c=getComputedStyle(probe).color;probe.remove();return c;};
 const until=async(fn,msg,timeout=4000)=>{const t0=Date.now();while(Date.now()-t0<timeout){if(fn())return;await wait(50);}throw Error('✗ timeout: '+msg);};
 const menus=()=>[...document.querySelectorAll('body > .menu')];
 const menuTitles=(menu)=>[...menu.querySelectorAll('.menu-item-title')].map((el)=>el.textContent);
@@ -35,6 +37,19 @@ let fileMenu=menus()[menus().length-1];
 let fileTitles=menuTitles(fileMenu);
 check(JSON.stringify(fileTitles)===JSON.stringify(['在新标签页中打开','在新标签组中打开','创建副本','将文件移动到…','复制路径','使用默认应用打开','在访达中显示','重命名','删除']),'文件树文件菜单项序与原版一致：'+fileTitles.join('/'));
 check(visibleSeps(fileMenu)===4,'文件菜单四处分隔线（open/action/info.copy/system/danger），实际 '+visibleSeps(fileMenu));
+// 动效/悬停：菜单无开合动画；项间距 8px；悬停底色只给可选项
+const fileMenuStyle=getComputedStyle(fileMenu);
+check(fileMenuStyle.display==='flex','菜单 display:flex（原版 9141）');
+check(fileMenuStyle.transitionDuration.split(',')[0].trim()==='0s'&&fileMenuStyle.animationName==='none','菜单无开合动画（原版瞬时）');
+const renameStyle=getComputedStyle(itemByName(fileMenu,'重命名'));
+check(renameStyle.gap==='8px'&&renameStyle.whiteSpace==='nowrap','菜单项 gap 8px、单行（原版 9161）');
+const probeItem=itemByName(fileMenu,'重命名');
+probeItem.addClass('is-selected');
+check(getComputedStyle(probeItem).backgroundColor===colorOf('--background-modifier-hover'),'可选菜单项选中底色=hover');
+probeItem.addClass('is-label');
+check(getComputedStyle(probeItem).backgroundColor==='rgba(0, 0, 0, 0)','label 不吃选中/悬停底色（规则排除 label）');
+probeItem.removeClass('is-label');
+probeItem.removeClass('is-selected');
 check(iconClass(itemByName(fileMenu,'在新标签页中打开')).includes('lucide-file-plus'),'在新标签页图标 lucide-file-plus');
 check(iconClass(itemByName(fileMenu,'在新标签组中打开')).includes('lucide-separator-vertical'),'在新标签组图标 lucide-separator-vertical');
 check(iconClass(itemByName(fileMenu,'创建副本')).includes('lucide-files'),'创建副本图标 lucide-files');

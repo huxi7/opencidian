@@ -226,8 +226,8 @@ body:not(.is-mobile) .workspace-split.mod-left-split .workspace-sidedock-vault-p
   justify-content: center;
   padding: var(--size-4-2) 0 7px 0;
   -webkit-app-region: no-drag;
-  --icon-size: var(--icon-l);
-  --icon-stroke: var(--icon-l-stroke-width);
+  --icon-size: var(--icon-m);
+  --icon-stroke: var(--icon-m-stroke-width);
 }
 .sidebar-toggle-button .sidebar-toggle-icon-inner {
   stroke: none;
@@ -260,12 +260,12 @@ body:not(.is-mobile) .workspace-split.mod-left-split .workspace-sidedock-vault-p
   padding-right: 38px;
 }
 
-/* 原版 app.css:7366-7376 | ribbon 与侧栏图标尺寸 */
+/* 原版 app.css:8324-8330 | ribbon 与侧栏图标尺寸（--icon-m 16px / 2px） */
 .clickable-icon.side-dock-ribbon-action .svg-icon,
 .mod-left-split .workspace-tab-header-inner-icon .svg-icon,
 .mod-right-split .workspace-tab-header-inner-icon .svg-icon {
-  --icon-size: var(--icon-l);
-  --icon-stroke: var(--icon-l-stroke-width);
+  --icon-size: var(--icon-m);
+  --icon-stroke: var(--icon-m-stroke-width);
 }
 .clickable-icon.side-dock-ribbon-action:active,
 .mod-left-split .workspace-tab-header-inner-icon:active,
@@ -337,7 +337,7 @@ body.is-resizing .workspace-split.mod-sidedock > .workspace-leaf-resize-handle {
 }
 
 /* 原版 6398-6406 没有文档标签边框或固定宽度。
- * 原版 6216 两侧各 8px，加 18px 图标得到自然宽度 34px。 */
+ * 原版 6216 两侧各 8px，加 16px 图标（--icon-m）得到自然宽度 32px。 */
 .workspace-split.mod-sidedock .workspace-tab-header-container .workspace-tab-header {
   border: 0;
   flex: 0 0 auto;
@@ -373,7 +373,7 @@ body.is-resizing .workspace-split.mod-sidedock > .workspace-leaf-resize-handle {
 }
 
 /* 原版 7336-7340 读取 --icon-size；base/layout 写死 icon-m/icon-s。
- * 仅修复本模块图标：侧栏与开关 18px，仓库切换箭头 16px。 */
+ * 仅修复本模块图标：侧栏与开关 16px（--icon-m），仓库切换箭头 16px。 */
 .mod-sidedock .workspace-tab-header-inner-icon svg.svg-icon,
 .sidebar-toggle-button svg.svg-icon,
 .workspace-sidedock-vault-profile svg.svg-icon,

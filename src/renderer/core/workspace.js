@@ -4,6 +4,7 @@
  * [OUTPUT]: 导出 Workspace、WorkspaceItem、WorkspaceSplit、WorkspaceTabs、
  * WorkspaceLeaf 与 parseSubpath。保留既有方法签名和调用入口。
  * [POS]: 装配分割树与导航。侧栏工具固定，文档新标签始终进入中心。侧栏沿用最近中心文件，链接路径由 vault 转为文件。
+ * moveLeafToTabs 是标签跨组/同组重排的唯一入口：搬既有叶子与 DOM，不重开视图；createTabsBySplit 只建空目标组。
  * loadLayout 只替换布局；旧视图保存与关闭仍由调用方负责。
  * 活动编辑器（原版 workspace.activeEditor）：getActiveEditor 取登记项（画布卡片宿主），否则回落活动叶子的编辑器视图；
  * setActiveEditor/unsetActiveEditor 是登记与清空入口，切换活动叶子即清空登记。命令层经此拿到当前应作用的内嵌编辑器。
@@ -18,6 +19,8 @@ import { FileNameModal } from './modals.js';
 import { normalizePath } from './vault.js';
 import { Desktop } from './ipc.js';
 import { WorkspaceSplit, WorkspaceTabs, WorkspaceLeaf } from './workspace-model.js';
+import { createTabsBySplit as createTabsBySplitImpl, moveLeafToTabs as moveLeafToTabsImpl } from './workspace-tab-move.js';
+import { getLayout as getLayoutImpl, serializeNode as serializeNodeImpl } from './workspace-serialize.js';
 import * as workspaceRenderer from './workspace-renderer.js';
 import * as workspaceInteractions from './workspace-interactions.js';
 import { reconcileSidebars, canCloseLeaf } from './workspace-sidebar.js';
@@ -166,28 +169,18 @@ export class Workspace extends Events {
     return leaf;
   }
 
+  /** 搬叶子入口；实现见 workspace-tab-move.js。 */
+  moveLeafToTabs(leaf, targetTabs, index) {
+    return moveLeafToTabsImpl(this, leaf, targetTabs, index);
+  }
+
+  /** 建空标签组入口；实现见 workspace-tab-move.js。 */
+  createTabsBySplit(referenceLeaf, direction, before = false) {
+    return createTabsBySplitImpl(this, referenceLeaf, direction, before);
+  }
+
   createLeafBySplit(referenceLeaf, direction, before = false) {
-    if (this._sideOf(referenceLeaf) !== 'center') referenceLeaf = this._firstLeafInCenter();
-    const tabs = referenceLeaf.parent;
-    const splitParent = tabs ? tabs.parent : null;
-    const newTabs = new WorkspaceTabs(this);
-    const theDirection = direction === 'horizontal' ? 'horizontal' : 'vertical';
-    if (splitParent instanceof WorkspaceSplit && splitParent.direction === theDirection) {
-      const idx = splitParent.children.indexOf(tabs);
-      splitParent.insertChild(before ? idx : idx + 1, newTabs);
-    } else if (splitParent instanceof WorkspaceSplit) {
-      const idx = splitParent.children.indexOf(tabs);
-      const newSplit = new WorkspaceSplit(this, theDirection);
-      splitParent.removeChild(tabs);
-      if (before) { newSplit.insertChild(0, newTabs); newSplit.insertChild(1, tabs); }
-      else { newSplit.insertChild(0, tabs); newSplit.insertChild(1, newTabs); }
-      splitParent.insertChild(idx, newSplit);
-    } else {
-      const newSplit = new WorkspaceSplit(this, theDirection);
-      newSplit.insertChild(0, newTabs);
-      this.centerSplit.insertChild(this.centerSplit.children.length, newSplit);
-    }
-    this.render();
+    const newTabs = this.createTabsBySplit(referenceLeaf, direction, before);
     return this.createLeafInTabGroup(newTabs);
   }
 
@@ -598,42 +591,13 @@ export class Workspace extends Events {
 
   _clearDropIndicators() { return workspaceInteractions._clearDropIndicators(this); }
 
+  _endTabDrag() { return workspaceInteractions._endTabDrag(this); }
+
   _makeTabBarSortable(tabs) { return workspaceInteractions._makeTabBarSortable(this, tabs); }
 
-  // -------------------------------------------------------------------------
-  // 布局序列化
-  // -------------------------------------------------------------------------
-  serializeNode(node) {
-    if (node instanceof WorkspaceLeaf) {
-      const type = node.view ? node.view.getViewType() : 'empty';
-      const state = node.view && node.view.getState ? node.view.getState() : {};
-      return { id: node.id, type: 'leaf', state: { type, state } };
-    }
-    if (node instanceof WorkspaceTabs) {
-      return { id: node.id, type: 'tabs', currentTab: node.currentTab, children: node.children.map((c) => this.serializeNode(c)) };
-    }
-    if (node instanceof WorkspaceSplit) {
-      const s = { id: node.id, type: 'split', direction: node.direction, children: node.children.map((c) => this.serializeNode(c)) };
-      if (node.size) s.size = node.size;
-      return s;
-    }
-    return null;
-  }
-
-  getLayout() {
-    return {
-      main: this.serializeNode(this.centerSplit),
-      left: this.serializeNode(this.leftSplit),
-      right: this.serializeNode(this.rightSplit),
-      active: this.activeLeaf ? this.activeLeaf.id : '',
-      lastOpenFiles: this.lastOpenFiles,
-      leftCollapsed: !!this.leftSplit.collapsed,
-      rightCollapsed: !!this.rightSplit.collapsed,
-      leftWidth: this.leftSplit.size,
-      rightWidth: this.rightSplit.size,
-      leftActive: this.leftSplit.children.length ? this.serializeNode(this.leftSplit) : null,
-    };
-  }
+  // 布局序列化（实现见 workspace-serialize.js）
+  serializeNode(node) { return serializeNodeImpl(this, node); }
+  getLayout() { return getLayoutImpl(this); }
 
   async deserializeNode(data) {
     if (!data) return null;

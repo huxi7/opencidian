@@ -103,7 +103,7 @@ iframe { border: 0; }
   align-items: center;
   display: flex;
   gap: var(--size-4-1);
-  font-size: var(--font-text-size);
+  font-size: var(--font-preferred-size);
   font-weight: calc(var(--font-weight) + var(--bold-modifier));
   text-align: start;
   text-overflow: ellipsis;

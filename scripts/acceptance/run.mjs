@@ -1,7 +1,7 @@
 /**
- * [INPUT]: Node 文件与进程 API、Electron、场景名称和可选既有测试库。
- * [OUTPUT]: 独立临时库、日志与退出码；--no-screenshot 跳过截图。
- * [POS]: 桌面验收运行器。只打开带验收标记的临时库，不自行构建。
+ * [INPUT]: Node 文件与进程 API、Electron、场景名称、--seed-vaults 与同名 .starter.js。
+ * [OUTPUT]: 独立临时库、主窗/第二窗口回执与浅深截图、日志与退出码；--no-screenshot 跳过截图。
+ * [POS]: 桌面验收运行器。.starter.js 不作为独立场景，由同名主场景触发；不自行构建。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 import fs from 'node:fs';
@@ -14,7 +14,9 @@ import { spawn } from 'node:child_process';
 const directory = path.dirname(fileURLToPath(import.meta.url));
 const repository = path.resolve(directory, '../..');
 const [scenario, ...arguments_] = process.argv.slice(2);
-const scenarios = fs.readdirSync(directory).filter(name => name.endsWith('.js')).map(name => name.slice(0, -3));
+const scenarios = fs.readdirSync(directory)
+  .filter(name => name.endsWith('.js') && !name.endsWith('.starter.js'))
+  .map(name => name.slice(0, -3));
 if (!scenarios.includes(scenario)) throw new Error('场景：' + scenarios.join(', '));
 const option = (name, fallback) => {
   const index = arguments_.indexOf(name);
@@ -50,7 +52,34 @@ if (scenario === 'graph-perf' && !selected) {
 }
 const output = fs.mkdtempSync(path.join(base, scenario + '-' + phase + '-result-'));
 const screenshot = arguments_.includes('--no-screenshot') ? null : path.join(output, 'screen.png');
+// 第二窗口（starter）：同名 .starter.js 会在该窗口中执行，并单独截图。
+const starterPath = path.join(directory, scenario + '.starter.js');
+const starterSource = fs.existsSync(starterPath) ? fs.readFileSync(starterPath, 'utf8') : null;
+const starterScreenshot = starterSource && !arguments_.includes('--no-screenshot')
+  ? path.join(output, 'starter.png') : null;
+const starterLightScreenshot = starterSource && !arguments_.includes('--no-screenshot')
+  ? path.join(output, 'starter-light.png') : null;
 const logfile = path.join(output, 'run.log');
+
+// 预置“未打开”的仓库到主进程注册表：先于 Electron 启动写入 userData/opensidian.json。
+// 用于验证 starter 的多行列表与“移除不打开的书库”路径；只允许落在临时根目录。
+const seedVaults = parseInt(option('--seed-vaults', '0'), 10);
+if (Number.isFinite(seedVaults) && seedVaults > 0) {
+  const userData = path.join(vault, '.electron-user-data');
+  fs.mkdirSync(userData, { recursive: true });
+  const configPath = path.join(userData, 'opensidian.json');
+  let config = {};
+  try { config = JSON.parse(fs.readFileSync(configPath, 'utf8')); } catch { config = {}; }
+  config.vaults = config.vaults || {};
+  for (let i = 0; i < seedVaults; i++) {
+    const seeded = path.join(path.dirname(vault), 'vault-switcher-seeded-' + String.fromCharCode(65 + i));
+    fs.rmSync(seeded, { recursive: true, force: true });
+    fs.mkdirSync(seeded, { recursive: true });
+    config.vaults['vault-switcher-seed-' + i] = { path: seeded, ts: i + 1 };
+  }
+  fs.writeFileSync(configPath, JSON.stringify(config));
+}
+
 const env = { ...process.env };
 for (const key of Object.keys(env)) if (key.startsWith('OBS_')) delete env[key];
 delete env.ELECTRON_RUN_AS_NODE;
@@ -67,6 +96,14 @@ Object.assign(env, {
   OBS_SIDEBAR_VIEW: option('--screen', 'outline'),
   OBS_GRAPH_PERF_NODES: option('--nodes', ''),
 });
+if (starterSource) {
+  Object.assign(env, {
+    OBS_STARTER_ACT: JSON.stringify({ action: 'eval', js: starterSource }),
+    OBS_STARTER_SCREENSHOT: starterScreenshot || '',
+    OBS_STARTER_SCREENSHOT_LIGHT: starterLightScreenshot || '',
+    OBS_STARTER_SCREENSHOT_DELAY: '800',
+  });
+}
 const require = createRequire(import.meta.url);
 const electron = require(path.join(repository, 'node_modules/electron'));
 console.log(JSON.stringify({ scenario, phase, vault, screenshot, logfile }));
@@ -80,11 +117,26 @@ const code = await new Promise((resolve, reject) => {
   child.on('close', resolve);
 });
 fs.writeFileSync(logfile, log);
-const receipt = log.split('\n').find(line => line.startsWith('[dev] eval: '));
-const failure = /\[dev\] act failed|\[error\]|\[unhandledrejection\]|uncaught|TypeError:|ReferenceError:|setState failed|View failed to load/i.test(log);
+const lines = log.split('\n');
+const receipt = lines.find(line => line.startsWith('[dev] eval: '));
+const starterReceipt = lines.find(line => line.startsWith('[dev-starter] eval: '));
+const failure = /\[dev(?:-starter)?\] act failed|\[dev(?:-starter)?\] screenshot failed|\[error\]|\[unhandledrejection\]|uncaught|TypeError:|ReferenceError:|setState failed|View failed to load/i.test(log);
 let result;
 try { result = JSON.parse(receipt?.slice('[dev] eval: '.length)); } catch { result = null; }
-const passed = code === 0 && !failure && (!screenshot || fs.existsSync(screenshot)) &&
+let starterResult;
+try { starterResult = JSON.parse(starterReceipt?.slice('[dev-starter] eval: '.length)); } catch { starterResult = null; }
+const resultCount = (value) => value?.count || value?.checks?.length || value?.assertions?.length || (typeof value?.passed === 'number' ? value.passed : 0);
+const starterOk = !starterSource || (starterReceipt && starterResult?.pass === true &&
+  (!starterScreenshot || fs.existsSync(starterScreenshot)) &&
+  (!starterLightScreenshot || fs.existsSync(starterLightScreenshot)));
+const passed = code === 0 && !failure && (!screenshot || fs.existsSync(screenshot)) && starterOk &&
   (result?.pass === true || result?.passed === true || result?.passed > 0 || result?.ok === true || result?.status === 'PASS');
-console.log(JSON.stringify({ passed, checks: result?.count || result?.checks?.length || result?.assertions?.length || result?.passed, logfile, screenshot, vault }));
+console.log(JSON.stringify({
+  passed,
+  checks: resultCount(result) + resultCount(starterResult),
+  logfile, screenshot,
+  starterScreenshot, starterLightScreenshot,
+  starterChecks: resultCount(starterResult),
+  vault,
+}));
 if (!passed) { console.error(log.slice(-6000)); process.exitCode = 1; }

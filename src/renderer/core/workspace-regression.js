@@ -143,8 +143,9 @@ async function harness(settings = {}) {
     'notices.js': { Notice: class { constructor(text) { notices.push(text); } } },
     'menu.js': { Menu: MenuStub },
     'ipc.js': { Desktop: { setTitle() {} }, ipcOn() {} },
-    // vault.js 需要 Node require（fs/chokidar），内存回归只用到路径归一化
+    // vault.js 需要 Node require（fs/chokidar），内存回归只用到路径归一化与 TFolder 身份
     'vault.js': {
+      TFolder: class TFolder { isRoot() { return false; } },
       normalizePath: (value) => {
         if (!value) return '/';
         const parts = [];

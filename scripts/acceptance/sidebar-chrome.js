@@ -2,7 +2,8 @@
  * [INPUT]: 独立临时 vault 与 OBS_ACT eval 注入的应用实例。
  * [OUTPUT]: 侧栏折叠/展开的顶栏几何、FLIP 动画与顶栏配色断言（计算样式锁）；失败抛出异常。
  * [POS]: sidebar-chrome 场景。钉住三件事：折叠侧分隔条不占位不穿红绿灯、toggle 迁移与 140ms FLIP、
- * 功能区/标签栏/左上角 44x40 由 --titlebar-background 同一变量驱动（收起无色块接缝）。
+ * 功能区/标签栏/左上角 44x40 由 --titlebar-background 同一变量驱动（收起无色块接缝）；
+ * 并锁住功能区/侧栏 16px 图标与图标 140ms 透明度过渡。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 (async()=>{
@@ -24,11 +25,27 @@ const body=document.body;
 check(body.hasClass('mod-macos')&&body.hasClass('is-hidden-frameless'),'macOS hidden 标题栏环境（前置）');
 check(body.hasClass('show-ribbon'),'功能区可见（前置，走 FLIP 迁移路径）');
 
+// ------------------------------------------------ hover 基座：图标 16px、140ms 透明度
+const ribbonAction=document.querySelector('.workspace-ribbon .side-dock-ribbon-action');
+check(!!ribbonAction,'功能区动作按钮存在（前置）');
+const ribbonActionStyle=getComputedStyle(ribbonAction);
+check(ribbonActionStyle.padding==='4px 6px','功能区按钮 padding 4/6（原版 8341）');
+check(Math.round(ribbonAction.querySelector('svg.svg-icon').getBoundingClientRect().width)===16,'功能区图标 16px（--icon-m）');
+const ribbonSvgStyle=getComputedStyle(ribbonAction.querySelector('svg.svg-icon'));
+check(ribbonSvgStyle.transitionProperty.includes('opacity')&&ribbonSvgStyle.transitionDuration.split(',')[0].trim()==='0.14s',
+  '功能区图标透明度过渡 140ms（原版 8352）');
+const sideTabIcon=document.querySelector('.mod-sidedock .workspace-tab-header-inner-icon svg.svg-icon');
+check(!!sideTabIcon&&Math.round(sideTabIcon.getBoundingClientRect().width)===16,'侧栏标签图标 16px（--icon-m）');
+const toggleSvg=document.querySelector('.sidebar-toggle-button svg.svg-icon');
+check(!!toggleSvg&&Math.round(toggleSvg.getBoundingClientRect().width)===16,'侧栏开关图标 16px（--icon-m）');
+
 // ---------------------------------------------------------------- 收起左栏
 ws.toggleSidebar('left');
 check(ws.leftSplit.collapsed===true,'左栏已收起');
 await wait(40);
 check(toggleEl().getAnimations&&toggleEl().getAnimations().length>0,'收起时 toggle 有 FLIP 动画（newStyle=offset）');
+const toggleAnim=toggleEl().getAnimations()[0];
+check(!!toggleAnim&&toggleAnim.effect.getTiming().duration===140,'toggle FLIP 时长 140ms（--anim-motion-swing）');
 await wait(520);
 check(toggleParentCls().includes('workspace-tab-header-container'),'收起后 toggle 位于中心标题栏容器');
 const tr=toggleEl().getBoundingClientRect();
@@ -82,7 +99,8 @@ body.removeClass('is-focused');
 await wait(60);
 const tabContainerBg=colorOf('--titlebar-background', centerTabsEl());
 const tabContainerBgFocused=colorOf('--titlebar-background-focused', centerTabsEl());
-check(tabContainerBg!==tabContainerBgFocused,'顶栏底色在焦点态确实换值（前置：token 有区分）');
+check(tabContainerBg===tabContainerBgFocused&&tabContainerBg===colorOf('--background-secondary', centerTabsEl()),
+  '1.14.4 顶栏底色：焦点/失焦同取 background-secondary（app.css:2894）');
 
 ws.toggleSidebar('left');
 await wait(520);
@@ -103,7 +121,7 @@ check(cs().borderBottomWidth==='1px'&&cs().borderBottomColor===colorOf('--divide
 body.addClass('is-focused');
 await wait(60);
 check(centerHeaderBg()===tabContainerBgFocused&&centerHeaderBg()===colorOf('--tab-container-background', centerTabsEl()),
-  '焦点态中心标签栏切到 titlebar-background-focused :: '+centerHeaderBg());
+  '焦点态中心标签栏= titlebar-background-focused（1.14.4 与失焦同色） :: '+centerHeaderBg());
 check(ribbonBefore()===centerHeaderBg(),'焦点态：功能区左上角与中心标签栏仍同色（红绿灯区无接缝）');
 body.toggleClass('is-focused', focusedBefore);
 await wait(60);

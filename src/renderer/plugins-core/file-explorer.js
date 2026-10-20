@@ -1,10 +1,11 @@
 /**
- * [INPUT]: 依赖 ../core/view.js 的 View；依赖 ../core/i18n.js 的 t/tt；依赖 ../core/icons.js 的 setIcon；依赖 ../core/menu.js 的 Menu；依赖 ../core/notices.js 的 Notice；依赖 ../core/vault.js 的 TFile/TFolder/normalizePath/parentPathOf；依赖 ../editor/attachments.js 的 getAvailableAttachmentPath；依赖 ../core/keymap.js 的 IS_MAC；依赖 ./file-explorer-selection.js 的 FileTreeSelection/isModEvent；依赖 ./file-explorer-multi.js 的多选批量操作；依赖 ./file-explorer-toolbar.js 的 createExplorerToolbar/syncExplorerToolbar/SORT_ORDER_IDS
+ * [INPUT]: 依赖 ../core/view.js 的 View；依赖 ../core/i18n.js 的 t/tt；依赖 ../core/icons.js 的 setIcon；依赖 ../core/menu.js 的 Menu；依赖 ../core/notices.js 的 Notice；依赖 ../core/vault.js 的 TFile/TFolder/normalizePath/parentPathOf；依赖 ../core/keymap.js 的 IS_MAC；依赖 ./file-explorer-selection.js 的 FileTreeSelection/isModEvent；依赖 ./file-explorer-drag.js 的拖拽生命周期；依赖 ./file-explorer-multi.js 的多选菜单与批量命令；依赖 ./file-explorer-toolbar.js 的 createExplorerToolbar/syncExplorerToolbar/SORT_ORDER_IDS
  * [OUTPUT]: 导出 FileExplorerView 与插件注册（左侧栏 'file-explorer' 视图）
  * [POS]: plugins-core/ 的导航面板。DOM 逐字对齐原版：tree-item nav-folder > tree-item-self nav-folder-title.is-clickable > (tree-item-icon.collapse-icon[+right-triangle] + tree-item-inner nav-folder-title-content)。折叠状态同时写在 nav-folder 与 collapse-icon 上（原版 _L() 语义）。文件标题显示去扩展名 basename，非 md 文件追加 nav-file-tag。
  *        面板头按原版 QL：.nav-header 是内容块第一个子块（固定在树上方，不随树滚动），按钮行与排序菜单由 file-explorer-toolbar.js 建，本文件只持 _autoReveal/_allCollapsed 状态并调用 syncExplorerToolbar 渲染。
  *        排序菜单按原版三分组（名称/修改时间/创建时间），组后各插分隔线；自动显示开启时才在 file-open / 活动叶切换时展开祖先并滚入视野。
- *        选择集与键盘由 FileTreeSelection 持有（Alt 切换 / Shift 范围 / 方向键 / Delete），本文件只提供 DOM 与动作（打开、折叠、重命名、删除、拖动、菜单）。
+ *        选择集与键盘由 FileTreeSelection 持有（Alt 切换 / Shift 范围 / 方向键 / Delete），本文件只提供 DOM 与动作（打开、折叠、重命名、删除、菜单）。
+ *        拖动生命周期与落点全部委派 file-explorer-drag.js：幽灵、body.is-grabbing、选择集源态、750ms 展开、根落点。
  *        右键菜单按 1.14 onFileContextMenu 的分节与项集构建（open/action-primary/action/info.copy/system/danger），
  *        复制路径子菜单与 system/action 系统项由 file-menu 事件交给 core/file-menu.js 补齐。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
@@ -16,14 +17,11 @@ import { setIcon } from '../core/icons.js';
 import { Menu } from '../core/menu.js';
 import { createExplorerToolbar, syncExplorerToolbar, SORT_ORDER_IDS } from './file-explorer-toolbar.js';
 import { Notice } from '../core/notices.js';
-import { getAvailableAttachmentPath } from '../editor/attachments.js';
 import { TFile, TFolder, normalizePath, parentPathOf } from '../core/vault.js';
 import { IS_MAC } from '../core/keymap.js';
 import { FileTreeSelection, isModEvent } from './file-explorer-selection.js';
-import {
-  chooseMoveTarget, deleteItemsSequentially, dragGhostTitle,
-  dragPayloadFor, movableItems, moveItemsToFolder, showMultiSelectionMenu,
-} from './file-explorer-multi.js';
+import { chooseMoveTarget, deleteItemsSequentially, showMultiSelectionMenu } from './file-explorer-multi.js';
+import { clearDragExpand, endItemDrag, setupFolderDrop, setupItemDrag, setupRootDrop } from './file-explorer-drag.js';
 
 export const nameKey = 'plugins.file-explorer';
 
@@ -76,6 +74,9 @@ export class FileExplorerView extends View {
     this._rerenderQueued = false;
     this._selection = new FileTreeSelection(this);
     this._draggingItems = null;
+    this._draggingEls = null;
+    this._dragExpandTimer = null;
+    this._dragExpandPath = null;
   }
   getViewType() { return 'file-explorer'; }
   getDisplayText() { return t('plugins.file-explorer.name') || 'Files'; }
@@ -122,19 +123,8 @@ export class FileExplorerView extends View {
       this._selection.clear();
       this._selection.setFocus(null, false);
     });
-    // 根区域：系统外部文件拖到空白处 → 复制进库根目录
-    this.treeEl.addEventListener('dragover', (ev) => {
-      const types = ev.dataTransfer ? Array.from(ev.dataTransfer.types || []) : [];
-      if (this._draggingItem || !types.includes('Files')) return;
-      ev.preventDefault();
-      ev.dataTransfer.dropEffect = 'copy';
-    });
-    this.treeEl.addEventListener('drop', async (ev) => {
-      const files = ev.dataTransfer && ev.dataTransfer.files ? Array.from(ev.dataTransfer.files) : [];
-      if (this._draggingItem || !files.length) return;
-      ev.preventDefault();
-      await this._importExternalFiles(files, '/');
-    });
+    // 根区域空白处：外部文件复制进库根；库内项移回仓库根
+    setupRootDrop(this);
     this.render();
 
     // events
@@ -242,8 +232,8 @@ export class FileExplorerView extends View {
       this._showFolderMenu(ev, folder);
     };
     title.onauxclick = (ev) => { if (ev.button === 1) { ev.preventDefault(); toggle(ev); } };
-    this._setupDrag(title, folder);
-    this._setupDrop(title, folder, el);
+    setupItemDrag(this, title, folder);
+    setupFolderDrop(this, title, folder, el);
 
     // render children (visible files only), hide empty folders?
     for (const child of sortChildren(folder.children, order)) {
@@ -277,7 +267,7 @@ export class FileExplorerView extends View {
       this.app.workspace.setActiveLeaf(this.leaf, { focus: false });
       this._showFileMenu(ev, file);
     };
-    this._setupDrag(title, file);
+    setupItemDrag(this, title, file);
   }
 
   /** 原版 file onSelfClick 的打开分支：Mod → 新标签页（Mod+Alt → 新标签组）。 */
@@ -285,85 +275,6 @@ export class FileExplorerView extends View {
     const event = isModEvent(ev);
     const newLeaf = event === 'tab' ? 'tab' : (event ? 'split' : false);
     this.app.workspace.openFile(file, { newLeaf });
-  }
-
-  // -------------------------------------------------------------------------
-  // Drag & drop
-  // -------------------------------------------------------------------------
-  _setupDrag(el, item) {
-    el.addEventListener('dragstart', (ev) => {
-      const multi = dragPayloadFor(this._selection, item);
-      const payload = multi || { path: item.path, type: item instanceof TFolder ? 'folder' : 'file' };
-      ev.dataTransfer.setData('text/plain', JSON.stringify(payload));
-      ev.dataTransfer.effectAllowed = 'move';
-      el.addClass('is-being-dragged');
-      this._draggingItem = item;
-      this._draggingItems = multi ? this._selection.items() : null;
-      // 原版 drag-ghost：图标 + 名称（多选为文件/文件夹计数），随指针显示
-      try {
-        const ghost = createDiv('drag-ghost');
-        if (multi) {
-          setIcon(ghost.createDiv('drag-ghost-icon'), 'files');
-          ghost.createDiv('drag-ghost-title').setText(dragGhostTitle(this._draggingItems));
-        } else {
-          setIcon(ghost.createDiv('drag-ghost-icon'), item instanceof TFolder ? 'folder' : 'file-text');
-          ghost.createDiv('drag-ghost-title').setText(item.name);
-        }
-        document.body.appendChild(ghost);
-        if (ev.dataTransfer.setDragImage) ev.dataTransfer.setDragImage(ghost, 12, 12);
-        requestAnimationFrame(() => ghost.detach());
-      } catch (e) { /* 某些环境不支持 drag image */ }
-    });
-    el.addEventListener('dragend', () => {
-      el.removeClass('is-being-dragged');
-      this._draggingItem = null;
-      this._draggingItems = null;
-      this.treeEl.findAll('.is-being-dragged-over').forEach((e) => e.removeClass('is-being-dragged-over'));
-    });
-  }
-
-  _setupDrop(titleEl, folder, folderEl) {
-    titleEl.addEventListener('dragover', (ev) => {
-      // 系统外部文件（Files）：允许放置到该文件夹
-      const types = ev.dataTransfer ? Array.from(ev.dataTransfer.types || []) : [];
-      if (!this._draggingItem && types.includes('Files')) {
-        ev.preventDefault();
-        ev.dataTransfer.dropEffect = 'copy';
-        folderEl.addClass('is-being-dragged-over');
-        return;
-      }
-      if (!this._draggingItem) return;
-      if (!movableItems(this._draggingItems || [this._draggingItem], folder).length) return;
-      ev.preventDefault();
-      ev.dataTransfer.dropEffect = 'move';
-      folderEl.addClass('is-being-dragged-over');
-    });
-    titleEl.addEventListener('dragleave', (ev) => {
-      if (!folderEl.contains(ev.relatedTarget)) folderEl.removeClass('is-being-dragged-over');
-    });
-    titleEl.addEventListener('drop', async (ev) => {
-      ev.preventDefault();
-      ev.stopPropagation();
-      folderEl.removeClass('is-being-dragged-over');
-      const files = ev.dataTransfer && ev.dataTransfer.files ? Array.from(ev.dataTransfer.files) : [];
-      if (!this._draggingItem && files.length) { await this._importExternalFiles(files, folder.path); return; }
-      if (!this._draggingItem) return;
-      // 多选拖动：整个选择集作为载荷（原版 f$ 语义），单选沿用 renameFile
-      await moveItemsToFolder(this, this._draggingItems || [this._draggingItem], folder);
-    });
-  }
-
-  /** 系统外部文件拖入文件夹/根：复制进库（不插入链接，原版文件树行为）。 */
-  async _importExternalFiles(files, folderPath) {
-    for (const f of files) {
-      let bytes = null;
-      try { bytes = new Uint8Array(await f.arrayBuffer()); } catch (e) { continue; }
-      const dot = f.name.lastIndexOf('.');
-      const name = dot > 0 ? f.name.slice(0, dot) : f.name;
-      const ext = dot > 0 ? f.name.slice(dot + 1) : '';
-      const path = getAvailableAttachmentPath(this.app, folderPath === '/' ? '' : folderPath, name, ext);
-      try { await this.app.vault.createBinary(path, bytes); } catch (e) { /* 失败跳过 */ }
-    }
   }
 
   // -------------------------------------------------------------------------

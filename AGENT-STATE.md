@@ -504,3 +504,13 @@ node --experimental-vm-modules src/renderer/core/workspace-regression.js
 - **全量回归（2026-10-19，`/tmp/opensidian-full-1019-220645`）**：52/56 直过；4 个假红复核——settings-restart（需 settings-write vault）过、graph-persist-read（需 graph-persist-write vault）过、graph-perf（需 --nodes）过、core-ribbon（旧断言依赖自造 `mod-quick-switcher`，已改为 `.prompt .prompt-input`）过。**最终 56/56 全绿**。
 - 已知偏差（等价替代）：前进后退用全局历史而非 per-leaf；面包屑右键复用文件夹菜单（has-active-menu 落树项）；`corner-shape: superellipse` 本机 Chromium 不支持（声明保留）；「自动显示」用视图/布局状态而非设置项（原版 autoRevealFile 待接）。
 - 待办：设置「自动显示当前文件」落到设置面板；per-leaf 历史单独立项；画布/图谱右键菜单原版分节表已抄待排期；属性类型子菜单、标签组模型、表格单元格段落/插入守卫。
+
+## 18. 像素级保真 + 核心交互批（2026-10-20）
+
+- 四路并行（主代理集成，未提交）：
+  1. **拖拽**：修标签重排「模型变 DOM 不变」（`_syncTabsHeaders` → `syncHeaderOrder`）、drop 先清 after 再读的索引错误；跨组拖拽改搬既有叶子（`workspace-tab-move.js`），视图/历史不丢；文件树补原版拖拽生命周期（`body.is-grabbing`、drag-ghost-self、750ms 悬停展开、根落点、多选 `type:'files'`）。新增 `drag-drop` 76 项，真实 CDP 指针路径验证落盘。
+  2. **令牌/图标/字体**：tokens 全量锚 1.14.4（浅/深 base、radius-xl 24、tab-curve 10、search-icon-size 16、mono、font-preferred-size、mod-macos 20 项）；图标偏大根因：ribbon/侧栏 tab/开关 `--icon-l` 18→`--icon-m` 16、根标签 16→14、关闭钮 14→16；body 行高 1.5→1.3、弹窗标题 15px、设置项 13px、tooltip 13px。theme-tokens 374 消费令牌 / 785 断言。
+  3. **hover/动效**：原版桌面事实——hover 底色瞬时，仅图标 opacity 140ms、通知入场 100ms、tooltip 200ms、侧栏 140ms；删除自造 300ms 遮罩与 70ms 按钮/输入过渡；clickable-icon 4/6、关闭钮 radius-m/16px、菜单 gap 8/nowrap、设置导航 13px/无 hover。
+  4. **仓库切换窗口**：`starter.js` 493 行重写为 1.14.4（800×650/titlebar 30/列表 280/行高 76.49/设置组 448/语言行 70/按钮 100×30），行菜单（重命名/移动/复制 ID/访达/移除）、打开/新建两屏、空态；原版无当前库标识、无移除二次确认。`vault-switcher` 142 项（主窗 13 + starter 129）。
+- 全量主循环 58 场景（`--no-screenshot`）：57 直过；`graph` 一次悬停命中时序假红，单独复跑 2 次 72/72，断言加 20×50ms 有限重试后再跑 3 次 72/72 → 最终 **58/58**。日志 `/tmp/opensidian-full-1020-091832/`。
+- 构建通过；CSS 括号平衡；文档回环：starter.html/css 补 L3，renderer/main/editor/acceptance/styles L2 同步。

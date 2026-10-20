@@ -1,6 +1,6 @@
 /**
  * [INPUT]: 独立临时 vault 与 OBS_ACT eval 注入的应用实例；状态用 --screen <state>（OBS_SIDEBAR_VIEW）切换；截图由 dev-hooks 在 2500ms 捕获。
- * [OUTPUT]: 多 UI 面（settings/palette/menu/filetree-menu/graph/search）截图诊断与结构计数（console.log PROBE-UI）；--phase dark 出深色同款。
+ * [OUTPUT]: 多 UI 面（settings/palette/menu/filetree-menu/graph/search/notice）截图诊断与结构计数（console.log PROBE-UI）；--phase dark 出深色同款。
  * [POS]: scripts/acceptance 的 UI 巡检诊断场景（1:1 深挖配套；非断言锁，可复用）。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
@@ -86,6 +86,18 @@ if(state==='settings'){
   info.resultCount=document.querySelectorAll('.search-result-container .search-result').length;
   const first=document.querySelector('.search-result');
   info.first=first?{h:Math.round(first.getBoundingClientRect().height),bg:getComputedStyle(first).backgroundColor}:null;
+}else if(state==='notice'){
+  // 标签栏 + 文件树 + 通知同屏：检查 1.14.4 的右上角滑入与单层阴影
+  const second=await app.vault.create('第二个标签.md','# 第二个标签\n');
+  await app.workspace.openFile(second,{newLeaf:'tab'});
+  await wait(260);
+  new Notice('已创建 3 个文件',0);
+  await wait(220);
+  const noticeEl=document.querySelector('.notice');
+  check(!!noticeEl,'通知已显示');
+  const ns=getComputedStyle(noticeEl);
+  info.notice={padding:ns.padding,radius:ns.borderRadius,shadow:ns.boxShadow.slice(0,80),transition:ns.transition};
+  info.noticeTabs=document.querySelectorAll('.mod-root .workspace-tab-header').length;
 }
 
 console.log('PROBE-UI '+JSON.stringify(info));

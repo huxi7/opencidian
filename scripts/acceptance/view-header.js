@@ -2,7 +2,8 @@
  * [INPUT]: 独立临时 vault 与 OBS_ACT eval 注入的应用实例。
  * [OUTPUT]: 返回视图头结构/行为断言；失败抛出异常，供运行器判定。
  * [POS]: view-header 场景。按原版 1.14.4 钉住：left 导航钮（空视图也有）、面包屑分段与 :empty 隐藏、
- *        mod-fade 渐隐条件、聚焦底色与 mod-active、标题居中与省略；末尾验证 ← → 的可用性与回退行为。
+ *        mod-fade 渐隐条件、聚焦底色与 mod-active、标题居中与省略；末尾验证 ← → 的可用性与回退行为，
+ *        并锁住标签无过渡、关闭钮几何与 clickable-icon 图标 140ms。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 (async()=>{
@@ -205,6 +206,21 @@ const finalCrumbs=[...finalHeader.querySelectorAll('.view-header-breadcrumb')].m
 check(finalCrumbs==='VH-Probe/A/B','收尾：回到嵌套文件后面包屑恢复 :: '+finalCrumbs);
 check(!!finalHeader.querySelector('.view-header-nav-buttons svg.lucide-arrow-left'),'收尾：导航钮仍在');
 check(finalHeader.querySelector('.view-header-title').textContent==='Deep Note','收尾：标题=Deep Note（短标题，面包屑可见）');
+
+/* ------------------------------------------- 悬停/动效：图标 140ms、标签瞬时 */
+const activeTabHeader=document.querySelector('.mod-root .workspace-tab-header.is-active');
+check(!!activeTabHeader,'活动中心标签存在（前置）');
+check(getComputedStyle(activeTabHeader).transitionDuration.split(',')[0].trim()==='0s','标签头无过渡（原版瞬时切换）');
+const closeBtn=activeTabHeader.querySelector('.workspace-tab-header-inner-close-button');
+check(!!closeBtn,'活动标签有关闭钮');
+check(getComputedStyle(closeBtn).padding==='2px','关闭钮 padding 2px（原版 7115）');
+const closeSvg=closeBtn.querySelector('svg.svg-icon');
+check(!!closeSvg&&Math.round(closeSvg.getBoundingClientRect().width)===16,'root 关闭钮图标 16px（--icon-s，原版 7239）');
+const navSvg=document.querySelector('.view-header-nav-buttons .clickable-icon svg');
+check(!!navSvg,'导航钮图标存在（前置）');
+const navSvgStyle=getComputedStyle(navSvg);
+check(navSvgStyle.transitionProperty.includes('opacity')&&navSvgStyle.transitionDuration.split(',')[0].trim()==='0.14s',
+  'clickable-icon 图标透明度过渡 140ms（原版 8352）');
 
 return {pass:true,checks,count:checks.length};
 })()

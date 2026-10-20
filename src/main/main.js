@@ -565,13 +565,17 @@ function openVaultStarter() {
     width: 800, height: 650, resizable: false, maximizable: false, fullscreenable: false,
     ...frameWindowOptions(),
     show: false, backgroundColor: '#1e1e1e',
-    webPreferences: { contextIsolation: false, nodeIntegration: true },
+    focusable: !E2E,
+    ...(E2E ? { opacity: 0 } : {}),
+    webPreferences: { contextIsolation: false, nodeIntegration: true, backgroundThrottling: false },
   });
   win.on('closed', () => { starterWindow = null; });
   win.loadURL(APP_ORIGIN + 'starter.html').then(
     () => { if (E2E) win.showInactive(); else win.show(); },
     () => { if (E2E) win.showInactive(); else win.show(); },
   );
+  // 验收第二窗口：仅读取 OBS_STARTER_*，不抢占主窗口的 OBS_ACT/OBS_SCREENSHOT。
+  devScreenshotHook(win, 'starter', { prefix: 'OBS_STARTER_', logTag: 'dev-starter', quit: false });
   secCtxWin(win);
   return win;
 }

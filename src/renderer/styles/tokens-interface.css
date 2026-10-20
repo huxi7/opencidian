@@ -7,7 +7,7 @@
 body {
   --nav-item-background-hover: var(--background-modifier-hover);
   --nav-item-background-active: var(--background-modifier-hover);
-  --nav-item-background-selected: hsla(var(--color-accent-hsl), 0.15);
+  --nav-item-background-selected: color-mix(in oklch, var(--color-accent) 15%, transparent);
   --nav-item-padding: var(--size-4-1) var(--size-4-2) var(--size-4-1) var(--size-4-6);
   --nav-item-parent-padding: var(--nav-item-padding);
   --nav-item-margin-bottom: var(--size-2-1);
@@ -42,7 +42,7 @@ body {
   --menu-border-color: var(--background-modifier-border-hover);
   --menu-border-width: var(--border-width);
   --menu-backdrop-filter: none;
-  --menu-scroll-mask: linear-gradient(to bottom, rgba(0, 0, 0, 0.05) 0%, rgba(0, 0, 0, 0.1) 48px);
+  --menu-scroll-mask: var(--scroll-mask-small);
   /* Metadata */
   --metadata-background: transparent;
   --metadata-display-reading: block;
@@ -78,7 +78,7 @@ body {
   --metadata-label-text-color: var(--text-muted);
   --metadata-label-text-color-hover: var(--text-muted);
   --metadata-label-width: 9em;
-  --metadata-input-height: calc(var(--font-text-size) * 1.75);
+  --metadata-input-height: calc(var(--font-preferred-size) * 1.75);
   --metadata-input-text-color: var(--text-normal);
   --metadata-input-font: var(--font-interface);
   --metadata-input-font-size: var(--font-smaller);
@@ -91,6 +91,7 @@ body {
   --metadata-sidebar-input-font-size: var(--font-ui-small);
   /* Modals - e.g. settings, community themes, community plugins */
   --modal-background: var(--background-primary);
+  --modal-sidebar-background: var(--modal-background);
   --modal-width: 90vw;
   --modal-header-height: auto;
   --modal-height: 85vh;
@@ -99,7 +100,7 @@ body {
   --modal-max-width-narrow: 800px;
   --modal-shadow: none;
   --modal-border-width: var(--border-width);
-  --modal-border-color: var(--color-base-40, var(--background-modifier-border-focus));
+  --modal-border-color: var(--background-modifier-border-hover);
   --modal-radius: var(--radius-l);
   --modal-community-sidebar-width: 280px;
   /* Multi-select pills */
@@ -134,7 +135,7 @@ body {
   --popover-max-height: 95vh;
   --popover-pdf-width: 450px;
   --popover-pdf-height: 400px;
-  --popover-font-size: var(--font-text-size);
+  --popover-font-size: var(--font-preferred-size);
   /* Prompts - e.g. quick switcher, command palette */
   --prompt-background: var(--background-primary);
   --prompt-backdrop-filter: none;
@@ -143,13 +144,13 @@ body {
   --prompt-max-width: 80vw;
   --prompt-max-height: 70vh;
   --prompt-border-width: var(--border-width);
-  --prompt-border-color: var(--color-base-40, var(--background-modifier-border-focus));
+  --prompt-border-color: var(--background-modifier-border-hover);
   /* Radiuses */
   --corner-shape: round;
   --radius-s: 4px;
   --radius-m: 8px;
   --radius-l: 12px;
-  --radius-xl: 16px;
+  --radius-xl: 24px;
   /* Raised */
   --raised-background: var(--blur-background);
   --raised-blur: var(--blur-s);
@@ -169,24 +170,43 @@ body {
   --scrollbar-height: 12px;
   --scrollbar-border-width: 3px 3px 3px 2px;
   --scrollbar-radius: var(--radius-l);
-  --scrollbar-active-thumb-bg: rgba(var(--mono-rgb-100), 0.2);
-  --scrollbar-bg: rgba(var(--mono-rgb-100), 0.05);
-  --scrollbar-thumb-bg: rgba(var(--mono-rgb-100), 0.1);
+  --scrollbar-active-thumb-bg: color-mix(in oklch, var(--mono-100) 20%, transparent);
+  --scrollbar-bg: transparent;
+  --scrollbar-thumb-bg: color-mix(in oklch, var(--mono-100) 10%, transparent);
+  --scroll-mask-small: linear-gradient(to bottom, rgba(0, 0, 0, 0) 0%, #000000 24px);
   /* Search */
   --search-clear-button-color: var(--text-muted);
   --search-clear-button-size: 13px;
   --search-icon-color: var(--text-muted);
-  --search-icon-size: 18px;
+  --search-icon-size: 16px;
+  --search-input-corner-shape: var(--input-corner-shape);
+  --search-input-radius: var(--input-radius);
   --search-result-background: var(--background-primary);
-  /* Setting groups */
+  /* Setting groups（原版 app.css:2686-2701） */
+  --settings-background: var(--modal-background);
   --setting-group-heading-color: var(--text-normal);
   --setting-group-heading-size: var(--font-ui-medium);
   --setting-group-heading-weight: var(--font-semibold);
   --setting-items-background: var(--background-primary-alt);
-  --setting-items-padding: var(--size-4-5);
+  --setting-items-padding-x: var(--size-4-5);
+  --setting-items-padding-y: var(--size-4-5);
   --setting-items-radius: var(--radius-l);
   --setting-items-border-width: 0;
   --setting-items-border-color: var(--background-modifier-border);
+  --setting-item-name-color: var(--text-normal);
+  --setting-item-name-size: var(--font-ui-small);
+  --setting-item-name-weight: var(--font-normal);
+  /* Tooltips（原版 app.css:2703-2712） */
+  --tooltip-corner-shape: var(--corner-shape);
+  --tooltip-background: var(--background-modifier-message);
+  --tooltip-color: #FAFAFA;
+  --tooltip-font-size: var(--font-ui-small);
+  --tooltip-font-weight: var(--font-normal);
+  --tooltip-line-height: var(--line-height-tight);
+  --tooltip-padding: var(--size-4-2) var(--size-4-3);
+  --tooltip-max-width: 300px;
+  --tooltip-radius: var(--radius-l);
+  --tooltip-shadow: var(--shadow-s);
   /* Layout sizing - for padding and margins */
   --size-2-1: 2px;
   --size-2-2: 4px;
@@ -204,14 +224,14 @@ body {
   --size-4-16: 64px;
   --size-4-18: 72px;
   /* Sidebar */
-  --sidebar-markdown-font-size: calc(var(--font-text-size) * 0.9);
+  --sidebar-markdown-font-size: calc(var(--font-preferred-size) * 0.9);
   --sidebar-tab-text-display: none;
   --sidebar-left-toggle-inner-width: 8.33%;
   --sidebar-right-toggle-inner-width: 8.33%;
   --sidebar-left-toggle-inner-width-open: 24%;
   --sidebar-right-toggle-inner-width-open: 24%;
-  /* Sliders */
-  --slider-thumb-border-width: var(--border-width);
+  /* Sliders（原版 app.css:2738-2759） */
+  --slider-thumb-border-width: 0.5px;
   --slider-thumb-border-color: var(--background-modifier-border-hover);
   --slider-thumb-height: 18px;
   --slider-thumb-width: 18px;
@@ -219,8 +239,8 @@ body {
   --slider-thumb-radius: var(--slider-thumb-height);
   --slider-s-thumb-size: 15px;
   --slider-s-thumb-position: -5px;
-  --slider-track-background: var(--background-modifier-border);
-  --slider-track-height: 3px;
+  --slider-track-background: var(--background-modifier-border-hover);
+  --slider-track-height: 4px;
   /* Status bar */
   --status-bar-background: var(--background-secondary);
   --status-bar-border-color: var(--divider-color);
@@ -246,9 +266,18 @@ body {
   --swatch-radius: 14px;
   --swatch-height: 22px;
   --swatch-width: 22px;
-  --swatch-shadow: inset 0 0 0 1px rgba(var(--mono-rgb-100), 0.15);
-  /* Tabs */
+  --swatch-shadow: inset 0 0 0 1px color-mix(in oklch, var(--mono-100) 15%, transparent);
+  /* Tabs（原版 app.css:2787-2817） */
+  --tab-background: transparent;
+  --tab-background-hover: transparent;
   --tab-background-active: var(--background-primary);
+  --tab-inner-background: transparent;
+  --tab-inner-background-hover: var(--background-modifier-hover);
+  --tab-inner-background-active: transparent;
+  --tab-inner-border-width: 0px;
+  --tab-inner-border-color: transparent;
+  --tab-inner-border-color-hover: transparent;
+  --tab-inner-border-color-active: transparent;
   --tab-text-color: var(--text-faint);
   --tab-text-color-active: var(--text-muted);
   --tab-text-color-focused: var(--text-muted);
@@ -258,12 +287,16 @@ body {
   --tab-font-size: var(--font-ui-small);
   --tab-font-weight: inherit;
   --tab-container-background: var(--background-secondary);
+  --tab-container-padding-start: var(--size-4-2);
+  --tab-container-padding-end: var(--size-4-2);
   --tab-divider-color: var(--background-modifier-border-hover);
   --tab-outline-color: var(--divider-color);
+  --tab-outline-color-hover: transparent;
   --tab-outline-width: 1px;
-  --tab-curve: 6px;
+  --tab-corner-shape: var(--corner-shape);
+  --tab-curve: 10px;
   --tab-radius: var(--radius-s);
-  --tab-radius-active: 6px 6px 0 0;
+  --tab-radius-active: 10px 10px 0 0;
   --tab-width: 200px;
   --tab-max-width: 320px;
   /* Mobile tab switcher */
@@ -271,7 +304,7 @@ body {
   --tab-switcher-background: var(--background-secondary);
   --tab-switcher-preview-radius: var(--radius-xl);
   --tab-switcher-preview-background-shadow: 0 4px 30px 2px rgba(0, 0, 0, 0.2);
-  --tab-switcher-preview-shadow: 0 0 0 1px rgba(var(--mono-rgb-100), 0.05);
+  --tab-switcher-preview-shadow: 0 0 0 1px color-mix(in oklch, var(--mono-100) 5%, transparent);
   --tab-switcher-preview-shadow-active: 0 0 0 2px var(--color-accent);
   /* Stacked tabs */
   --tab-stacked-pane-width: 700px;
@@ -296,7 +329,7 @@ body {
   --table-header-weight: calc(var(--font-weight) + var(--bold-modifier));
   --table-header-color: var(--text-normal);
   --table-line-height: var(--line-height-tight);
-  --table-text-size: var(--font-text-size);
+  --table-text-size: var(--font-preferred-size);
   --table-text-color: inherit;
   --table-column-min-width: 6ch;
   --table-column-max-width: none;
@@ -307,7 +340,7 @@ body {
   --table-row-alt-background: var(--table-background);
   --table-row-alt-background-hover: var(--table-background);
   --table-row-last-border-width: var(--table-border-width);
-  --table-selection: hsla(var(--color-accent-hsl), 0.1);
+  --table-selection: color-mix(in oklch, var(--color-accent) 10%, transparent);
   --table-selection-blend-mode: var(--highlight-mix-blend-mode);
   --table-selection-border-color: var(--interactive-accent);
   --table-selection-border-width: 2px;
@@ -327,10 +360,10 @@ body {
   --tag-color-hover: var(--text-accent);
   --tag-decoration: none;
   --tag-decoration-hover: none;
-  --tag-background: hsla(var(--interactive-accent-hsl), 0.1);
-  --tag-background-hover: hsla(var(--interactive-accent-hsl), 0.2);
-  --tag-border-color: hsla(var(--interactive-accent-hsl), 0.15);
-  --tag-border-color-hover: hsla(var(--interactive-accent-hsl), 0.15);
+  --tag-background: color-mix(in oklch, var(--interactive-accent) 10%, transparent);
+  --tag-background-hover: color-mix(in oklch, var(--interactive-accent) 20%, transparent);
+  --tag-border-color: color-mix(in oklch, var(--interactive-accent) 15%, transparent);
+  --tag-border-color-hover: color-mix(in oklch, var(--interactive-accent) 15%, transparent);
   --tag-border-width: 0px;
   --tag-padding-x: 0.65em;
   --tag-padding-y: 0.25em;
@@ -341,7 +374,7 @@ body {
   --traffic-lights-offset-x: var(--header-height);
   --traffic-lights-offset-y: var(--header-height);
   --titlebar-background: var(--background-secondary);
-  --titlebar-background-focused: var(--background-secondary-alt);
+  --titlebar-background-focused: var(--background-secondary);
   --titlebar-border-width: 0px;
   --titlebar-border-color: var(--background-modifier-border);
   --titlebar-text-color: var(--text-muted);
@@ -355,6 +388,7 @@ body {
   --toggle-thumb-radius: 18px;
   --toggle-thumb-height: 18px;
   --toggle-thumb-width: 18px;
+  --toggle-thumb-opacity-active: 1;
   --toggle-s-border-width: 2px;
   --toggle-s-width: 34px;
   --toggle-s-thumb-height: 15px;
@@ -381,7 +415,7 @@ body {
   --vault-profile-color: var(--text-normal);
   --vault-profile-color-hover: var(--vault-profile-color);
   /* Workspace */
-  --workspace-background-translucent: rgba(var(--mono-rgb-0), 0.6);
+  --workspace-background-translucent: color-mix(in oklch, var(--mono-0) 60%, transparent);
   /* Color mappings ------------------------ */
   /* Accent HSL values */
   --accent-h: 258;
@@ -391,17 +425,15 @@ body {
   --background-primary: var(--color-base-00);
   --background-primary-alt: var(--color-base-10);
   --background-secondary: var(--color-base-20);
-  --background-modifier-hover: rgba(var(--mono-rgb-100), 0.067);
-  --background-modifier-active-hover: hsla(var(--interactive-accent-hsl), 0.1);
+  --background-modifier-hover: color-mix(in oklch, var(--mono-100) 6.7%, transparent);
+  --background-modifier-active-hover: color-mix(in oklch, var(--interactive-accent) 10%, transparent);
   --background-modifier-border: var(--color-base-30);
   --background-modifier-border-hover: var(--color-base-35);
   --background-modifier-border-focus: var(--color-base-40);
-  --background-modifier-error-rgb: var(--color-red-rgb);
   --background-modifier-error: var(--color-red);
   --background-modifier-error-hover: var(--color-red);
-  --background-modifier-success-rgb: var(--color-green-rgb);
   --background-modifier-success: var(--color-green);
-  --background-modifier-message: rgba(0, 0, 0, 0.9);
+  --background-modifier-message: color-mix(in oklch, black 90%, transparent);
   /* Inputs */
   --background-modifier-form-field: var(--color-base-00);
   --background-modifier-form-field-hover: var(--background-modifier-form-field);
@@ -414,109 +446,106 @@ body {
   --text-error: var(--color-red);
   --text-warning: var(--color-orange);
   --text-success: var(--color-green);
-  --text-selection: hsla(var(--color-accent-hsl), 0.2);
+  --text-selection: color-mix(in oklch, var(--interactive-accent) 20%, transparent);
   --text-highlight-bg-rgb: 255, 208, 0;
   --text-highlight-bg: rgba(var(--text-highlight-bg-rgb), 0.4);
   --text-accent: var(--color-accent);
   --text-accent-hover: var(--color-accent-2);
   --interactive-normal: var(--color-base-00);
   --interactive-hover: var(--color-base-10);
-  --interactive-accent-hsl: var(--color-accent-hsl);
   --interactive-accent: var(--color-accent-1);
   --interactive-accent-hover: var(--color-accent-2);
-  /* Window frame — 原版 app.css 3958-3960 的独立 body 块 */
+  /* Deprecated — 与 1.14.4 一致，保留供主题兼容（原版 app.css:2976-2979） */
+  --interactive-accent-hsl: var(--color-accent-hsl);
+  --background-modifier-error-rgb: var(--color-red-rgb);
+  --background-modifier-success-rgb: var(--color-green-rgb);
+  /* Window frame — 原版 app.css 4292-4294 的独立 body 块 */
   --zoom-factor: 1;
   --titlebar-height: 30px;
-}
-.theme-light,
-.theme-dark {
-  --dropdown-background: var(--interactive-normal);
-  --dropdown-background-hover: var(--interactive-hover);
 }
 .theme-light {
   color-scheme: light;
   --highlight-mix-blend-mode: darken;
-  --mono-rgb-0: 255, 255, 255;
-  --mono-rgb-100: 0, 0, 0;
-  --color-red-rgb: 233, 49, 71;
+  --mono-0: white;
+  --mono-100: black;
   --color-red: #e93147;
-  --color-orange-rgb: 236, 117, 0;
   --color-orange: #ec7500;
-  --color-yellow-rgb: 224, 172, 0;
   --color-yellow: #e0ac00;
-  --color-green-rgb: 8, 185, 78;
   --color-green: #08b94e;
-  --color-cyan-rgb: 0, 191, 188;
   --color-cyan: #00bfbc;
-  --color-blue-rgb: 8, 109, 221;
   --color-blue: #086ddd;
-  --color-purple-rgb: 120, 82, 238;
   --color-purple: #7852ee;
-  --color-pink-rgb: 213, 57, 132;
   --color-pink: #d53984;
   --color-base-00: #ffffff;
   --color-base-05: #fcfcfc;
   --color-base-10: #fafafa;
   --color-base-20: #f6f6f6;
-  --color-base-25: #e3e3e3;
-  --color-base-30: #e0e0e0;
-  --color-base-35: #d4d4d4;
+  --color-base-25: #efefef;
+  --color-base-30: #e4e4e4;
+  --color-base-35: #dadada;
   --color-base-40: #bdbdbd;
   --color-base-50: #ababab;
   --color-base-60: #707070;
   --color-base-70: #5c5c5c;
   --color-base-100: #222222;
-  --color-accent-hsl: var(--accent-h), var(--accent-s), var(--accent-l);
   --color-accent: hsl(var(--accent-h), var(--accent-s), var(--accent-l));
   --color-accent-1: hsl(calc(var(--accent-h) - 1), calc(var(--accent-s) * 1.01), calc(var(--accent-l) * 1.075));
   --color-accent-2: hsl(calc(var(--accent-h) - 3), calc(var(--accent-s) * 1.02), calc(var(--accent-l) * 1.15));
   --background-secondary-alt: var(--color-base-05);
   --background-modifier-box-shadow: rgba(0, 0, 0, 0.1);
   --background-modifier-cover: rgba(220, 220, 220, 0.4);
-  --input-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.12), 0 2px 3px 0 rgba(0, 0, 0, 0.05), 0 1px 1.5px 0 rgba(0, 0, 0, 0.03), 0 1px 2px 0 rgba(0, 0, 0, 0.04), 0 0 0 0 transparent;
-  --input-shadow-hover: inset 0 0 0 1px rgba(0, 0, 0, 0.17), 0 2px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 1.5px 0 rgba(0, 0, 0, 0.03), 0 1px 2px 0 rgba(0, 0, 0, 0.04), 0 0 0 0 transparent;
+  --input-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.12), 0 1px 2px 0 rgba(0, 0, 0, 0.065), 0 0 0 0 transparent;
+  --input-shadow-hover: inset 0 0 0 1px rgba(0, 0, 0, 0.17), 0 1px 2px 0 rgba(0, 0, 0, 0.1), 0 0 0 0 transparent;
   --shadow-edges: 0 0 transparent;
   --shadow-xs: 0 1px 6px rgba(0, 0, 0, 0.015), 0 4px 24px rgba(0, 0, 0, 0.065), var(--shadow-edges);
   --shadow-s: 0px 1px 2px rgba(0, 0, 0, 0.028), 0px 3.4px 6.7px rgba(0, 0, 0, 0.042), 0px 15px 30px rgba(0, 0, 0, 0.07);
   --shadow-l: 0px 1.8px 7.3px rgba(0, 0, 0, 0.071), 0px 6.3px 24.7px rgba(0, 0, 0, 0.112), 0px 15px 30px rgba(0, 0, 0, 0.1);
+  /* Deprecated — 与 1.14.4 一致，保留供主题兼容（原版 app.css:3018-3028） */
+  --mono-rgb-0: 255, 255, 255;
+  --mono-rgb-100: 0, 0, 0;
+  --color-accent-hsl: var(--accent-h), var(--accent-s), var(--accent-l);
+  --color-red-rgb: 233, 49, 71;
+  --color-orange-rgb: 236, 117, 0;
+  --color-yellow-rgb: 224, 172, 0;
+  --color-green-rgb: 8, 185, 78;
+  --color-cyan-rgb: 0, 191, 188;
+  --color-blue-rgb: 8, 109, 221;
+  --color-purple-rgb: 120, 82, 238;
+  --color-pink-rgb: 213, 57, 132;
 }
 .theme-dark {
   color-scheme: dark;
   --highlight-mix-blend-mode: lighten;
-  --mono-rgb-0: 0, 0, 0;
-  --mono-rgb-100: 255, 255, 255;
-  --color-red-rgb: 251, 70, 76;
+  --mono-0: black;
+  --mono-100: white;
   --color-red: #fb464c;
-  --color-orange-rgb: 233, 151, 63;
   --color-orange: #e9973f;
-  --color-yellow-rgb: 224, 222, 113;
   --color-yellow: #e0de71;
-  --color-green-rgb: 68, 207, 110;
   --color-green: #44cf6e;
-  --color-cyan-rgb: 83, 223, 221;
   --color-cyan: #53dfdd;
-  --color-blue-rgb: 2, 122, 255;
   --color-blue: #027aff;
-  --color-purple-rgb: 168, 130, 255;
   --color-purple: #a882ff;
-  --color-pink-rgb: 250, 153, 205;
   --color-pink: #fa99cd;
-  --color-base-00: #1e1e1e;
+  --color-base-00: #1C1C1C;
   --color-base-05: #212121;
-  --color-base-10: #242424;
-  --color-base-20: #262626;
-  --color-base-25: #2a2a2a;
-  --color-base-30: #363636;
+  --color-base-10: #232323;
+  --color-base-20: #282828;
+  --color-base-25: #2e2e2e;
+  --color-base-30: #333333;
   --color-base-35: #3f3f3f;
   --color-base-40: #555555;
   --color-base-50: #666666;
   --color-base-60: #999999;
   --color-base-70: #b3b3b3;
   --color-base-100: #dadada;
-  --color-accent-hsl: var(--accent-h), var(--accent-s), var(--accent-l);
   --color-accent: hsl(var(--accent-h), var(--accent-s), var(--accent-l));
   --color-accent-1: hsl(calc(var(--accent-h) - 3), calc(var(--accent-s) * 1.02), calc(var(--accent-l) * 1.15));
   --color-accent-2: hsl(calc(var(--accent-h) - 5), calc(var(--accent-s) * 1.05), calc(var(--accent-l) * 1.29));
+  --color-secondary-2: color-mix(in srgb, var(--background-secondary) 96%, white 4%);
+  --color-secondary-3: color-mix(in srgb, var(--background-secondary) 92%, white 8%);
+  --color-secondary-4: color-mix(in srgb, var(--background-secondary) 90%, white 10%);
+  --color-secondary-5: color-mix(in srgb, var(--background-secondary) 84%, white 16%);
+  --color-secondary-6: color-mix(in srgb, var(--background-secondary) 76%, white 24%);
   --blur-background: color-mix(in srgb, var(--interactive-normal) var(--blur-opacity-s), transparent) linear-gradient(var(--interactive-normal), color-mix(in srgb, var(--interactive-normal) var(--blur-opacity-s), transparent));
   --background-modifier-form-field: var(--color-base-25);
   --background-secondary-alt: var(--color-base-30);
@@ -528,7 +557,7 @@ body {
   --background-modifier-box-shadow: rgba(0, 0, 0, 0.3);
   --background-modifier-cover: rgba(10, 10, 10, 0.4);
   --raised-mask-background: transparent;
-  --text-selection: hsla(var(--interactive-accent-hsl), 0.33);
+  --text-selection: color-mix(in oklch, var(--interactive-accent) 33%, transparent);
   --input-shadow: inset 0 0.5px 0.5px 0.5px rgba(255, 255, 255, 0.09), 0 2px 4px 0 rgba(0, 0, 0, 0.15), 0 1px 1.5px 0 rgba(0, 0, 0, 0.1), 0 1px 2px 0 rgba(0, 0, 0, 0.2), 0 0 0 0 transparent;
   --input-shadow-hover: inset 0 0.5px 1px 0.5px rgba(255, 255, 255, 0.16), 0 2px 3px 0 rgba(0, 0, 0, 0.3), 0 1px 1.5px 0 rgba(0, 0, 0, 0.2), 0 1px 2px 0 rgba(0, 0, 0, 0.4), 0 0 0 0 transparent;
   --shadow-xs: 0 1px 6px rgba(0, 0, 0, 0.045), 0 4px 24px rgba(0, 0, 0, 0.195), var(--shadow-edges);
@@ -536,9 +565,39 @@ body {
   --shadow-l: 0px 1.8px 7.3px rgba(0, 0, 0, 0.071), 0px 6.3px 24.7px rgba(0, 0, 0, 0.112), 0px 30px 90px rgba(0, 0, 0, 0.2);
   --pdf-shadow: 0 0 0 1px var(--background-modifier-border);
   --pdf-thumbnail-shadow: 0 0 0 1px var(--background-modifier-border);
+  /* Deprecated — 与 1.14.4 一致，保留供主题兼容（原版 app.css:3083-3094） */
+  --mono-rgb-0: 0, 0, 0;
+  --mono-rgb-100: 255, 255, 255;
+  --color-accent-hsl: var(--accent-h), var(--accent-s), var(--accent-l);
+  --color-red-rgb: 251, 70, 76;
+  --color-orange-rgb: 233, 151, 63;
+  --color-yellow-rgb: 224, 222, 113;
+  --color-green-rgb: 68, 207, 110;
+  --color-cyan-rgb: 83, 223, 221;
+  --color-blue-rgb: 2, 122, 255;
+  --color-purple-rgb: 168, 130, 255;
+  --color-pink-rgb: 250, 153, 205;
 }
 .mod-macos {
+  --clickable-icon-radius: var(--radius-m);
+  --corner-shape: superellipse(1.33);
+  --input-radius: var(--radius-m);
+  --input-icon-inset: var(--size-4-2);
+  --input-shadow: none;
+  --input-shadow-hover: none;
+  --interactive-normal: var(--background-modifier-border);
+  --interactive-hover: var(--background-modifier-border);
+  --modal-radius: var(--radius-xl);
+  --scrollbar-thumb-bg: gray;
+  --search-input-radius: 100px;
+  --search-input-corner-shape: round;
+  --slider-thumb-border-width: 0;
   --slider-thumb-width: 30px;
+  --slider-thumb-opacity-active: 0.7;
+  --slider-thumb-height-active: calc(var(--slider-thumb-height) + 4px);
+  --slider-thumb-width-active: calc(var(--slider-thumb-width) + 4px);
+  --slider-thumb-y-active: calc(var(--slider-thumb-y) - 2px);
+  --tab-radius: var(--radius-m);
   --toggle-width: 44px;
   --toggle-radius: 24px;
   --toggle-thumb-radius: 24px;
@@ -564,5 +623,6 @@ body {
   --font-monospace-theme: '??';
   --font-monospace: var(--font-monospace-override), var(--font-monospace-theme), var(--font-monospace-default);
   --font-text-size: 16px;
+  --font-preferred-size: var(--font-text-size);
   --font-mermaid: var(--font-text);
 }

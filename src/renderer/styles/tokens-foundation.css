@@ -106,6 +106,7 @@ body {
   --button-corner-shape: var(--corner-shape);
   /* Blurs */
   --blur-background: color-mix(in srgb, var(--background-primary) var(--blur-opacity-s), transparent) linear-gradient(var(--background-primary), color-mix(in srgb, var(--background-primary) var(--blur-opacity-s), transparent));
+  /* 原版 1.14.4 app.css:2119 同值；主题暗色覆写见 tokens-interface.css */
   --blur-opacity-s: 65%;
   --blur-opacity-m: 90%;
   --blur-brightness: 1.15;
@@ -159,7 +160,7 @@ body {
   --caret-color: var(--text-normal);
   /* Checkboxes */
   --checkbox-radius: var(--radius-s);
-  --checkbox-size: var(--font-text-size);
+  --checkbox-size: var(--font-preferred-size);
   --checkbox-marker-color: var(--background-primary);
   --checkbox-color: var(--interactive-accent);
   --checkbox-color-hover: var(--interactive-accent-hover);
@@ -206,15 +207,17 @@ body {
   /* Dragging */
   --drag-ghost-background: rgba(0, 0, 0, 0.85);
   --drag-ghost-text-color: #fff;
-  /* Dropdowns */
-  --dropdown-background-blend-mode: hard-light;
-  --dropdown-background-position: var(--inset-end) var(--dropdown-icon-inset) top 50%, 0 0;
-  --dropdown-background-size: var(--dropdown-icon-width) auto, 100%;
+  /* Dropdowns（原版 app.css:2223-2235） */
+  --dropdown-background: var(--interactive-normal);
+  --dropdown-background-hover: var(--interactive-hover);
+  --dropdown-background-blend-mode: hard-light, normal;
+  --dropdown-background-position: var(--inset-end) var(--dropdown-icon-inset) top 50%, var(--inset-end) 0.15em top 50%, 0 0;
+  --dropdown-background-size: var(--dropdown-icon-width) auto, 2em 2em, 100%;
   --dropdown-icon-width: 1em;
-  --dropdown-icon-inset: 0.5em;
+  --dropdown-icon-inset: 0.65em;
   --dropdown-padding: 0 var(--dropdown-padding-end) 0 var(--dropdown-padding-start);
   --dropdown-padding-start: 0.8em;
-  --dropdown-padding-end: 1.9em;
+  --dropdown-padding-end: 2.4em;
   /* Embeds */
   --embed-max-height: 4000px;
   --embed-canvas-max-height: 400px;
@@ -234,8 +237,6 @@ body {
   --file-margins-x: var(--size-4-8);
   --file-margins-y: var(--size-4-8);
   --file-header-font: var(--font-interface);
-  /* Sidebar */
-  --sidebar-markdown-font-size: calc(var(--font-text-size) * 0.9);
   --file-header-font-size: var(--font-ui-small);
   --file-header-font-weight: 400;
   --file-header-background: var(--background-primary);
@@ -365,14 +366,16 @@ body {
   --icon-opacity-hover: 1;
   --icon-opacity-active: 1;
   --clickable-icon-radius: var(--radius-s);
+  /* Images */
+  --image-radius: 4px;
   /* Indent size */
   --indent-size: 4;
   --indent-unit: 0.5625em;
   /* Indentation guide */
   --indentation-guide-width: var(--border-width);
   --indentation-guide-width-active: var(--border-width);
-  --indentation-guide-color: rgba(var(--mono-rgb-100), 0.12);
-  --indentation-guide-color-active: rgba(var(--mono-rgb-100), 0.3);
+  --indentation-guide-color: color-mix(in oklch, var(--mono-100) 12%, transparent);
+  --indentation-guide-color-active: color-mix(in oklch, var(--mono-100) 30%, transparent);
   --indentation-guide-editing-indent: 0.85em;
   --indentation-guide-reading-indent: -0.85em;
   --indentation-guide-source-indent: 0.25em;
@@ -429,7 +432,7 @@ body {
   --link-unresolved-opacity: 0.7;
   --link-unresolved-filter: none;
   --link-unresolved-decoration-style: solid;
-  --link-unresolved-decoration-color: hsla(var(--interactive-accent-hsl), 0.3);
+  --link-unresolved-decoration-color: color-mix(in oklch, var(--interactive-accent) 30%, transparent);
   /* Lists */
   --list-indent: calc(var(--indent-unit) * var(--indent-size));
   --list-indent-editing: 0.75em;
@@ -446,7 +449,7 @@ body {
   --list-bullet-end-padding: 1.3rem;
   /* File navigator */
   --nav-item-size: var(--font-ui-small);
-  --nav-item-radius: var(--radius-s);
+  --nav-item-radius: var(--radius-m);
   --nav-item-color: var(--text-muted);
   --nav-item-color-hover: var(--text-normal);
   --nav-item-color-active: var(--text-normal);

@@ -1,125 +1,274 @@
+/**
+ * [INPUT]: 依赖 tokens-*.css 的设计变量与 components/settings 的通用外壳；仅被 starter.html 加载。
+ * [OUTPUT]: 仓库选择窗口（titlebar/最近仓库/打开/新建/空态）的 1.14.4 几何与主题规则。
+ * [POS]: 第二窗口专属样式。窗口 800×650、列表列 280、行高 76.49；通用控件复用 components.css。
+ * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
+ */
 /* ==========================================================================
-   starter.css — vault switcher window (help / open-vault screen)
+   starter.css — vault switcher window (Obsidian 1.14.4 starter.html)
+   证据：app.css 19225-19500（.starter/.splash/.recent-vaults/open-vault-options）
+         starter.js 442421-446700（行结构、菜单、重命名）
+   窗口固定 800×650；titlebar 30px 覆盖内容，红色/黄色/绿色窗口按钮由主进程绘制。
    ========================================================================== */
 
 body.starter {
-  display: flex;
-  flex-direction: column;
-  align-items: stretch;
-  background-color: var(--background-secondary);
+  background-color: var(--background-primary);
   overflow: hidden;
 }
 
-.starter-header {
-  -webkit-app-region: drag;
-  flex: 0 0 auto;
+.starter .titlebar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: var(--layer-popover, 30);
   display: flex;
-  align-items: flex-end;
-  justify-content: center;
-  padding: var(--size-4-8) var(--size-4-6) var(--size-4-4);
+  height: var(--titlebar-height, 30px);
+  padding-top: 2px;
+  background-color: transparent;
+  border: none;
+  -webkit-app-region: drag;
 }
-.starter-title { display: flex; flex-direction: column; align-items: center; gap: var(--size-4-1); }
-.starter-app-name { font-size: 28px; font-weight: var(--font-bold); color: var(--text-normal); letter-spacing: -0.01em; }
-.starter-app-subtitle { font-size: var(--font-ui-small); color: var(--text-faint); }
+.starter .titlebar-inner { display: flex; flex: 1 1 auto; }
+.starter .titlebar-inner .titlebar-text { display: none; }
 
-.starter-screen { flex: 1 1 auto; display: flex; min-height: 0; }
+.starter-screen {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+  background-color: var(--background-primary);
+}
 .starter-screen-inner {
   flex: 1 1 auto;
   display: flex;
-  flex-direction: row;
-  align-items: stretch;
-  gap: var(--size-4-6);
-  padding: 0 var(--size-4-8) var(--size-4-4);
   min-height: 0;
+  height: 100%;
 }
 
-/* vault list column */
-.starter-vault-list {
-  flex: 1 1 auto;
-  min-width: 0;
-  overflow-y: auto;
+body.starter .notice-container { top: 38px; }
+
+/* ------------------------------------------------------------- recent vaults */
+/* app.css 19390-19490：280px 固定列、32px 顶部留白给红绿灯、8px 列表内边距 */
+.recent-vaults {
+  flex: 0 0 280px;
+  width: 280px;
+  height: 100%;
+  padding: var(--size-4-8) 0 0;
+  overflow-y: hidden;
+  background-color: var(--background-secondary);
+  border-right: 1px solid var(--background-modifier-border);
+}
+.recent-vaults-list {
   display: flex;
   flex-direction: column;
-  gap: var(--size-2-2);
-  background-color: var(--background-primary);
-  border: 1px solid var(--background-modifier-border);
-  border-radius: var(--radius-m);
+  height: 100%;
   padding: var(--size-4-2);
+  overflow-y: auto;
 }
-.starter-vault-item {
-  display: flex;
-  align-items: center;
-  gap: var(--size-4-3);
-  padding: var(--size-4-2) var(--size-4-3);
-  border-radius: var(--radius-m);
+.recent-vaults-list:after {
+  content: ' ';
+  display: block;
+  flex-grow: 1;
+  width: 100%;
+  height: 100px;
+  -webkit-app-region: drag;
+}
+.recent-vaults-list-item {
+  position: relative;
+  margin-bottom: var(--size-4-1);
+  padding: var(--size-4-2) var(--size-4-6) var(--size-4-2) var(--size-4-3);
+  border-radius: var(--radius-s);
   cursor: var(--cursor, pointer);
+  color: var(--text-normal);
+  -webkit-app-region: no-drag;
 }
-.starter-vault-item:hover { background-color: var(--background-modifier-hover); }
-.vault-list-item-icon { display: flex; color: var(--text-muted); }
-.vault-list-item-icon .svg-icon { width: var(--icon-l); height: var(--icon-l); }
-.starter-vault-info { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
-.vault-list-item-title {
+@media (hover: hover) {
+  .recent-vaults-list-item:hover {
+    background-color: var(--background-modifier-hover);
+    color: var(--text-on-accent);
+  }
+}
+.recent-vaults-list-item:focus-visible {
+  outline: 2px solid var(--background-modifier-border-focus);
+  outline-offset: -2px;
+}
+.recent-vaults-list-item-name,
+.recent-vaults-list-item-path { word-break: break-all; }
+.recent-vaults-list-item-name {
+  border: 1px solid transparent;
+  border-radius: 2px;
+  font-size: var(--font-ui-medium);
+  line-height: var(--line-height-tight, 1.3);
+}
+.recent-vaults-list-item-name[contenteditable] {
+  padding: 0 var(--size-4-1);
+  border-color: var(--interactive-accent);
+  background-color: var(--background-modifier-hover);
+  font-size: 0.9em;
+  cursor: text;
+}
+.recent-vaults-list-item-path {
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+  line-height: 16px;
+}
+.recent-vaults-list-item-option-button {
+  position: absolute;
+  top: var(--size-4-3);
+  right: var(--size-4-1);
   display: flex;
   align-items: center;
-  gap: var(--size-4-2);
-  color: var(--text-muted);
-  font-size: var(--font-ui-medium);
-  font-weight: var(--font-medium);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  min-width: 0;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  color: var(--text-faint);
+  text-align: center;
+  transition: background-color 200ms ease-in-out;
 }
-.vault-list-item-desc { color: var(--text-faint); font-size: var(--font-ui-smaller); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.starter-vault-buttons { display: flex; align-items: center; gap: var(--size-2-2); opacity: 0; }
-.starter-vault-item:hover .starter-vault-buttons { opacity: 1; }
-.starter-vault-button { color: var(--text-faint); }
+.recent-vaults-list-item-option-button:hover { color: var(--text-normal); }
+.recent-vaults-list-item-option-button:focus-visible {
+  outline: 2px solid var(--background-modifier-border-focus);
+  outline-offset: -2px;
+}
 
-.starter-empty {
+/* ------------------------------------------------------------------- splash */
+/* app.css 19301-19330：品牌区固定内容，选项区吃掉剩余高度并限宽 540 */
+.splash {
   flex: 1 1 auto;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: var(--size-4-2);
-  color: var(--text-faint);
-  padding: var(--size-4-8);
+  padding: 36px 0 0;
+  background-color: var(--background-primary);
   text-align: center;
+  min-width: 0;
 }
-.starter-empty-icon .svg-icon { width: 40px; height: 40px; stroke-width: 1.25px; }
-.starter-empty-text { font-size: var(--font-ui-small); max-width: 300px; }
+.splash-brand { flex: 0 0 content; padding: var(--size-4-5) 0; }
+.splash-brand-logo { display: flex; height: 94px; justify-content: center; }
+.splash-brand-logo-text {
+  margin-top: var(--size-4-5);
+  color: #fff;
+  font-size: 28px;
+  font-weight: var(--font-bold, 700);
+  letter-spacing: -0.02em;
+  line-height: 24.5px;
+  white-space: nowrap;
+}
+.theme-light .splash-brand-logo-text { color: var(--text-normal); }
+.splash-brand-version {
+  margin-top: var(--size-4-2);
+  color: var(--text-muted);
+  font-size: var(--font-ui-small);
+}
+.open-vault-options-container {
+  position: relative;
+  flex: 1 0 0;
+  width: 100%;
+  max-width: 540px;
+  overflow: auto;
+  scrollbar-width: none;
+}
+.open-vault-options-container::-webkit-scrollbar { display: none; }
 
-/* actions column */
-.starter-actions {
-  flex: 0 0 260px;
+/* --------------------------------------------------------- open-vault screens */
+/* app.css 19337-19400：两屏横向滑动，150ms 缓动；每屏绝对定位并独立滚动 */
+.open-vault-options {
+  position: absolute;
+  top: 0;
+  left: 0;
   display: flex;
   flex-direction: column;
-  gap: var(--size-4-2);
-  padding-top: var(--size-4-1);
+  width: 100%;
+  height: 100%;
+  padding: 12px 36px;
+  overflow-y: auto;
+  background-color: var(--background-primary);
+  text-align: start;
+  transition: transform 150ms cubic-bezier(0.33, 1, 0.68, 1);
 }
-.starter-action {
+.open-vault-options input[type='text'] { width: 150px; }
+.open-vault-options .setting-item-control button { width: 100px; }
+.open-vault-options .setting-item-description {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+}
+.open-vault-options .setting-item { align-items: flex-start; }
+.open-vault-options .back-button {
   display: flex;
   align-items: center;
-  gap: var(--size-4-3);
-  padding: var(--size-4-3) var(--size-4-4);
-  border-radius: var(--radius-m);
-  background-color: var(--background-primary);
-  border: 1px solid var(--background-modifier-border);
+  align-self: flex-start;
+  padding: 0 var(--size-4-3) var(--size-4-2);
+  color: var(--text-muted);
+  font-size: var(--font-ui-small);
+  border-radius: var(--radius-s);
   cursor: var(--cursor, pointer);
-  transition: background-color var(--anim-duration-superfast), border-color var(--anim-duration-superfast);
+  -webkit-app-region: no-drag;
+  user-select: none;
 }
-.starter-action:hover { background-color: var(--background-modifier-hover); border-color: var(--background-modifier-border-hover); }
-.starter-action-icon { display: flex; color: var(--text-muted); }
-.starter-action-label { font-size: var(--font-ui-small); color: var(--text-muted); }
-.starter-action:hover .starter-action-label { color: var(--text-normal); }
+@media (hover: hover) {
+  .open-vault-options .back-button:hover { color: var(--text-normal); }
+}
+.open-vault-options .button-container {
+  margin-top: var(--size-4-3);
+  text-align: center;
+}
+.quick-start-container { margin-bottom: 10px; text-align: center; }
+.quick-start-container button {
+  padding: 8px 60px;
+  font-size: var(--font-ui-medium);
+}
 
-.starter-footer {
-  flex: 0 0 auto;
-  display: flex;
-  justify-content: flex-end;
-  padding: var(--size-4-2) var(--size-4-4);
-  font-size: var(--font-ui-smaller);
-  color: var(--text-faint);
+/* setting 行：启动器组没有外 padding，分隔线内缩 20px（app.css 5227-5271） */
+body.starter .open-vault-options .setting-group .setting-group-search:empty { display: none; }
+body.starter .open-vault-options .setting-group .setting-items {
+  padding: 0;
+  border-radius: var(--setting-items-radius);
 }
+body.starter .open-vault-options .setting-group .setting-items > .setting-item:not(.setting-item-heading) {
+  position: relative;
+  padding: var(--size-4-5);
+  border-top: 0;
+  border-radius: 0;
+}
+body.starter .open-vault-options .setting-group .setting-items > .setting-item:not(.setting-item-heading)::before {
+  content: '';
+  position: absolute;
+  top: calc(-1 * var(--border-width));
+  left: var(--size-4-5);
+  right: var(--size-4-5);
+  border-top: var(--border-width) solid var(--background-modifier-border);
+}
+body.starter .open-vault-options .setting-group .setting-items > .setting-item:first-child {
+  border-top-left-radius: var(--setting-items-radius);
+  border-top-right-radius: var(--setting-items-radius);
+}
+body.starter .open-vault-options .setting-group .setting-items > .setting-item:first-child::before { content: none; }
+body.starter .open-vault-options .setting-group .setting-items > .setting-item:last-child {
+  border-bottom-left-radius: var(--setting-items-radius);
+  border-bottom-right-radius: var(--setting-items-radius);
+}
+
+/* 语言/帮助行：帮助图标在左，下拉占满剩余宽度（app.css 19400-19430） */
+.open-vault-options .setting-item.mod-change-language { -webkit-app-region: no-drag; }
+.open-vault-options .setting-item.mod-change-language .setting-item-info { flex-grow: 0; }
+.open-vault-options .setting-item.mod-change-language .setting-item-control {
+  flex-grow: 1;
+  justify-content: flex-start;
+}
+.open-vault-options .setting-item.mod-change-language select { width: 100%; max-width: 100%; }
+.open-vault-options .setting-item.mod-change-language .setting-item-name {
+  position: relative;
+  top: 3px;
+  color: var(--text-faint);
+  cursor: var(--cursor, pointer);
+}
+.open-vault-options .setting-item.mod-change-language .setting-item-name:hover { color: var(--text-muted); }
+
+.u-center-text { text-align: center; }
+.u-pop { color: var(--text-accent); font-weight: var(--font-semibold); }
 
 body.starter.is-drop-target { outline: 2px dashed var(--interactive-accent); outline-offset: -8px; }

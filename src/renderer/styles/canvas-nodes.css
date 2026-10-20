@@ -482,7 +482,7 @@ body:not(.is-ios) .canvas-wrapper.mod-animating .canvas-group-label {
   /* 原版 .markdown-preview-view 的字体上下文：文本卡片正文在编辑器内，内容层保持同一字体来源，
      画布导出取内容层的计算样式（views/canvas-export.js 的 styleSource）。 */
   font-family: var(--font-text);
-  font-size: var(--font-text-size);
+  font-size: var(--font-preferred-size);
   color: var(--text-normal);
 }
 .canvas-node-content.markdown-embed .inline-title {

@@ -4,6 +4,7 @@
  * [POS]: 侧栏只创建固定工具图标，库信息栏独立于标签树；由 Workspace 委托渲染，首参 workspace 提供树状态与交互入口。
  * 视图 _rootEl 只迁移不重建；节点类型统一由 workspace-model 导入；分割方向 vertical 横排、horizontal 纵排。
  * 标签组叶子挂 .workspace-tab-container（原版 tabsContainerEl）；堆叠头叶排布与滑动由模型落位。
+ * 非堆叠态 _syncTabsHeaders 按 children 顺序重排标签头 DOM，保证模型顺序即视觉顺序。
  * view-header 由 view-header.js 落三块（left 导航钮 / title-container 面包屑+标题 mod-fade / actions）；活动叶与活动标签组带 mod-active（焦点规则挂它）。
  * updateSidebarChrome 是折叠态外观的唯一出口：顶栏组 mod-top 归位（原版 updateFrameless）、开关迁移、分隔条宽度/透明度、功能区 is-collapsed 底色。
  * mount 时装载 stacked 键的序列化装饰器（layout JSON 组装在 workspace.js）。
@@ -407,10 +408,7 @@ export function _syncTabsHeaders(workspace, tabs) {
       if (h._leaf && !tabs.children.includes(h._leaf)) h.detach();
     }
   }
-  // 落位交给 updateTabDisplay（堆叠态头要排进 tab-container）
-  tabs.children.forEach((leaf) => {
-    if (!leaf._tabHeaderEl) { leaf._tabHeaderEl = workspace._createTabHeader(leaf); leaf._dragHost = null; }
-  });
+  tabs.syncHeaderOrder();
 }
 
 export function _syncTabsVisibility(workspace, tabs) {

@@ -121,6 +121,19 @@ export class WorkspaceTabs extends WorkspaceItem {
   }
 
   /**
+   * 非堆叠态：标签头 DOM 顺序跟随 children（原版 insertChild + updateTabDisplay 的等价物）。
+   * 只重排、不新建；堆叠态由 updateTabDisplay 交替落位。
+   */
+  syncHeaderOrder() {
+    const inner = this._headersInner;
+    if (!inner || this.isStacked) return;
+    const current = Array.from(inner.children).filter((el) => el._leaf);
+    const desired = this.children.map((leaf) => leaf._tabHeaderEl).filter(Boolean);
+    if (current.length === desired.length && current.every((el, i) => el === desired[i])) return;
+    for (const header of desired) if (header.parentElement === inner) inner.appendChild(header);
+  }
+
+  /**
    * 原版 VD.updateSlidingTabs：堆叠态下头按累计宽度取 left/right（position: sticky 吸附），
    * pane 取 left 与 min/max 宽度；非堆叠态清空这些内联样式。
    */

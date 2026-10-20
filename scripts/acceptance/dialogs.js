@@ -1,7 +1,8 @@
 /**
  * [INPUT]: 独立临时 vault 与 OBS_ACT eval 注入的应用实例。
  * [OUTPUT]: 返回验收断言结果；失败抛出异常，供运行器判定。
- * [POS]: dialogs 场景。覆盖设置重开、确认删除、命令面板、全局 tooltip 与 Notice 布局。
+ * [POS]: dialogs 场景。覆盖设置重开、确认删除、命令面板、全局 tooltip 与 Notice 布局；
+ *        并锁住 modal/prompt 无动画、tooltip 200ms、Notice 100ms 滑入与 token 阴影。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 (async()=>{
@@ -9,10 +10,12 @@ const wait=ms=>new Promise(r=>setTimeout(r,ms));const ok=(b,m)=>{if(!b)throw Err
 const checks=[];
 app.setting.open();app.setting.openTabById('appearance');app.setting.close();app.setting.open();await wait(250);
 ok(app.setting.modalEl.isConnected&&getComputedStyle(app.setting.modalEl).display!=='none','settings reopens');
+const bgEl=app.setting.bgEl||document.querySelector('.modal-container .modal-bg');
+ok(!!bgEl&&getComputedStyle(bgEl).transitionDuration.split(',')[0].trim()==='0s','modal-bg has no transition (1.14.4)');
 const a=app.setting.tabHeadersEl.getBoundingClientRect(),b=app.setting.tabContentContainer.getBoundingClientRect();ok(b.left>=a.right-1&&Math.abs(a.top-b.top)<2,'settings horizontal');app.setting.close();await wait(170);checks.push('settings reopens');
 const f=await app.vault.create('Dialog-'+Date.now()+'.md','# confirm');app.settings.updateAppSettings({promptDelete:true,trashOption:'none'});
 const task=app.fileManager.deleteFile(f);await wait(100);const cta=document.querySelector('.modal:not(.is-hidden) .mod-warning');ok(cta,'confirmation visible');cta.click();await task;ok(!app.vault.getFileByPath(f.path),'confirm resolves true');checks.push('confirm resolves true');
-app.commands.executeCommandById('switcher:open');await wait(40);const prompt=document.querySelector('.prompt:not(.is-hidden)');ok(prompt,'switcher opens');const input=prompt.querySelector('.prompt-input'),results=prompt.querySelector('.prompt-results');ok(input.getBoundingClientRect().bottom<=results.getBoundingClientRect().top+3,'prompt input before results');checks.push('prompt input first');
+app.commands.executeCommandById('switcher:open');await wait(40);const prompt=document.querySelector('.prompt:not(.is-hidden)');ok(prompt,'switcher opens');const promptStyle=getComputedStyle(prompt);ok(promptStyle.animationName==='none'&&promptStyle.transitionDuration.split(',')[0].trim()==='0s','prompt opens without animation (1.14.4)');const input=prompt.querySelector('.prompt-input'),results=prompt.querySelector('.prompt-results');ok(input.getBoundingClientRect().bottom<=results.getBoundingClientRect().top+3,'prompt input before results');checks.push('prompt input first');
 // ---- Suggest：清空按钮 + PageDown（命令面板，库为空但命令存在）
 app.commands.executeCommandById('command-palette:open');await wait(60);
 const openPrompts=document.querySelectorAll('.prompt:not(.is-hidden)');
@@ -47,6 +50,9 @@ target.setAttr('aria-label','Tooltip acceptance text');target.setAttr('data-tool
 target.style.cssText='position:fixed;top:140px;left:320px;width:120px;height:24px;z-index:1';
 target.dispatchEvent(new PointerEvent('pointerover',{bubbles:true,pointerType:'mouse'}));
 await wait(30);const tooltip=document.querySelector('.tooltip');ok(tooltip,'tooltip appears');
+const tooltipStyle=getComputedStyle(tooltip);
+ok(tooltipStyle.animationDuration.split(',')[0].trim()==='0.2s','tooltip pops in 200ms (1.14.4)');
+ok(tooltipStyle.padding==='8px 12px','tooltip padding 8/12 (--tooltip-padding)');
 ok(tooltip.textContent.includes('Tooltip acceptance text'),'tooltip text from aria-label');
 ok(tooltip.querySelector('.tooltip-arrow'),'tooltip has arrow');
 const targetRect=target.getBoundingClientRect(),tooltipRect=tooltip.getBoundingClientRect();
@@ -57,13 +63,20 @@ target.dispatchEvent(new PointerEvent('pointerout',{bubbles:true,pointerType:'mo
 await wait(30);ok(!document.querySelector('.tooltip'),'tooltip hides on pointerout');
 target.detach();checks.push('tooltip show/hide/position');
 // ---- Notice：右上角、hover 暂停自动隐藏、隐藏后容器摘除
-const notice=new Notice('Acceptance notice',4000);await wait(30);
+const notice=new Notice('Acceptance notice',4000);await wait(160);
 const container=document.querySelector('.notice-container');ok(container,'notice container exists');
 ok(container.querySelector('.notice-message'),'notice message element');
 const containerRect=container.getBoundingClientRect();ok(Math.abs(containerRect.top-22)<=1,'notice container top is 22px');
 ok(Math.abs(containerRect.right-window.innerWidth)<=1,'notice container right aligned');
 const noticeRect=container.querySelector('.notice').getBoundingClientRect();
 ok(noticeRect.right<=window.innerWidth&&noticeRect.right>=window.innerWidth-30,'notice hugs the right edge');
+const noticeStyle=getComputedStyle(container.querySelector('.notice'));
+ok(noticeStyle.transitionProperty.includes('transform')&&noticeStyle.transitionDuration.split(',')[0].trim()==='0.1s','notice slides in over 100ms');
+ok(noticeStyle.padding==='8px 12px','notice padding 8/12 (--notice-padding)');
+const noticeProbe=document.body.createDiv();
+noticeProbe.style.cssText='position:absolute;visibility:hidden;box-shadow:var(--shadow-s);border-radius:var(--radius-m)';
+ok(getComputedStyle(noticeProbe).boxShadow===noticeStyle.boxShadow&&getComputedStyle(noticeProbe).borderRadius===noticeStyle.borderRadius,'notice shadow=shadow-s / radius=radius-m');
+noticeProbe.detach();
 // 监听挂在 .notice 本体，直接对元素派发事件即可(不依赖事件冒泡)
 const noticeEl=container.querySelector('.notice');
 noticeEl.dispatchEvent(new MouseEvent('mouseenter'));

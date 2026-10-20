@@ -12,9 +12,11 @@
 .menu {
   position: fixed;
   z-index: var(--layer-menu);
+  display: flex;
   background-color: var(--menu-background);
   border: var(--menu-border-width) solid var(--menu-border-color);
   border-radius: var(--menu-radius);
+  corner-shape: var(--corner-shape);
   box-shadow: var(--menu-shadow);
   padding: 0;
   min-width: 180px;
@@ -40,16 +42,17 @@
 .menu-item {
   display: flex;
   align-items: center;
-  gap: var(--size-4-1);
+  gap: var(--size-4-2);
   padding: var(--size-4-1) var(--size-4-2);
   border-radius: var(--radius-s);
   cursor: var(--cursor, pointer);
   color: var(--text-normal);
-  min-height: 30px;
+  white-space: nowrap;
 }
-.menu-item:hover, .menu-item.is-selected { background-color: var(--background-modifier-hover); }
+/* 原版只给可选项铺悬停底；label 与 disabled 不响应。 */
+.menu-item:not(.is-label):not(.is-disabled):hover,
+.menu-item:not(.is-label):not(.is-disabled).is-selected { background-color: var(--background-modifier-hover); }
 .menu-item.is-disabled { color: var(--text-faint); cursor: default; }
-.menu-item.is-disabled:hover { background-color: transparent; }
 .menu-item.is-warning:not(.is-disabled) { color: var(--text-error); }
 .menu-item.is-warning .menu-item-icon { color: var(--text-error); }
 .menu-item.mod-checked .menu-item-title { font-weight: var(--font-medium); }
@@ -98,12 +101,12 @@
   align-items: center;
   justify-content: center;
 }
+/* 原版 1.14.4 app.css:9297-9303 | 遮罩无过渡：开合瞬时到位，不拖慢设置/prompt 打开。 */
 .modal-bg {
   position: absolute;
   inset: 0;
   background-color: var(--background-modifier-cover);
   opacity: 0;
-  transition: opacity var(--anim-duration-moderate) ease-in-out;
 }
 .modal-container.is-open .modal-bg { opacity: 1; }
 .modal-bg.is-hidden { opacity: 0; }
@@ -142,7 +145,7 @@
 .modal-header { margin-bottom: 0.75em; height: var(--modal-header-height, auto); }
 .mod-sidebar-layout .modal-header { display: none; }
 .modal-title {
-  font-size: var(--font-ui-large);
+  font-size: var(--font-ui-medium);
   margin-left: auto;
   margin-right: auto;
   font-weight: var(--font-semibold);
@@ -315,16 +318,22 @@ body.is-settings-window .status-bar { display: none; }
   flex-direction: column;
   align-items: end;
 }
+/* 原版 1.14.4 app.css:9088-9108 | 通知：padding 8/12、radius-m、shadow-s、
+   等宽数字；入场 transform 100ms ease-in-out（由 JS 触发）。 */
 .notice {
   display: flex; flex-direction: column; gap: var(--size-4-2);
+  corner-shape: var(--corner-shape);
   background-color: var(--background-modifier-message);
   border-radius: var(--radius-m);
-  box-shadow: 0 2px 8px var(--background-modifier-box-shadow);
-  color: #FAFAFA; font-size: var(--font-ui-small); line-height: var(--line-height-tight);
-  padding: 0.75em 1em 0.75em 1em; max-width: 300px; margin-bottom: 14px;
+  box-shadow: var(--shadow-s);
+  color: #FAFAFA; font-size: var(--font-ui-small); font-weight: var(--font-normal);
+  font-variant-numeric: tabular-nums; line-height: var(--line-height-tight);
+  padding: var(--size-4-2) var(--size-4-3); border: none;
+  max-width: 300px; margin-bottom: 14px;
   white-space: pre-wrap; overflow-wrap: anywhere; word-break: break-word;
   cursor: var(--cursor); pointer-events: auto;
   -webkit-user-select: text; user-select: text;
+  transition: transform 100ms ease-in-out;
 }
 .notice-button-container {
   display: flex; flex-direction: row; flex-wrap: wrap;
@@ -343,16 +352,17 @@ body.is-settings-window .status-bar { display: none; }
 /* 逐字移植原版 app.css 9324-9445：默认在目标下方，上方由 mod-top 翻转。 */
 .tooltip {
   animation: pop-down 200ms forwards ease-in-out;
-  box-shadow: 0 2px 8px var(--background-modifier-box-shadow);
-  background-color: var(--background-modifier-message);
-  border-radius: var(--radius-s);
-  color: #FAFAFA;
-  font-size: var(--font-ui-smaller);
-  font-weight: var(--font-medium);
+  box-shadow: var(--tooltip-shadow);
+  background-color: var(--tooltip-background);
+  border-radius: var(--tooltip-radius);
+  color: var(--tooltip-color);
+  font-size: var(--tooltip-font-size);
+  font-weight: var(--tooltip-font-weight);
   left: 50%;
-  line-height: var(--line-height-tight);
-  max-width: 300px;
-  padding: var(--size-4-1) var(--size-4-2);
+  line-height: var(--tooltip-line-height);
+  max-width: var(--tooltip-max-width);
+  padding: var(--tooltip-padding);
+  corner-shape: var(--tooltip-corner-shape);
   position: fixed;
   text-align: center;
   transform: translateX(-50%);
@@ -891,7 +901,7 @@ input.prompt-input:focus-visible {
 }
 .file-recovery-text[data-ext="md"] {
   font-family: var(--font-text);
-  font-size: var(--font-text-size);
+  font-size: var(--font-preferred-size);
 }
 
 /* In file recovery, sync version history, and publish diff */

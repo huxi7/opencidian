@@ -177,26 +177,8 @@ body.is-resizing * { user-select: none !important; }
   min-height: 0;
   min-width: 0;
 }
-/* 原版 1.14.4 app.css:2786-2817 | 标签栏几何 token。
-   tokens-interface.css 的基线仍是 1.12（theme-tokens 断言锚定旧值），
-   顶栏按 1.14 对齐，因此这组值在本文件内以 .workspace-tabs 作用域落定：
-   --tab-curve=10px 决定活动标签底角凹弧半径，--tab-radius-active 决定标签上圆角。 */
+/* 原版 1.14.4 app.css:2786-2817 | 标签栏几何 token 已由 tokens-interface.css 提供基线。 */
 .workspace-tabs {
-  --tab-background: transparent;
-  --tab-background-hover: transparent;
-  --tab-inner-background: transparent;
-  --tab-inner-background-hover: var(--background-modifier-hover);
-  --tab-inner-background-active: transparent;
-  --tab-inner-border-width: 0px;
-  --tab-inner-border-color: transparent;
-  --tab-inner-border-color-hover: transparent;
-  --tab-inner-border-color-active: transparent;
-  --tab-container-padding-start: var(--size-4-2);
-  --tab-container-padding-end: var(--size-4-2);
-  --tab-outline-color-hover: transparent;
-  --tab-corner-shape: var(--corner-shape);
-  --tab-curve: 10px;
-  --tab-radius-active: 10px 10px 0 0;
 }
 
 .workspace-tabs .workspace-tab-header-container { flex: 0 0 auto; }
@@ -287,8 +269,8 @@ body.is-hidden-frameless .workspace-tabs.mod-top-right-space .workspace-tab-head
   padding-inline-start: 6px;
   padding-bottom: 0;
 }
-.workspace-tab-header-inner-icon { display: flex; color: var(--icon-color); opacity: var(--icon-opacity); }
-.workspace-tab-header-inner-icon .svg-icon { width: var(--icon-s); height: var(--icon-s); }
+.workspace-tab-header-inner-icon { flex: 0 0 auto; display: flex; color: var(--icon-color); opacity: var(--icon-opacity); }
+.workspace-tab-header-inner-icon .svg-icon { width: var(--icon-xs); height: var(--icon-xs); }
 @media (hover: hover) {
   .workspace-tab-header-inner:hover .workspace-tab-header-inner-icon { color: var(--icon-color-hover); opacity: var(--icon-opacity-hover); }
 }
@@ -302,18 +284,29 @@ body.is-hidden-frameless .workspace-tabs.mod-top-right-space .workspace-tab-head
   width: 100%;
   text-align: left;
 }
+/* 原版 1.14.4 app.css:7115-7161 | 关闭钮：padding 2px、radius-m、root 用 icon-s。
+   非活动标签默认不占位；悬停标签才显示。非活动关闭钮悬停只换色，不铺底。 */
 .workspace-tab-header-inner-close-button {
   display: none;
   align-items: center;
   justify-content: center;
-  border-radius: var(--radius-s);
-  color: var(--text-faint);
-  padding: 2px;
-  margin-inline-end: -4px;
+  cursor: var(--cursor);
+  padding: var(--size-2-1);
+  border-radius: var(--radius-m);
+  --icon-size: var(--icon-s);
+  --icon-stroke: var(--icon-s-stroke-width);
 }
-.workspace-tab-header-inner-close-button .svg-icon { width: var(--icon-xs); height: var(--icon-xs); }
-.workspace-tab-header:hover .workspace-tab-header-inner-close-button { display: flex; }
-.workspace-tab-header-inner-close-button:hover { color: var(--text-normal); background-color: var(--background-modifier-hover); }
+.workspace-tab-header-inner-close-button .svg-icon { width: var(--icon-s); height: var(--icon-s); }
+@media (hover: hover) {
+  .workspace-tab-header:hover .workspace-tab-header-inner-close-button { display: flex; color: var(--tab-text-color-focused); }
+  .workspace-tab-header-inner-close-button:hover,
+  .workspace-tab-header:hover .workspace-tab-header-inner-close-button:hover { color: var(--tab-text-color-focused-active-current); }
+  .workspace-tab-header.is-active .workspace-tab-header-inner-close-button:hover {
+    color: var(--tab-text-color-focused-active-current);
+    background-color: var(--background-modifier-hover);
+  }
+}
+.workspace-tab-header.is-active .workspace-tab-header-inner-close-button { color: var(--tab-text-color-focused-active); }
 
 /* 原版 1.14.4 app.css:6962-6990 | 焦点态文字色与悬停态内层底色。
    悬停的标签只填充内层（--tab-inner-background-hover），不填标签本体。 */
@@ -461,7 +454,10 @@ body.is-focused .workspace-tab-header-container .workspace-tab-header.is-highlig
 /* 原版：固定标签的状态容器（pin 图标） */
 .workspace-tab-header-status-container { display: flex; flex-shrink: 0; gap: var(--size-2-1); justify-content: center; }
 .workspace-tab-header-status-container:empty { display: none; }
-.workspace-tab-header-status-icon { cursor: var(--cursor); padding: var(--size-2-1); border-radius: var(--radius-s); display: flex; align-items: center; --icon-size: var(--icon-xs); --icon-stroke: var(--icon-xs-stroke-width); }
+.workspace-tab-header-status-icon { cursor: var(--cursor); padding: var(--size-2-1); border-radius: var(--radius-m); display: flex; align-items: center; --icon-size: var(--icon-xs); --icon-stroke: var(--icon-xs-stroke-width); }
+/* 原版 7234-7242：root 固定图标用 icon-s，普通状态图标用 icon-xs。 */
+.mod-root .workspace-tab-header-status-icon.mod-pinned { --icon-size: var(--icon-s); --icon-stroke: var(--icon-s-stroke-width); }
+.mod-root .workspace-tab-header-status-icon.mod-pinned .svg-icon { width: var(--icon-s); height: var(--icon-s); }
 .workspace-tab-header.is-active .workspace-tab-header-status-icon:hover { background-color: var(--background-modifier-hover); }
 .workspace-tab-header-status-icon .svg-icon { width: var(--icon-xs); height: var(--icon-xs); }
 

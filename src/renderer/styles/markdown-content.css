@@ -22,7 +22,7 @@
 /* app.css 4347 .markdown-preview-view */
 .markdown-preview-view {
   padding: var(--file-margins, var(--size-4-8));
-  font-size: var(--font-text-size);
+  font-size: var(--font-preferred-size);
   font-family: var(--font-text);
   line-height: var(--line-height-normal);
   color: var(--text-normal);

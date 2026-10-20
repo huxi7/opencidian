@@ -1,3 +1,9 @@
+/**
+ * [INPUT]: 依赖 tokens-*.css 与 base.css；消费设置弹窗与设置页 DOM。
+ * [OUTPUT]: 设置导航、setting-group/setting-item、开关、下拉、快捷键与滑块样式。
+ * [POS]: 设置页唯一皮肤。导航只有 is-active 底色；开关无 hover 阴影；输入/按钮过渡由 base 提供。
+ * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
+ */
 /* ==========================================================================
    settings.css — 设置模态样式。逐字移植自原版 app.css：
    .vertical-tabs-container / .vertical-tab-header / .vertical-tab-nav-item
@@ -49,26 +55,16 @@ body:not(.is-phone) .vertical-tab-header-group-items {
   margin-bottom: 0;
   user-select: none;
   cursor: var(--cursor);
-  font-size: calc(var(--font-ui-small) + 1px);
-  border-radius: var(--radius-s);
+  font-size: var(--font-ui-small);
+  border-radius: var(--radius-m);
   corner-shape: var(--corner-shape);
 }
 body:not(.is-phone) .horizontal-tab-nav-item.is-active,
 body:not(.is-phone) .vertical-tab-nav-item.is-active {
   background-color: var(--background-modifier-hover);
 }
-.horizontal-tab-nav-item:hover .vertical-tab-nav-item-icon,
-.vertical-tab-nav-item:hover .vertical-tab-nav-item-icon,
-.horizontal-tab-nav-item.is-active .vertical-tab-nav-item-icon,
-.vertical-tab-nav-item.is-active .vertical-tab-nav-item-icon {
-  color: var(--text-normal);
-}
-@media (hover: hover) {
-  .horizontal-tab-nav-item:hover,
-  .vertical-tab-nav-item:hover {
-    background-color: var(--background-modifier-hover);
-  }
-}
+/* 原版 1.14.4 app.css:10329-10357 | 设置页导航：只有 is-active 有底色，
+   悬停不变；图标恒为 --text-muted（active 也不提亮）。 */
 .vertical-tab-nav-item {
   display: flex;
 }
@@ -122,7 +118,7 @@ body:not(.is-phone) .vertical-tab-nav-item.is-active {
 }
 .setting-group .setting-group-search {
   background-color: var(--setting-items-background);
-  padding: var(--setting-items-padding);
+  padding: var(--setting-items-padding-y) var(--setting-items-padding-x);
   border-top-left-radius: var(--setting-items-radius);
   border-top-right-radius: var(--setting-items-radius);
   border: var(--setting-items-border-width) solid var(--setting-items-border-color);
@@ -136,7 +132,7 @@ body:not(.is-phone) .vertical-tab-nav-item.is-active {
 }
 .setting-group .setting-items {
   background-color: var(--setting-items-background);
-  padding: var(--setting-items-padding);
+  padding: var(--setting-items-padding-y) var(--setting-items-padding-x);
   border-radius: var(--setting-items-radius);
   corner-shape: var(--corner-shape);
   border: var(--setting-items-border-width) solid var(--setting-items-border-color);
@@ -289,8 +285,9 @@ body:not(.is-phone) .vertical-tab-nav-item.is-active {
   padding-inline-start: var(--size-4-6);
 }
 .setting-item-name {
-  color: var(--text-normal);
-  font-size: var(--font-ui-medium);
+  color: var(--setting-item-name-color);
+  font-size: var(--setting-item-name-size);
+  font-weight: var(--setting-item-name-weight);
   line-height: var(--line-height-tight);
   text-overflow: ellipsis;
   overflow: hidden;
@@ -521,7 +518,7 @@ body:not(.is-phone) .vertical-tab-nav-item.is-active {
   flex-shrink: 0;
   position: relative;
   user-select: none;
-  box-shadow: inset 0 4px 10px rgba(0, 0, 0, 0.07), inset 0 0 1px rgba(0, 0, 0, 0.21);
+  box-shadow: inset 0 4px 10px rgba(0, 0, 0, 0.07);
   transition: box-shadow 0.15s ease-in-out, outline 0.15s ease-in-out, border 0.15s ease-in-out, opacity 0.15s ease-in-out;
   outline: 0 solid var(--background-modifier-border-focus);
   width: var(--toggle-s-width);
@@ -531,11 +528,6 @@ body:not(.is-phone) .vertical-tab-nav-item.is-active {
   position: absolute;
   opacity: 0;
   left: 0;
-}
-@media (hover: hover) {
-  .checkbox-container:hover {
-    box-shadow: inset 0 6px 20px rgba(0, 0, 0, 0.14), inset 0 0 1px rgba(0, 0, 0, 0.28);
-  }
 }
 .checkbox-container.is-enabled {
   background-color: var(--interactive-accent);
@@ -573,7 +565,7 @@ body:not(.is-phone) .vertical-tab-nav-item.is-active {
 .checkbox-container.is-enabled:after {
   transform: translate3d(calc(var(--toggle-s-width) - var(--toggle-s-thumb-width) - var(--toggle-s-border-width)), 0, 0);
 }
-.checkbox-container:active:after {
+.checkbox-container:where(:not(.is-disabled)):active:after {
   opacity: var(--toggle-thumb-opacity-active);
   width: calc(var(--toggle-s-thumb-width) + var(--toggle-s-border-width) * 2);
   height: calc(var(--toggle-s-thumb-height) + var(--toggle-s-border-width) * 2);
@@ -595,10 +587,10 @@ body:not(.is-phone) .vertical-tab-nav-item.is-active {
 .modal .checkbox-container.is-enabled:after {
   transform: translate3d(calc(var(--toggle-width) - var(--toggle-thumb-width) - var(--toggle-border-width)), 0, 0);
 }
-.modal .checkbox-container.is-enabled:active:after {
+.modal .checkbox-container.is-enabled:where(:not(.is-disabled)):active:after {
   left: -4px;
 }
-.modal .checkbox-container:active:after {
+.modal .checkbox-container:where(:not(.is-disabled)):active:after {
   opacity: var(--toggle-thumb-opacity-active);
   width: calc(var(--toggle-thumb-width) + var(--toggle-border-width) * 4);
   height: calc(var(--toggle-thumb-height) + var(--toggle-border-width) * 4);
@@ -616,6 +608,12 @@ body:not(.is-phone) .vertical-tab-nav-item.is-active {
 }
 .checkbox-container.mod-small.is-enabled:after {
   transform: translate3d(calc(var(--toggle-s-width) - var(--toggle-s-thumb-width) - var(--toggle-s-border-width)), 0, 0);
+}
+.checkbox-container.mod-small:where(:not(.is-disabled)):active:after {
+  opacity: var(--toggle-thumb-opacity-active);
+  width: calc(var(--toggle-s-thumb-width) + var(--toggle-s-border-width) * 2);
+  height: calc(var(--toggle-s-thumb-height) + var(--toggle-s-border-width) * 2);
+  margin-top: 0;
 }
 .checkbox-container.is-disabled {
   opacity: 0.5;

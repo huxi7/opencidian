@@ -3,6 +3,8 @@
  * [OUTPUT]: 导出新标签、标签菜单、拖拽绑定与落点判定函数。
  * [POS]: 仅中心文档标签响应关闭、拆分与拖拽。侧栏图标保持固定入口。
  * 不持有独立状态，不导入 Workspace；拖拽继续使用宿主的 _dragData。
+ * 标签落点按原版 getTabInsertLocation 求插入 index；跨组/分割移动委托 workspace.moveLeafToTabs（搬叶子不重建视图）。
+ * 落点覆盖层边缘取 max(尺寸/3,40)，center 用 10px 标签插入条。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 import { t } from './i18n.js';
@@ -94,82 +96,44 @@ export function _showTabListMenu(workspace, ev, tabs) {
   menu.showAtMouseEvent(ev);
 }
 
-export function _setupTabDrag(workspace, header, leaf) {
-  if (!workspace.canCloseLeaf(leaf)) return;
-  header.addEventListener('dragstart', (ev) => {
-    if (leaf.pinned) { ev.preventDefault(); return; }
-    workspace._dragData = { leaf };
-    try { ev.dataTransfer.setData('text/plain', leaf.view ? leaf.view.getDisplayText() : 'tab'); } catch (e) {}
-    ev.dataTransfer.effectAllowed = 'move';
-    header.addClass('is-being-dragged');
-    document.body.addClass('is-grabbing');
-    workspace._dragGhost(ev);
-  });
-  header.addEventListener('dragend', () => {
-    header.removeClass('is-being-dragged');
-    document.body.removeClass('is-grabbing');
-    workspace._dragData = null;
-    workspace._clearDropIndicators();
-  });
-  // dropping onto the tab bar reorders / un-tabs
-  const bar = header.parentElement;
-  if (bar && !bar._dropBound) {
-    bar._dropBound = true;
-    bar.addEventListener('dragover', (ev) => {
-      if (!workspace._dragData) return;
-      ev.preventDefault();
-      const target = ev.target.closest('.workspace-tab-header');
-      for (const h of bar.children) h.removeClass('is-tab-drop-before', 'is-tab-drop-after');
-      if (target && target._leaf && target._leaf !== workspace._dragData.leaf) {
-        const rect = target.getBoundingClientRect();
-        target.toggleClass('is-tab-drop-before', ev.clientX < rect.left + rect.width / 2);
-        target.toggleClass('is-tab-drop-after', ev.clientX >= rect.left + rect.width / 2);
-      }
-      workspace._tabDropTarget = target;
-    });
-    bar.addEventListener('dragleave', (ev) => {
-      if (!bar.contains(ev.relatedTarget)) {
-        for (const h of bar.children) h.removeClass('is-tab-drop-before', 'is-tab-drop-after');
-      }
-    });
-    bar.addEventListener('drop', async (ev) => {
-      if (!workspace._dragData) return;
-      ev.preventDefault();
-      ev.stopPropagation();
-      const drag = workspace._dragData;
-      const target = workspace._tabDropTarget;
-      const tabsEl = bar.closest('.workspace-tabs');
-      const tabs = tabsEl && tabsEl._tabs;
-      for (const h of bar.children) h.removeClass('is-tab-drop-before', 'is-tab-drop-after');
-      if (!tabs) return;
-      const after = target && target._leaf ? target : null;
-      const draggedLeaf = drag.leaf;
-      const idx = after ? tabs.children.indexOf(after._leaf) + (after.hasClass('is-tab-drop-after') ? 1 : 0) : tabs.children.length;
-      const state = draggedLeaf.view && draggedLeaf.view.getState ? draggedLeaf.view.getState() : {};
-      const type = draggedLeaf.view ? draggedLeaf.view.getViewType() : 'empty';
-      if (draggedLeaf.parent === tabs) {
-        // reorder within same stack
-        const from = tabs.children.indexOf(draggedLeaf);
-        let to = idx;
-        if (from < to) to -= 1;
-        tabs.children.splice(from, 1);
-        tabs.children.splice(to, 0, draggedLeaf);
-        tabs.currentTab = to;
-        workspace._syncTabsHeaders(tabs);
-        workspace._syncTabsVisibility(tabs);
-      } else {
-        draggedLeaf.detach();
-        const newLeaf = workspace.createLeafInTabGroup(tabs, idx);
-        await newLeaf.setViewState({ type, state });
-        workspace.setActiveLeaf(newLeaf, { focus: true });
-      }
-      workspace._dragData = null;
-    });
+/**
+ * 原版 VD.getTabInsertLocation：按 clientX 在标签头上求插入 index。
+ * 遍历含被拖头本身——同组重排由调用方按原版 `p>f&&p-- 且 f===p 返回` 消解。
+ */
+export function _tabInsertInfo(tabs, clientX) {
+  const children = tabs.children;
+  let index = children.length;
+  let x = 0;
+  let y = 0;
+  let height = 0;
+  for (let i = 0; i < children.length; i++) {
+    const header = children[i]._tabHeaderEl;
+    if (!header || !header.isConnected) continue;
+    const rect = header.getBoundingClientRect();
+    if (i === children.length - 1 || clientX <= rect.right) {
+      index = i;
+      x = rect.left;
+      y = rect.top;
+      height = rect.height;
+      const mid = (rect.left + rect.right) / 2;
+      if (clientX > mid) { index++; x = rect.right; }
+      break;
+    }
   }
+  return { rect: { x: x - 5, y, width: 10, height }, index };
+}
+
+/** 原版 getTabInsertLocation 的落点覆盖层：10px 宽竖条贴在插入缝上。 */
+function overlayAtRect(node, rect) {
+  node.style.left = rect.x + 'px';
+  node.style.top = rect.y + 'px';
+  node.style.width = Math.max(0, rect.width) + 'px';
+  node.style.height = Math.max(0, rect.height) + 'px';
+  node.addClass('mod-active');
 }
 
 /**
- * 原版 drag-ghost：setDragImage 用带图标与标题的幽灵元素；
+ * 原版 onDragLeaf 的 ghost：drag-ghost mod-leaf（图标 + 标题），setDragImage(0,0)。
  * Chromium 需要元素在 DOM 中渲染过，截图后即可摘除。
  */
 export function _dragGhost(workspace, ev) {
@@ -178,24 +142,114 @@ export function _dragGhost(workspace, ev) {
   const ghost = createDiv('drag-ghost mod-leaf');
   const iconEl = ghost.createDiv('drag-ghost-icon');
   try { setIcon(iconEl, (leaf.view && leaf.view.getIcon && leaf.view.getIcon()) || 'file-text'); } catch (e) {}
-  ghost.createDiv('drag-ghost-title').setText(((leaf.view && leaf.view.getDisplayText && leaf.view.getDisplayText()) || 'Tab').slice(0, 60));
+  ghost.createSpan({ text: String(((leaf.view && leaf.view.getDisplayText && leaf.view.getDisplayText()) || 'Tab')).slice(0, 60) });
   document.body.appendChild(ghost);
   try {
-    if (ev.dataTransfer && ev.dataTransfer.setDragImage) {
-      ev.dataTransfer.setDragImage(ghost, 12 + ghost.offsetWidth / 2, 12 + ghost.offsetHeight / 2);
-    }
+    if (ev.dataTransfer && ev.dataTransfer.setDragImage) ev.dataTransfer.setDragImage(ghost, 0, 0);
   } catch (e) { /* setDragImage 不受支持时保持元素跟随（拖拽期间由浏览器接管） */ }
-  requestAnimationFrame(() => ghost.detach());
+  setTimeout(() => ghost.detach(), 0);
 }
 
-/** 叶内落点覆盖层：fixed 定位 + 100ms 过渡（原版 workspace-drop-overlay）。 */
+/** 收尾：按原版移除 is-grabbing，清空宿主拖拽数据与全部落点指示。 */
+export function _endTabDrag(workspace) {
+  document.body.removeClass('is-grabbing');
+  workspace._dragData = null;
+  workspace._tabDropTarget = null;
+  workspace._clearDropIndicators();
+}
+
+export function _setupTabDrag(workspace, header, leaf) {
+  if (workspace.canCloseLeaf(leaf) && !header._tabDragBound) {
+    header._tabDragBound = true;
+    header.addEventListener('dragstart', (ev) => {
+      if (leaf.pinned) { ev.preventDefault(); return; }
+      workspace._dragData = {
+        leaf,
+        startX: ev.clientX, startY: ev.clientY, grabbing: false,
+        dropTarget: null, dropAfter: false, dropIndex: null,
+      };
+      try { ev.dataTransfer.setData('text/plain', ''); } catch (e) {}
+      ev.dataTransfer.effectAllowed = 'move';
+      header.addClass('is-being-dragged');
+      workspace._dragGhost(ev);
+    });
+    header.addEventListener('dragend', () => {
+      header.removeClass('is-being-dragged');
+      if (workspace._dragData && workspace._dragData.leaf === leaf) workspace._endTabDrag();
+    });
+  }
+  const bar = header.parentElement;
+  if (bar && !bar._dropBound) {
+    bar._dropBound = true;
+    const headersOf = () => Array.from(bar.children).filter((el) => el.hasClass('workspace-tab-header'));
+    const clearIndicators = () => { for (const h of headersOf()) h.removeClass('is-tab-drop-before', 'is-tab-drop-after'); };
+    bar.addEventListener('dragover', (ev) => {
+      const drag = workspace._dragData;
+      if (!drag || !drag.leaf) return;
+      ev.preventDefault();
+      if (ev.dataTransfer) ev.dataTransfer.dropEffect = 'move';
+      // 原版 onDragLeaf：位移超过 5px 才进入 grabbing 光标态
+      if (!drag.grabbing && (Math.abs(ev.clientX - drag.startX) > 5 || Math.abs(ev.clientY - drag.startY) > 5)) {
+        drag.grabbing = true;
+        document.body.addClass('is-grabbing');
+      }
+      const tabsEl = bar.closest('.workspace-tabs');
+      const tabs = tabsEl && tabsEl._tabs;
+      if (!tabs) return;
+      drag.dropIndex = _tabInsertInfo(tabs, ev.clientX).index;
+      const hovered = ev.target && ev.target.closest ? ev.target.closest('.workspace-tab-header') : null;
+      clearIndicators();
+      if (hovered && hovered._leaf && hovered._leaf !== drag.leaf) {
+        const rect = hovered.getBoundingClientRect();
+        drag.dropTarget = hovered;
+        drag.dropAfter = ev.clientX >= rect.left + rect.width / 2;
+        hovered.toggleClass('is-tab-drop-before', !drag.dropAfter);
+        hovered.toggleClass('is-tab-drop-after', drag.dropAfter);
+      } else {
+        drag.dropTarget = null;
+        drag.dropAfter = false;
+      }
+    });
+    bar.addEventListener('dragleave', (ev) => {
+      if (!bar.contains(ev.relatedTarget)) {
+        const drag = workspace._dragData;
+        if (drag) { drag.dropTarget = null; drag.dropAfter = false; drag.dropIndex = null; }
+        clearIndicators();
+      }
+    });
+    bar.addEventListener('drop', (ev) => {
+      const drag = workspace._dragData;
+      if (!drag || !drag.leaf) return;
+      ev.preventDefault();
+      ev.stopPropagation();
+      const draggedLeaf = drag.leaf;
+      const dropIndex = drag.dropIndex;
+      const tabsEl = bar.closest('.workspace-tabs');
+      const tabs = tabsEl && tabsEl._tabs;
+      workspace._endTabDrag();
+      if (!tabs) return;
+      const idx = typeof dropIndex === 'number' && dropIndex >= 0 ? dropIndex : tabs.children.length;
+      const from = tabs.children.indexOf(draggedLeaf);
+      if (from >= 0) {
+        // 原版 getTabInsertLocation 的 f===p 返回：拖回原位不动作（索引消解在 moveLeafToTabs 内完成）
+        const expected = from < idx ? idx - 1 : idx;
+        if (expected === from) return;
+      }
+      workspace.moveLeafToTabs(draggedLeaf, tabs, idx);
+      if (workspace._sideOf(draggedLeaf) === 'center') workspace.setActiveLeaf(draggedLeaf, { focus: true });
+    });
+  }
+}
+
+/** 叶内落点覆盖层：fixed 定位 + 100ms 过渡（原版 workspace-drop-overlay）。
+ *  边缘 d=max(尺寸/3, 40)，center 由调用方给标签插入条矩形（原版 showOverlay 语义）。 */
 function layoutDropOverlay(el, node, zone) {
   const rect = el.getBoundingClientRect();
   let x = rect.left, y = rect.top, w = rect.width, h = rect.height;
-  if (zone === 'left') w = Math.round(rect.width / 2);
-  else if (zone === 'right') { x = rect.left + Math.round(rect.width / 2); w = Math.round(rect.width / 2); }
-  else if (zone === 'top') h = Math.round(rect.height / 2);
-  else if (zone === 'bottom') { y = rect.top + Math.round(rect.height / 2); h = Math.round(rect.height / 2); }
+  if (zone === 'left') w = Math.max(rect.width / 3, 40);
+  else if (zone === 'right') { const d = Math.max(rect.width / 3, 40); x = rect.left + rect.width - d; w = d; }
+  else if (zone === 'top') h = Math.max(rect.height / 3, 40);
+  else if (zone === 'bottom') { const d = Math.max(rect.height / 3, 40); y = rect.top + rect.height - d; h = d; }
   node.style.left = x + 'px';
   node.style.top = y + 'px';
   node.style.width = w + 'px';
@@ -213,16 +267,28 @@ export function _setupLeafDrop(workspace, el, leaf) {
     return overlayEl;
   };
   el.addEventListener('dragover', (ev) => {
-    if (!workspace._dragData) return;
-    if (workspace._dragData.leaf === leaf) return;
+    const drag = workspace._dragData;
+    if (!drag || !drag.leaf || drag.leaf === leaf) return;
     ev.preventDefault();
+    if (ev.dataTransfer) ev.dataTransfer.dropEffect = 'move';
     const rect = el.getBoundingClientRect();
+    if (!rect.width || !rect.height) return;
     const x = (ev.clientX - rect.left) / rect.width;
     const y = (ev.clientY - rect.top) / rect.height;
-    const zone = workspace._dropZone(x, y);
+    const allowed = workspace._sideOf(leaf) !== 'center' ? ['left', 'right'] : null;
+    const zone = workspace._dropZone(x, y, allowed);
     leaf._dropZone = zone;
     workspace._clearLeafDropIndicators();
-    layoutDropOverlay(el, overlay(), zone);
+    const node = overlay();
+    if (zone === 'center') {
+      const tabs = leaf.parent;
+      if (tabs && tabs.children && tabs.children.length === 1 && tabs.children[0] === drag.leaf) return;   // 原版：单标签组拖回自身，无落点
+      const info = tabs && tabs.children ? _tabInsertInfo(tabs, ev.clientX) : null;
+      if (info) overlayAtRect(node, info.rect);
+      else layoutDropOverlay(el, node, zone);
+    } else {
+      layoutDropOverlay(el, node, zone);
+    }
     el.toggleClass('is-drop-target', zone === 'center');
     el.toggleClass('mod-drop-left', zone === 'left');
     el.toggleClass('mod-drop-right', zone === 'right');
@@ -232,42 +298,42 @@ export function _setupLeafDrop(workspace, el, leaf) {
   el.addEventListener('dragleave', (ev) => {
     if (!el.contains(ev.relatedTarget)) workspace._clearLeafDropIndicators();
   });
-  el.addEventListener('drop', async (ev) => {
+  el.addEventListener('drop', (ev) => {
     const drag = workspace._dragData;
-    if (!drag) return;
+    if (!drag || !drag.leaf) return;
     ev.preventDefault();
     ev.stopPropagation();
-    const zone = leaf._dropZone || 'center';
-    workspace._clearLeafDropIndicators();
-    workspace._dragData = null;
     const draggedLeaf = drag.leaf;
-    const type = draggedLeaf.view ? draggedLeaf.view.getViewType() : 'empty';
-    const state = draggedLeaf.view && draggedLeaf.view.getState ? draggedLeaf.view.getState() : {};
+    const zone = leaf._dropZone || 'center';
+    const tabsOfTarget = leaf.parent;
+    const info = zone === 'center' && tabsOfTarget && tabsOfTarget.children ? _tabInsertInfo(tabsOfTarget, ev.clientX) : null;
+    workspace._clearLeafDropIndicators();
+    workspace._endTabDrag();
+    if (!tabsOfTarget) return;
     if (zone === 'center') {
-      const tabs = leaf.parent;
-      const idx = tabs.children.indexOf(leaf);
-      draggedLeaf.detach();
-      const newLeaf = workspace.createLeafInTabGroup(tabs, idx + 1);
-      await newLeaf.setViewState({ type, state });
-      workspace.setActiveLeaf(newLeaf, { focus: true });
+      const idx = info ? info.index : tabsOfTarget.children.length;
+      workspace.moveLeafToTabs(draggedLeaf, tabsOfTarget, idx);
     } else {
       const direction = (zone === 'left' || zone === 'right') ? 'vertical' : 'horizontal';
       const before = (zone === 'left' || zone === 'top');
-      const newLeaf = workspace.createLeafBySplit(leaf, direction, before);
-      draggedLeaf.detach();
-      await newLeaf.setViewState({ type, state });
-      workspace.setActiveLeaf(newLeaf, { focus: true });
+      const targetTabs = workspace.createTabsBySplit(leaf, direction, before);
+      workspace.moveLeafToTabs(draggedLeaf, targetTabs, 0);
     }
+    workspace.setActiveLeaf(draggedLeaf, { focus: true });
   });
 }
 
-export function _dropZone(workspace, x, y) {
-  const margin = 0.25;
-  if (x < margin && x < y && x < 1 - y) return 'left';
-  if (x > 1 - margin && 1 - x < y && 1 - x < 1 - y) return 'right';
-  if (y < margin && y < x && y < 1 - x) return 'top';
-  if (y > 1 - margin && 1 - y < x && 1 - y < 1 - x) return 'bottom';
-  return 'center';
+/** 原版 getDropDirection 的归一化移植：0.33 阈值，按最近边缘取最小值。 */
+export function _dropZone(workspace, x, y, allowed) {
+  const blocked = allowed || [];
+  const left = x, top = y, right = 1 - x, bottom = 1 - y;
+  let zone = 'center';
+  let min = 1;
+  if (top < 0.33 && top < min && !blocked.includes('top')) { min = top; zone = 'top'; }
+  if (left < 0.33 && left < min && !blocked.includes('left')) { min = left; zone = 'left'; }
+  if (right < 0.33 && right < min && !blocked.includes('right')) { min = right; zone = 'right'; }
+  if (bottom < 0.33 && bottom < min && !blocked.includes('bottom')) { min = bottom; zone = 'bottom'; }
+  return zone;
 }
 
 export function _clearLeafDropIndicators(workspace) {
@@ -284,6 +350,7 @@ export function _clearDropIndicators(workspace) {
   workspace._clearLeafDropIndicators();
   workspace.containerEl.findAll('.workspace-tab-header.is-tab-drop-before, .workspace-tab-header.is-tab-drop-after')
     .forEach((el) => el.removeClass('is-tab-drop-before', 'is-tab-drop-after'));
+  workspace._tabDropTarget = null;
 }
 
 export function _makeTabBarSortable(workspace, tabs) {

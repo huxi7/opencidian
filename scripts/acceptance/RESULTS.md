@@ -355,3 +355,13 @@ MathJax 独立适配器子代理的41项基础/故障测试见 assets/mathjax/SO
 - 主循环日志目录：`/tmp/opensidian-full-1019-220645/`（`summary.txt` + 每场景 run.log）。最终 **56/56 通过**。
 - 视觉取证：`_analysis/topbar-114/`（改前/改后浅深、空态、裁切）、`_analysis/quick-switcher-114/screens/`（我方与原版复现页截图 + 计算样式 json）、`_analysis/menu-family-114/`（audit.md + screens）；设置窗口浅/深截图见 `settings-window` 场景输出目录。
 - 已知边界：per-leaf 前进后退、自动显示设置项、画布/图谱右键菜单、属性类型子菜单、标签组模型仍待单独立项。
+
+## 像素级保真 + 核心交互批（2026-10-20 · 58/58）
+
+- 四路交付：文件树/标签拖拽、1.14.4 令牌与图标、hover/动效、仓库切换窗口。
+- 新增永久场景：`drag-drop` 76 项（CDP 真实指针路径验证落盘与重排）、`vault-switcher` 142 项（主窗 13 + starter 129，含第二窗口浅/深）。
+- 扩容：theme-tokens 717→785（374 项消费令牌）、sidebar-chrome 66→73、view-header 61→68、menu-family 52→57、settings-ui 34、appearance 34、quick-switcher 130、dialogs 8。
+- 全量主循环（58 场景、`--no-screenshot`）：57 直过；`graph` 一次悬停命中时序假红——单独复跑 2 次均 72/72；该断言已加有限重试（20×50ms），再复跑 3 次 72/72。最终 **58/58 通过**。
+- 日志：`/tmp/opensidian-full-1020-091832/`（`summary.txt` + 每场景 run.log）；graph 复核 `graph-run-result-CMQvZ3 / I3qbUi / t1IxsH / BLzCGu / FB9tI9`。
+- 视觉证据：`_analysis/drag-drop-114/`、`_analysis/tokens-114/`、`_analysis/motion-114/`；starter 截图见 `vault-switcher-run-result-7C2D4x/`。
+- 已知差异：通知出场 easing（`core/notices.js` 未动）；菜单宽度 180/360 保留；starter 品牌/版本文本与浅色仅验收钩子；`--file-header-justify` 保持居中待产品拍板。

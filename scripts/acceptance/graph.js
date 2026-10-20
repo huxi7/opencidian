@@ -352,7 +352,13 @@
     return hoverRenderer.highlightNode === hoverNode;
   };
   let closedPreview = false;
-  assert(pinClosedHover(), '独立图谱悬停命中 A.md');
+  let hitHover = false;
+  // 命中判定依赖画布变换/悬停处理器落帧；负载高时首帧可能还没更新，有限重试。
+  for (let i = 0; i < 20 && !hitHover; i += 1) {
+    hitHover = pinClosedHover();
+    if (!hitHover) await delay(50);
+  }
+  assert(hitHover, '独立图谱悬停命中 A.md');
   for (let i = 0; i < 20 && !closedPreview; i += 1) {
     await delay(120);
     pinClosedHover();

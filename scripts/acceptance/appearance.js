@@ -1,12 +1,14 @@
 /**
  * [INPUT]: 独立临时 vault 与 OBS_ACT eval 注入的应用实例。
  * [OUTPUT]: 返回验收断言结果；失败抛出异常，供运行器判定。
- * [POS]: appearance 场景：主题 (Legacy) 项、字体管理弹窗（指示/图标/拖拽手柄/持久化）、主题色恢复默认。
+ * [POS]: appearance 场景：主题 (Legacy) 项、字体管理弹窗（指示/图标/拖拽手柄/持久化）、主题色恢复默认；
+ *        并锁住弹窗输入无基础过渡与 2px focus 焦点环。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 (async()=>{
 const wait=ms=>new Promise(r=>setTimeout(r,ms));const ok=(b,m)=>{if(!b)throw Error(m)};
 let count=0;const check=(b,m)=>{count++;ok(b,m)};
+const cssRules=()=>{const out=[];const walk=(list)=>{for(const r of list){if(r.cssRules&&r.cssRules.length)walk(r.cssRules);else if(r.selectorText)out.push(r);}};for(const ss of document.styleSheets){try{walk(ss.cssRules);}catch(e){}}return out;};
 const fsc=require('fs');const pth=require('path');
 const rowByName=(root,re)=>[...root.querySelectorAll('.setting-item')].find((el)=>{
   const n=el.querySelector('.setting-item-name');return n&&re.test(n.textContent||'');});
@@ -40,6 +42,9 @@ manage.click();await wait(200);
 const modal=[...document.querySelectorAll('.modal:not(.is-hidden)')].find((m)=>/字体名称|Font name/.test((m.querySelector('.modal-title')||{}).textContent||''));
 check(!!modal,'字体管理弹窗打开');
 const input=modal.querySelector('input');
+const inputFocusRules=cssRules().filter((r)=>r.selectorText&&r.selectorText.includes('input:focus')&&r.style.getPropertyValue('box-shadow'));
+check(inputFocusRules.some((r)=>r.style.getPropertyValue('box-shadow').includes('var(--input-border-width-focus')),'弹窗输入 focus 有 2px 焦点环规则');
+check(getComputedStyle(input).transitionDuration.split(',')[0].trim()==='0s','弹窗输入无基础过渡');
 input.value='AcceptanceFontXYZ';
 input.dispatchEvent(new Event('input',{bubbles:true}));
 [...modal.querySelectorAll('button')].find((b)=>/添加|Add/.test(b.textContent||'')).click();

@@ -1,9 +1,10 @@
 /**
  * [INPUT]: 依赖 ../core/i18n.js 的 t/tt/getNouns；依赖 ../core/menu.js 的 Menu；依赖 ../core/notices.js 的 Notice；
  *          依赖 ../core/suggest.js 的 GenericSuggester；依赖 ../core/vault.js 的 TFolder/normalizePath/parentPathOf
- * [OUTPUT]: 导出 movableItems、flattenTopLevel、dragPayloadFor、dragGhostTitle、moveItemsToFolder、deleteItemsSequentially、
+ * [OUTPUT]: 导出 movableItems、flattenTopLevel、dragPayloadFor、dragTitleFor、dragGhostTitle、moveItemsToFolder、deleteItemsSequentially、
  *          createFolderWithSelection、showMultiSelectionMenu、folderChoicesFor、chooseMoveTarget
- * [POS]: plugins-core/file-explorer 的多选批量操作层。逐条对应原版：x8.dragFiles（多选拖动载荷）、
+ * [POS]: plugins-core/file-explorer 的多选批量操作层。逐条对应原版：x8.dragFiles（多选拖动载荷 type=files + items）、
+ *        dragManager.dragFile/dragFolder 的单项幽灵标题（dragTitleFor：md 短名/其它全名/文件夹名）、
  *        onFileContextMenu 多选分支（actionNewFolderWithCount + 触发 files-menu 由 core/file-menu.js 补 actionMoveItems + menuOptDelete，
  *        分节表与单选菜单一致）、
  *        onDeleteSelectedFiles（顺序 promptForDeletion）、f$（移动进文件夹）、v$（剔除被选中文件夹包含的项）。
@@ -37,9 +38,15 @@ export function dragPayloadFor(selection, item) {
   if (items.length < 2) return null;
   return {
     path: item.path,
-    type: item instanceof TFolder ? 'folder' : 'file',
+    type: 'files',
     items: items.map((it) => ({ path: it.path, type: it instanceof TFolder ? 'folder' : 'file' })),
   };
+}
+
+/** 原版 dragManager.dragFile/dragFolder 的单项幽灵标题：md 用短名，其它文件用全名，文件夹用名字。 */
+export function dragTitleFor(item) {
+  if (item instanceof TFolder) return item.name;
+  return item.extension === 'md' ? item.basename : item.name;
 }
 
 /** 原版 dragManager.dragFiles 的幽灵标题："N files and M folders"。 */
@@ -54,7 +61,7 @@ export function dragGhostTitle(items) {
 /** 原版 f$：把 items 移动进 folder，逐项 renameFile，失败提示沿用拖拽移动的文案。 */
 export async function moveItemsToFolder(view, items, folder) {
   let moved = 0;
-  for (const item of movableItems(items, folder)) {
+  for (const item of movableItems(flattenTopLevel(items), folder)) {
     const newPath = normalizePath((folder.path === '/' ? '' : folder.path + '/') + item.name);
     const ok = await view.app.fileManager.renameFile(item, newPath);
     if (ok) moved++;
@@ -81,7 +88,7 @@ export async function createFolderWithSelection(view, targetItem, items) {
     ? targetItem
     : (view.app.vault.getFolderByPath(parentPathOf(targetItem.path)) || view.app.vault.getRoot());
   const created = await view._createFolderIn(parent);
-  await moveItemsToFolder(view, flattenTopLevel(items), created);
+  await moveItemsToFolder(view, items, created);
   view._selection.clear();
   view._selection.setFocus(created.path, true);
   setTimeout(() => view.startRename(created), 30);
