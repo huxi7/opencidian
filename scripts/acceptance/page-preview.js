@@ -29,6 +29,17 @@ await wait(460);
 const pop = findPop();
 check(!!pop, '悬停后出现 hover-popover');
 check(!!pop && pop.textContent.includes('UNIQUE_PREVIEW_MARKER'), 'popover 渲染目标笔记内容');
+check(!!pop && !!pop.querySelector('.markdown-embed > .markdown-embed-content > .markdown-preview-view'), 'popover 使用原版 markdown-embed 结构');
+check(!!pop && (pop.querySelector('.inline-title')||{}).textContent === 'Preview Target', 'popover 顶部显示文件名 inline-title');
+const popEmbed = pop && pop.querySelector('.markdown-embed');
+check(!!popEmbed && getComputedStyle(popEmbed).maxHeight === '400px' && getComputedStyle(popEmbed).overflow === 'auto', '预览限高 400px 且内部滚动');
+check(!!pop && getComputedStyle(pop.querySelector('.markdown-preview-view')).padding === '32px', '预览内容 padding 32px（--file-margins）');
+if (popEmbed) {
+  popEmbed.scrollTop = 30;
+  popEmbed.dispatchEvent(new Event('scroll', { bubbles: true }));
+  await wait(80);
+  check(!!findPop(), '预览内部滚动不关闭 popover');
+}
 link.dispatchEvent(new PointerEvent('pointerout', { bubbles: true, cancelable: true }));
 await wait(420);
 check(!findPop(), '移出链接后 popover 关闭');

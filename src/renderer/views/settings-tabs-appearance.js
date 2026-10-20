@@ -12,6 +12,7 @@ import { Modal } from '../core/modals.js';
 import { Desktop } from '../core/ipc.js';
 import { setIcon } from '../core/icons.js';
 import { AbstractInputSuggest } from '../core/suggest.js';
+import { syncTrafficLightPosition } from '../core/window-chrome.js';
 
 const fs = require('fs');
 const nodePath = require('path');
@@ -219,7 +220,7 @@ export class AppearanceTab extends SettingTab {
       const webFrame = electron && electron.webFrame;
       const current = webFrame ? webFrame.getZoomLevel() : (appearance.zoomLevel || 0);
       const applyZoom = (v) => {
-        if (webFrame) webFrame.setZoomLevel(v);
+        if (webFrame) { webFrame.setZoomLevel(v); syncTrafficLightPosition(); }
         app.settings.updateAppearance({ zoomLevel: v });
       };
       s.setName(tt('setting.appearance.option-zoom-level', '缩放比例'))

@@ -11,7 +11,7 @@ const checks=[];
 const check=(ok,msg)=>{if(!ok)throw Error('✗ '+msg);checks.push(msg);};
 const wait=ms=>new Promise(r=>setTimeout(r,ms));
 const ws=app.workspace;
-// 红绿灯保留区（macOS hidden 标题栏 + trafficLightPosition 19,12）
+// 红绿灯保留区（macOS hidden 标题栏 + trafficLightPosition 14,12）
 const LIGHT={x0:0,y0:0,x1:80,y1:30};
 const intersect=(r)=>!(r.right<=LIGHT.x0||r.left>=LIGHT.x1||r.bottom<=LIGHT.y0||r.top>=LIGHT.y1);
 const handlesInLightBox=()=>[...document.querySelectorAll('.workspace-leaf-resize-handle')]

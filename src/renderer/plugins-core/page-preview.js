@@ -16,8 +16,9 @@ export const nameKey = 'plugins.page-preview';
 
 const DATA_FILE = 'page-preview.json';
 const SHOW_DELAY = 300;
-/* 原版 workspace.registerHoverLinkSource 的默认门控：graph 为 defaultMod:true */
-const SOURCE_DEFAULT_MOD = { editor: true, preview: false, search: false, 'tab-header': false, graph: true };
+/* 原版 workspace.registerHoverLinkSource：search/editor/tab-header 为 defaultMod:true，preview 为 false。
+   graph 是本复刻的第五来源（原版无），沿用 Mod 门控。 */
+const SOURCE_DEFAULT_MOD = { editor: true, preview: false, search: true, 'tab-header': true, graph: true };
 const SOURCE_LABEL = {
   editor: ['plugins.page-preview.label-source-editor', '编辑模式'],
   preview: ['plugins.page-preview.label-source-preview', '预览模式'],
@@ -136,6 +137,7 @@ export function create(app) {
   /* 建外壳：popover 自身被悬停时视为仍在目标上（原版 onHover） */
   function createPopover() {
     const el = createDiv('popover hover-popover');
+    el.style.opacity = '0';
     document.body.appendChild(el);
     popoverEl = el;
     el.addEventListener('mouseenter', () => keepAlive());
@@ -143,7 +145,20 @@ export function create(app) {
     return el;
   }
 
-  /* 填充内容：未解析链接显示空态，已创建文件渲染正文（原版 E$.create → load） */
+  /* 原版 JZ.show：Gw(hoverEl, 80ms, --anim-motion-swing, opacity 0→1) */
+  function fadeIn(el) {
+    let easing = 'cubic-bezier(0, 0.55, 0.45, 1)';
+    try {
+      const token = getComputedStyle(document.body).getPropertyValue('--anim-motion-swing').trim();
+      if (token) easing = token;
+    } catch (e) {}
+    const anim = el.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 80, easing });
+    anim.onfinish = () => { el.style.opacity = ''; };
+  }
+
+  /* 填充内容：未解析链接显示空态；已创建文件按原版嵌块结构渲染（inline title + 正文）。
+     原版 E1.create：hoverEl.createDiv() → embedRegistry.load() → .markdown-embed > .markdown-embed-content，
+     预览头部的 .inline-title 是文件名，正文随嵌块滚动（max-height 400）。 */
   async function fillBody(el, href, sourcePath) {
     const dest = app.metadataCache.getFirstLinkpathDest(href, sourcePath);
     const file = dest ? app.vault.getFileByPath(dest) : null;
@@ -152,10 +167,16 @@ export function create(app) {
         tt('plugins.page-preview.label-empty-note', '“{{linktext}}” 未创建，点击以创建。', { linktext: href })));
       return;
     }
-    const content = el.createDiv('markdown-preview-view markdown-rendered');
+    const embed = el.createDiv('markdown-embed');
+    embed.setAttr('data-type', 'markdown');
+    const content = embed.createDiv('markdown-embed-content');
+    const preview = content.createDiv('markdown-preview-view markdown-rendered');
+    const sizer = preview.createDiv('markdown-preview-sizer markdown-preview-section');
+    sizer.createDiv('inline-title').setText(file.basename);
+    const body = sizer.createDiv('markdown-content');
     try {
       const text = await app.vault.read(file);
-      await renderMarkdown(app, stripFrontmatter(text), content, file.path, { preview: true });
+      await renderMarkdown(app, stripFrontmatter(text), body, file.path, { preview: true });
     } catch (e) {
       console.error(e);
     }
@@ -167,8 +188,8 @@ export function create(app) {
     const h = el.offsetHeight || 200;
     let x = Math.min(rect.left, Math.max(8, window.innerWidth - w - 8));
     x = Math.max(8, x);
-    let y = rect.bottom + 6;
-    if (y + h > window.innerHeight - 8) y = Math.max(8, rect.top - h - 6);
+    let y = rect.bottom + 10;
+    if (y + h > window.innerHeight - 8) y = Math.max(8, rect.top - h - 10);
     el.style.left = Math.round(x) + 'px';
     el.style.top = Math.round(y) + 'px';
   }
@@ -192,6 +213,7 @@ export function create(app) {
     const el = createPopover();
     await fillBody(el, href, findSourcePath(anchor));
     position(el, anchor);
+    fadeIn(el);
   }
 
   /* 原版 onHoverLink → onLinkHover：来源默认门控为需按住 Mod 时，不按 Mod 不显示 */
@@ -204,6 +226,7 @@ export function create(app) {
     attachHandle(parent);
     await fillBody(el, info.linktext, info.sourcePath || '');
     positionAtPoint(el, info.event.clientX, info.event.clientY);
+    fadeIn(el);
   }
 
   const onPointerOver = (ev) => {
@@ -244,7 +267,13 @@ export function create(app) {
   const onDocMouseDown = (ev) => {
     if (popoverEl && !popoverEl.contains(ev.target)) hidePopover();
   };
-  const onScroll = () => { if (popoverEl) hidePopover(); };
+  const onScroll = (ev) => {
+    if (!popoverEl) return;
+    // 嵌块自身在 400px 高度内滚动时不能关闭预览
+    const target = ev && ev.target;
+    if (target && target.nodeType === 1 && popoverEl.contains(target)) return;
+    hidePopover();
+  };
   const onKeyDown = (ev) => {
     if (ev.key === 'Escape') { hidePopover(); return; }
     if (!modPressed(ev) || popoverEl) return;

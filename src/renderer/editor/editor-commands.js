@@ -115,7 +115,17 @@ export function registerEditorCommands(app) {
   editorCmd('editor:undo', 'Undo', (e) => e.undo());
   editorCmd('editor:redo', 'Redo', (e) => e.redo());
   editorCmd('editor:select-all', 'Select all', (e) => e.setSelection({ line: 0, ch: 0 }, { line: e.lastLine(), ch: e.getLine(e.lastLine()).length }));
-  editorCmd('editor:copy', 'Copy', () => { document.execCommand('copy'); });
+  /* 系统剪贴板：渲染层有 nodeIntegration，优先用 Electron clipboard（菜单点击后编辑器失焦，execCommand 会空转） */
+  const sysClipboard = () => {
+    try { const cb = require('electron').clipboard; return cb && cb.readText ? cb : null; } catch (e) { return null; }
+  };
+  editorCmd('editor:copy', 'Copy', (e) => {
+    const text = e.getRange(e.getCursor('from'), e.getCursor('to'));
+    if (!text) return;
+    const cb = sysClipboard();
+    if (cb) cb.writeText(text);
+    else { try { document.execCommand('copy'); } catch (err) {} }
+  });
   editorCmd('editor:paste', 'Paste', async () => {
     // 剪贴板图片优先（原版：截图/图片 → "Pasted image <时间戳>" 落盘 + 嵌入）
     try {
@@ -131,12 +141,19 @@ export function registerEditorCommands(app) {
         return;
       }
     } catch (err) { /* 无图片或权限 → 文本路径 */ }
-    try { const text = await navigator.clipboard.readText(); const e = getEditor(app); if (e) e.replaceSelection(text); } catch (err) {}
+    const cb = sysClipboard();
+    try {
+      const text = cb ? cb.readText() : await navigator.clipboard.readText();
+      const e = getEditor(app);
+      if (e && text) e.replaceSelection(text);
+    } catch (err) {}
   });
-  editorCmd('editor:cut', 'Cut', async () => {
-    const e = getEditor(app);
+  editorCmd('editor:cut', 'Cut', async (e) => {
     if (!e) return;
-    try { await navigator.clipboard.writeText(e.getRange(e.getCursor('from'), e.getCursor('to'))); } catch (err) {}
+    const text = e.getRange(e.getCursor('from'), e.getCursor('to'));
+    const cb = sysClipboard();
+    if (cb) cb.writeText(text);
+    else { try { await navigator.clipboard.writeText(text); } catch (err) {} }
     e.replaceSelection('');
   });
 

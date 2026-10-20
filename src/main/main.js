@@ -188,7 +188,7 @@ function frameWindowOptions() {
   const frame = config.frame || 'hidden';
   if (frame === 'native') return { frame: true, titleBarStyle: 'default' };
   if (frame === 'custom') return { frame: false, titleBarStyle: 'hiddenInset', trafficLightPosition: { x: 12, y: 12 } };
-  return { frame: false, titleBarStyle: 'hidden', trafficLightPosition: { x: 19, y: 12 } };
+  return { frame: false, titleBarStyle: 'hidden', trafficLightPosition: { x: 14, y: 12 } };
 }
 
 function defaultWindowOptions(id) {
@@ -855,9 +855,13 @@ function setupIpc() {
   ipcMain.on('set-traffic-light-position', (e, x, y) => {
     if (!IS_MAC) return;
     const w = BrowserWindow.fromWebContents(e.sender);
-    if (w && typeof w.setTrafficLightPosition === 'function') {
-      try { w.setTrafficLightPosition({ x: Math.round(x), y: Math.round(y) }); } catch (err) { /* 窗口样式不支持时忽略 */ }
-    }
+    if (!w) return;
+    const pos = { x: Math.round(x), y: Math.round(y) };
+    try {
+      // Electron 33 起使用 setWindowButtonPosition；旧 API setTrafficLightPosition 已不在类型定义中
+      if (typeof w.setWindowButtonPosition === 'function') w.setWindowButtonPosition(pos);
+      else if (typeof w.setTrafficLightPosition === 'function') w.setTrafficLightPosition(pos);
+    } catch (err) { /* 窗口样式不支持时忽略 */ }
   });
   ipcMain.handle('plugin-select-folder', async (e) => {
     const win = BrowserWindow.fromWebContents(e.sender);

@@ -92,6 +92,7 @@ export class Menu {
     const scrollEl = dom.createDiv('menu-scroll');
     dom.createDiv('suggestion-bg');
     this.dom = dom;
+    dom.__menu = this;   // 真实鼠标 mousedown 时沿菜单链判断归属（子菜单 DOM 不在父菜单 dom 内）
     this._scrollEl = scrollEl;
     this.renderDom();
     document.body.appendChild(dom);
@@ -111,6 +112,14 @@ export class Menu {
     dom.style.left = Math.max(4, x) + 'px';
     dom.style.top = Math.max(4, y) + 'px';
     this._docMouseDown = (ev) => {
+      // 子菜单挂在本菜单 dom 之外：真实鼠标按下子菜单项时不能先关父菜单，
+      // 否则 mousedown →（菜单被移除）→ click 永远到不了 item.onclick。
+      let menuEl = ev.target && ev.target.closest ? ev.target.closest('.menu') : null;
+      let owner = menuEl && menuEl.__menu;
+      while (owner) {
+        if (owner === this) return;
+        owner = owner.parentMenu;
+      }
       if (!dom.contains(ev.target)) this.close();
     };
     this._docKeyDown = (ev) => this.onKeyDown(ev);

@@ -46,6 +46,13 @@ ok(Math.abs(opened.bounds.width-900)<=2&&Math.abs(opened.bounds.height-700)<=2,'
 ok(opened.minSize&&opened.minSize[0]===600&&opened.minSize[1]===400,'min 600x400 实际 '+JSON.stringify(opened.minSize));
 checks.push('size 900x700 min 600x400');
 
+// 4.1) macOS 红绿灯：popout offset 32px + zoom 1 → (10,8)，不能沿用主窗 (14,12)
+if (process.platform==='darwin' && opened.buttonPosition) {
+  ok(Math.abs(opened.buttonPosition.x-10)<=1&&Math.abs(opened.buttonPosition.y-8)<=1,
+    '设置窗口红绿灯位置 (10,8) 实际 '+JSON.stringify(opened.buttonPosition));
+  checks.push('traffic lights popout (10,8)');
+}
+
 // 5) 窗口内容铺满：body.is-popout-modal + modal 直挂 body + 关闭按钮隐藏
 ok(ready.isPopoutBody===true,'body.is-popout-modal');
 ok(ready.isSettingsWindow===true,'body.is-settings-window');

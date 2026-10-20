@@ -7,6 +7,7 @@
 /* Settings host — modal shell + tab management, DOM 1:1 with the original. */
 import { Modal } from '../core/modals.js';
 import { Desktop } from '../core/ipc.js';
+import { syncTrafficLightPosition } from '../core/window-chrome.js';
 import { setIcon } from '../core/icons.js';
 import { tt } from '../core/i18n.js';
 import { SettingTab } from '../core/setting.js';
@@ -97,7 +98,10 @@ export class SettingsHost extends Modal {
   /** 主进程已裁决回退应用内模态：绕过本地配置缓存（设置窗口写的配置尚未同步到本渲染器）。 */
   openInApp() {
     if (this.app.isSettingsWindow) document.body.addClass('is-popout-modal');
-    return super.open();
+    const result = super.open();
+    // popout 的 --traffic-lights-offset 变为 32px；必须在类生效后重算，否则沿用主窗 (14,12)
+    if (this.app.isSettingsWindow) syncTrafficLightPosition();
+    return result;
   }
 
   close() {

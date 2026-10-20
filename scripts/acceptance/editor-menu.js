@@ -10,6 +10,8 @@ const checks=[];
 const check=(ok,msg)=>{if(!ok)throw Error('✗ '+msg);checks.push(msg);};
 const wait=ms=>new Promise(r=>setTimeout(r,ms));
 const until=async(fn,msg,timeout=4000)=>{const t0=Date.now();while(Date.now()-t0<timeout){if(fn())return;await wait(50);}throw Error('✗ timeout: '+msg);};
+// 真实鼠标序列：mousedown 会先跑到 document 捕获监听（子菜单关闭回归就挂在这里），再 click 才触发动作
+const realClick=(el)=>{for(const type of ['mousedown','mouseup','click'])el.dispatchEvent(new MouseEvent(type,{bubbles:true,cancelable:true,button:0}));};
 
 const file=await app.vault.create('Menu-'+Date.now()+'.md','# 标题\n\nhello world\n\n[[菜单目标]]\n\n正文段落。\n');
 await app.vault.create('菜单目标.md','# 目标\n');
@@ -25,6 +27,8 @@ let fired=null;
 const ref=app.workspace.on('editor-menu',(menu,ed)=>{fired=menu;});
 const lineEl=[...content.querySelectorAll('.cm-line')][2];
 const r=lineEl.getBoundingClientRect();
+// 真实右键序列：mousedown 先把选区折叠/移走，contextmenu 里必须恢复（原版行为）
+content.dispatchEvent(new MouseEvent('mousedown',{bubbles:true,cancelable:true,button:2,clientX:r.left+8,clientY:r.top+6}));
 content.dispatchEvent(new MouseEvent('contextmenu',{bubbles:true,cancelable:true,button:2,clientX:r.left+8,clientY:r.top+6}));
 await until(()=>!!document.querySelector('body > .menu'),'右键菜单弹出',3000);
 const menu=document.querySelector('body > .menu');
@@ -63,9 +67,9 @@ const fmtScroll=fmtMenus[fmtMenus.length-1].querySelector('.menu-scroll');
 const fmtTitles=[...fmtScroll.querySelectorAll('.menu-item-title')].map((el)=>el.textContent);
 check(JSON.stringify(fmtTitles)===JSON.stringify(['加粗','倾斜','删除线','高亮','代码','数学','注释','清除格式']),'文本格式子菜单项序与原版一致：'+fmtTitles.join('/'));
 check(fmtScroll.querySelectorAll('.menu-separator').length===2,'文本格式子菜单两处分隔线（basic/advanced/danger）');
-boldItem.click();
+realClick(boldItem);
 await wait(150);
-check(view.editor.getValue().includes('**hello**'),'加粗动作包裹选区');
+check(view.editor.getValue().includes('**hello**'),'加粗动作包裹选区（子菜单真实 mousedown 不关闭父菜单）');
 if (ref && ref.unregister) ref.unregister();
 await wait(120);
 check(!document.querySelector('body > .menu'),'点击后菜单关闭');
@@ -137,5 +141,58 @@ view.editor.setSelection({line:1,ch:0},{line:1,ch:10});
 app.commands.executeCommandById('editor:clear-formatting');
 await wait(80);
 check(view.editor.getValue().includes('bold text'),'clear-formatting 去掉标记');
+
+// ---------------------------------------------------------- 剪贴板：真实鼠标 + CM6 选区
+const clip=require('electron').clipboard;
+const openMenu=(lineIndex=0)=>{
+  const el=[...content.querySelectorAll('.cm-line')][lineIndex];
+  const rr=el.getBoundingClientRect();
+  const x=rr.left+2, y=rr.top+rr.height/2;
+  content.dispatchEvent(new MouseEvent('mousedown',{bubbles:true,cancelable:true,button:2,clientX:x,clientY:y}));
+  content.dispatchEvent(new MouseEvent('contextmenu',{bubbles:true,cancelable:true,button:2,clientX:x,clientY:y}));
+};
+const menuItem=(re)=>[...document.querySelectorAll('body .menu .menu-item')].find((el)=>re.test(el.textContent));
+view.editor.setValue('alpha beta');
+view.editor.setSelection({line:0,ch:0},{line:0,ch:5});
+clip.writeText('SENTINEL');
+openMenu(0);
+await until(()=>!!document.querySelector('body > .menu'),'复制菜单弹出',2000);
+const copyItem=menuItem(/复制|Copy/);
+check(!!copyItem&&!copyItem.classList.contains('is-disabled'),'有选区时“复制”可用（editFlags 不覆盖 CM 选区）');
+realClick(copyItem);
+await wait(120);
+check(clip.readText()==='alpha','“复制”写入系统剪贴板：'+clip.readText());
+view.editor.setSelection({line:0,ch:0},{line:0,ch:5});
+clip.writeText('SENTINEL2');
+openMenu(0);
+await until(()=>!!document.querySelector('body > .menu'),'剪切菜单弹出',2000);
+realClick(menuItem(/剪切|Cut/));
+await wait(120);
+check(view.editor.getValue()===' beta','“剪切”移除选中文本：'+JSON.stringify(view.editor.getValue()));
+check(clip.readText()==='alpha','“剪切”写入系统剪贴板：'+clip.readText());
+openMenu(0);
+await until(()=>!!document.querySelector('body > .menu'),'粘贴菜单弹出',2000);
+realClick(menuItem(/粘贴|Paste/));
+await wait(120);
+check(view.editor.getValue().includes('alpha'),'“粘贴”写回文本：'+JSON.stringify(view.editor.getValue()));
+
+// ---------------------------------------------------------- 段落/插入子菜单真实鼠标动作
+const openSub=(re)=>{const item=menuItem(re);if(!item)throw Error('✗ 找不到子菜单：'+re);item.dispatchEvent(new MouseEvent('mouseenter',{bubbles:false}));return wait(380);};
+view.editor.setValue('段落测试');
+view.editor.setCursor({line:0,ch:0});
+openMenu(0);
+await until(()=>!!document.querySelector('body > .menu'),'段落菜单弹出',2000);
+await openSub(/段落设置|Paragraph/);
+realClick(menuItem(/1级标题|标题 1|Heading 1/));
+await wait(150);
+check(view.editor.getValue().startsWith('# 段落测试'),'段落设置→标题 1 生效：'+JSON.stringify(view.editor.getValue()));
+view.editor.setValue('插入测试');
+view.editor.setCursor({line:0,ch:0});
+openMenu(0);
+await until(()=>!!document.querySelector('body > .menu'),'插入菜单弹出',2000);
+await openSub(/插入|Insert/);
+realClick(menuItem(/表格|Table/));
+await wait(150);
+check(view.editor.getValue().includes('| Column 1 |'),'插入→表格生效：'+JSON.stringify(view.editor.getValue()));
 return {pass:true,checks};
 })()

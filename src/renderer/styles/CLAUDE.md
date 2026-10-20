@@ -25,7 +25,7 @@ markdown-highlight.css: 阅读、实时预览与源码共用原版 token 色彩�
 search.css: 搜索面板、backlinks、outline、tag pane 的专属样式。树基础结构来自 tree.css；面板内边距统一归 .nav-header，本文件不再复写。
 properties.css: 出链面板(outgoing-link，逐字移植原版 app.css 的 outgoing-link 段，含未解析链接色)与属性面板(all-properties/file-properties 的原版 data-type 规则、排序栏、只读列表滚动)。
 graph.css: 原版图谱颜色探针、筛选控件与折叠面板规则。
-popover.css: page-preview 的 .popover/.hover-popover 尺寸与内容规则（逐字移植 app.css）。
+popover.css: page-preview 的 .popover/.hover-popover 尺寸与内容规则（逐字移植 app.css）：450px 宽、markdown-embed 400px 限高内部滚动、内容 32px padding、空态/图片/PDF 宽度。
 settings.css: 设置页签完整样式，逐字移植原版 app.css 设置段(vertical-tab 导航/内容、setting-item、mod-toggle、设置组头、hotkey 胶囊、.hotkey-filter 筛选芯片、.input-right-decorator 装饰图标与清除按钮让位、CSS 片段列表)。导航 13px/radius-m/无 hover；开关单层 inset，active 排除 disabled。
 canvas.css: 画布样式入口。按序导入节点规则与连接线规则。
 canvas-nodes.css: 原版画布布局、节点、分组与手柄规则。文本卡片编辑器规则逐字移植 app.css 的 .markdown-source-view.mod-inside-iframe 段（原版编辑器跑在铺满卡片的内嵌 iframe，本复刻内联，10vh 换成卡片高度）：scroller 纵向布局 + 0 16px 内边距、::before/::after 上下留白、sizer 不撑满、--file-margins 归零、不挂行宽 class；另承接原版卡片内 callout 的 mix-blend-mode: normal、非编辑态正文不可选中（user-select: none）与卡片内容层的文本字体上下文（导出取该层计算样式）。末尾补导出弹窗用到的原版类 .modal.mod-narrow(宽度 400px) 与 .u-muted(次级说明文字，仅弹窗内)。

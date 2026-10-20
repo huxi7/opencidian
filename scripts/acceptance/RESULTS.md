@@ -373,3 +373,16 @@ MathJax 独立适配器子代理的41项基础/故障测试见 assets/mathjax/SO
 - 断言：editor-layout 23→26、view-header 68→73、drag-drop 76→79（真实指针命中、落点几何/透明度、开合动画、四入口模式切换）。
 - 全量主循环 58 场景（`--no-screenshot`）：**58/58 通过、0 失败**。日志 `/tmp/opensidian-full-1020-111628/`。
 - 证据：`_analysis/editor-layout-114/README.md`（原版/修复前后数值）、`after-dark.png`、`tab-drop-overlay.png`。
+
+## 右键菜单修复 + 悬浮预览嵌块 + 设置红绿灯（2026-10-20）
+
+- **编辑区右键（用户报「一个都不能用」）**：
+  - 子菜单真实鼠标点击回归：`menu.js` 的 document mousedown 改为沿 `parentMenu` 链判断归属；旧验收用 `.click()` 绕过 mousedown，故全绿但真机全失效。`editor-menu` 新增 `realClick`（mousedown→mouseup→click）锁死；段落设置→1级标题、插入→表格也改真实点击。
+  - CM6 选区不写原生 DOM selection，Electron `editFlags.canCopy/canCut` 恒 false；菜单又把 `editor.getSelection()` 的 `{anchor,head}` 当字符串。改经 `getRange` 取文本，有选区即启用。
+  - 真实右键折叠选区：`markdown-view.js` 捕获阶段记选区，contextmenu 落点在选区内时恢复（含 macOS Ctrl+Click）。
+  - copy/cut/paste 改 Electron `clipboard`，不再依赖失焦后的 `execCommand`。
+- **悬浮预览（用户报「跟原版完全不一样」）**：`.markdown-embed > .markdown-embed-content > .markdown-preview-view` + `.inline-title` 文件名；450px 宽、400px 限高自身滚动、32px padding、80ms swing 淡入、gap 10、内部滚动不关闭；来源默认门控 search/editor/tab-header=true、preview=false。
+- **设置红绿灯（用户报「歪了」）**：Electron 33 用 `setWindowButtonPosition`；旧 API 无效导致停在 `(19,12)`。新增 `core/window-chrome.js`，主窗 `(14,12)`、设置 popout `(10,8)`，`is-popout-modal` 与缩放后重算；验收读原生 `getWindowButtonPosition()`。
+- 断言：editor-menu 42→49、page-preview 16→21、settings-window +红绿灯；editor 131、menu-family 57、quick-switcher 130、theme-tokens 785、reading-ui 212、view-header 73、modal-ui 6、drag-drop 79 全绿。
+- 全量 58：主循环 55/56 直过（`vault-switcher` 漏传 `--seed-vaults 3`，复跑 142 项全过），`settings-restart` / `graph-persist-read` 链式通过 → **58/58**。日志 `/tmp/opensidian-full-1020-122223/`、`/tmp/obs-copy-acceptance/vault-switcher-run-result-X4JBot/`。
+- 证据：`_analysis/page-preview-114/`、`_analysis/settings-window-114/`。

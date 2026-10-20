@@ -17,6 +17,7 @@ import { Desktop, ipcOn } from './ipc.js';
 import { setIcon } from './icons.js';
 import { renderViewHeader, fillViewHeader, syncNavButtons } from './view-header.js';
 import { animateTabIn, animateTabOut } from './tab-animation.js';
+import { syncTrafficLightPosition } from './window-chrome.js';
 
 export function mount(workspace, container) {
   workspace.containerEl = container;
@@ -98,14 +99,7 @@ function installWindowState() {
         let zoom = 1;
         try { zoom = require('electron').webFrame.getZoomFactor() || 1; } catch (e) {}
         document.body.style.setProperty('--zoom-factor', String(zoom));
-        if (navigator.platform.startsWith('Mac') && typeof getComputedStyle === 'function') {
-          const styles = getComputedStyle(document.body);
-          const reduce = (value) => { const t = Math.floor(value * zoom / 2 - 8); return t < -5 ? 0 : t; };
-          const ox = parseFloat(styles.getPropertyValue('--traffic-lights-offset-x')) || 40;
-          let oy = parseFloat(styles.getPropertyValue('--traffic-lights-offset-y')) || 40;
-          if (!oy) oy = 40;
-          try { Desktop.setTrafficLightPosition(reduce(ox) + 2, reduce(oy)); } catch (e) {}
-        }
+        syncTrafficLightPosition();
       } catch (e) { /* 无 DOM/无 Electron 的宿主（回归测试）忽略 */ }
     }, 50);
   };

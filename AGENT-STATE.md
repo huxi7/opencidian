@@ -526,3 +526,16 @@ node --experimental-vm-modules src/renderer/core/workspace-regression.js
   - 模式切换：头部按钮 / 状态栏菜单 / 更多选项 / Cmd+E 四入口全通过（真实指针命中 + 双向切换）；view-header 增加永久断言。
 - 验收：editor-layout 26、view-header 73、drag-drop 79、editor 131、stacked-tabs 49、sidebar-chrome 73、core-views 83、theme-tokens 785 全绿。
 - 全量主循环 58 场景（`--no-screenshot`）：**58/58 通过、0 失败**。日志 `/tmp/opensidian-full-1020-111628/`。
+
+## 20. 右键菜单修复 + 悬浮预览嵌块 + 设置红绿灯（2026-10-20）
+
+- **用户反馈**：编辑区右键「一个都不能用」；双链浮窗「跟原版完全不一样，一点效果都没有」；设置窗口红绿灯「歪了」。
+- **右键菜单根因（三条叠加）**：
+  1. 子菜单 DOM 挂在父菜单 `dom` 之外。`document` 捕获阶段的 mousedown 只看父菜单 `dom.contains`，真实鼠标按下子菜单项会先关整条链，`click` 永远到不了 `item.onclick`；程序化 `.click()` 不产生 mousedown，所以旧验收全绿。`menu.js` 改为沿 `parentMenu` 链判断归属。
+  2. CM6 选区不在原生 DOM selection 里，Electron `editFlags.canCopy/canCut` 恒 false；且菜单把 `editor.getSelection()` 的 `{anchor,head}` 当字符串取 `.length`，导致「复制/剪切」永久置灰。改经 `getRange` 取文本，有 CM 选区即启用。
+  3. 真实右键的 mousedown 会折叠/移走 CM 选区。`markdown-view.js` 在捕获阶段记住按下前选区；contextmenu 落点在选区内时恢复（含 macOS Ctrl+Click，button 0 + ctrlKey）。
+  4. 剪贴板命令改走 Electron `clipboard`（菜单点击后编辑器失焦，`document.execCommand('copy')` 空转）。
+- **悬浮预览**：按原版 `E1` 结构补 `.markdown-embed > .markdown-embed-content > .markdown-preview-view`；`.inline-title` 显示文件名；450px 宽、嵌块 400px 限高自身滚动、内容 32px padding；80ms `--anim-motion-swing` 淡入；定位 gap 10；内部滚动不关闭。来源默认门控对齐原版：search/editor/tab-header=true、preview=false。证据 `_analysis/page-preview-114/`。
+- **红绿灯**：Electron 33 改用 `setWindowButtonPosition`；旧 API 调用无效，窗口停在 `(19,12)`。新增 `core/window-chrome.js` 按原版公式计算；设置窗口创建选项即写 `(10,8)`，`is-popout-modal` 生效后与缩放后重算（主窗 40px → `(14,12)`）。验收直接读 `getWindowButtonPosition()` 断言。证据 `_analysis/settings-window-114/`。
+- **验收**：editor 131、editor-menu 49（真实鼠标子菜单：加粗/1级标题/表格、右键选区恢复、系统剪贴板）、page-preview 21、settings-window 17、menu-family 57、quick-switcher 130、theme-tokens 785、reading-ui 212、view-header 73、modal-ui 6、drag-drop 79 全绿。
+- **全量 58**：主循环 56 场景 55 直过；`vault-switcher` 首次漏传 `--seed-vaults 3`（harness 参数，不是产品回归），带参数复跑 142 项全过；`settings-restart`、`graph-persist-read` 链式通过 → **58/58**。日志 `/tmp/opensidian-full-1020-122223/`，vault-switcher 复跑 `/tmp/obs-copy-acceptance/vault-switcher-run-result-X4JBot/`。

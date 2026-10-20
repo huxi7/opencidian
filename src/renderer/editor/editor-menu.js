@@ -166,10 +166,14 @@ function addClickableTokenItems(menu, app, editor, ev, sourcePath) {
 // ------------------------------------------------------------- 剪贴板
 function addClipboardItems(menu, app, editor, params) {
   const flags = (params && params.editFlags) || {};
-  const selection = editor.getSelection() || '';
+  // 本复刻 editor.getSelection() 返回 {anchor, head}（与原版返回文本不同）；选中文本统一经 getRange 取。
+  const range = editor.getSelection();
+  const selection = range && range.anchor ? editor.getRange(range.anchor, range.head) : '';
   const hasSelection = selection.length > 0;
-  const canCut = typeof flags.canCut === 'boolean' ? flags.canCut : hasSelection;
-  const canCopy = typeof flags.canCopy === 'boolean' ? flags.canCopy : hasSelection;
+  // Electron 的 editFlags 读的是原生 DOM 选区，CM6 选区不在其中 → canCopy/canCut 恒 false。
+  // 编辑器有真实选区时必须覆盖原生标志；否则“复制/剪切”永远置灰。
+  const canCut = hasSelection || flags.canCut === true;
+  const canCopy = hasSelection || flags.canCopy === true;
   const canPaste = typeof flags.canPaste === 'boolean' ? flags.canPaste : true;
   menu.addItem((i) => i.setSection('clipboard').setTitle(t('interface.menu.cut') || 'Cut').setIcon('lucide-scissors').setDisabled(!canCut)
     .onClick(() => app.commands.executeCommandById('editor:cut')));
@@ -185,7 +189,9 @@ function addClipboardItems(menu, app, editor, params) {
 
 // ------------------------------------------------------------- 链接插入（selection-link）
 function addLinkInsertItems(menu, app, editor) {
-  const oneLine = !/[\r\n]/.test(editor.getSelection() || '');
+  const linkRange = editor.getSelection();
+  const linkSelection = linkRange && linkRange.anchor ? editor.getRange(linkRange.anchor, linkRange.head) : '';
+  const oneLine = !/[\r\n]/.test(linkSelection);
   menu.addItem((i) => i.setSection('selection-link').setTitle(t('interface.formatting.insert-link') || 'Insert internal link').setIcon('lucide-link')
     .setDisabled(!oneLine).onClick(() => app.commands.executeCommandById('editor:insert-wikilink')));
   menu.addItem((i) => i.setSection('selection-link').setTitle(t('interface.formatting.insert-external-link') || 'Insert external link').setIcon('lucide-external-link')

@@ -103,8 +103,24 @@ export class MarkdownView extends View {
     this._bindEditorKeys();
     this._bindInlineTitle();
     // 原版 onContextMenu：编辑器右键菜单（属性行等组件已 preventDefault 的不再重复弹出）
+    // 真实右键的 mousedown 会把 CM 选区折叠/移走；在捕获阶段记住按下前的选区，contextmenu 时若落点在选区内则恢复。
+    let rightPress = null;
+    this.editor.cm.dom.addEventListener('mousedown', (ev) => {
+      // macOS 的 Ctrl+Click 是副键点击，DOM 里 button 仍为 0
+      const secondary = ev.button === 2 || (navigator.platform.startsWith('Mac') && ev.ctrlKey && ev.button === 0);
+      if (!secondary) return;
+      const sel = this.editor.cm.state.selection.main;
+      rightPress = sel.empty ? null : { from: sel.from, to: sel.to };
+    }, true);
     this.editor.cm.dom.addEventListener('contextmenu', (ev) => {
       if (ev.defaultPrevented) return;
+      if (rightPress) {
+        const pos = this.editor.cm.posAtCoords({ x: ev.clientX, y: ev.clientY });
+        if (pos != null && pos >= rightPress.from && pos <= rightPress.to) {
+          this.editor.cm.dispatch({ selection: { anchor: rightPress.from, head: rightPress.to } });
+        }
+      }
+      rightPress = null;
       showEditorContextMenu(this.app, this.editor, this, ev);
     });
 

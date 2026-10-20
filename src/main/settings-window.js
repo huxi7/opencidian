@@ -64,6 +64,7 @@ function setupSettingsWindows(ctx) {
         y = Math.round(base.y + (base.height - height) / 2);
       }
     }
+    const frameOptions = frameWindowOptions();
     const win = new BrowserWindow({
       width,
       height,
@@ -75,7 +76,9 @@ function setupSettingsWindows(ctx) {
       autoHideMenuBar: true,                  // 原版 overrideBrowserWindowOptions.autoHideMenuBar
       show: false,
       backgroundColor: typeof payload.background === 'string' && payload.background ? payload.background : '#00000000',
-      ...frameWindowOptions(),                // 原版 frame/titleBarStyle 跟随应用「窗口边框」设置
+      ...frameOptions,                         // 原版 frame/titleBarStyle 跟随应用「窗口边框」设置
+      // popout offset 32px @ zoom 1 → (10,8)；避免窗口首帧停在主窗坐标
+      ...(frameOptions.frame === false ? { trafficLightPosition: { x: 10, y: 8 } } : {}),
       ...(isE2E ? { focusable: false, opacity: 0 } : {}),
       webPreferences: {
         contextIsolation: false,
@@ -155,16 +158,18 @@ function setupSettingsWindows(ctx) {
     const entry = entryForEvent(e);
     if (!alive(entry)) { e.returnValue = { open: false }; return; }
     const win = entry.win;
-    let bounds = null; let minSize = null; let title = '';
+    let bounds = null; let minSize = null; let title = ''; let buttonPosition = null;
     try { bounds = win.getBounds(); } catch (err) {}
     try { minSize = win.getMinimumSize(); } catch (err) {}
     try { title = win.getTitle(); } catch (err) {}
+    try { buttonPosition = typeof win.getWindowButtonPosition === 'function' ? win.getWindowButtonPosition() : null; } catch (err) {}
     e.returnValue = {
       open: true,
       vaultId: entry.id,
       bounds,
       minSize,
       title,
+      buttonPosition,
       focused: !isE2E && win.isFocused(),
       frame: ctx.getFrame ? ctx.getFrame() : null,
       isNativeFrame: ctx.getFrame ? ctx.getFrame() === 'native' : false,

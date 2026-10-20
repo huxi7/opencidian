@@ -29,9 +29,17 @@
 }
 .popover.hover-popover .markdown-preview-view {
   font-size: var(--popover-font-size);
-  overflow-y: auto;
-  padding: var(--size-4-3) var(--size-4-4);
 }
+/* 原版 app.css 9758-9772：嵌入块自身限高 400 并滚动，内容 padding 走 --file-margins */
+.popover.hover-popover > .markdown-embed {
+  max-height: var(--popover-height);
+  overflow: auto;
+  border: 0;
+  padding: 0;
+  margin: 0;
+}
+.popover.hover-popover > .markdown-embed > .markdown-embed-content { width: 100%; }
+.popover.hover-popover > .markdown-embed > .markdown-embed-content > .markdown-preview-view { padding: var(--file-margins); }
 .popover.hover-popover > .mod-empty {
   display: flex;
   justify-content: center;
