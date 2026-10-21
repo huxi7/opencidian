@@ -1,16 +1,15 @@
 /**
  * [INPUT]: 依赖 tokens-*.css 与 base.css；消费设置弹窗与设置页 DOM。
- * [OUTPUT]: 设置导航、setting-group/setting-item、开关、下拉、快捷键与滑块样式。
- * [POS]: 设置页唯一皮肤。导航只有 is-active 底色；开关无 hover 阴影；输入/按钮过渡由 base 提供。
+ * [OUTPUT]: 设置导航、setting-group/setting-item、开关、下拉与滑块样式。
+ * [POS]: 设置页唯一皮肤。导航只有 is-active 底色；开关无 hover 阴影；输入/按钮过渡由 base 提供。快捷键筛选在 settings-hotkeys.css，设置弹窗在 settings-dialogs.css。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 /* ==========================================================================
    settings.css — 设置模态样式。逐字移植自原版 app.css：
    .vertical-tabs-container / .vertical-tab-header / .vertical-tab-nav-item
-   .setting-group / .setting-item / .checkbox-container / .setting-hotkey
-   .hotkey-filter / .setting-filter-container / .input-right-decorator
-   （app.css 行号：9088-9195 标签页、4743-5120 设置项、9199-9305 开关、
-   7051-7112 下拉、7769-7835 滑块与色块、155059-156100 快捷键筛选与装饰图标）
+   .setting-group / .setting-item / .checkbox-container
+   （app.css 行号：9088-9195 标签页、5206-5410 设置组、5611 行结构、9199-9305 开关、
+   7051-7112 下拉、7769-7835 滑块与色块）
    ========================================================================== */
 
 /* ---------------------------------------------------------- tabs (app.css 9141) */
@@ -25,7 +24,7 @@
 }
 .modal.mod-settings .vertical-tab-header {
   flex: 0 0 25%;
-  min-width: 180px;
+  min-width: 200px;
   max-width: 250px;
   overflow: auto;
   border-inline-end: var(--border-width) solid var(--divider-color);
@@ -94,6 +93,7 @@ body:not(.is-phone) .vertical-tab-nav-item.is-active {
   container-type: inline-size;
 }
 .vertical-tab-content-container {
+  position: relative;
   overflow: hidden;
   flex-grow: 1;
   min-width: 0;
@@ -101,8 +101,15 @@ body:not(.is-phone) .vertical-tab-nav-item.is-active {
 .vertical-tab-content {
   overflow-y: auto;
   height: 100%;
-  padding-top: var(--size-4-8);
+  padding-top: var(--size-4-12);
   padding-bottom: var(--size-4-16);
+  scroll-padding-block: var(--size-4-4);
+}
+.modal.mod-settings {
+  --setting-group-center-offset: calc((100% - var(--setting-group-max-width, 700px)) / 2);
+}
+.modal.mod-settings .vertical-tab-content {
+  padding-inline: max(var(--size-4-8), var(--setting-group-center-offset));
 }
 .vertical-tab-content h1 {
   display: none;
@@ -112,27 +119,58 @@ body:not(.is-phone) .vertical-tab-nav-item.is-active {
   font-weight: var(--font-semibold);
 }
 
-/* --------------------------------------------------- setting groups (app.css 4761) */
+/* --------------------------------------------------- setting groups (app.css 5206) */
+.setting-group {
+  width: 100%;
+  max-width: var(--setting-group-max-width, 700px);
+  margin-inline: auto;
+}
 .setting-group + .setting-group {
   margin-top: var(--size-4-6);
 }
 .setting-group .setting-group-search {
   background-color: var(--setting-items-background);
-  padding: var(--setting-items-padding-y) var(--setting-items-padding-x);
+  padding: var(--setting-items-padding-y) 0;
   border-top-left-radius: var(--setting-items-radius);
   border-top-right-radius: var(--setting-items-radius);
   border: var(--setting-items-border-width) solid var(--setting-items-border-color);
   border-bottom: none;
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--size-4-2);
+  padding-top: var(--size-4-4);
 }
-.setting-group .setting-group-search + .setting-items {
+.setting-group .setting-group-search:empty {
+  display: none;
+}
+.setting-group .setting-group-search:focus-visible {
+  outline: 2px solid var(--background-modifier-border-focus);
+  outline-offset: -2px;
+}
+.setting-group .setting-group-search > .search-input-container {
+  flex: 1;
+  margin-inline: var(--setting-items-padding-x);
+  min-width: 0;
+}
+.setting-group .setting-group-search-control {
+  flex: 1 0 100%;
+  margin: var(--size-4-1) 0;
+  overflow: hidden;
+  padding-inline: var(--setting-items-padding-x);
+}
+.setting-group .setting-group-search:not(:empty) + .setting-items {
   border-top-left-radius: 0;
   border-top-right-radius: 0;
   padding-top: 0;
   border-top: none;
 }
+.setting-group .setting-group-search:not(:empty) + .setting-items > .setting-item:first-child {
+  border-top-left-radius: 0;
+  border-top-right-radius: 0;
+}
 .setting-group .setting-items {
   background-color: var(--setting-items-background);
-  padding: var(--setting-items-padding-y) var(--setting-items-padding-x);
   border-radius: var(--setting-items-radius);
   corner-shape: var(--corner-shape);
   border: var(--setting-items-border-width) solid var(--setting-items-border-color);
@@ -140,20 +178,32 @@ body:not(.is-phone) .vertical-tab-nav-item.is-active {
 .setting-group .setting-items:empty {
   display: none;
 }
-.setting-group .setting-item {
+.setting-group .setting-item:not(.setting-item-heading) {
+  position: relative;
   border: none;
-  border-top: var(--border-width) solid var(--background-modifier-border);
   background-color: transparent;
   border-radius: 0;
-  padding: var(--size-4-4) 0;
+  padding: var(--setting-items-padding-y) var(--setting-items-padding-x);
   margin-bottom: 0;
 }
-.setting-group .setting-item:first-child {
-  padding-top: 0;
-  border-top: none;
+.setting-group .setting-item:not(.setting-item-heading)::before {
+  content: '';
+  position: absolute;
+  top: calc(-1 * var(--border-width));
+  left: var(--setting-items-padding-x);
+  right: var(--setting-items-padding-x);
+  border-top: var(--setting-items-divider-width, var(--border-width)) solid var(--setting-items-divider-color, var(--background-modifier-border));
 }
-.setting-group .setting-item:last-child {
-  padding-bottom: 0;
+.setting-group .setting-item:not(.setting-item-heading):first-child {
+  border-top-left-radius: var(--setting-items-radius);
+  border-top-right-radius: var(--setting-items-radius);
+}
+.setting-group .setting-item:not(.setting-item-heading):first-child::before {
+  content: none;
+}
+.setting-group .setting-item:not(.setting-item-heading):last-child {
+  border-bottom-left-radius: var(--setting-items-radius);
+  border-bottom-right-radius: var(--setting-items-radius);
 }
 .setting-group .setting-item-heading {
   padding: 0 var(--size-4-4);
@@ -161,11 +211,26 @@ body:not(.is-phone) .vertical-tab-nav-item.is-active {
   background-color: transparent;
   margin-bottom: var(--size-4-4);
 }
+.setting-group.mod-list .setting-item { align-items: center; }
+body:not(.is-mobile) .setting-group.mod-list .checkbox-container {
+  width: var(--toggle-s-width);
+  height: calc(var(--toggle-s-thumb-height) + var(--toggle-s-border-width) * 2);
+}
+body:not(.is-mobile) .setting-group.mod-list .checkbox-container:after {
+  width: var(--toggle-s-thumb-width);
+  height: var(--toggle-s-thumb-height);
+  margin: var(--toggle-s-border-width) 0 0 0;
+  transform: translate3d(var(--toggle-s-border-width), 0, 0);
+}
+body:not(.is-mobile) .setting-group.mod-list .checkbox-container.is-enabled:after {
+  transform: translate3d(calc(var(--toggle-s-width) - var(--toggle-s-thumb-width) - var(--toggle-s-border-width)), 0, 0);
+}
 
 /* ---------------------------------------------------- setting items (app.css 4803) */
 .setting-item {
+  position: relative;
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   row-gap: var(--size-4-3);
   border-radius: var(--setting-items-radius);
   background-color: var(--setting-items-background);
@@ -261,6 +326,8 @@ body:not(.is-phone) .vertical-tab-nav-item.is-active {
   min-width: 0;
 }
 .setting-item-description {
+  --link-color: var(--text-muted);
+  --link-color-hover: var(--text-normal);
   color: var(--text-muted);
   font-size: var(--font-ui-smaller);
   padding-top: var(--size-4-1);
@@ -326,173 +393,12 @@ body:not(.is-phone) .vertical-tab-nav-item.is-active {
   width: inherit;
   max-width: 400px;
 }
+.setting-item-control select.dropdown {
+  width: var(--dropdown-fitted-width, inherit);
+}
 
-/* ------------------------------------------------------------ hotkeys (app.css 4980) */
-.setting-command-hotkeys {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--size-4-1);
-}
-.setting-hotkey {
-  font-family: -apple-system, BlinkMacSystemFont, var(--font-monospace);
-  font-size: var(--font-ui-small);
-  background-color: var(--background-modifier-hover);
-  border-radius: var(--radius-s);
-  corner-shape: var(--corner-shape);
-  padding: 2px 4px 2px 8px;
-  align-self: flex-end;
-  white-space: nowrap;
-  display: flex;
-  align-items: center;
-  gap: var(--size-4-1);
-}
-.setting-hotkey.has-conflict {
-  background-color: var(--background-modifier-error);
-  color: var(--text-on-accent);
-}
-@media (hover: hover) {
-  .setting-hotkey.has-conflict:hover {
-    background-color: var(--background-modifier-error-hover);
-  }
-}
-.setting-hotkey.mod-active {
-  background-color: var(--interactive-accent);
-  color: var(--text-on-accent);
-}
-.setting-hotkey.mod-empty {
-  padding-inline-end: var(--size-4-2);
-}
-.setting-password {
-  white-space: nowrap;
-  text-overflow: ellipsis;
-  max-width: 10ch;
-  overflow: hidden;
-}
-.setting-hotkey-icon {
-  display: flex;
-  align-items: center;
-  cursor: var(--cursor);
-  border-radius: 50%;
-  line-height: 1;
-  text-align: center;
-}
-.setting-hotkey-icon .svg-icon {
-  width: 16px;
-  height: 16px;
-  stroke-width: 2px;
-  opacity: 0.6;
-}
-@media (hover: hover) {
-  .setting-hotkey-icon:hover .svg-icon {
-    opacity: 1;
-  }
-}
-@media (hover: hover) {
-  .setting-delete-hotkey:hover {
-    background-color: var(--background-modifier-error);
-    color: var(--text-on-accent);
-  }
-}
-.setting-add-hotkey-button,
-.setting-restore-hotkey-button {
-  padding: var(--size-2-2);
-  border-radius: var(--radius-s);
-  corner-shape: var(--corner-shape);
-  color: var(--text-faint);
-  cursor: var(--cursor);
-  height: calc(var(--icon-l) + var(--size-2-2) + var(--size-2-2));
-}
-.setting-add-hotkey-button.mod-active,
-.setting-restore-hotkey-button.mod-active {
-  color: var(--text-accent);
-}
-@media (hover: hover) {
-  .setting-add-hotkey-button:hover,
-  .setting-restore-hotkey-button:hover {
-    background-color: var(--background-modifier-hover);
-    color: var(--text-normal);
-  }
-}
 .extra-setting-button {
   line-height: 0;
-}
-.setting-message {
-  font-size: var(--font-ui-small);
-}
-.setting-font-list {
-  margin: 1.5em 0 0.75em 0;
-}
-.hotkey-settings-container {
-  display: flex;
-  flex-direction: column;
-}
-.hotkey-settings-container .setting-item-description {
-  padding-top: 0;
-}
-.hotkey-settings-container hr {
-  margin: 20px 0 10px 0;
-}
-.hotkey-list-container {
-  overflow: auto;
-}
-.hotkey-header-container {
-  justify-content: space-between;
-  padding-bottom: var(--size-4-8);
-  display: flex;
-  flex-wrap: wrap;
-}
-.hotkey-filter {
-  align-items: center;
-  background-color: var(--background-modifier-hover);
-  border-radius: var(--radius-s);
-  corner-shape: var(--corner-shape);
-  display: flex;
-  font-size: var(--font-ui-small);
-  padding: var(--size-4-1) var(--size-4-1) var(--size-4-1) var(--size-4-2);
-  gap: var(--size-2-1);
-}
-.setting-filter-container {
-  display: flex;
-  gap: var(--size-4-2);
-  margin-bottom: var(--size-4-4);
-}
-.input-right-decorator {
-  position: absolute;
-  transform: translateY(-50%);
-  top: 50%;
-  inset-inline-end: var(--input-icon-inset);
-}
-/* 原版 app.css：装饰图标内边距，搜索框有文本时让位给清除按钮 */
-.input-right-decorator.clickable-icon {
-  padding: var(--size-2-1) var(--size-2-2);
-}
-.input-right-decorator.clickable-icon.is-active {
-  background-color: transparent;
-}
-.search-input-container input:not(:placeholder-shown) {
-  padding-inline-end: 28px;
-}
-.search-input-container input:not(:placeholder-shown) ~ .input-right-decorator {
-  inset-inline-end: calc(var(--input-icon-inset) + 28px);
-}
-.search-input-container.mod-hotkey .clickable-icon {
-  padding: var(--size-2-1);
-}
-.hotkey-filter-remove-button {
-  cursor: var(--cursor);
-  color: var(--text-muted);
-  padding: var(--size-2-1);
-  border-radius: var(--radius-s);
-  corner-shape: var(--corner-shape);
-  display: flex;
-  align-items: center;
-  --icon-size: var(--icon-xs);
-  --icon-stroke: var(--icon-xs-stroke-width);
-}
-@media (hover: hover) {
-  .hotkey-filter-remove-button:hover {
-    background-color: var(--background-modifier-hover);
-  }
 }
 .setting-progress-bar {
   width: 100%;
@@ -678,6 +584,10 @@ input[type='range'] {
   padding: 0;
   outline: none;
 }
+input[type='range'].slider {
+  --slider-fill-position: calc(var(--slider-thumb-width) / 2 + (100% - var(--slider-thumb-width)) * var(--slider-fill-ratio, 0));
+  background-image: linear-gradient(to var(--inset-end, right), var(--slider-fill-background, var(--interactive-accent)) var(--slider-fill-position), transparent var(--slider-fill-position));
+}
 input[type='range']::-webkit-slider-runnable-track {
   height: 6px;
   -webkit-appearance: none;
@@ -688,26 +598,35 @@ input[type='range']::-webkit-slider-thumb {
   width: var(--slider-thumb-width);
   border-radius: var(--slider-thumb-radius);
   cursor: default;
-  background: #FFF;
+  background: var(--slider-thumb-background, #FFF);
   border: var(--slider-thumb-border-width) solid var(--slider-thumb-border-color);
   position: relative;
   top: var(--slider-thumb-y);
   transition: all 0.1s linear;
-  box-shadow: 0 1px 1px 0px rgba(0, 0, 0, 0.05), 0 2px 2px 0px rgba(0, 0, 0, 0.1);
+  box-shadow: var(--slider-thumb-shadow, 0 0px 2px 0px rgba(0, 0, 0, 0.1), 0 2px 6px 0px rgba(0, 0, 0, 0.1));
 }
-input[type='range']::-webkit-slider-thumb:hover,
-input[type='range']::-webkit-slider-thumb:active {
-  background: white;
+input[type='range']:where(:not(:disabled))::-webkit-slider-thumb:hover,
+input[type='range']:where(:not(:disabled))::-webkit-slider-thumb:active {
+  background: var(--slider-thumb-background-hover, #FFF);
   border-color: var(--background-modifier-border-focus);
-  box-shadow: 0 1px 2px 0px rgba(0, 0, 0, 0.1), 0 2px 3px 0px rgba(0, 0, 0, 0.2);
+  box-shadow: var(--slider-thumb-shadow-hover, var(--slider-thumb-shadow, 0 0px 2px 0px rgba(0, 0, 0, 0.1), 0 2px 6px 0px rgba(0, 0, 0, 0.1)));
   transition: all 0.1s linear;
+}
+input[type='range']:where(:not(:disabled))::-webkit-slider-thumb:active {
+  width: var(--slider-thumb-width-active, calc(var(--slider-thumb-width) + 4px));
+  height: var(--slider-thumb-height-active, calc(var(--slider-thumb-height) + 4px));
+  opacity: var(--slider-thumb-opacity-active, 0.7);
+  top: var(--slider-thumb-y-active, calc(var(--slider-thumb-y) - 2px));
 }
 body:not(.is-mobile) input[type=range]:focus {
   box-shadow: none;
 }
+body:not(.is-mobile) input[type=range]:focus::-webkit-slider-thumb {
+  box-shadow: var(--slider-thumb-shadow-active, var(--slider-thumb-shadow, 0 0px 2px 0px rgba(0, 0, 0, 0.1), 0 2px 6px 0px rgba(0, 0, 0, 0.1)));
+}
 body:not(.is-mobile) input[type=range]:focus-visible::-webkit-slider-thumb {
   border-color: var(--background-modifier-border-focus);
-  box-shadow: 0 1px 2px 0px rgba(0, 0, 0, 0.05), 0 2px 3px 0px rgba(0, 0, 0, 0.2), 0 0 0px 2px var(--background-modifier-border-focus);
+  box-shadow: var(--slider-thumb-shadow-focus, var(--slider-thumb-shadow, 0 0px 2px 0px rgba(0, 0, 0, 0.1), 0 2px 6px 0px rgba(0, 0, 0, 0.1)), 0 0 0px 2px var(--background-modifier-border-focus));
 }
 input[type="color"] {
   -webkit-appearance: none;
@@ -812,18 +731,6 @@ select.mod-hidden {
   align-items: center;
 }
 
-/* -------------------------------------------------- font manager (Vee) */
-.font-manager-item { align-items: center; gap: var(--size-2-3); }
-.font-manager-drag-handle { cursor: var(--cursor); color: var(--text-faint); }
-.font-manager-item-indicator { display: flex; align-items: center; margin-inline-start: auto; cursor: var(--cursor); }
-.font-manager-item-indicator.mod-success { color: var(--text-success, var(--color-green)); }
-.font-manager-item-indicator.mod-warning { color: var(--text-warning, var(--color-orange)); }
-.font-manager-item .mobile-option-setting-item-name { flex: 1; }
-.font-manager-item.is-being-dragged { opacity: 0.5; }
-.font-manager-item.is-drop-target { box-shadow: inset 0 2px 0 0 var(--interactive-accent); }
-.font-missing-icon { display: inline-flex; vertical-align: middle; margin-inline-end: 2px; }
-.font-missing-icon .svg-icon { width: var(--icon-xs); height: var(--icon-xs); }
-
 /* ------------------------------------------------------- flair / warning */
 /* 原版 app.css：.flair 徽标（忽略文件正则标记等）与通用 .mod-warning 文本色 */
 .flair {
@@ -841,25 +748,3 @@ select.mod-hidden {
 }
 .flair.mod-flat { vertical-align: top; }
 .mod-warning { color: var(--text-error); }
-
-/* ------------------------------------------------- ribbon configuration (Zee) */
-.ribbon-config-item {
-  display: flex;
-  align-items: center;
-  gap: var(--size-2-3);
-  padding: var(--size-4-1) 0;
-}
-.ribbon-config-item .mobile-option-setting-item-name { flex: 1; }
-.mobile-option-setting-item-remove-icon,
-.mobile-option-setting-item-add-icon {
-  display: flex;
-  align-items: center;
-  color: var(--text-muted);
-  cursor: var(--cursor);
-}
-.mobile-option-setting-item-remove-icon:hover,
-.mobile-option-setting-item-add-icon:hover { color: var(--text-normal); }
-.mobile-option-setting-item-option-icon { display: flex; align-items: center; color: var(--text-faint); }
-.ribbon-config-item.is-being-dragged { opacity: 0.5; }
-.ribbon-config-item.is-drop-target { box-shadow: inset 0 2px 0 0 var(--interactive-accent); }
-.ribbon-config-hidden { margin-top: var(--size-4-4); }

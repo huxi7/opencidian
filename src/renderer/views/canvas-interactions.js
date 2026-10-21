@@ -1,6 +1,6 @@
 /**
  * [INPUT]: 依赖 ./canvas-viewport.js 的 CanvasViewport（类链基类）；依赖 ./canvas-node.js 的 CanvasNode（instanceof 判定）；依赖 ./canvas-utils.js 的 clamp、containsBox、unionBBox、expandBBox、bboxOf、rectFromBBox；依赖 ./canvas-selection.js 的 CanvasSelectionBox；依赖 ../core/menu.js 的 Menu；依赖 ../core/keymap.js 的 IS_MAC；依赖 ../core/i18n.js 的 t；依赖 ./canvas-menu.js 的 showCreationMenu、showQuickSettingsMenu
- * [OUTPUT]: 导出 CanvasInteractions 类（选择集合语义：select/deselect/toggleSelect/selectOnly/selectAll/deselectAll、updateSelection/applySelectionDiff、deleteSelection；指针/键盘/拖拽/框选/滚轮/右键菜单；悬停命中 hitTestNode/interactionHitTest/setInteractionTarget/onPointermove/onPointerleave）与 startDrag、suppressClick 两个拖拽原语。
+ * [OUTPUT]: 导出 CanvasInteractions 类（选择集合语义：select/deselect/toggleSelect/selectOnly/selectAll/deselectAll、updateSelection/applySelectionDiff、deleteSelection；指针/键盘/拖拽/框选/滚轮/右键菜单；悬停命中 hitTestNode/interactionHitTest/setInteractionTarget/onPointermove/onPointerleave）与 startDrag、suppressClick、suppressContextMenu 三个拖拽原语。
  * [POS]: views/ 画布类链的第三层：View → CanvasViewport → CanvasInteractions → CanvasView。所有画布指针语义（阈值 5px 才成拖拽、拖到视口边缘 30px 自动平移、拖拽后吞掉一次 click）集中于此；
  *        选择集合也归本层：改动一律走 updateSelection（先拍旧集合、置 selectionChanged），帧尾由 applySelectionDiff 统一处理焦点/高亮进出。
  *        CanvasView 只负责装配 DOM 与调度，节点/边自身不注册窗口级监听。startDrag 是原版 wg 的等价物：超过 threshold 后调用一次 factory，cleanup 先于 end/cancel。
@@ -10,6 +10,9 @@
  *        键盘含 Esc/Delete、Mod+A、Mod+Z/Mod+Shift+Z/Mod+Y、Shift+1/2，以及方向键微移选中节点（Shift 为 5 倍、对齐网格时吸附网格线）。
  *        悬停命中（hitTestNode 取 8px/scale 容差 + interactionHitTest）：只给指针下的卡片加 .mod-handles 让手柄可命中；
  *        命中的卡片属于多选集合时收起手柄（原版 selection.size > 1 分支，帧尾也复核一次，避免指针静止时留下手柄）。
+ *        右键拖拽平移在 capture 阶段处理（原版 onPriorityPointerdown 的 button 2 分支，macOS 额外接受 Ctrl+左键）：
+ *        移动超过 5px 才进入拖动；macOS 的 contextmenu 先于 pointermove，进入拖动时主动关闭已弹出的菜单；
+ *        Windows 的 contextmenu 在 pointerup 之后，拖动收尾用一次性的捕获监听吞掉它。未拖动的右键保留原菜单。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 /* Canvas pointer + keyboard interactions (class chain layer 3). */
@@ -29,6 +32,17 @@ export function suppressClick(el) {
   const handler = (e) => { e.preventDefault(); e.stopPropagation(); e.stopImmediatePropagation(); };
   window.setTimeout(() => el.removeEventListener('click', handler, { capture: true }), 0);
   el.addEventListener('click', handler, { capture: true });
+}
+
+/**
+ * 原版 sM(el, "contextmenu")：吞掉拖拽收尾后浏览器补发的那一次 contextmenu。
+ * Windows 的顺序是 pointerup → contextmenu；监听必须在 pointerup 的同一任务里挂好，
+ * 所以这里与 suppressClick 一样用 0ms 定时器摘除，而不是等下一帧。
+ */
+export function suppressContextMenu(el) {
+  const handler = (e) => { e.preventDefault(); e.stopPropagation(); e.stopImmediatePropagation(); };
+  window.setTimeout(() => el.removeEventListener('contextmenu', handler, { capture: true }), 0);
+  el.addEventListener('contextmenu', handler, { capture: true });
 }
 
 /** 原版 wg：指针拖拽助手。factory 在超过 threshold 后调用一次；cleanup 先于 end/cancel 执行。 */
@@ -57,7 +71,8 @@ export function startDrag(e, factory, threshold = 5) {
     if (drag.move) drag.move(ev);
   }
   function onUp(ev) {
-    if (ev.pointerId !== e.pointerId) return;
+    // 原版 oM：pointerup 必须来自发起拖动的同一个指针与同一个按键，避免右键拖动被左键松开收尾。
+    if (ev.pointerId !== e.pointerId || ev.button !== e.button) return;
     const current = drag;
     cleanup();
     if (current && current.end) current.end(ev);
@@ -240,19 +255,54 @@ export class CanvasInteractions extends CanvasViewport {
     }), 0);
   }
 
-  /** 中键平移（原版 onPriorityPointerdown 的鼠标部分）。 */
+  /**
+   * 原版 onPriorityPointerdown 的鼠标分支：中键平移；右键平移（macOS 也接受 Ctrl+左键）。
+   * 右键用 5px 阈值，未达到阈值的纯右键不碰菜单；进入拖动时关掉 macOS 已先弹出的菜单，
+   * 收尾时吞掉 Windows 在 pointerup 之后补发的 contextmenu。
+   */
   onPriorityPointerdown(e) {
-    if (e.pointerType !== 'mouse' || e.button !== 1) return;
+    if (e.pointerType !== 'mouse') return;
+    if (e.button === 1) {
+      e.preventDefault();
+      const start = this.posFromEvt(e);
+      this.setDragging(true);
+      startDrag(e, () => ({
+        move: (ev) => {
+          const pos = this.posFromEvt(ev);
+          this.panBy(start.x - pos.x, start.y - pos.y);
+        },
+        cleanup: () => this.setDragging(false),
+      }), 0);
+      return;
+    }
+    const rightButton = e.button === 2 || (IS_MAC && e.button === 0 && e.ctrlKey);
+    if (!rightButton) return;
     e.preventDefault();
     const start = this.posFromEvt(e);
-    this.setDragging(true);
-    startDrag(e, () => ({
-      move: (ev) => {
-        const pos = this.posFromEvt(ev);
-        this.panBy(start.x - pos.x, start.y - pos.y);
-      },
-      cleanup: () => this.setDragging(false),
-    }), 0);
+    let dragged = false;
+    startDrag(e, () => {
+      dragged = true;
+      this.dismissOpenMenus();
+      this.setDragging(true);
+      return {
+        move: (ev) => {
+          const pos = this.posFromEvt(ev);
+          this.panBy(start.x - pos.x, start.y - pos.y);
+        },
+        cleanup: () => {
+          if (dragged) suppressContextMenu(this.wrapperEl);
+          this.setDragging(false);
+        },
+      };
+    }, 5);
+  }
+
+  /** 拖动开始时收起已打开的菜单（macOS 的 contextmenu 先于 pointermove 到达）。 */
+  dismissOpenMenus() {
+    for (const el of Array.from(document.querySelectorAll('.menu'))) {
+      const menu = el && el.__menu;
+      if (menu && typeof menu._closeRoot === 'function') menu._closeRoot();
+    }
   }
 
   /* -------------------------------------------------------------- 选择 */

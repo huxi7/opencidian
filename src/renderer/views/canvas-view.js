@@ -16,6 +16,8 @@
  *        1↔多选切换不会留下「既聚焦又选中」的中间态；浮动工具条 this.menu 由帧尾按变化重绘，拖动期间隐藏。
  *        getData 按 z 升序写出节点（原版 g5），importData 读到较低 z 时重新置顶，两者共同决定文件顺序即堆叠顺序；cloneData 为克隆拖动换新 id。
  *        只读标记按原版 localDataManager 存 localStorage('canvas-<路径>')，重命名迁移、删除清理；切换只读时逐节点通知正文（onReadonlyChange）。
+ *        分组背景跟随 vault rename/delete：vault 的 renameTree 只对根目录/文件发一次事件，故按路径前缀处理整棵移动；
+ *        重命名后写回新路径并立刻重绘，删除后清空 background/backgroundStyle 并请求写盘，磁盘 JSON 不留死路径。
  *        剪贴板与拖入：copy/cut/paste 监听挂在 wrapper（canvas-clipboard.js），文件树/系统文件/URL/文本 drop 由 canvas-drop.js 处理。
  *        导出图片：绘制在 canvas-export.js，选项弹窗在 canvas-export-dialog.js；本类只提供 renderCanvasImage（可测试）、generateHDImage（命令/面板菜单入口）
  *        与 promptImageSavePath（保存对话框，验收场景替换它即可跳过原生对话框）。
@@ -149,9 +151,11 @@ export class CanvasView extends CanvasInteractions {
     // 只读标记随重命名/删除迁移（原版 localDataManager.handleRename/handleDelete）
     this._renameRef = this.app.vault.on('rename', (file, oldPath) => {
       if (file && file.extension === 'canvas') migrateCanvasLocalData(oldPath, file.path);
+      this.updateGroupBackgrounds(file, oldPath, false);
     });
     this._deleteRef = this.app.vault.on('delete', (file) => {
       if (file && file.extension === 'canvas') dropCanvasLocalData(file.path);
+      this.updateGroupBackgrounds(file, file ? file.path : '', true);
     });
   }
 
@@ -576,6 +580,32 @@ export class CanvasView extends CanvasInteractions {
   loadLocalData() { return loadCanvasLocalData(this.file ? this.file.path : ''); }
 
   saveLocalData() { saveCanvasLocalData(this.file ? this.file.path : '', this.readonly); }
+
+  /**
+   * 分组背景的 vault 生命周期（原版插件 processRenames 只处理重命名；删除在本复刻补上，避免死路径）。
+   * delete=true 时 file 已从 vault 索引移除；否则 file 是重命名后的根文件/文件夹，
+   * oldPath 可能是背景文件本身，也可能是包含背景文件的文件夹。
+   */
+  updateGroupBackgrounds(file, oldPath, deleted) {
+    if (!oldPath) return;
+    const prefix = oldPath + '/';
+    let changed = false;
+    for (const node of this.nodes.values()) {
+      if (!node.isGroup || !node.bgPath) continue;
+      const path = node.bgPath;
+      if (path !== oldPath && !path.startsWith(prefix)) continue;
+      if (deleted) {
+        node.setBackgroundFile(null);
+      } else {
+        const nextPath = file.path + path.slice(oldPath.length);
+        const nextFile = this.app.vault.getAbstractFileByPath(nextPath);
+        node.setBackgroundPath(nextPath, nextFile);
+      }
+      node.renderBackground();
+      changed = true;
+    }
+    if (changed) this.requestSave();
+  }
 
   /* ---------------------------------------------------------------- 存取 */
 

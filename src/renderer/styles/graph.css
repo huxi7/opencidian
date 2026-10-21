@@ -1,7 +1,7 @@
 /*
  * [INPUT]: 依赖 tokens.css 的图谱颜色与尺寸变量。
- * [OUTPUT]: 提供画布颜色探针、控制面板与拖拽光标样式。
- * [POS]: 图谱视图样式；类名对应 graph-renderer 与 graph-controls。
+ * [OUTPUT]: 提供画布颜色探针、控制面板、拖拽光标与触屏手势样式。
+ * [POS]: 图谱视图样式；类名对应 graph-renderer 与 graph-controls。画布 touch-action:none 把触摸手势留给图谱。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 /* ==========================================================================
@@ -81,6 +81,7 @@
   background-color: var(--menu-background);
   width: var(--graph-controls-width);
   overflow: auto;
+  --scrollbar-native-width: none;
 }
 .graph-controls:not(.is-close) {
   max-height: calc(100% - var(--size-4-4));
@@ -319,4 +320,8 @@ body.is-grabbing webview {
   height: 100%;
   overflow: hidden;
   background-color: var(--background-primary);
+}
+/* 触摸拖动交给图谱：禁止浏览器把单指/双指手势解释为滚动或缩放 */
+.graph-view-container canvas {
+  touch-action: none;
 }

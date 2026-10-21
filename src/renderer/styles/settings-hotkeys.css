@@ -1,0 +1,225 @@
+/**
+ * [INPUT]: 依赖 tokens-*.css 的 --hotkey-*、--pill-*、--setting-items-padding-x；消费快捷键页 DOM。
+ * [OUTPUT]: 快捷键芯片、状态筛选芯片、按快捷键筛选装饰器样式。
+ * [POS]: settings.css 的快捷键分片。只服务 HotkeysTab（.setting-group.mod-hotkeys）。
+ * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
+ */
+/* ==========================================================================
+   settings-hotkeys.css — 快捷键页样式，逐字移植自 app.css 5617/5731-5865。
+   ========================================================================== */
+
+.setting-command-hotkeys {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--size-4-1);
+}
+.setting-hotkey {
+  font-family: var(--hotkey-font, var(--font-interface));
+  font-size: var(--hotkey-font-size, var(--font-ui-smaller));
+  background-color: var(--hotkey-background, var(--background-modifier-hover));
+  border-radius: var(--hotkey-radius, 2em);
+  corner-shape: var(--hotkey-corner-shape, round);
+  padding: 2px 4px 2px 8px;
+  align-self: flex-end;
+  white-space: nowrap;
+  display: flex;
+  align-items: center;
+  gap: var(--size-4-1);
+}
+.setting-hotkey.has-conflict {
+  background-color: var(--background-modifier-error);
+  color: var(--text-on-accent);
+}
+@media (hover: hover) {
+  .setting-hotkey.has-conflict:hover {
+    background-color: var(--background-modifier-error-hover);
+  }
+}
+.setting-hotkey.mod-active {
+  background-color: var(--interactive-accent);
+  color: var(--text-on-accent);
+}
+.setting-hotkey.mod-empty {
+  padding-inline-end: var(--size-4-2);
+}
+.setting-hotkey-icon {
+  display: flex;
+  align-items: center;
+  cursor: var(--cursor);
+  border-radius: 50%;
+  line-height: 1;
+  text-align: center;
+}
+.setting-hotkey-icon .svg-icon {
+  width: 16px;
+  height: 16px;
+  stroke-width: 2px;
+  opacity: 0.6;
+}
+@media (hover: hover) {
+  .setting-hotkey-icon:hover .svg-icon {
+    opacity: 1;
+  }
+}
+@media (hover: hover) {
+  .setting-delete-hotkey:hover {
+    background-color: var(--background-modifier-error);
+    color: var(--text-on-accent);
+  }
+}
+.setting-add-hotkey-button,
+.setting-restore-hotkey-button {
+  padding: var(--size-2-2);
+  border-radius: var(--radius-s);
+  corner-shape: var(--corner-shape);
+  color: var(--text-faint);
+  cursor: var(--cursor);
+  height: calc(var(--icon-l) + var(--size-2-2) + var(--size-2-2));
+}
+.setting-add-hotkey-button.mod-active,
+.setting-restore-hotkey-button.mod-active {
+  color: var(--text-accent);
+}
+@media (hover: hover) {
+  .setting-add-hotkey-button:hover,
+  .setting-restore-hotkey-button:hover {
+    background-color: var(--background-modifier-hover);
+    color: var(--text-normal);
+  }
+}
+
+/* 原版 app.css:5731-5835 | 状态筛选芯片与冲突计数徽标 */
+.setting-group-filters {
+  display: flex;
+  gap: var(--size-2-3);
+  margin-inline-end: calc(var(--setting-items-padding-x) * -1);
+  min-width: 0;
+  overflow-x: auto;
+  padding-inline-end: var(--setting-items-padding-x);
+  --scrollbar-native-width: none;
+}
+.setting-group-filters::-webkit-scrollbar {
+  display: none;
+}
+.setting-group-filter {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--size-2-2);
+  background-color: transparent;
+  border: var(--border-width) solid var(--background-modifier-border);
+  border-radius: var(--pill-radius);
+  color: var(--text-muted);
+  cursor: var(--cursor);
+  flex-shrink: 0;
+  font-size: var(--font-ui-smaller);
+  padding: var(--size-4-1) var(--size-4-2);
+  white-space: nowrap;
+}
+@media (hover: hover) {
+  .setting-group-filter:hover {
+    border-color: var(--background-modifier-border-hover);
+    color: var(--text-normal);
+  }
+}
+.setting-group-filter:focus-visible {
+  outline: 2px solid var(--background-modifier-border-focus);
+  outline-offset: -2px;
+}
+.setting-group-filter.is-active {
+  background-color: var(--interactive-accent);
+  border-color: var(--interactive-accent);
+  color: var(--text-on-accent);
+}
+@media (hover: hover) {
+  .setting-group-filter.is-active:hover {
+    background-color: var(--interactive-accent);
+    border-color: var(--interactive-accent);
+    color: var(--text-on-accent);
+  }
+}
+.setting-group-filter.mod-error {
+  border-color: color-mix(in oklch, var(--background-modifier-error) 15%, transparent);
+  background-color: color-mix(in oklch, var(--background-modifier-error) 10%, transparent);
+  color: var(--text-error);
+}
+@media (hover: hover) {
+  .setting-group-filter.mod-error:hover {
+    border-color: color-mix(in oklch, var(--background-modifier-error) 25%, transparent);
+    color: var(--text-error);
+  }
+}
+.setting-group-filter.mod-error.is-active {
+  background-color: var(--background-modifier-error);
+  border-color: var(--background-modifier-error);
+  color: var(--text-on-accent);
+}
+@media (hover: hover) {
+  .setting-group-filter.mod-error.is-active:hover {
+    background-color: var(--background-modifier-error-hover);
+    border-color: var(--background-modifier-error-hover);
+    color: var(--text-on-accent);
+  }
+}
+.setting-group-filter-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.15em 0.5em;
+  border-radius: var(--pill-radius);
+  font-size: var(--font-small);
+  line-height: 1;
+  background-color: color-mix(in oklch, var(--background-modifier-error) 15%, transparent);
+}
+.is-active .setting-group-filter-badge {
+  background-color: var(--text-on-accent);
+  color: var(--background-modifier-error);
+}
+
+/* 原版 app.css:5725-5865 | 搜索框右缘装饰器与按快捷键筛选芯片 */
+.input-right-decorator {
+  position: absolute;
+  transform: translateY(-50%);
+  top: 50%;
+  inset-inline-end: var(--input-icon-inset);
+}
+.input-right-decorator.clickable-icon {
+  padding: var(--size-2-1) var(--size-2-2);
+}
+.input-right-decorator.clickable-icon.is-active {
+  background-color: transparent;
+}
+.search-input-container input:not(:placeholder-shown) {
+  padding-inline-end: 28px;
+}
+.search-input-container input:not(:placeholder-shown) ~ .input-right-decorator {
+  inset-inline-end: calc(var(--input-icon-inset) + 28px);
+}
+.search-input-container.mod-hotkey .clickable-icon {
+  padding: var(--size-2-1);
+}
+.search-input-container.mod-hotkey .input-right-decorator.mod-active-hotkey-filter {
+  align-items: center;
+  background-color: var(--background-modifier-hover);
+  border-radius: var(--radius-s);
+  corner-shape: var(--corner-shape);
+  display: flex;
+  font-size: var(--font-ui-small);
+  gap: var(--size-2-1);
+  padding: var(--size-2-1) var(--size-2-1) var(--size-2-1) var(--size-4-1);
+}
+.search-input-container.mod-hotkey .input-right-decorator.mod-active-hotkey-filter .hotkey-filter-clear {
+  align-items: center;
+  border-radius: var(--radius-s);
+  color: var(--text-muted);
+  corner-shape: var(--corner-shape);
+  cursor: var(--cursor);
+  display: flex;
+  padding: var(--size-2-1);
+  --icon-size: var(--icon-xs);
+  --icon-stroke: var(--icon-xs-stroke-width);
+}
+@media (hover: hover) {
+  .search-input-container.mod-hotkey .input-right-decorator.mod-active-hotkey-filter .hotkey-filter-clear:hover {
+    background-color: var(--background-modifier-hover);
+  }
+}

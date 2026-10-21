@@ -2,10 +2,10 @@
 
 > L2 | 父级: /src/renderer/CLAUDE.md
 
-CodeMirror 6 编辑器层。Editor 类向视图暴露 Obsidian Editor API 子集；live-preview 是唯一的装饰器（表格部件在 table-widget.js）；completions 提供 [[链接]] 补全。
+CodeMirror 6 编辑器层。Editor 类向视图暴露 Obsidian Editor API 子集；live-preview 是唯一的装饰器（表格部件在 table-widget.js）；completions 提供 [[链接]] 数据层，link-suggest 提供单列补全浮窗。
 
 成员清单
-editor.js: Editor 包装。构造原版 file layout DOM（.cm-scroller > .cm-sizer > .cm-contentContainer > .cm-gutters + .cm-content，_buildSizerDom；gutter 挂载的 insertBefore 重定向到 contentContainer）。持有 CM6 EditorView 与 _rootEl；暴露 getValue/setValue/getLine/replaceSelection/listSelections/posToOffset 等；updateListener → onChange 回调。setValue 整弹重建 state 并手动 emit change：撤销栈不跨文档边界，装载后 undo 不清空文档、切文件不带回旧文本（插件 ext 扩展经 _baseExtensions 保住）。Compartments：folding(标题与缩进开关)、theme/livePreview/readonly/lineNumbers/wrap/keymap/ext/indent(缩进单位+Tab 宽度,随 useTab/tabSize 热重配)/brackets(自动补全标点,随 autoPairBrackets)。setSpellcheck 切换拼写；系统外部文件拖入复制进库并插入嵌入（Alt/Ctrl 直链）；文件树多选载荷 type=files 时按顺序插入全部文件链接；剪贴板图片（截图/图片/HTML data URL）落盘为 Pasted image <时间戳> 并插入嵌入；滚动使用 SelectionRange，setCursor 接受位置对象。
+editor.js: Editor 包装。构造原版 file layout DOM（.cm-scroller > .cm-sizer > .cm-contentContainer > .cm-gutters + .cm-content，_buildSizerDom；gutter 挂载的 insertBefore 重定向到 contentContainer）。持有 CM6 EditorView 与 _rootEl；暴露 getValue/setValue/getLine/replaceSelection/listSelections/posToOffset 等；updateListener → onChange 回调。setValue 整弹重建 state 并手动 emit change：撤销栈不跨文档边界，装载后 undo 不清空文档、切文件不带回旧文本（插件 ext 扩展经 _baseExtensions 保住）。Compartments：folding(标题与缩进开关)、theme/livePreview/readonly/lineNumbers/wrap/keymap/ext/indent(缩进单位+Tab 宽度,随 useTab/tabSize 热重配)/brackets(自动补全标点,随 autoPairBrackets)。[[ 链接不注册 CM6 autocompletion（不产生 .cm-completionInfo 双列），由 LinkSuggest 接管；setValue 关闭浮窗，destroy 释放监听。setSpellcheck 切换拼写；系统外部文件拖入复制进库并插入嵌入（Alt/Ctrl 直链）；文件树多选载荷 type=files 时按顺序插入全部文件链接；剪贴板图片（截图/图片/HTML data URL）落盘为 Pasted image <时间戳> 并插入嵌入；滚动使用 SelectionRange，setCursor 接受位置对象。
 attachments.js: 附件落盘。saveAttachment 按 attachmentFolderPath 选目录、重名追加序号、vault.createBinary 写入；trailing 规则与 pastedImageBaseName 命名；拖入、粘贴与 attach-file 命令共用。
 editor-menu.js: 编辑器右键菜单（拼写建议 → 链接 → 剪贴板 → 链接插入 → 文本格式 → 段落设置 → 插入 → 复制路径），先触发 workspace 的 editor-menu 事件再显示；桌面端向主进程申请 context-menu 参数（90ms 超时）。剪贴板启用按 CM 选区经 getRange 判定（原生 editFlags 不含 CM6 选区）；菜单项真实鼠标序列由 menu.js 的子菜单归属规则保证。
 live-preview.js: ViewPlugin。隐藏光标外语法；渲染 checkbox/bullet/图片/MathJax CHTML/hr/wikilink 部件；行级 HyperMD-* 类(header/quote/codeblock/list/task)；依赖 view.__sourcePath 解析相对路径。内嵌图片部件复用 markdown/source-text.js 的尺寸解析，落成 `.image-wrapper > img` 的 width/height。块层 StateField 生产属性面板/callout/代码块/mermaid 与表格装饰。 块 widget（代码/数学/Mermaid）带原版 edit-block-button（默认隐藏、悬停显形、点击把光标放回源码）。
@@ -16,7 +16,8 @@ table-selection.js: 单元格矩形选区与剪贴板。移植原版 mq/gq 的 p
 table-edit.js: 单元格原位置编辑。textarea 编辑器替代原版单元格 CM 实例：进入即全选（Tab/Enter 换格）、blur 或 Enter/Tab 提交（trim + 换行落 <br> + 未转义 | 补反斜杠）、Esc 取消、Tab/Shift+Tab 逐格移动（末格在表尾加行、首格在表头前插行）、Enter 下移或末行加行、IME 合成期间挂起提交；进入调 widget.setActiveDragHandles、关闭调 unsetActiveDragHandles（原版 editTableCell/destroyTableCell 的手柄与 has-focus 语义）。
 table-format.js: 单元格文本格式层（原版 NV 的 selection.format 段）。「文本格式」子菜单的条目、图标、section 对齐原版三段 selection.basic / selection.advanced / selection.danger（加粗/倾斜/删除线/高亮、代码/数学/注释、清除格式）；原版动作调单元格 CM 的 toggleMarkdownFormatting，这里改写单元格 Markdown：整格被标记包裹即勾选，包裹/去包裹按同一套标记（**、*、~~、==、`、$、%%），编辑器内有选区时只包裹选区。table-selection.js 的单元格菜单是唯一调用方。
 folding.js: 标题与缩进范围按文档缓存。事务过滤禁止语法回退绕过设置。
-completions.js: [[wikilink]] 自动补全(文件建议 + 锚点)。
+completions.js: [[wikilink]] 补全数据层，不创建 DOM。buildLinkContext 识别同一行未闭合 [[；collectLinkSuggestions 覆盖文件/别名/未创建 linktext、本地或全局标题与块；文件建议保留完整路径，重复 basename 插入完整路径并补 |basename；buildLinkInsertion 生成 file/heading/block/display 四模式文本。
+link-suggest.js: [[链接]] 单列浮窗。挂 body 的 .suggestion-container.link-suggest > .suggestion + .prompt-instructions，逐项对齐原版 EditorSuggest；空查询不预选，非空预选首项；上下/Page/Home/End/Ctrl+P/N、Enter/Tab/Shift+Enter、点击/悬停、Esc/失焦/外部点击/滚动/缩放；# 先接受文件再进标题，^ 进块，| 进显示文本；尺寸由内容收缩（max 500×300），不使用 CM autocompletion 或 .cm-completionInfo。
 editor-commands.js: registerEditorCommands(app)。注册 editor:* 与 markdown:* 命令。含 set-heading-1..6/0（按行改写前缀）、toggle-blockquote、clear-formatting（选区去标记）、attach-file（选文件复制进库并插入嵌入）、download-attachments（画廊勾选下载外部图片并改写嵌入/frontmatter 链接）、paste（剪贴板图片优先，其次纯文本）。copy/cut/paste 文本走 Electron clipboard（菜单点击后编辑器失焦，execCommand 会空转）。
 
 [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md

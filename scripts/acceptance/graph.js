@@ -2,7 +2,8 @@
  * [INPUT]: OBS_ACT eval 注入；已启用 graph，且 vault 是新建的 graph-vault-* 临时目录。
  * [OUTPUT]: 返回 {role, passed, checks, screenshots}；断言失败会抛错。
  * [POS]: 图谱集成验收；创建独立 fixture，通过 DOM 事件验证交互。
- *        覆盖筛选/局部图/画布交互之外，另验收颜色组拖拽排序、悬停预览（hover-link）与力参数落盘。
+ *        覆盖筛选/局部图/画布交互之外，另验收颜色组拖拽排序、鼠标与触屏 PointerEvent 拖拽/平移/捏合、
+ *        悬停预览（hover-link、按住 Mod；图谱不支持先悬停后补 Mod）与力参数落盘。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  * 截图终态：OBS_GRAPH_SCREEN=global|filter|local|menu，默认 local。
  */
@@ -193,6 +194,59 @@
   mouse(window, 'mouseup', emptyPoint);
   assert(!renderer.panning && !document.body.hasClass('is-grabbing'), '平移释放清除抓取状态');
   renderer.cancelInteraction();
+  // A2. 触屏：真实 PointerEvent（pointerType=touch）走原版 TouchEvent 分支。
+  //     单指命中节点=拖动，空白=平移；双指=捏合；轻点=打开。
+  renderer.setScale(1); renderer.targetScale = 1; renderer.resetPan();
+  a.x = a.y = 0; Object.assign(renderer.sim.nodeById.get(a.id), { x: 0, y: 0, vx: 0, vy: 0 });
+  const touch = (target, type, point, pointerId = 11) => target.dispatchEvent(new PointerEvent(type, {
+    bubbles: true, cancelable: true, pointerId, pointerType: 'touch', isPrimary: pointerId === 11,
+    button: 0, buttons: type === 'pointerup' || type === 'pointercancel' ? 0 : 1, ...point,
+  }));
+  let touchClicked = null;
+  const clickHandler = renderer.onNodeClick;
+  renderer.onNodeClick = (ev, id, type) => { touchClicked = { ev, id, type }; };
+  touch(renderer.canvasEl, 'pointerdown', point(a), 11);
+  assert(renderer.dragNode === a, '触摸按下节点开始拖拽');
+  const touchDragPoint = { clientX: rect.left + 130, clientY: rect.top + 95 };
+  touch(window, 'pointermove', touchDragPoint, 11);
+  assert(renderer.dragMoved && Math.abs(a.fx - ((touchDragPoint.clientX - rect.left) * devicePixelRatio - renderer.panX) / renderer.scale) < 0.01,
+    '触摸拖动节点按画布坐标移动');
+  touch(window, 'pointerup', touchDragPoint, 11);
+  assert(!renderer.dragNode && a.fx === null && renderer.sim.nodeById.get(a.id).fx === null, '触摸释放解除节点固定');
+  assert(!touchClicked, '触摸拖动超过阈值不触发点击');
+  touchClicked = null;
+  a.x = a.y = 0; Object.assign(renderer.sim.nodeById.get(a.id), { x: 0, y: 0, vx: 0, vy: 0 });
+  touch(renderer.canvasEl, 'pointerdown', point(a), 12);
+  touch(window, 'pointerup', point(a), 12);
+  assert(!!touchClicked && touchClicked.id === a.id && touchClicked.ev.pointerType === 'touch', '触摸轻点命中节点触发打开');
+  const touchEmpty = { clientX: rect.left + 6, clientY: rect.top + 6 };
+  const touchPanBefore = renderer.panX;
+  touch(renderer.canvasEl, 'pointerdown', touchEmpty, 13);
+  assert(renderer.panning && !document.body.hasClass('is-grabbing'), '触摸空白按下平移且不挂鼠标抓取光标');
+  touch(window, 'pointermove', { clientX: touchEmpty.clientX + 30, clientY: touchEmpty.clientY + 20 }, 13);
+  assert(Math.abs(renderer.panX - touchPanBefore - 30 * devicePixelRatio) < 0.01, '触摸平移按设备像素换算');
+  touch(window, 'pointerup', { clientX: touchEmpty.clientX + 30, clientY: touchEmpty.clientY + 20 }, 13);
+  assert(!renderer.panning, '触摸释放结束平移');
+  renderer.onNodeClick = clickHandler;
+  renderer.cancelInteraction();
+  renderer.setScale(1); renderer.targetScale = 1; renderer.resetPan();
+  const pinchA = { clientX: rect.left + 100, clientY: rect.top + 100 };
+  const pinchB = { clientX: rect.left + 200, clientY: rect.top + 100 };
+  const pinchMid = ((pinchA.clientX + pinchB.clientX) / 2 - rect.left) * devicePixelRatio;
+  const pinchPanBefore = renderer.panX;
+  touch(renderer.canvasEl, 'pointerdown', pinchA, 21);
+  touch(renderer.canvasEl, 'pointerdown', pinchB, 22);
+  assert(!!renderer.touch.pinch && !renderer.panning, '双指按下进入捏合');
+  touch(window, 'pointermove', { clientX: pinchA.clientX - 50, clientY: pinchA.clientY }, 21);
+  assert(renderer.panX < pinchPanBefore - 1, '捏合中点移动时同步平移');
+  touch(window, 'pointermove', { clientX: pinchB.clientX + 50, clientY: pinchB.clientY }, 22);
+  assert(renderer.targetScale > 1.8, '双指分开按距离比放大');
+  assert(Math.abs(renderer.zoomCenterX - pinchMid) < 0.01, '捏合缩放中心取双指中点');
+  touch(window, 'pointerup', { clientX: pinchA.clientX - 50, clientY: pinchA.clientY }, 21);
+  touch(window, 'pointerup', { clientX: pinchB.clientX + 50, clientY: pinchB.clientY }, 22);
+  assert(!renderer.touch.pinch && !renderer.panning, '双指抬起结束捏合与残余平移');
+  renderer.zoomTo(1); renderer.setScale(1); renderer.resetPan();
+  a.x = a.y = 0; Object.assign(renderer.sim.nodeById.get(a.id), { x: 0, y: 0, vx: 0, vy: 0 });
   const wheelPoint = { clientX: rect.left + rect.width * 0.35, clientY: rect.top + rect.height * 0.4 };
   const anchor = (Math.trunc(wheelPoint.clientX) - rect.left) * devicePixelRatio;
   const worldX = (anchor - renderer.panX) / renderer.scale;
@@ -221,6 +275,7 @@
   assert(!renderer.highlightNode, '移出画布清除高亮');
   mouse(renderer.canvasEl, 'mousemove', { ...point(a), metaKey: true });
   await holdHover(a, true);
+  await wait(() => { const popover = findPopover(); return !!popover && popover.textContent.includes('alpha'); }, '按住 Mod 预览内容');
   const hoverPopover = findPopover();
   assert(!!hoverPopover && hoverPopover.textContent.includes('alpha'), '按住 Mod 悬停节点显示目标笔记预览');
   assert(!!hoverPopover.style.left && !!hoverPopover.style.top, '预览按鼠标坐标定位');
@@ -228,6 +283,16 @@
   renderer.onMouseOut();
   await delay(420);
   assert(!findPopover(), '移出画布后预览关闭');
+  // B2. 原版图谱 targetEl=null：未按 Mod 悬停不弹，悬停后再按 Mod 也不补弹
+  pinHover(a, false);
+  await delay(80);
+  assert(!findPopover(), '图谱悬停未按 Mod 不弹预览');
+  document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Meta', metaKey: true, bubbles: true }));
+  await delay(200);
+  assert(!findPopover(), '图谱悬停后按下 Mod 不补弹（原版 targetEl=null）');
+  document.dispatchEvent(new KeyboardEvent('keyup', { key: 'Meta', metaKey: false, bubbles: true }));
+  renderer.onMouseOut();
+  await delay(60);
   engine.setOptions({ showTags: true, hideUnresolved: false });
   await delay(60);
   for (const [id, far] of [['#project/root', -20000], ['Missing', -40000]]) {

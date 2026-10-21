@@ -124,11 +124,22 @@ class MenuStub {
 // ---------------------------------------------------------------------------
 async function harness(settings = {}) {
   const notices = [], lifecycle = [], errors = [], lookups = [], modules = new Map();
+  class DocumentStub {}
+  const documentStub = {
+    body: new ElementStub(),
+    hasFocus: () => true,
+    createElement: () => new ElementStub(),
+    createElementNS: () => new ElementStub(),
+    createTextNode: (text) => ({ textContent: text }),
+  };
   const context = createContext({
     console: { error: (...args) => errors.push(args), warn: (...args) => errors.push(args) },
     createDiv: (info) => new ElementStub(info),
     navigator: { platform: 'MacIntel' },
-    document: { hasFocus: () => true, body: new ElementStub() },
+    Element: ElementStub,
+    Document: DocumentStub,
+    document: documentStub,
+    getComputedStyle: () => ({ getPropertyValue: () => '' }),
     window: new ElementStub(),
     requestAnimationFrame: () => 1,
     ResizeObserver: class {
@@ -138,6 +149,7 @@ async function harness(settings = {}) {
   });
   const mocks = {
     'i18n.js': { t: (key) => key, tt: (key, fallback) => fallback },
+    'tab-animation.js': { animateTabIn() {}, animateTabOut() {} },
     'workspace-profile.js': { createVaultProfile: () => new ElementStub('workspace-sidedock-vault-profile') },
     'icons.js': { setIcon: (el, icon) => el.setAttr('data-icon', icon) },
     'notices.js': { Notice: class { constructor(text) { notices.push(text); } } },
@@ -470,11 +482,18 @@ test('拖拽落点边界与标签内重排保持原行为', async () => {
   const next = ws.getLeaf(true);
   await next.setViewState({ type: 'empty' });
   const bar = leaf.parent._headersInner;
+  // 内存 DOM 没有完整 render；补上真实 DOM 中 bar 所属的 .workspace-tabs 容器语义。
+  if (bar.parentElement) {
+    bar.parentElement.addClass('workspace-tabs');
+    bar.parentElement._tabs = leaf.parent;
+  }
   ws._setupTabDrag(leaf._tabHeaderEl, leaf);
   ws._dragData = { leaf };
   ws._tabDropTarget = null;
   await bar.emit('drop');
-  assert.deepEqual(Array.from(leaf.parent.children), [next, leaf]);
+  assert.equal(leaf.parent.children.length, 2);
+  assert.equal(leaf.parent.children[0], next);
+  assert.equal(leaf.parent.children[1], leaf);
   assert.equal(leaf.parent.currentTab, 1);
   assert.equal(ws._dragData, null);
 });

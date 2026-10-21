@@ -1,7 +1,7 @@
 /**
  * [INPUT]: 依赖 ../core/i18n.js 的 tt；依赖 ../core/setting.js 的 SettingGroup/SettingTab；依赖 ../core/notices.js 的 Notice；依赖 ../core/modals.js 的 Modal；依赖 ../core/ipc.js 的 Desktop；Node 内置 fs/path；Electron renderer 的 webFrame/ipcRenderer
  * [OUTPUT]: 导出 AppearanceTab（外观页签）、FontManagerModal（字体管理弹窗）
- * [POS]: views/ 的外观设置页签。逐字对齐原版 Jee 的 display()：基础（基础颜色/主题色/主题）、界面（页内标题/标签页标题栏/功能区）、字体（三种字体/字号/快速调整）、高级（缩放/原生菜单/窗口边框/在新窗口中打开设置/硬件加速）、CSS 代码片段。CSS 注入由 core/app.js 的 _applyCustomCss 执行，本页签只改配置与读取 snippets 目录。
+ * [POS]: views/ 的外观设置页签。逐字对齐原版 Jee 的 display()：基础（基础颜色/主题色/主题）、界面（标签页标题栏/功能区）、字体（三种字体/字号/快速调整）、高级（缩放/原生菜单/窗口边框/在新窗口中打开设置/自定义图标）、CSS 代码片段。硬件加速属于关于页高级组。CSS 注入由 core/app.js 的 _applyCustomCss 执行，本页签只改配置与读取 snippets 目录。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 /* Appearance settings tab — base theme, fonts, advanced desktop options, CSS snippets. */
@@ -87,21 +87,30 @@ export class AppearanceTab extends SettingTab {
       s.setClass('mod-toggle');
       s.setName(tt('setting.appearance.option-accent-color', '主题色'))
         .setDesc(tt('setting.appearance.option-accent-color-description', '为 OpenSidian 选择一个主题色。主题色将影响选中、链接等元素的颜色。'));
+      let picker = null;
+      let resetBtn = null;
+      const syncResetState = () => {
+        if (resetBtn) resetBtn.extraSettingsEl.setAttr('aria-disabled', String(!appearance.accentColor));
+      };
       s.addExtraButton((b) => {
+        resetBtn = b;
         b.setIcon('lucide-rotate-ccw')
           .setTooltip(tt('setting.hotkeys.tooltip-restore-default', '恢复默认'))
           .onClick(() => {
             update({ accentColor: '' });
-            this.display();
+            if (picker) picker.colorPickerEl.value = computedAccentHex();
+            syncResetState();
           });
-        if (!appearance.accentColor) b.extraSettingsEl.setAttr('aria-disabled', 'true');
       });
-      s.addColorPicker((cp) => cp
-        .setValue(appearance.accentColor || computedAccentHex())
-        .onChange((v) => {
-          update({ accentColor: v });
-          this.display();
-        }));
+      s.addColorPicker((cp) => {
+        picker = cp;
+        cp.setValue(appearance.accentColor || computedAccentHex())
+          .onChange((v) => {
+            update({ accentColor: v });
+            syncResetState();
+          });
+      });
+      syncResetState();
     });
 
     const themes = this.listThemes();
@@ -127,10 +136,6 @@ export class AppearanceTab extends SettingTab {
     /* ---------------------------------------------------------- 界面 */
     const iface = new SettingGroup(this.containerEl).setHeading(tt('setting.appearance.option-interface', '界面'));
     iface.addSetting((s) => s
-      .setName(tt('setting.editor.option-show-inline-title', '页内标题'))
-      .setDesc(tt('setting.editor.option-show-inline-title-description', '将文件名作为可编辑的标题在文件内容中显示。'))
-      .addToggle((tog) => tog.setValue(app.settings.appSettings.showInlineTitle !== false).onChange((v) => app.settings.updateAppSettings({ showInlineTitle: v }))));
-    iface.addSetting((s) => s
       .setName(tt('setting.appearance.option-show-view-header', '显示标签页标题栏'))
       .setDesc(tt('setting.appearance.option-show-view-header-desc', '在每个标签页上方显示标题栏。'))
       .addToggle((tog) => tog.setValue(app.settings.appearance.showViewHeader !== false).onChange((v) => app.settings.updateAppearance({ showViewHeader: v }))));
@@ -139,16 +144,18 @@ export class AppearanceTab extends SettingTab {
       .setDesc(tt('setting.appearance.option-show-ribbon-desc', '显示窗口最左侧的功能区，以便快速执行命令。'))
       .addToggle((tog) => tog.setValue(app.settings.appearance.showRibbon !== false).onChange((v) => {
         app.settings.updateAppearance({ showRibbon: v });
-        this.display(); // 配置行随开关显隐（原版行为）
+        if (configureRow) configureRow.settingEl.toggle(v !== false);
       })));
-    if (app.settings.appearance.showRibbon !== false) {
-      iface.addSetting((s) => s
-        .setName(tt('setting.appearance.option-configure-ribbon', '功能区'))
+    let configureRow = null;
+    iface.addSetting((s) => {
+      configureRow = s;
+      s.setName(tt('setting.appearance.option-configure-ribbon', '功能区'))
         .setDesc(tt('setting.appearance.option-configure-ribbon-desc', '设置哪些命令需要显示在功能区上。'))
         .addButton((b) => b
           .setButtonText(tt('setting.appearance.option-theme-button-manage', '管理'))
-          .onClick(() => new RibbonConfigModal(app).open())));
-    }
+          .onClick(() => new RibbonConfigModal(app).open()));
+      s.settingEl.toggle(app.settings.appearance.showRibbon !== false);
+    });
 
     /* ---------------------------------------------------------- 字体 */
     const fonts = new SettingGroup(this.containerEl).setHeading(tt('setting.appearance.option-font', '字体'));
@@ -205,6 +212,7 @@ export class AppearanceTab extends SettingTab {
           sl.setLimits(10, 30, 1).setDynamicTooltip()
             .setValue(app.settings.appearance.baseFontSize || 16)
             .onChange((v) => app.settings.updateAppearance({ baseFontSize: v }));
+          trackSliderFill(sl);
         });
     });
     fonts.addSetting((s) => s
@@ -217,23 +225,34 @@ export class AppearanceTab extends SettingTab {
     const adv = new SettingGroup(this.containerEl).setHeading(tt('setting.appearance.option-advanced', '高级'));
     adv.addSetting((s) => {
       let slider = null;
+      let resetBtn = null;
       const webFrame = electron && electron.webFrame;
       const current = webFrame ? webFrame.getZoomLevel() : (appearance.zoomLevel || 0);
+      const syncResetState = (value) => {
+        if (resetBtn) resetBtn.extraSettingsEl.setAttr('aria-disabled', String(value === 0));
+      };
       const applyZoom = (v) => {
         if (webFrame) { webFrame.setZoomLevel(v); syncTrafficLightPosition(); }
         app.settings.updateAppearance({ zoomLevel: v });
       };
       s.setName(tt('setting.appearance.option-zoom-level', '缩放比例'))
         .setDesc(tt('setting.appearance.option-zoom-level-description', '控制应用程序的整体缩放比例'))
-        .addExtraButton((b) => b
-          .setIcon('lucide-rotate-ccw')
-          .setTooltip(tt('setting.hotkeys.tooltip-restore-default', '恢复默认'))
-          .onClick(() => { applyZoom(0); if (slider) slider.setValue(0); }))
+        .addExtraButton((b) => {
+          resetBtn = b;
+          b.setIcon('lucide-rotate-ccw')
+            .setTooltip(tt('setting.hotkeys.tooltip-restore-default', '恢复默认'))
+            .onClick(() => { applyZoom(0); if (slider) slider.setValue(0); syncResetState(0); });
+        })
         .addSlider((sl) => {
           slider = sl;
-          sl.setLimits(-2.5, 3, 0.5).setDynamicTooltip().setValue(current).onChange((v) => applyZoom(v));
+          sl.setLimits(-2.5, 3, 0.5).setDynamicTooltip().setValue(current).onChange((v) => {
+            applyZoom(v);
+            syncResetState(v);
+          });
           sl.getValuePretty = () => Math.round(100 * Math.pow(1.2, sl.getValue())) + '%';
+          trackSliderFill(sl);
         });
+      syncResetState(current);
     });
     adv.addSetting((s) => s
       .setName(tt('setting.appearance.option-native-menus', '原生菜单'))
@@ -283,44 +302,28 @@ export class AppearanceTab extends SettingTab {
               setTimeout(() => { setting.open(); if (tabId) setting.openTabById(tabId); });
             }
           })));
-      let gpuDisabled = false;
-      try { gpuDisabled = !!electron.ipcRenderer.sendSync('disable-gpu'); } catch (e) {}
       adv.addSetting((s) => {
         let relaunchBtn = null;
-        s.setName(tt('setting.about.option-hw-acceleration', '硬件加速'));
-        s.descEl.empty();
-        s.descEl.createDiv({ text: tt('setting.about.option-hw-acceleration-description', '开启硬件加速，即使用 GPU 让 OpenSidian 运行更流畅。') });
-        s.descEl.createDiv({ cls: 'mod-warning', text: tt('setting.about.option-hw-acceleration-warning', '如果关闭此选项，OpenSidian 的性能将严重下降。') });
-        s.addButton((b) => {
-          relaunchBtn = b;
-          b.setCta().setButtonText(tt('setting.about.button-relaunch', '重新启动应用'));
-          b.buttonEl.hide();
-          b.onClick(() => { try { electron.ipcRenderer.sendSync('relaunch'); } catch (e) { location.reload(); } });
-        });
-        s.addToggle((tog) => tog.setValue(!gpuDisabled).onChange((v) => {
-          const disabled = !v;
-          try { electron.ipcRenderer.sendSync('disable-gpu', disabled); } catch (e) {}
-          relaunchBtn.buttonEl.toggle(disabled !== gpuDisabled);
-        }));
-      });
-      adv.addSetting((s) => {
-        let relaunchBtn = null;
+        let resetBtn = null;
         const renderDesc = () => {
           s.descEl.empty();
           const icon = (() => { try { return Desktop.getIcon(); } catch (e) { return null; } })();
           if (icon && icon.dataUrl) s.descEl.createEl('img', { attr: { width: '64', height: '64', src: icon.dataUrl } });
           else s.descEl.appendText(tt('setting.appearance.option-custom-icon-desc', '给应用设置一个自定义的图标'));
+          if (resetBtn) resetBtn.extraSettingsEl.toggle(!!icon);
         };
         s.setName(tt('setting.appearance.option-custom-icon', '自定义应用图标'));
+        s.addExtraButton((b) => {
+          resetBtn = b;
+          b.setIcon('lucide-rotate-ccw')
+            .setTooltip(tt('setting.hotkeys.tooltip-restore-default', '恢复默认'))
+            .onClick(() => {
+              try { Desktop.setIcon(null); } catch (e) {}
+              renderDesc();
+              if (relaunchBtn) relaunchBtn.buttonEl.show();
+            });
+        });
         renderDesc();
-        s.addExtraButton((b) => b
-          .setIcon('lucide-rotate-ccw')
-          .setTooltip(tt('setting.hotkeys.tooltip-restore-default', '恢复默认'))
-          .onClick(() => {
-            try { Desktop.setIcon(null); } catch (e) {}
-            renderDesc();
-            if (relaunchBtn) relaunchBtn.buttonEl.show();
-          }));
         s.addButton((b) => b
           .setButtonText(tt('dialogue.button-choose', '选择'))
           .onClick(() => {
@@ -402,7 +405,12 @@ class RibbonConfigModal extends Modal {
     const container = this.contentEl;
     container.empty();
     const ws = this.app.workspace;
-    const items = ws.getRibbonItems();
+    const registered = ws.getRibbonItems();
+    // getRibbonItems 返回注册顺序；配置列表必须按功能区 DOM 顺序显示（含隐藏项，applyRibbonOrder 已排好 DOM）。
+    const items = registered.slice().sort((a, b) => {
+      if (a.el === b.el) return 0;
+      return a.el.compareDocumentPosition(b.el) & Node.DOCUMENT_POSITION_FOLLOWING ? -1 : 1;
+    });
     container.createEl('p', { text: tt('setting.appearance.option-configure-ribbon-desc', '设置哪些命令需要显示在功能区上。') });
     const active = items.filter((item) => !ws.isRibbonItemHidden(item.key));
     const listEl = container.createDiv('ribbon-config-list');
@@ -431,12 +439,12 @@ class RibbonConfigModal extends Modal {
         const from = this._dragKey;
         this._dragKey = null;
         if (!from || from === item.key) return;
-        const keys = active.map((i) => i.key);
+        const keys = items.map((i) => i.key);
         const fromIndex = keys.indexOf(from);
-        if (fromIndex < 0) return;
-        keys.splice(fromIndex, 1);
         const toIndex = keys.indexOf(item.key);
-        keys.splice(toIndex < 0 ? keys.length : toIndex, 0, from);
+        if (fromIndex < 0 || toIndex < 0) return;
+        keys.splice(fromIndex, 1);
+        keys.splice(toIndex, 0, from);
         ws.setRibbonOrder(keys);
         this.render();
       };
@@ -487,7 +495,8 @@ class FontManagerModal extends Modal {
       row.setAttr('draggable', 'true');
       const handle = row.createDiv('clickable-icon font-manager-drag-handle');
       setIcon(handle, 'lucide-menu');
-      row.createSpan({ cls: 'mobile-option-setting-item-name', text: font });
+      const nameEl = row.createSpan({ cls: 'mobile-option-setting-item-name', text: font });
+      nameEl.style.fontFamily = font;
       const indicator = row.createDiv('font-manager-item-indicator ' + (exists ? 'mod-success' : 'mod-warning'));
       setIcon(indicator, exists ? 'lucide-check-circle-2' : 'lucide-alert-circle');
       if (!exists) {
@@ -553,6 +562,23 @@ class FontManagerModal extends Modal {
 }
 
 /* ------------------------------------------------------------------ helpers */
+
+/** 原版 1.14.4 滑杆填充：--slider-fill-ratio 随值更新，setValue 也要同步。 */
+function trackSliderFill(slider) {
+  const el = slider.sliderEl;
+  const sync = () => {
+    const min = Number(el.min) || 0;
+    const max = Number(el.max) || 100;
+    const value = Number(el.value) || 0;
+    const ratio = max > min ? Math.min(1, Math.max(0, (value - min) / (max - min))) : 0;
+    el.style.setProperty('--slider-fill-ratio', String(ratio));
+  };
+  el.addEventListener('input', sync);
+  el.addEventListener('change', sync);
+  const setValue = slider.setValue.bind(slider);
+  slider.setValue = (value) => { const result = setValue(value); sync(); return result; };
+  sync();
+}
 
 /**
  * 字体是否存在（原版字体检测的等价实现）。

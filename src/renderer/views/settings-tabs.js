@@ -1,21 +1,32 @@
 /**
- * [INPUT]: 依赖 ../core/i18n.js 的 tt/getLanguage/setLanguage；依赖 ../core/setting.js 的 Setting/SettingGroup/SettingTab；依赖 ../core/notices.js 的 Notice；依赖 ../core/modals.js 的 Modal；依赖 ../core/ipc.js 的 Desktop；依赖 ../core/suggest.js 的 AbstractInputSuggest；依赖 ../core/icons.js 的 setIcon
+ * [INPUT]: 依赖 ../core/i18n.js 的 tt/getLanguage/setLanguage；依赖 ../core/setting.js 的 Setting/SettingGroup/SettingTab；依赖 ../core/notices.js 的 Notice；依赖 ../core/ipc.js 的 Desktop；依赖 ../core/icons.js 的 setIcon；依赖 ./settings-tabs-dialogs.js 的 VERSION/StartupTimeModal/VimTestModal/ExcludedFilesModal/SpellcheckDictModal/trackSliderFill/isRegexFilterValue/FilePathSuggest/FolderPathSuggest
  * [OUTPUT]: 导出 AboutTab、EditorTab、FileTab 三个内置页签类
- * [POS]: views/ 的内置设置页签（选项组）。逐字对齐原版 O7/nte/lte 的 display()：关于（版本/语言/高级+启动耗时弹窗）、编辑器（行为+拼写检查词典/语言+Vim 验证）、文件与链接（打开行为/新建位置/附件/链接/回收站/忽略文件/重建缓存）。文案走 tt() 兜底，配置写 app.settings.updateAppSettings（app.json）；拼写检查词典/语言经 Desktop IPC 读写主进程。
+ * [POS]: views/ 的内置设置页签（选项组）。逐字对齐原版 O7/nte/lte 的 display()：关于（版本/语言/高级+启动耗时弹窗）、编辑器（行为+拼写检查词典/语言+Vim 验证）、文件与链接（打开行为/新建位置/附件/链接/回收站/忽略文件/重建缓存）。文案走 tt() 兜底，配置写 app.settings.updateAppSettings（app.json）；拼写检查词典/语言经 Desktop IPC 读写主进程。弹窗与路径建议器在 settings-tabs-dialogs.js。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 /* Built-in settings tabs: About / Editor / File & Links. */
 import { tt, getLanguage, setLanguage } from '../core/i18n.js';
 import { Setting, SettingGroup, SettingTab } from '../core/setting.js';
 import { Notice } from '../core/notices.js';
-import { Modal } from '../core/modals.js';
 import { Desktop } from '../core/ipc.js';
-import { AbstractInputSuggest } from '../core/suggest.js';
-import { TFile, TFolder } from '../core/vault.js';
 import { setIcon } from '../core/icons.js';
+import {
+  VERSION,
+  StartupTimeModal,
+  VimTestModal,
+  ExcludedFilesModal,
+  SpellcheckDictModal,
+  trackSliderFill,
+  isRegexFilterValue,
+  FilePathSuggest,
+  FolderPathSuggest,
+} from './settings-tabs-dialogs.js';
 
-const VERSION = '1.0.0';
 const IS_MAC = navigator.platform.startsWith('Mac') || navigator.userAgent.includes('Macintosh');
+
+function electronModule() {
+  try { return require('electron'); } catch (e) { return null; }
+}
 
 /* ------------------------------------------------------------------- About */
 
@@ -35,13 +46,15 @@ export class AboutTab extends SettingTab {
     group.addSetting((s) => {
       s.setName(tt('setting.about.label-version', '版本 {{version}}', { version: VERSION }));
       s.descEl.empty();
-      s.descEl.appendText(tt('opensidian.about.replica-note', 'OpenSidian — 基于 Obsidian 1.12.4 的独立开源复刻。'));
+      s.descEl.appendText(tt('setting.about.label-install-version', '安装程序版本: {{version}}', { version: VERSION }));
+      s.descEl.createEl('br');
+      s.descEl.appendText(tt('opensidian.about.replica-note', 'OpenSidian — 基于 Obsidian 1.14.4 的独立开源复刻。'));
       s.descEl.createEl('br');
       s.descEl.createEl('a', {
         text: tt('setting.about.label-read-changelog', '阅读更新日志'),
         attr: { href: 'https://obsidian.md/changelog', target: '_blank', rel: 'noopener' },
       });
-      s.addButton((b) => b.setCta().setButtonText(tt('setting.about.button-check-for-updates', '检查更新')).onClick(async () => {
+      s.addButton((b) => b.setButtonText(tt('setting.about.button-check-for-updates', '检查更新')).onClick(async () => {
         await new Promise((r) => setTimeout(r, 900));
         new Notice(tt('setting.about.label-new-version-ready', '已是最新版本') + ' (' + VERSION + ')');
       }));
@@ -67,14 +80,15 @@ export class AboutTab extends SettingTab {
       });
       const current = getLanguage() === 'zh' ? 'zh' : 'en';
       let pending = null;
+      let relaunchBtn = null;
       s.addButton((b) => {
+        relaunchBtn = b;
         b.setCta().setButtonText(tt('setting.about.button-relaunch', '重新启动应用'));
         b.buttonEl.hide();
         b.onClick(() => {
           if (pending) setLanguage(pending);
           location.reload();
         });
-        this._relaunchButton = b;
       });
       s.addDropdown((d) => {
         d.addOption('en', 'English');
@@ -82,7 +96,7 @@ export class AboutTab extends SettingTab {
         d.setValue(current);
         d.onChange((v) => {
           pending = v;
-          this._relaunchButton.buttonEl.toggle(v !== current);
+          relaunchBtn.buttonEl.toggle(v !== current);
         });
       });
     });
@@ -109,47 +123,30 @@ export class AboutTab extends SettingTab {
           else localStorage.removeItem('slow-startup-check');
         } catch (e) {}
       })));
-  }
-}
-
-/**
- * 原版 P7 的简化版：标题与统计标签保留原版英文（原版未走 i18n）。
- * 桌面统计系统与版本；计时段只有总耗时——初始化/仓库等分段未埋点。
- * 类名 mod-plugin-debug 触发原版启动统计弹窗样式。
- */
-class StartupTimeModal extends Modal {
-  constructor(app) {
-    super(app);
-    this.setTitle('Startup time');
-    this.modalEl.addClass('mod-lg', 'mod-scrollable-content', 'mod-plugin-debug');
-    const totalMs = Math.max(0, performance.now() - (app.bootTime || performance.now()));
-    const total = Math.round(totalMs) + 'ms';
-    const statsEl = this.contentEl.createDiv('startup-stat-list');
-    const addStat = (label, value, desc) => {
-      const row = statsEl.createDiv('startup-stat');
-      const info = row.createDiv('startup-info');
-      info.createSpan({ cls: 'startup-label', text: label });
-      if (desc) info.createSpan({ cls: 'startup-desc', text: desc });
-      row.createDiv({ cls: 'startup-value', text: value });
-    };
-    addStat('Operating system', navigator.platform || 'Unknown');
-    addStat('OpenSidian', VERSION);
-    const timingEl = this.contentEl.createDiv('startup-timing-list');
-    const heading = timingEl.createDiv('startup-stat mod-heading');
-    heading.createDiv('startup-info').createSpan({ cls: 'startup-label', text: 'Total app startup' });
-    heading.createDiv({ cls: 'startup-value', text: total });
-    this.buttonContainerEl.createEl('button', { cls: 'mod-secondary', text: tt('interface.label-copy', '复制到剪贴板') })
-      .addEventListener('click', async () => {
-        const lines = [
-          'OpenSidian start-up time breakdown', '',
-          'OpenSidian version: ' + VERSION,
-          'Operating system: ' + (navigator.platform || 'Unknown'), '',
-          '- Total startup time: ' + total,
-        ];
-        try { await navigator.clipboard.writeText(lines.join('\n')); new Notice(tt('interface.copied_generic', '已复制到剪贴板')); } catch (e) {}
+    const electron = electronModule();
+    if (electron && electron.ipcRenderer) {
+      let gpuDisabled = false;
+      try { gpuDisabled = !!electron.ipcRenderer.sendSync('disable-gpu'); } catch (e) {}
+      adv.addSetting((s) => {
+        let relaunchBtn = null;
+        s.setName(tt('setting.about.option-hw-acceleration', '硬件加速'));
+        s.descEl.empty();
+        const desc = s.descEl.createDiv();
+        desc.appendText(tt('setting.about.option-hw-acceleration-description', '开启硬件加速，即使用 GPU 让 OpenSidian 运行更流畅。') + ' ');
+        desc.createSpan({ cls: 'mod-warning', text: tt('setting.about.option-hw-acceleration-warning', '如果关闭此选项，OpenSidian 的性能将严重下降。') });
+        s.addButton((b) => {
+          relaunchBtn = b;
+          b.setCta().setButtonText(tt('setting.about.button-relaunch', '重新启动应用'));
+          b.buttonEl.hide();
+          b.onClick(() => { try { electron.ipcRenderer.sendSync('relaunch'); } catch (e) { location.reload(); } });
+        });
+        s.addToggle((tog) => tog.setValue(!gpuDisabled).onChange((v) => {
+          const disabled = !v;
+          try { electron.ipcRenderer.sendSync('disable-gpu', disabled); } catch (e) {}
+          relaunchBtn.buttonEl.toggle(disabled !== gpuDisabled);
+        }));
       });
-    this.buttonContainerEl.createEl('button', { cls: 'mod-cancel', text: tt('dialogue.button-done', '完成') })
-      .addEventListener('click', () => this.close());
+    }
   }
 }
 
@@ -171,10 +168,6 @@ export class EditorTab extends SettingTab {
     this.containerEl.empty();
 
     const group = new SettingGroup(this.containerEl);
-    group.addSetting((s) => s
-      .setName(tt('setting.editor.option-open-tab-in-foreground', '始终聚焦新标签页'))
-      .setDesc(tt('setting.editor.option-open-tab-in-foreground-description', '当你在新标签页打开链接，立即切换至新标签页。'))
-      .addToggle((tog) => tog.setValue(settings.focusNewTab === true).onChange((v) => update({ focusNewTab: v }))));
     group.addSetting((s) => s
       .setName(tt('setting.editor.option-default-new-tab-view', '新标签页的默认视图'))
       .setDesc(tt('setting.editor.option-default-new-tab-view-description', '设置新标签页的默认视图模式。'))
@@ -214,6 +207,10 @@ export class EditorTab extends SettingTab {
     });
 
     const display = new SettingGroup(this.containerEl).setHeading(tt('setting.editor.section-display', '显示'));
+    display.addSetting((s) => s
+      .setName(tt('setting.editor.option-show-inline-title', '页内标题'))
+      .setDesc(tt('setting.editor.option-show-inline-title-description', '将文件名作为可编辑的标题在文件内容中显示。'))
+      .addToggle((tog) => tog.setValue(settings.showInlineTitle !== false).onChange((v) => update({ showInlineTitle: v }))));
     display.addSetting((s) => s
       .setName(tt('setting.editor.option-readable-line-length', '限制行宽'))
       .setDesc(tt('setting.editor.option-readable-line-description', '开启后将限制每行显示的字数，使屏幕显示的内容减少，但使较长的段落更具可读性。'))
@@ -267,35 +264,52 @@ export class EditorTab extends SettingTab {
         .setDesc(IS_MAC
           ? tt('setting.editor.spellcheck-languages-mac-description', '本地的拼写检查器将自动检测你当前所使用的语言。')
           : tt('setting.editor.spellcheck-languages-description', '选择需要检查拼写的语言。'));
-      const info = (() => { try { return Desktop.spellcheckLanguages() || {}; } catch (e) { return {}; } })();
-      const available = Array.isArray(info.available) ? info.available : [];
-      const active = Array.isArray(info.active) ? info.active : [];
-      const custom = Array.isArray(info.current) ? [...info.current] : null;
-      const apply = (languages) => { try { Desktop.spellcheckLanguagesSet(languages); } catch (e) {} this.display(); };
-      const pillValues = custom || active;
-      const pills = s.controlEl.createDiv('multi-select-container');
-      for (const lang of pillValues) {
-        pills.createDiv('multi-select-pill', (pill) => {
-          pill.createDiv('multi-select-pill-content', (c) => c.setText(lang));
-          const del = pill.createDiv('multi-select-pill-remove-button clickable-icon');
-          setIcon(del, 'lucide-x');
-          del.onclick = () => apply(pillValues.filter((x) => x !== lang));
+      const displayName = (lang) => {
+        try { return new Intl.DisplayNames([getLanguage()], { type: 'language' }).of(lang) || lang; } catch (e) { return lang; }
+      };
+      const renderLanguages = () => {
+        const info = (() => { try { return Desktop.spellcheckLanguages() || {}; } catch (e) { return {}; } })();
+        const available = Array.isArray(info.available) ? info.available : [];
+        const active = Array.isArray(info.active) ? info.active : [];
+        const custom = Array.isArray(info.current) ? [...info.current] : null;
+        const apply = (languages) => { try { Desktop.spellcheckLanguagesSet(languages); } catch (e) {} renderLanguages(); };
+        s.controlEl.empty();
+        const row = s.controlEl.createDiv('setting-command-hotkeys');
+        if (custom) {
+          const languages = custom.map((lang) => ({
+            lang,
+            display: displayName(lang) + (available.includes(lang) || !available.length ? '' : ' (Not available)'),
+          })).sort((a, b) => a.display.localeCompare(b.display));
+          for (const item of languages) {
+            row.createSpan({ cls: 'setting-hotkey', text: item.display }).createSpan('setting-hotkey-icon', (remove) => {
+              setIcon(remove, 'lucide-x');
+              remove.addEventListener('click', () => apply(custom.filter((lang) => lang !== item.lang)));
+            });
+          }
+          s.controlEl.createSpan('clickable-icon setting-restore-hotkey-button', (restore) => {
+            setIcon(restore, 'lucide-rotate-ccw');
+            restore.setAttr('aria-label', tt('setting.hotkeys.tooltip-restore-default', '恢复默认'));
+            restore.addEventListener('click', () => apply(null));
+          });
+        } else {
+          const current = active[0] || navigator.language || 'en';
+          row.createSpan({ cls: 'setting-hotkey', text: displayName(current) });
+        }
+        const select = s.controlEl.createEl('select', { cls: 'dropdown' });
+        select.style.width = '80px';
+        select.createEl('option', { value: '', text: '+' });
+        const options = available.map((lang) => ({ lang, display: displayName(lang) }))
+          .sort((a, b) => a.display.localeCompare(b.display));
+        for (const option of options) select.createEl('option', { value: option.lang, text: option.display });
+        select.addEventListener('change', () => {
+          if (!select.value) return;
+          const next = custom ? [...custom] : [active[0] || navigator.language || 'en'];
+          if (!next.includes(select.value)) next.push(select.value);
+          apply(next);
         });
-      }
-      if (custom) {
-        s.addExtraButton((b) => b
-          .setIcon('lucide-rotate-ccw')
-          .setTooltip(tt('setting.hotkeys.tooltip-restore-default', '恢复默认'))
-          .onClick(() => apply(null)));
-      }
-      if (available.length) {
-        s.addDropdown((d) => {
-          d.addOption('', '');
-          for (const lang of available) if (!pillValues.includes(lang)) d.addOption(lang, lang);
-          d.setValue('');
-          d.onChange((v) => { if (v) apply([...pillValues, v]); });
-        });
-      }
+      };
+      // 原版 macOS 走系统拼写检查器：只显示描述，不渲染语言胶囊与下拉。
+      if (!IS_MAC) renderLanguages();
     });
     behavior.addSetting((s) => s
       .setName(tt('setting.editor.option-auto-pair-brackets', '自动补全英文标点符号'))
@@ -328,6 +342,7 @@ export class EditorTab extends SettingTab {
         .addSlider((sl) => {
           slider = sl;
           sl.setLimits(2, 8, 1).setDynamicTooltip().setValue(settings.tabSize || 4).onChange((v) => update({ tabSize: v }));
+          trackSliderFill(sl);
         });
     });
 
@@ -340,51 +355,18 @@ export class EditorTab extends SettingTab {
       .setName(tt('setting.editor.option-vim-key-bindings', 'Vim 模式'))
       .setDesc(tt('setting.editor.option-vim-key-bindings-description', '允许在编辑器中使用 Vim 模式。'))
       .addToggle((tog) => tog.setValue(settings.vimMode === true).onChange((v) => {
-        if (!v) { update({ vimMode: false }); return; }
+        if (this.passedVimTest || !v) { update({ vimMode: v }); return; }
         tog.setValue(false); // 原版：弹窗期间开关回弹为关闭，验证通过后再开启
         new VimTestModal(app, (ok) => {
           if (ok) {
-            tog.setValue(true);
-            update({ vimMode: true });
+            this.passedVimTest = true;
+            tog.setValue(true); // 已通过验证，onChange 走持久化分支
             new Notice(tt('setting.editor.msg-vim-mode-enabled', '命令正确。开启 Vim 模式。'));
           } else {
             new Notice(tt('setting.editor.msg-vim-mode-not-enabled', '命令错误。为保证你的使用体验，暂不开启 Vim 模式。'));
           }
         }).open();
       })));
-  }
-}
-
-/** 原版 Vim 验证弹窗：输入 :q 才允许开启 Vim 模式。 */
-class VimTestModal extends Modal {
-  constructor(app, onConfirm) {
-    super(app);
-    this.onConfirm = onConfirm;
-    this.setTitle(tt('setting.editor.label-confirm-enable-vim', '确认进入 Vim 模式'));
-    this.contentEl.createEl('p', { cls: 'mod-warning', text: tt('setting.editor.label-vim-warning', 'Vim 模式可以实现高效的文本编辑操作，但其使用方法十分复杂。如果你对 Vim 不了解，开启该模式可能会让 OpenSidian 难以使用。') });
-    this.contentEl.createEl('p', { text: tt('setting.editor.label-vim-test', '为了确保你知道如何使用 Vim，请输入 Vim 中“退出而不保存”对应的命令：') });
-    const field = this.contentEl.createEl('p', { cls: 'form-field' });
-    field.createEl('label', { cls: 'input-label', text: tt('setting.editor.label-vim-your-answer', '你的答案') });
-    const input = field.createEl('input', {
-      type: 'text',
-      attr: { placeholder: tt('setting.editor.placeholder-enter-command', '请输入命令…') },
-    });
-    input.style.width = '100%';
-    const confirm = () => {
-      const value = input.value.trim();
-      if (!value) { new Notice(tt('setting.editor.msg-vim-mode-please-enter-command', '请输入相应命令开启 Vim 模式。')); return; }
-      const ok = value === ':q' || value.startsWith(':q');
-      this.close();
-      this.onConfirm(ok);
-    };
-    input.addEventListener('keydown', (ev) => {
-      if (ev.key === 'Enter') { ev.preventDefault(); confirm(); }
-    });
-    const row = this.contentEl.createDiv('modal-button-container');
-    row.createEl('button', { text: tt('dialogue.button-cancel', '取消') })
-      .addEventListener('click', () => { this.close(); this.onConfirm(false); });
-    row.createEl('button', { cls: 'mod-cta', text: tt('setting.editor.button-confirm-enable-vim', '让我开启 Vim 模式') })
-      .addEventListener('click', confirm);
   }
 }
 
@@ -416,9 +398,9 @@ export class FileTab extends SettingTab {
       .addDropdown((d) => {
         d.addOption('', tt('setting.file.option-choice-last-opened', '上次打开的文件'));
         d.addOption('new', tt('setting.file.option-choice-new-note', '新笔记'));
+        d.addOption('file', tt('setting.file.option-choice-specific-file', '指定文件'));
         const daily = app.plugins.getInternalPlugin('daily-notes');
         if (daily && daily.enabled) d.addOption('daily', tt('setting.file.option-choice-daily-note', '日记'));
-        d.addOption('file', tt('setting.file.option-choice-specific-file', '指定文件'));
         d.setValue(isFileBehavior ? 'file' : (['', 'new', 'daily'].includes(behavior) ? behavior : ''));
         d.onChange((v) => {
           if (v === 'file') update({ openBehavior: 'file:' + currentOpenPath });
@@ -441,6 +423,10 @@ export class FileTab extends SettingTab {
         });
       s.settingEl.toggle(isFileBehavior);
     });
+    group.addSetting((s) => s
+      .setName(tt('setting.editor.option-open-tab-in-foreground', '始终聚焦新标签页'))
+      .setDesc(tt('setting.editor.option-open-tab-in-foreground-description', '当你在新标签页打开链接，立即切换至新标签页。'))
+      .addToggle((tog) => tog.setValue(settings.focusNewTab === true).onChange((v) => update({ focusNewTab: v }))));
 
     /* 新建笔记位置 */
     group.addSetting((s) => s
@@ -473,11 +459,11 @@ export class FileTab extends SettingTab {
     /* 附件位置 */
     const attach = settings.attachmentFolderPath || '/';
     let attachMode = 'root';
-    let attachFolder = 'attachments';
-    let attachSub = 'attachments';
+    let attachFolder = '';
+    let attachSub = '';
     if (attach === './' || attach === '.') attachMode = 'current';
-    else if (attach.startsWith('./')) { attachMode = 'subfolder'; attachSub = attach.slice(2) || 'attachments'; }
-    else if (attach !== '/' && attach !== '') { attachMode = 'folder'; attachFolder = attach; }
+    else if (attach.startsWith('./')) { attachMode = 'subfolder'; attachSub = attach.slice(2); if (attachSub === 'attachments') attachSub = ''; }
+    else if (attach !== '/' && attach !== '') { attachMode = 'folder'; attachFolder = attach === 'attachments' ? '' : attach; }
     const writeAttach = (mode, folder, sub) => {
       let value = '/';
       if (mode === 'current') value = './';
@@ -583,7 +569,7 @@ export class FileTab extends SettingTab {
     adv.addSetting((s) => {
       s.setName(tt('setting.file.option-excluded-files', '忽略文件'));
       s.descEl.empty();
-      s.descEl.appendText(tt('setting.file.option-excluded-files-desc', '符合以下条件的文件将被忽略。'));
+      s.descEl.appendText(tt('setting.file.option-excluded-files-desc', '符合以下条件的文件将被忽略。忽略是指文件将出现在快速切换、链接补全中队列的末尾，以及不在关系图谱和搜索结果中出现。'));
       const filters = app.settings.appSettings.userIgnoreFilters || [];
       if (filters.length) {
         const list = s.descEl.createEl('ul');
@@ -600,176 +586,18 @@ export class FileTab extends SettingTab {
     adv.addSetting((s) => {
       s.setName(tt('setting.editor.option-reindex-vault', '重建仓库缓存'));
       s.descEl.empty();
-      s.descEl.appendText(tt('setting.editor.option-reindex-vault-description', '重建缓存可能需要几秒钟到几分钟的时间，具体取决于您的仓库大小。'));
-      s.descEl.createDiv({ cls: 'mod-warning', text: tt('setting.editor.label-reindex-warning', '重建缓存后应用将重新加载。') });
+      s.descEl.createSpan({ cls: 'mod-warning', text: tt('setting.editor.option-reindex-vault-description', '重建缓存可能需要几秒钟到几分钟的时间，具体取决于您的仓库大小。') });
+      s.descEl.createEl('br');
       s.descEl.createEl('a', {
-        text: tt('setting.editor.label-reindex-learn-more', '了解它是如何工作的'),
-        attr: { href: 'https://help.obsidian.md/troubleshooting', target: '_blank', rel: 'noopener' },
+        text: tt('interface.button-learn-more', '了解更多'),
+        attr: { href: 'https://help.obsidian.md/data-storage', target: '_blank', rel: 'noopener' },
       });
       s.addButton((b) => b
-        .setClass('mod-destructive')
         .setButtonText(tt('setting.editor.label-reindex', '重建'))
         .onClick(async () => {
           try { await app.metadataCache.rebuildIndices(); } catch (e) { console.error(e); }
           window.location.reload();
         }));
     });
-  }
-}
-
-/** 忽略文件管理弹窗：列表 + 添加输入 + 保存/取消（对齐原版行为，简化 UI）。 */
-class ExcludedFilesModal extends Modal {
-  constructor(app, onDone) {
-    super(app);
-    this.app = app;
-    this.onDone = onDone;
-    this.values = [...(app.settings.appSettings.userIgnoreFilters || [])];
-    this.setTitle(tt('setting.file.option-excluded-files', '忽略文件'));
-  }
-
-  onOpen() {
-    this.display();
-  }
-
-  display() {
-    const container = this.contentEl;
-    container.empty();
-    const listEl = container.createDiv('excluded-files-list');
-    for (const value of this.values) {
-      listEl.createDiv('mobile-option-setting-item', (row) => {
-        row.createSpan({ cls: 'mobile-option-setting-item-name', text: value });
-        if (isRegexFilterValue(value)) row.createSpan({ cls: 'flair mod-flat', text: tt('setting.file.label-regex', '正则') });
-        const btn = row.createDiv('clickable-icon mobile-option-setting-item-option-icon');
-        setIcon(btn, 'lucide-x');
-        btn.addEventListener('click', () => {
-          this.values = this.values.filter((x) => x !== value);
-          this.display();
-        });
-      });
-    }
-    if (!this.values.length) {
-      container.createEl('p', { text: tt('setting.file.label-no-excluded-filters-applied', '目前没有需要忽略的文件。') });
-    }
-    container.createDiv('setting-item-name', (t2) => t2.setText(tt('setting.file.label-filter-conditions', '条件')));
-    const addRow = container.createDiv('excluded-files-add-row');
-    const input = addRow.createEl('input', {
-      type: 'text',
-      attr: { placeholder: tt('setting.file.placeholder-excluded-filter', '请输入文件路径或正则表达式') },
-    });
-    input.style.flex = '1';
-    const errorEl = container.createDiv('mod-warning');
-    errorEl.hide();
-    const suggest = new ExcludedPathSuggest(this.app, input);
-    const add = () => {
-      const value = input.value.trim();
-      if (!value) {
-        errorEl.setText(tt('setting.file.message-empty-filter', '条件不能为空。'));
-        errorEl.show();
-        return;
-      }
-      errorEl.hide();
-      this.values.push(value);
-      input.value = '';
-      this.display();
-    };
-    input.addEventListener('keydown', (ev) => {
-      if (ev.key === 'Enter') { ev.preventDefault(); add(); }
-    });
-    suggest.onSelect = () => add();
-    addRow.createEl('button', { text: tt('interface.button-add', '添加') }).addEventListener('click', add);
-    const buttons = container.createDiv('modal-button-container');
-    buttons.createEl('button', { text: tt('dialogue.button-cancel', '取消') }).addEventListener('click', () => this.close());
-    buttons.createEl('button', { cls: 'mod-cta', text: tt('dialogue.button-save', '保存') }).addEventListener('click', () => {
-      this.app.settings.updateAppSettings({ userIgnoreFilters: this.values });
-      this.close();
-      this.onDone && this.onDone();
-    });
-  }
-}
-
-/* -------------------------------------------------------- helpers & modals */
-
-/** 原版正则条件检测：/pattern/ 形式。 */
-function isRegexFilterValue(value) {
-  return /^\/.+\/$/.test(String(value || '').trim());
-}
-
-/** 递归收集仓库内文件夹相对路径（建议列表用）。 */
-function collectFolderPaths(app) {
-  const out = [];
-  const walk = (folder) => {
-    for (const child of folder.children || []) {
-      if (child instanceof TFolder) {
-        if (child.path) out.push(child.path);
-        walk(child);
-      }
-    }
-  };
-  walk(app.vault.getRoot());
-  return out;
-}
-
-/** 文件路径建议（设置页文本框用，只读复用 suggest 基类）。 */
-class FilePathSuggest extends AbstractInputSuggest {
-  getSuggestions(query) {
-    const q = String(query || '').toLowerCase();
-    return this.app.vault.getFiles()
-      .map((f) => f.path)
-      .filter((p) => !q || p.toLowerCase().includes(q))
-      .slice(0, 30);
-  }
-  renderSuggestion(path, el) { el.setText(path); }
-  selectSuggestion(path) {
-    this.inputEl.value = path;
-    this.inputEl.dispatchEvent(new Event('input', { bubbles: true }));
-    this.close();
-  }
-}
-
-/** 文件夹路径建议。 */
-class FolderPathSuggest extends FilePathSuggest {
-  getSuggestions(query) {
-    const q = String(query || '').toLowerCase();
-    return collectFolderPaths(this.app)
-      .filter((p) => !q || p.toLowerCase().includes(q))
-      .slice(0, 30);
-  }
-}
-
-/** 忽略文件条件的路径建议：选择即触发 onSelect（弹窗内自动添加）。 */
-class ExcludedPathSuggest extends FilePathSuggest {
-  selectSuggestion(path) {
-    super.selectSuggestion(path);
-    if (typeof this.onSelect === 'function') this.onSelect(path);
-  }
-}
-
-/** 拼写检查词典弹窗（原版 ite）：自加词列表 + 移除。 */
-class SpellcheckDictModal extends Modal {
-  constructor(app) {
-    super(app);
-    this.setTitle(tt('setting.editor.spellcheck-dict', '拼写检查词典'));
-  }
-  onOpen() { this.render(); }
-  render() {
-    this.contentEl.empty();
-    let words = [];
-    try { words = Desktop.spellcheckDict() || []; } catch (e) { words = []; }
-    if (!words.length) {
-      this.contentEl.createEl('p', { text: tt('setting.editor.spellcheck-dict-empty', '拼写检查词典是空的。') });
-      return;
-    }
-    const wrap = this.contentEl.createDiv('spellchecker-dictionary-container');
-    for (const word of words) {
-      wrap.createDiv('spellchecker-dictionary-item', (row) => {
-        row.createDiv('spellchecker-dictionary-word', (w) => w.setText(word));
-        const remove = row.createDiv('spellchecker-dictionary-remove-button clickable-icon');
-        setIcon(remove, 'lucide-x');
-        remove.onclick = () => {
-          try { Desktop.spellcheckDictRemove(word); } catch (e) {}
-          this.render();
-        };
-      });
-    }
   }
 }

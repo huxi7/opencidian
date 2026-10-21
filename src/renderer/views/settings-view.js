@@ -1,7 +1,7 @@
 /**
- * [INPUT]: 依赖 ../core/modals.js 的 Modal；依赖 ../core/ipc.js 的 Desktop；依赖 ../core/icons.js 的 setIcon；依赖 ../core/i18n.js 的 t；依赖 ./settings-tabs.js 的 AboutTab/EditorTab/FileTab/AppearanceTab；依赖 ./settings-tabs-plugins.js 的 HotkeysTab/CorePluginsTab
+ * [INPUT]: 依赖 ../core/modals.js 的 Modal；依赖 ../core/ipc.js 的 Desktop；依赖 ../core/icons.js 的 setIcon；依赖 ../core/i18n.js 的 t；依赖 ./settings-tabs.js 的 AboutTab/EditorTab/FileTab；依赖 ./settings-tabs-appearance.js 的 AppearanceTab；依赖 ./settings-tabs-plugins.js 的 HotkeysTab/CorePluginsTab
  * [OUTPUT]: 导出 SettingTab（页签基类）、SettingsHost（设置模态宿主）、installSettingsHost(app)
- * [POS]: views/ 的设置模态宿主，逐字对齐原版 fte 类 DOM：modal.mod-settings.mod-sidebar-layout > .modal-content.vertical-tabs-container > .vertical-tab-header + .vertical-tab-content-container。app.setting 即本类实例；插件通过 addSettingTab 注册页签。1.14.4 popout：shouldUsePopout 读 vault 配置 settingsPopoutWindow，开启时主进程开独立窗口，窗口内 modalEl 直接挂 body（is-popout-modal）。
+ * [POS]: views/ 的设置模态宿主，逐字对齐原版 fte 类 DOM：modal.mod-settings.mod-sidebar-layout > .modal-content.vertical-tabs-container > .vertical-tab-header + .vertical-tab-content-container。app.setting 即本类实例；内置页签注册顺序为 关于 → 外观 → 编辑器 → 文件与链接 → 快捷键 → 核心插件，第三方插件页不注册。1.14.4 popout：shouldUsePopout 读 vault 配置 settingsPopoutWindow，开启时主进程开独立窗口，窗口内 modalEl 直接挂 body（is-popout-modal）。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 /* Settings host — modal shell + tab management, DOM 1:1 with the original. */
@@ -43,11 +43,11 @@ export class SettingsHost extends Modal {
     });
     this.tabContentContainer = createDiv('vertical-tab-content-container');
 
-    // 内置页签顺序对齐原版：关于 → 编辑器 → 文件与链接 → 外观 → 快捷键 → 核心插件
+    // 内置页签顺序对齐原版 1.14.4：关于 → 外观 →（界面已并入外观）→ 编辑器 → 文件与链接 → 快捷键 → 核心插件
     this.addSettingTab(new AboutTab(app, this));
+    this.addSettingTab(new AppearanceTab(app, this));
     this.addSettingTab(new EditorTab(app, this));
     this.addSettingTab(new FileTab(app, this));
-    this.addSettingTab(new AppearanceTab(app, this));
     this.addSettingTab(new HotkeysTab(app, this));
     this.addSettingTab(new CorePluginsTab(app, this));
   }

@@ -1,28 +1,17 @@
 /**
- * [INPUT]: 依赖 ../core/i18n.js 的 tt；依赖 ../core/setting.js 的 SearchComponent/Setting/SettingGroup/SettingTab；依赖 ../core/modals.js 的 Modal；依赖 ../core/keymap.js 的 hotkeyToString/eventToHotkey；依赖 ../core/default-hotkeys.js 的 DEFAULT_HOTKEYS；依赖 ../core/menu.js 的 Menu；依赖 ../core/icons.js 的 setIcon；依赖 ../core/commands.js 的命令注册表
+ * [INPUT]: 依赖 ../core/i18n.js 的 tt；依赖 ../core/setting.js 的 Setting/SettingGroup/SettingTab；依赖 ../core/keymap.js 的 hotkeyToString/eventToHotkey/hotkeysEqual；依赖 ../core/default-hotkeys.js 的 DEFAULT_HOTKEYS；依赖 ../core/icons.js 的 setIcon；依赖 ../core/commands.js 的命令注册表
  * [OUTPUT]: 导出 HotkeysTab、CorePluginsTab
- * [POS]: views/ 的插件相关设置页签。快捷键页对齐原版 w0：筛选菜单 + hotkey-filter 芯片、按快捷键捕获筛选（window keydown 捕获替代原版 keymap scope，本仓库 Keymap 注册不了通配 handler）、has-conflict 冲突芯片、setting-command-hotkeys 行结构，暴露 setQuery/setHotkeyFilter 供插件跳转。核心插件页对齐 dte：.setting-group-search 裸搜索 + 自动聚焦，行内齿轮/快捷键入口按启用与注册状态显隐。
+ * [POS]: views/ 的插件相关设置页签。快捷键页对齐原版 f3：.setting-group-search 裸搜索框 + setting-group-search-control 状态芯片（冲突 chip 带计数）、按快捷键捕获筛选（window keydown 捕获替代原版 keymap scope，本仓库 Keymap 注册不了通配 handler）、搜索框右缘 mod-active-hotkey-filter 组合键芯片、has-conflict 冲突芯片、行内录制态 setting-hotkey.mod-active、setting-command-hotkeys 行结构，暴露 setQuery/setHotkeyFilter 供插件跳转。核心插件页对齐 dte：.setting-group.mod-list 裸搜索 + 自动聚焦，搜索按词全匹配，行内齿轮/快捷键入口按启用与注册状态显隐，开关不重建行。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 /* Plugin-related settings tabs: Hotkeys / Core plugins. */
 import { tt } from '../core/i18n.js';
-import { SearchComponent, Setting, SettingGroup, SettingTab } from '../core/setting.js';
-import { Modal } from '../core/modals.js';
-import { hotkeyToString, eventToHotkey } from '../core/keymap.js';
+import { Setting, SettingGroup, SettingTab } from '../core/setting.js';
+import { hotkeyToString, eventToHotkey, hotkeysEqual } from '../core/keymap.js';
 import { DEFAULT_HOTKEYS } from '../core/default-hotkeys.js';
-import { Menu } from '../core/menu.js';
 import { setIcon } from '../core/icons.js';
 
 /* --------------------------------------------------------------- shared */
-
-/** 原版 Hk.addSearch 的裸搜索容器：.setting-group-search 直接挂 SearchComponent，无名称行。 */
-function addGroupSearch(group, placeholder, onChange) {
-  const containerEl = group.groupEl.createDiv('setting-group-search');
-  group.groupEl.insertBefore(containerEl, group.listEl);
-  const search = new SearchComponent(containerEl);
-  search.setPlaceholder(placeholder).onChange(onChange);
-  return search;
-}
 
 /** 打开快捷键页并按插件 id 前缀过滤（原版核心/社区插件行的 lucide-plus-circle 入口）。 */
 function openHotkeysFor(setting, pluginId) {
@@ -40,45 +29,14 @@ function hasPluginCommands(app, pluginId) {
 
 /* ----------------------------------------------------------------- Hotkeys */
 
-/** 原版 y0：hotkey-filter 芯片。remove() 先清 value 再出场，避免移除回调读到旧筛选值。 */
-class FilterChip {
-  constructor(parentEl) {
-    this.value = null;
-    this.handleRemove = null;
-    this.el = createDiv('hotkey-filter', (el) => {
-      this.innerEl = el.createDiv('hotkey-filter-inner');
-      this.removeEl = el.createDiv('hotkey-filter-remove-button', (removeEl) => {
-        setIcon(removeEl, 'lucide-x');
-        removeEl.setAttr('aria-label', tt('interface.menu.close', '关闭'));
-      });
-    });
-    if (parentEl) parentEl.appendChild(this.el);
-  }
-
-  setValue(value) { this.value = value; return this; }
-  setTitle(title) { this.innerEl.setText(title); return this; }
-  onRemove(callback) {
-    this.handleRemove = callback;
-    this.removeEl.addEventListener('click', this.remove.bind(this));
-    return this;
-  }
-
-  remove() {
-    this.value = null;
-    if (this.el.isShown()) {
-      this.el.detach();
-      if (this.handleRemove) this.handleRemove();
-    }
-  }
-}
-
-/** 原版 b0：状态筛选 → 菜单标题。键序即菜单项顺序。 */
-const STATUS_FILTER_LABELS = {
-  'show-all': () => tt('setting.hotkeys.label-show-all', '全部'),
-  'show-assigned': () => tt('setting.hotkeys.label-show-assigned', '已分配'),
-  'show-user-assigned': () => tt('setting.hotkeys.label-show-user-assigned', '由我分配'),
-  'show-unassigned': () => tt('setting.hotkeys.label-show-unassigned', '未分配'),
-};
+/** 原版 d3：状态筛选顺序与文案。冲突项按当前冲突数动态显示。 */
+const STATUS_FILTERS = [
+  ['show-conflicts', () => tt('setting.hotkeys.label-show-conflicts', '显示冲突')],
+  ['show-all', () => tt('setting.hotkeys.label-show-all', '全部')],
+  ['show-assigned', () => tt('setting.hotkeys.label-show-assigned', '已分配')],
+  ['show-user-assigned', () => tt('setting.hotkeys.label-show-user-assigned', '由我分配')],
+  ['show-unassigned', () => tt('setting.hotkeys.label-show-unassigned', '未分配')],
+];
 
 export class HotkeysTab extends SettingTab {
   constructor(app, setting) {
@@ -87,61 +45,78 @@ export class HotkeysTab extends SettingTab {
     this.id = 'hotkeys';
     this.icon = 'command';
     this.searchComponent = null;
-    this.headerComponent = null;
     this.filterContainerEl = null;
-    this.hotkeyListContainerEl = null;
-    this.statusFilter = null;
+    this.filterEls = {};
+    this.activeStatusFilterEl = null;
+    this.hotkeyListEl = null;
+    this.statusFilter = 'show-all';
     this.hotkeyFilter = null;
+    this.hotkeyFilterDecoratorEl = null;
     this.filterHotkeyActiveEl = null;
+    this.commandBeingCustomized = null;
     this._captureHandler = null;
+    this._customizeHandler = null;
   }
 
   display() {
     this.containerEl.empty();
     this.finishFilteringByHotkey();
-    this.statusFilter = null;
+    this.finishCustomizingHotkey();
+    this.statusFilter = 'show-all';
     this.hotkeyFilter = null;
+    this.filterEls = {};
+    this.activeStatusFilterEl = null;
 
-    const group = new SettingGroup(this.containerEl);
-    group.addSetting((s) => {
-      this.headerComponent = s;
-      s.setName(tt('setting.hotkeys.option-search', '搜索快捷键'));
-      s.addButton((b) => {
-        b.buttonEl.addClass('clickable-icon');
-        setIcon(b.buttonEl, 'lucide-filter');
-        b.buttonEl.addEventListener('click', (ev) => this.showFilterMenu(ev));
+    const group = new SettingGroup(this.containerEl).addClass('mod-list').addClass('mod-hotkeys');
+    group.addSearch((search) => {
+      this.searchComponent = search;
+      search.setPlaceholder(tt('setting.hotkeys.prompt-filter', '搜索…'))
+        .onChange(() => this.updateHotkeyVisibility());
+      search.containerEl.addClass('mod-hotkey');
+      this.hotkeyFilterDecoratorEl = search.containerEl.createDiv('input-right-decorator clickable-icon');
+      this.renderHotkeyFilterDecorator();
+      this.hotkeyFilterDecoratorEl.addEventListener('click', (ev) => {
+        if (ev.defaultPrevented || this.hotkeyFilter) return;
+        search.containerEl.appendChild(this.filterHotkeyActiveEl);
+        this.startFilteringByHotkey();
       });
-      s.addSearch((search) => {
-        this.searchComponent = search;
-        search.setPlaceholder(tt('setting.hotkeys.prompt-filter', '搜索…'))
-          .onChange(() => this.updateHotkeyVisibility());
-        const container = search.containerEl;
-        container.addClass('mod-hotkey');
-        const filterHotkeyEl = container.createDiv('input-right-decorator clickable-icon');
-        setIcon(filterHotkeyEl, 'lucide-keyboard');
-        filterHotkeyEl.setAttr('aria-label', tt('setting.hotkeys.tooltip-filter-by-hotkey', '按快捷键筛选'));
-        this.filterHotkeyActiveEl = createSpan({
-          cls: 'setting-hotkey mod-active input-right-decorator',
-          text: tt('setting.hotkeys.label-waiting-for-hotkey-press', '按下快捷键…'),
-        });
-        filterHotkeyEl.addEventListener('click', () => {
-          if (this.filterHotkeyActiveEl.isShown()) { this.finishFilteringByHotkey(); return; }
-          container.appendChild(this.filterHotkeyActiveEl);
-          this.startFilteringByHotkey();
-        });
+      this.filterHotkeyActiveEl = createSpan({
+        cls: 'setting-hotkey mod-active input-right-decorator',
+        text: tt('setting.hotkeys.label-waiting-for-hotkey-press', '按下快捷键…'),
+      });
+      this.filterHotkeyActiveEl.addEventListener('click', (ev) => {
+        ev.preventDefault();
+        this.finishFilteringByHotkey();
       });
     });
 
-    this.filterContainerEl = group.listEl.createDiv('setting-filter-container');
-    this.statusFilter = new FilterChip()
-      .setTitle(tt('setting.hotkeys.label-show-all', '全部'))
-      .onRemove(() => this.setStatusFilter('show-all'));
-    this.hotkeyListContainerEl = group.listEl.createDiv('hotkey-list-container');
+    // 原版 addSearchControl：筛选芯片独占搜索行下一行。
+    group.addSearchControl((control) => {
+      this.filterContainerEl = control.createDiv('setting-group-filters');
+      for (const [mode, label] of STATUS_FILTERS) {
+        const chip = this.filterContainerEl.createDiv({ cls: 'setting-group-filter', text: label() });
+        if (mode === 'show-conflicts') chip.addClass('mod-error');
+        chip.setAttr('tabIndex', '0');
+        chip.addEventListener('click', () => this.setStatusFilter(mode));
+        chip.addEventListener('keydown', (ev) => {
+          if (ev.key === 'Enter' || ev.key === ' ') this.setStatusFilter(mode);
+        });
+        this.filterEls[mode] = chip;
+      }
+      this.filterEls['show-conflicts'].hide();
+      this.activeStatusFilterEl = this.filterEls['show-all'];
+      this.activeStatusFilterEl.addClass('is-active');
+    });
+
+    this.hotkeyListEl = group.listEl;
     this.updateHotkeyVisibility();
     this.searchComponent.inputEl.focus();
   }
 
-  hide() { this.finishFilteringByHotkey(); }
+  hide() {
+    this.finishFilteringByHotkey();
+    this.finishCustomizingHotkey();
+  }
 
   /** 进入按快捷键筛选捕获态：吞掉按键并转成筛选条件；Esc 取消（同时清掉现有快捷键筛选）。 */
   startFilteringByHotkey() {
@@ -150,9 +125,8 @@ export class HotkeysTab extends SettingTab {
       ev.preventDefault();
       ev.stopPropagation();
       if (ev.key === 'Escape') {
-        if (this.hotkeyFilter) this.hotkeyFilter.remove();
         this.finishFilteringByHotkey();
-        this.updateHotkeyVisibility();
+        this.setHotkeyFilter(null);
         return;
       }
       const hotkey = eventToHotkey(ev);
@@ -169,46 +143,82 @@ export class HotkeysTab extends SettingTab {
     }
   }
 
-  /** 原版 setHotkeyFilter：状态筛选芯片让位给快捷键芯片，列表只留绑定该组合的命令。 */
-  setHotkeyFilter(hotkey) {
-    if (this.statusFilter) this.statusFilter.remove();
-    if (this.hotkeyFilter) this.hotkeyFilter.remove();
-    this.hotkeyFilter = new FilterChip(this.filterContainerEl)
-      .setValue(hotkey)
-      .setTitle(hotkeyToString(hotkey))
-      .onRemove(() => { this.hotkeyFilter = null; this.updateHotkeyVisibility(); });
+  /** 原版 commandBeingCustomized：行内进入录制态，按键直接写入该命令；Esc 取消。 */
+  startCustomizingHotkey(command) {
     this.finishFilteringByHotkey();
+    this.finishCustomizingHotkey();
+    this.commandBeingCustomized = command;
+    this._customizeHandler = (ev) => {
+      ev.preventDefault();
+      ev.stopPropagation();
+      if (ev.key === 'Escape') {
+        this.finishCustomizingHotkey();
+        this.updateHotkeyVisibility();
+        return;
+      }
+      const hk = eventToHotkey(ev);
+      if (!hk) return;
+      const current = this.app.hotkeyManager.getHotkeys(command.id);
+      if (!current.some((existing) => hotkeysEqual(existing, hk))) {
+        this.app.settings.setHotkey(command.id, [...current, hk]);
+      }
+      this.app.hotkeyManager.buildCustomKeys();
+      this.finishCustomizingHotkey();
+      this.updateHotkeyVisibility();
+    };
+    window.addEventListener('keydown', this._customizeHandler, true);
     this.updateHotkeyVisibility();
   }
 
-  /** 原版 setStatusFilter：选 show-all 时移除芯片，其余模式把芯片挂进筛选容器。 */
-  setStatusFilter(mode) {
-    if (this.hotkeyFilter) this.hotkeyFilter.remove();
-    this.statusFilter.setValue(mode);
-    if (mode === 'show-all') {
-      this.statusFilter.remove();
+  finishCustomizingHotkey() {
+    if (this._customizeHandler) {
+      window.removeEventListener('keydown', this._customizeHandler, true);
+      this._customizeHandler = null;
+    }
+    this.commandBeingCustomized = null;
+  }
+
+  /** 原版 renderHotkeyFilterDecorator：无筛选显示键盘图标；有筛选显示组合键 + 清除钮。 */
+  renderHotkeyFilterDecorator() {
+    const el = this.hotkeyFilterDecoratorEl;
+    if (!el) return;
+    el.empty();
+    el.toggleClass('mod-active-hotkey-filter', !!this.hotkeyFilter);
+    el.toggleClass('clickable-icon', !this.hotkeyFilter);
+    if (this.hotkeyFilter) {
+      el.createSpan({ text: hotkeyToString(this.hotkeyFilter) });
+      const clear = el.createSpan('hotkey-filter-clear');
+      setIcon(clear, 'lucide-x');
+      clear.addEventListener('click', (ev) => {
+        ev.preventDefault();
+        this.setHotkeyFilter(null);
+      });
     } else {
-      if (!this.statusFilter.el.isShown()) this.filterContainerEl.appendChild(this.statusFilter.el);
-      const label = STATUS_FILTER_LABELS[mode];
-      this.statusFilter.setTitle(label ? label() : mode);
+      setIcon(el, 'lucide-keyboard');
+      el.setAttr('aria-label', tt('setting.hotkeys.tooltip-filter-by-hotkey', '按快捷键筛选'));
     }
+  }
+
+  /** 原版 setActiveHotkeyFilter：清空值即移除装饰器芯片并重筛。 */
+  setHotkeyFilter(hotkey) {
+    this.hotkeyFilter = hotkey || null;
+    this.finishFilteringByHotkey();
+    this.renderHotkeyFilterDecorator();
     this.updateHotkeyVisibility();
   }
 
-  /** 原版 showFilterMenu：工具栏 filter 按钮弹出勾选菜单，打开期间按钮带 has-active-menu。 */
-  showFilterMenu(ev) {
-    ev.preventDefault();
-    const target = ev.currentTarget;
-    if (target.hasClass('has-active-menu')) return;
-    const menu = new Menu(this.app);
-    const current = (this.statusFilter && this.statusFilter.value) || 'show-all';
-    for (const mode of Object.keys(STATUS_FILTER_LABELS)) {
-      menu.addItem((item) => item
-        .setTitle(STATUS_FILTER_LABELS[mode]())
-        .setChecked(current === mode)
-        .onClick(() => this.setStatusFilter(mode)));
-    }
-    menu.setParentElement(target).showAtMouseEvent(ev);
+  /** 原版 setActiveStatusFilter：只移动 is-active，不清除快捷键筛选。 */
+  setStatusFilter(mode) {
+    if (this.statusFilter === mode) return;
+    this.statusFilter = mode;
+    this.updateActiveFilterClass();
+    this.updateHotkeyVisibility();
+  }
+
+  updateActiveFilterClass() {
+    if (this.activeStatusFilterEl) this.activeStatusFilterEl.removeClass('is-active');
+    this.activeStatusFilterEl = this.filterEls[this.statusFilter] || this.filterEls['show-all'];
+    if (this.activeStatusFilterEl) this.activeStatusFilterEl.addClass('is-active');
   }
 
   /** 原版 setQuery：写入搜索词、聚焦并重筛；核心插件页的快捷键入口按插件 id 前缀过滤。 */
@@ -219,22 +229,11 @@ export class HotkeysTab extends SettingTab {
     this.updateHotkeyVisibility();
   }
 
-  /** 原版 setDescription：计数与冲突数写入搜索行描述，冲突数为 mod-warning span。 */
-  setDescription(count, conflicts) {
-    if (!this.headerComponent) return;
-    const descEl = this.headerComponent.descEl;
-    descEl.empty();
-    descEl.createSpan({ text: tt('setting.hotkeys.option-search-desc', '显示 {{count}} 个快捷键。', { count }) });
-    if (conflicts) {
-      descEl.createSpan({ cls: 'mod-warning', text: tt('setting.hotkeys.option-search-conflict', '有 {{count}} 个冲突命令。', { count: conflicts }) });
-    }
-  }
-
   /** 原版 updateHotkeyVisibility：全量命令建冲突表，再按搜索/状态/快捷键三重条件出行。 */
   updateHotkeyVisibility() {
     const app = this.app;
-    if (!this.hotkeyListContainerEl) return;
-    const listEl = this.hotkeyListContainerEl;
+    if (!this.hotkeyListEl) return;
+    const listEl = this.hotkeyListEl;
     listEl.empty();
     const hotkeysSetting = app.settings.hotkeys || {};
     const customOf = (commandId) => {
@@ -256,11 +255,26 @@ export class HotkeysTab extends SettingTab {
       const bound = custom !== null ? custom : (DEFAULT_HOTKEYS[cmd.id] || []);
       for (const hk of bound) addOwner(hotkeyToString(hk), { id: cmd.id, name: cmd.name });
     }
+    const conflicts = new Set();
+    for (const bound of owners.values()) {
+      if (bound.length > 1) for (const owner of bound) conflicts.add(owner.id);
+    }
+    if (!conflicts.size && this.statusFilter === 'show-conflicts') {
+      this.statusFilter = 'show-all';
+      this.updateActiveFilterClass();
+    }
+    const conflictFilterEl = this.filterEls['show-conflicts'];
+    if (conflictFilterEl) {
+      conflictFilterEl.toggle(conflicts.size > 0);
+      conflictFilterEl.empty();
+      conflictFilterEl.createSpan({ text: tt('setting.hotkeys.label-show-conflicts', '显示冲突') });
+      conflictFilterEl.createSpan({ cls: 'setting-group-filter-badge', text: String(conflicts.size) });
+    }
 
     const query = (this.searchComponent ? this.searchComponent.inputEl.value : '').toLowerCase();
-    const statusMode = (this.statusFilter && this.statusFilter.value) || 'show-all';
-    const filterText = this.hotkeyFilter ? hotkeyToString(this.hotkeyFilter.value) : '';
-    const conflicts = new Set();
+    const terms = query.split(/\s+/).filter(Boolean);
+    const statusMode = this.statusFilter || 'show-all';
+    const filterText = this.hotkeyFilter ? hotkeyToString(this.hotkeyFilter) : '';
     let shown = 0;
 
     for (const cmd of sorted) {
@@ -268,9 +282,13 @@ export class HotkeysTab extends SettingTab {
       const defaults = DEFAULT_HOTKEYS[cmd.id];
       const hasCustom = custom !== null;
       const hasDefaults = Array.isArray(defaults) && defaults.length > 0;
-      if (query && !String(cmd.name).toLowerCase().includes(query) && !cmd.id.toLowerCase().startsWith(query)) continue;
+      if (terms.length) {
+        const haystack = (String(cmd.name) + ' ' + cmd.id).toLowerCase();
+        if (!terms.every((term) => haystack.includes(term))) continue;
+      }
       const bound = hasCustom ? custom : (defaults || []);
       if (filterText && !bound.some((hk) => hotkeyToString(hk) === filterText)) continue;
+      if (statusMode === 'show-conflicts' && !conflicts.has(cmd.id)) continue;
       if (statusMode === 'show-assigned' && !hasDefaults && !hasCustom) continue;
       if (statusMode === 'show-user-assigned' && !hasCustom) continue;
       if (statusMode === 'show-unassigned' && (hasCustom || hasDefaults)) continue;
@@ -306,29 +324,35 @@ export class HotkeysTab extends SettingTab {
         });
       };
 
+      const customizing = !!(this.commandBeingCustomized && this.commandBeingCustomized.id === cmd.id);
       if (hasCustom) {
         for (const hk of custom) {
           const text = hotkeyToString(hk);
-          for (const owner of (owners.get(text) || [])) if (owner.id !== cmd.id) conflicts.add(owner.id);
           buildChip(hk, () => {
             const next = custom.filter((x) => hotkeyToString(x) !== text);
-            app.settings.setHotkey(cmd.id, next.length ? next : null);
+            app.settings.setHotkey(cmd.id, next);
             app.hotkeyManager.buildCustomKeys();
             this.updateHotkeyVisibility();
           });
+        }
+        if (!custom.length && !customizing) {
+          row.createSpan({ cls: 'setting-hotkey mod-empty', text: tt('setting.hotkeys.label-blank-hotkey', '未设置') });
         }
       } else if (hasDefaults) {
         for (const hk of defaults) {
           const text = hotkeyToString(hk);
           buildChip(hk, () => {
             const next = defaults.filter((x) => hotkeyToString(x) !== text);
-            app.settings.setHotkey(cmd.id, next.length ? next : null);
+            app.settings.setHotkey(cmd.id, next);
             app.hotkeyManager.buildCustomKeys();
             this.updateHotkeyVisibility();
           });
         }
-      } else {
+      } else if (!customizing) {
         row.createSpan({ cls: 'setting-hotkey mod-empty', text: tt('setting.hotkeys.label-blank-hotkey', '未设置') });
+      }
+      if (customizing) {
+        row.createSpan({ cls: 'setting-hotkey mod-active', text: tt('setting.hotkeys.label-waiting-for-hotkey-press', '按下快捷键…') });
       }
 
       if (hasCustom) {
@@ -342,49 +366,18 @@ export class HotkeysTab extends SettingTab {
           });
         });
       }
-      setting.controlEl.createSpan('clickable-icon setting-add-hotkey-button', (el) => {
+      const addBtn = setting.controlEl.createSpan('clickable-icon setting-add-hotkey-button', (el) => {
         setIcon(el, 'lucide-plus-circle');
         el.setAttr('aria-label', tt('setting.hotkeys.tooltip-customize-command', '自定义快捷键'));
-        el.addEventListener('click', () => new HotkeyRecorderModal(app, cmd, () => this.updateHotkeyVisibility()).open());
+        el.addEventListener('click', () => this.startCustomizingHotkey(cmd));
       });
+      if (customizing) addBtn.addClass('mod-active');
     }
-    this.setDescription(shown, conflicts.size);
-  }
-}
-
-/** 录制弹窗：按下组合键写入该命令。Escape 取消。 */
-class HotkeyRecorderModal extends Modal {
-  constructor(app, command, onDone) {
-    super(app);
-    this.app = app;
-    this.command = command;
-    this.onDone = onDone;
-    this.setTitle(command.name);
-  }
-
-  onOpen() {
-    this.contentEl.createDiv({
-      cls: 'hotkey-recorder',
-      text: tt('setting.hotkeys.label-waiting-for-hotkey-press', '按下快捷键…'),
-    });
-    this._keyHandler = (ev) => {
-      ev.preventDefault();
-      ev.stopPropagation();
-      if (ev.key === 'Escape') { this.close(); return; }
-      const hk = eventToHotkey(ev);
-      if (!hk) return;
-      const current = this.app.hotkeyManager.getHotkeys(this.command.id);
-      this.app.settings.setHotkey(this.command.id, [...current, hk]);
-      this.app.hotkeyManager.buildCustomKeys();
-      this.close();
-      this.onDone && this.onDone();
-    };
-    window.addEventListener('keydown', this._keyHandler, true);
-  }
-
-  onClose() {
-    window.removeEventListener('keydown', this._keyHandler, true);
-    this.contentEl.empty();
+    if (!shown) {
+      const empty = new Setting(listEl);
+      empty.setName(tt('setting.hotkeys.label-no-results-found', '没有找到结果'));
+      empty.setClass('mod-empty-state');
+    }
   }
 }
 
@@ -400,21 +393,25 @@ export class CorePluginsTab extends SettingTab {
 
   display() { this.render(true); }
 
-  /** 原版 dte.render：裸搜索框 + 行内齿轮/快捷键入口 + 开关；入口按启用与注册状态显隐。 */
+  /** 原版 dte.render：.setting-group.mod-list 裸搜索 + 行内齿轮/快捷键入口 + 开关；入口按启用与注册状态显隐。 */
   render(focusSearch = false) {
     const app = this.app;
     this.containerEl.empty();
     let query = '';
-    const group = new SettingGroup(this.containerEl);
+    const group = new SettingGroup(this.containerEl).addClass('mod-list');
     const rowsEl = group.listEl;
     const renderRows = () => {
       rowsEl.empty();
+      const terms = query.split(/\s+/).filter(Boolean);
       const entries = Object.entries(app.plugins.internalPlugins)
         .sort((a, b) => String(a[1].manifest.name).localeCompare(String(b[1].manifest.name), 'zh'));
+      let rendered = 0;
       for (const [id, entry] of entries) {
         const name = entry.manifest.name || id;
         const desc = entry.manifest.description || '';
-        if (query && !name.toLowerCase().includes(query) && !desc.toLowerCase().includes(query)) continue;
+        const haystack = (name + ' ' + desc).toLowerCase();
+        if (terms.length && !terms.every((term) => haystack.includes(term))) continue;
+        rendered++;
         const hasSettingTab = !!(entry.manifest.module && entry.manifest.module.settingTab);
         const setting = new Setting(rowsEl);
         setting.setName(name);
@@ -424,7 +421,7 @@ export class CorePluginsTab extends SettingTab {
         setting.addExtraButton((b) => {
           gearEl = b.extraSettingsEl;
           b.setIcon('lucide-settings')
-            .setTooltip(tt('setting.plugin-options', '插件选项'))
+            .setTooltip(tt('setting.options', '选项'))
             .onClick(() => this.setting.openPluginOptions(id));
         });
         setting.addExtraButton((b) => {
@@ -434,20 +431,30 @@ export class CorePluginsTab extends SettingTab {
             .setTooltip(tt('setting.hotkeys.name', '快捷键'))
             .onClick(() => openHotkeysFor(this.setting, id));
         });
+        const refreshVisibility = () => {
+          const enabled = !!entry.enabled;
+          gearEl.toggle(enabled && hasSettingTab);
+          hotkeysEl.toggle(enabled && hasPluginCommands(app, id));
+        };
         setting.addToggle((tog) => tog.setValue(!!entry.enabled).onChange(async (v) => {
           if (v) await app.plugins.enableInternalPlugin(id);
           else await app.plugins.disableInternalPlugin(id);
-          renderRows();
+          refreshVisibility();
         }));
-        // 原版 d()：禁用时两个入口都隐藏；齿轮要注册设置页签，快捷键按钮要有命令
-        const enabled = !!entry.enabled;
-        gearEl.toggle(enabled && hasSettingTab);
-        hotkeysEl.toggle(enabled && hasPluginCommands(app, id));
+        refreshVisibility();
+      }
+      if (!rendered) {
+        const empty = new Setting(rowsEl);
+        empty.setName(tt('setting.hotkeys.label-no-results-found', '没有找到结果'));
+        empty.setClass('mod-empty-state');
       }
     };
-    const search = addGroupSearch(group,
-      tt('setting.core-plugin.placeholder-search-plugin', '搜索插件…'),
-      (v) => { query = String(v || '').trim().toLowerCase(); renderRows(); });
+    let search = null;
+    group.addSearch((component) => {
+      search = component;
+      component.setPlaceholder(tt('setting.core-plugin.placeholder-search-plugin', '搜索插件…'))
+        .onChange((v) => { query = String(v || '').trim().toLowerCase(); renderRows(); });
+    });
     if (focusSearch) setTimeout(() => search.inputEl.focus(), 0);
     renderRows();
   }

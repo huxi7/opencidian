@@ -25,6 +25,17 @@ app.settings.updateAppearance({ accentColor: '#ff0000' });
 app.setting.open();app.setting.openTabById('appearance');await wait(250);
 const tab=app.setting.activeTab.containerEl;
 check(!!tab&&tab.isConnected,'外观页打开');
+const groupEl=tab.querySelector('.setting-group');
+check(!!groupEl,'设置组存在');
+const groupStyle=getComputedStyle(groupEl);
+check(parseFloat(groupStyle.maxWidth)<=700.5,'设置组最大宽度 700px（原版 --setting-group-max-width）:: '+groupStyle.maxWidth);
+check(parseFloat(groupStyle.width)<=700.5,'设置组实际宽度不超过 700px :: '+groupStyle.width);
+const firstItem=groupEl.querySelector('.setting-items > .setting-item');
+check(getComputedStyle(firstItem).alignItems==='flex-start','设置行顶部对齐（描述换行时不挤压控件）');
+const padProbe=document.body.createDiv();
+padProbe.style.paddingLeft='var(--setting-items-padding-x)';
+const padX=getComputedStyle(padProbe).paddingLeft;padProbe.detach();
+check(getComputedStyle(firstItem).paddingLeft===padX,'设置行左内边距=--setting-items-padding-x :: '+getComputedStyle(firstItem).paddingLeft+' / '+padX);
 
 const themeRow=rowByName(tab,/^主题$|^Themes$/);
 check(!!themeRow,'主题行存在');
@@ -51,6 +62,7 @@ input.dispatchEvent(new Event('input',{bubbles:true}));
 await wait(150);
 const item=[...modal.querySelectorAll('.font-manager-item')].find((el)=>/AcceptanceFontXYZ/.test(el.textContent||''));
 check(!!item,'新字体进入列表');
+check(item.querySelector('.mobile-option-setting-item-name').style.fontFamily.includes('AcceptanceFontXYZ'),'字体名按自身字体预览');
 check(!!item.querySelector('.font-manager-item-indicator.mod-warning'),'不存在的字体显示警示指示');
 check(!!item.querySelector('.font-manager-drag-handle svg'),'行有拖拽手柄图标');
 const delBtn=[...item.querySelectorAll('.clickable-icon')].pop();
@@ -73,7 +85,9 @@ app.settings.updateAppearance({ interfaceFontFamily: '' });
 const iconRow=rowByName(tab,/自定义应用图标|Custom app icon/);
 check(!!iconRow,'自定义图标行存在');
 check([...iconRow.querySelectorAll('button')].some((b)=>/选择|Choose/.test(b.textContent||'')),'自定义图标有选择按钮');
-check(!!iconRow.querySelector('.extra-setting-button'),'自定义图标有恢复默认按钮');
+const iconReset=iconRow.querySelector('.extra-setting-button');
+check(!!iconReset,'自定义图标有恢复默认按钮');
+check(iconReset.style.display==='none','无自定义图标时恢复默认按钮隐藏');
 check(require('electron').ipcRenderer.sendSync('get-icon')===null,'初始状态无自定义图标');
 
 /* 功能区配置（Zee）：隐藏/恢复/拖拽排序 */
@@ -87,15 +101,15 @@ check(!!rcModal,'功能区配置弹窗打开');
 const activeRows=[...rcModal.querySelectorAll('.ribbon-config-list .ribbon-config-item')];
 check(activeRows.length>0,'功能区配置列出当前按钮');
 const firstName=activeRows[0].querySelector('.mobile-option-setting-item-name').textContent;
-const firstItem=app.workspace.getRibbonItems().find((i)=>i.title===firstName);
-check(!!firstItem,'找到对应功能区按钮');
+const firstRibbonItem=app.workspace.getRibbonItems().find((i)=>i.title===firstName);
+check(!!firstRibbonItem,'找到对应功能区按钮');
 activeRows[0].querySelector('.mobile-option-setting-item-remove-icon').click();await wait(150);
 check(!!rcModal.querySelector('.ribbon-config-hidden'),'隐藏后出现未显示按钮分区');
-check(firstItem.el.style.display==='none','移除后功能区按钮隐藏');
+check(firstRibbonItem.el.style.display==='none','移除后功能区按钮隐藏');
 const hiddenRow=[...rcModal.querySelectorAll('.ribbon-config-hidden .ribbon-config-item')].find((r)=>r.textContent.includes(firstName));
 check(!!hiddenRow,'未显示分区包含该按钮');
 hiddenRow.querySelector('.mobile-option-setting-item-add-icon').click();await wait(150);
-check(firstItem.el.style.display!=='none','恢复后功能区按钮重新显示');
+check(firstRibbonItem.el.style.display!=='none','恢复后功能区按钮重新显示');
 const rows2=[...rcModal.querySelectorAll('.ribbon-config-list .ribbon-config-item')];
 if(rows2.length>=2){
   const secondKey=app.workspace.getRibbonItems()[1].key;
@@ -106,6 +120,9 @@ if(rows2.length>=2){
   await wait(180);
   const order=JSON.parse(localStorage.getItem('opensidian-ribbon-order')||'[]');
   check(order.length>0&&order[0]===secondKey,'拖拽后顺序持久化');
+  const reordered=[...rcModal.querySelectorAll('.ribbon-config-list .ribbon-config-item')];
+  const secondItem=app.workspace.getRibbonItems().find((i)=>i.key===secondKey);
+  check(!!secondItem&&reordered[0].querySelector('.mobile-option-setting-item-name').textContent===secondItem.title,'拖拽后配置列表按功能区 DOM 顺序显示');
 }
 rcModal.querySelector('.modal-close-button').click();await wait(100);
 
@@ -114,9 +131,13 @@ const accentRow=rowByName(tab,/主题色|Accent color/);
 check(!!accentRow,'主题色行存在');
 const resetBtn=accentRow.querySelector('.extra-setting-button');
 check(!!resetBtn,'主题色有恢复默认按钮');
+check(resetBtn.getAttribute('aria-disabled')==='false','已有主题色时恢复按钮可用');
 resetBtn.click();await wait(250);
 check(!app.settings.appearance.accentColor,'重设后清空 accentColor 配置');
 check(!document.body.style.getPropertyValue('--accent-h'),'重设后移除内联 --accent-h，恢复主题默认');
+check(resetBtn.getAttribute('aria-disabled')==='true','重设后恢复按钮 aria-disabled');
+const colorInput=accentRow.querySelector('input[type=color]');
+check(/^#[0-9a-f]{6}$/i.test(colorInput.value)&&colorInput.value!=='#ff0000','重设后色块回到主题默认色');
 app.setting.close();
 return {pass:true,count};
 })()

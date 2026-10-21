@@ -1,13 +1,16 @@
 /**
- * [INPUT]: 依赖 ForceSim（worker/本地门面）、共享几何与颜色工具及浏览器 Canvas。
- * [OUTPUT]: 导出 GraphRenderer；绘制节点与连线，承接缩放、平移和拖拽。
- * [POS]: 图谱渲染层；拥有模拟器、画布监听与 ResizeObserver，销毁时终止模拟器（含 worker）。
+ * [INPUT]: 依赖 ForceSim（worker/本地门面）、共享几何与颜色工具、GraphTouchController 及浏览器 Canvas。
+ * [OUTPUT]: 导出 GraphRenderer；绘制节点与连线，承接鼠标/触屏缩放、平移、拖拽与捏合。
+ * [POS]: 图谱渲染层；拥有模拟器、画布监听与 ResizeObserver，销毁时终止模拟器（含 worker）与触摸控制器。
+ *        鼠标走 mousedown/mousemove；触摸与触控笔由 GraphTouchController 接管 PointerEvent，
+ *        两者共用 nodeAt/onMouseMove/onMouseUp，避免两套坐标换算。
  *        力学在 worker 运行时由 sim.onUpdate → changed() 驱动重绘；本地回退才在帧回调里 tick()。
  *        每帧把 sim.nodeById 的坐标拷进节点，钉住的节点以自身 fx/fy 为准。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 import { ForceSim } from '../plugins-core/graph-simulation.js';
 import { has, clamp, displayName, parseColor, COLOR_CLASSES } from '../plugins-core/graph-utils.js';
+import { GraphTouchController } from './graph-touch.js';
 
 // 渲染常量与几何工具（原版 pQ/dQ/fQ/mQ/vQ）
 const FADE = 0.2; // 原版 pQ：非高亮元素的目标淡出系数
@@ -126,8 +129,12 @@ export class GraphRenderer {
     containerEl.style.position = 'relative';
     const canvas = this.canvasEl = containerEl.createEl('canvas');
     this.ctx = canvas.getContext('2d');
-    canvas.style.cssText = 'position:absolute;left:0;top:0;margin:0;padding:0;border:0;width:100%;height:100%;overflow:hidden';
+    this.touch = new GraphTouchController(this);
+    canvas.style.cssText = 'position:absolute;left:0;top:0;margin:0;padding:0;border:0;width:100%;height:100%;overflow:hidden;touch-action:none';
     canvas.addEventListener('mousedown', (ev) => { ev.preventDefault(); this.onMouseDown(ev); });
+    /* 触屏/触控笔：PointerEvent 在触摸拖动期间持续派发；mouse 事件只在抬手后合成。
+       原版（PIXI events + TouchEvent）同时支持触屏平移/捏合与节点拖动。 */
+    canvas.addEventListener('pointerdown', (ev) => this.touch.onPointerDown(ev));
     canvas.addEventListener('wheel', (ev) => this.onWheel(ev), { passive: false });
     canvas.addEventListener('mousemove', (ev) => {
       if (!this.dragNode && !this.panning) this.onMouseMove(ev);
@@ -155,6 +162,7 @@ export class GraphRenderer {
     window.removeEventListener('mousemove', this.windowMouseMove);
     window.removeEventListener('mouseup', this.windowMouseUp);
     window.removeEventListener('blur', this.windowBlur);
+    if (this.touch) { this.touch.destroy(); this.touch = null; }
     if (this.resizeObserver) { this.resizeObserver.disconnect(); this.resizeObserver = null; }
     if (this.renderTimer) window.cancelAnimationFrame(this.renderTimer);
     this.renderTimer = null;
@@ -171,6 +179,7 @@ export class GraphRenderer {
   }
 
   cancelInteraction() {
+    if (this.touch) this.touch.cancel();
     if (this.dragNode) {
       const node = this.dragNode;
       node.fx = node.fy = null;
@@ -235,6 +244,9 @@ export class GraphRenderer {
 
   onMouseDown(ev) {
     if (ev.button !== 0 && ev.button !== 1) return;
+    /* 触摸后 Chromium 可能补发兼容 mousedown；由 PointerEvent 路径处理，避免重复打开/拖动 */
+    if (ev.pointerType === undefined && this.touch && this.touch.lastTouchAt &&
+      performance.now() - this.touch.lastTouchAt < 500) return;
     this.interactionButton = ev.button;
     this.panvX = this.panvY = 0;
     const node = this.nodeAt(ev);
@@ -248,7 +260,8 @@ export class GraphRenderer {
     this.panStart = { x: ev.clientX, y: ev.clientY };
     this.panOrigin = { x: this.panX, y: this.panY };
     this.lastPanTime = performance.now();
-    document.body.addClass('is-grabbing');
+    /* 原版触屏平移不挂 is-grabbing；鼠标平移才挂 */
+    if (!ev.pointerType || ev.pointerType === 'mouse') document.body.addClass('is-grabbing');
   }
 
   onMouseMove(ev) {
@@ -686,7 +699,8 @@ export class GraphRenderer {
         ctx.stroke();
       }
       const textColor = this.colors.text;
-      let textAlpha = highlighted ? this.textAlpha * textColor.a : this.textAlpha * node.fadeAlpha * textColor.a;
+      /* 原版：高亮节点文本透明度直接取 color-text.a；其余再乘节点淡出系数 */
+      let textAlpha = highlighted ? textColor.a : this.textAlpha * node.fadeAlpha * textColor.a;
       let textVisible = textAlpha > 0.001;
       if (textVisible) {
         textVisible = highlighted

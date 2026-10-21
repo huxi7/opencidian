@@ -1,7 +1,8 @@
 /**
- * [INPUT]: 依赖 CM6、folding.js 折叠策略、live-preview.js 装饰与 markdown/highlight.js 语义颜色。
+ * [INPUT]: 依赖 CM6、folding.js 折叠策略、live-preview.js 装饰、link-suggest.js 的 [[链接]] 浮窗与 markdown/highlight.js 语义颜色。
  * [OUTPUT]: 导出 Editor、EditorState、EditorView、ViewPlugin；Editor.setFolding 热切换标题与缩进折叠；Editor.setValue 整弹重建 state（撤销栈不跨文档边界）。
  * [POS]: editor/ 的 CM6 包装层。构造原版 file layout DOM（.cm-sizer/.cm-contentContainer）。独立 Compartment 保留文档与撤销栈；位置采用零基 {line, ch}。
+ *        [[链接]] 不注册 CM6 autocompletion（不产生 .cm-completionInfo 双列），由 LinkSuggest 的 EditorSuggest 单列浮窗接管。
  *        拖放：payload.type=file 插入单条链接；type=files 按 items 顺序插入全部文件链接（原版 IR）。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
@@ -20,13 +21,11 @@ import {
   syntaxHighlighting, HighlightStyle, bracketMatching, indentUnit, indentOnInput,
 } from '@codemirror/language';
 import { tags as hlTags } from '@lezer/highlight';
-import {
-  searchKeymap, highlightSelectionMatches, openSearchPanel, closeSearchPanel, searchPanelOpen,
-} from '@codemirror/search';
-import { autocompletion, completionKeymap, closeBrackets, closeBracketsKeymap } from '@codemirror/autocomplete';
+import { searchKeymap, highlightSelectionMatches, openSearchPanel, closeSearchPanel, searchPanelOpen } from '@codemirror/search';
+import { closeBrackets, closeBracketsKeymap } from '@codemirror/autocomplete';
 import { livePreviewExtension } from './live-preview.js';
 import { saveAttachment, pastedImageBaseName } from './attachments.js';
-import { wikilinkCompletionSource } from './completions.js';
+import { LinkSuggest } from './link-suggest.js';
 import { eventToHotkey } from '../core/keymap.js';
 import { markdownEditing, foldingExtensions, unfoldDisabledFolds } from './folding.js';
 import { codeHighlighter } from '../markdown/highlight.js';
@@ -77,10 +76,6 @@ function themeSpec(dark) {
       backgroundColor: 'var(--background-secondary)',
       border: '1px solid var(--background-modifier-border)',
       borderRadius: 'var(--radius-s)',
-    },
-    '.cm-tooltip-autocomplete ul li[aria-selected]': {
-      backgroundColor: 'var(--background-modifier-hover)',
-      color: 'var(--text-normal)',
     },
   }, { dark });
 }
@@ -173,6 +168,7 @@ export class Editor {
 
     this.cm = new EditorView({ state, parent: containerEl });
     this._buildSizerDom();
+    this.linkSuggest = new LinkSuggest(this);
     this.cm.dom.classList.toggle('is-folding', this._foldHeading || this._foldIndent);
     this.setSpellcheck(app.settings && app.settings.appSettings.spellcheck === true);
 
@@ -223,14 +219,10 @@ export class Editor {
       rectangularSelection(),
       crosshairCursor(),
       this._bracketsCompartment.of((app.settings && app.settings.appSettings.autoPairBrackets !== false) ? closeBrackets() : []),
-      autocompletion({
-        override: [wikilinkCompletionSource(app)],
-        activateOnTyping: true,
-      }),
       Prec.high(cmKeymap.of([
         { key: 'Mod-f', run: (v) => { openSearchPanel(v); return true; }, preventDefault: true },
       ])),
-      cmKeymap.of([...closeBracketsKeymap, ...defaultKeymap, ...searchKeymap, ...historyKeymap, ...completionKeymap, indentWithTab]),
+      cmKeymap.of([...closeBracketsKeymap, ...defaultKeymap, ...searchKeymap, ...historyKeymap, indentWithTab]),
       markdownEditing,
       this._foldingCompartment.of(foldingExtensions(this._foldHeading, this._foldIndent)),
       syntaxHighlighting(markdownHighlightDark),
@@ -404,6 +396,7 @@ export class Editor {
     // 否则一次 Mod+Z 会撤消"装入"本身（空文档被自动保存写盘），
     // 且切文件后会把上一文件编辑的逆操作打进当前文件。
     // history() 是模块级 StateField（compartment 重配清不掉），故整弹重建 state。
+    if (this.linkSuggest) this.linkSuggest.close();
     const extensions = this._baseExtensions();
     this.cm.setState(EditorState.create({ doc: insert, extensions }));
     // setState 不派发事务：手动通知订阅者（markdown-view / 画布卡片靠它同步数据），
@@ -629,6 +622,7 @@ export class Editor {
 
   destroy() {
     this.containerEl.removeEventListener('keydown', this._containerKeyHandler, true);
+    if (this.linkSuggest) this.linkSuggest.destroy();
     this.cm.destroy();
   }
 

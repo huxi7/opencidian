@@ -404,3 +404,15 @@ MathJax 独立适配器子代理的41项基础/故障测试见 assets/mathjax/SO
 - 全量 56 场景 / 58 次执行（含 settings-restart、graph-persist-read 链式复跑）：**56/56 通过，3525 断言**。日志 `/tmp/opensidian-full-1020-ui/`，汇总 `summary-clean.txt`；`vault-switcher --seed-vaults 3` 142 项，`graph-perf --nodes 1000` 4 项。
 - 证据：`_analysis/canvas-114/audit.md`、`screens/after-board-light.png`、`after-board-dark.png`。
 - 未完成：画布设置页、右键拖拽平移、分组背景文件重命名/删除监听、链接卡 UA/离线占位、导出链接卡网页画面。
+
+## 搜索/设置/画布/图谱/链接补全（2026-10-21）
+
+- 全量：**58 场景 / 60 次执行全绿，4101 断言**；日志 `/tmp/opensidian-full-1021-ui/`（`summary.txt`）。
+- 主循环包含新增 `search` 281、`link-suggest` 168；链式 `settings-restart`、`graph-persist-write → graph-persist-read` 通过；`vault-switcher --seed-vaults 3` 142、`graph-perf --nodes 1000` 4。
+- `link-suggest`：移除 CM6 `.cm-completionInfo` 双列，改为原版单列 `.suggestion-container`；真实键盘/输入驱动，锁 382.8×78.1 容器、31.5 行高、15/19.5 标题、12/15.6 路径与 168 项交互。
+- 白板：`canvas-ui` 171（右键/中键平移、contextmenu 顺序、背景附件生命周期）、`canvas` 101（链接卡真实网页截图导出）、`canvas-edit` 91、`canvas-selection` 72。
+- 图谱：`graph` 87（触屏拖节点/轻点/平移/双指捏合；无悬停后 Mod 补弹）、`graph-worker` 58（worker 缓冲/SAB 回退）。
+- 搜索：`search` 281（字段/属性/OR/括号/否定/正则/大小写、排序/折叠/解释/键盘/复制结果）。
+- 设置：`appearance` 45、`settings-ui` 69、`settings-plugins` 74；页签顺序、快捷键行内录制、核心插件空态与入口显隐、编辑器/文件/关于/外观行级。
+- 内存回归：`node --experimental-vm-modules src/renderer/core/workspace-regression.js` 19/19；VM 补 Element/Document/document 与 tab-animation mock。
+- 边界：搜索未做虚拟列表/hover 上下文按钮/历史；画布设置页与 Windows 真实右键顺序未真机验证；链接卡 iframe/失败态导出回退 URL；设置 Interface 独立页签、主题管理仍跳过。

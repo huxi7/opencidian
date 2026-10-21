@@ -5,16 +5,22 @@
  *        并覆盖图片导出（命令可用性、面板菜单文案、导出弹窗四项设置与取消不落盘、确认后按倍率落盘并遵守 4096 上限、
  *        renderCanvasImage 的 dataURL/maxSize 上限/倍率/视口范围/水印/隐私模式与文字墨迹消失）与拖动对齐参考线
  *        （吸附到对齐值、出现 svg.canvas-snaps 参考线、松手清除、snapToObjects 关闭时不吸附）。
+ *        链接卡导出：进程内 HTTP 页面 → webview.capturePage 真实 PNG → renderCanvasImage 像素 → generateHDImage 落盘 PNG 含网页画面。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 (async()=>{
 const wait=ms=>new Promise(r=>setTimeout(r,ms));const checks=[];const ok=(b,m)=>{if(!b)throw Error(m);checks.push(m)};
+const until=async(fn,m)=>{for(let i=0;i<80;i++){if(fn())return;await wait(50)}throw Error(m)};
 // 指针事件助手：p 为相对画布中心的 DOM 坐标
 const evt=(target,type,p)=>target.dispatchEvent(new PointerEvent(type,{bubbles:true,isPrimary:true,pointerType:'mouse',pointerId:9,button:0,buttons:type==='pointerup'?0:1,clientX:p.x+reopened.canvasRect.cx,clientY:p.y+reopened.canvasRect.cy}));
 // 统计与左上角背景像素差异超过 threshold 的像素数（导出图必须画出内容）
 const countPixels=async(image,threshold)=>{const pic=new Image();pic.src=image.dataURL;await new Promise((r,j)=>{pic.onload=r;pic.onerror=j});const c=document.createElement('canvas');c.width=pic.width;c.height=pic.height;const x=c.getContext('2d');x.drawImage(pic,0,0);const d=x.getImageData(0,0,c.width,c.height).data;const bg=[d[0],d[1],d[2]];let n=0;for(let i=0;i<d.length;i+=4){if(Math.abs(d[i]-bg[0])+Math.abs(d[i+1]-bg[1])+Math.abs(d[i+2]-bg[2])>threshold)n++}return n};
 const countNonBackgroundPixels=image=>countPixels(image,12);
 const countTextInkPixels=image=>countPixels(image,400);
+// 统计接近 #ff00ff 的像素（链接卡本地网页的纯色背景）
+const countMagenta=async(image)=>{const pic=new Image();pic.src=image.dataURL;await new Promise((r,j)=>{pic.onload=r;pic.onerror=j});const c=document.createElement('canvas');c.width=pic.width;c.height=pic.height;const x=c.getContext('2d');x.drawImage(pic,0,0);const d=x.getImageData(0,0,c.width,c.height).data;let n=0;for(let i=0;i<d.length;i+=4){if(d[i]>200&&d[i+1]<80&&d[i+2]>200)n++}return n};
+// 统计接近 #00ffff 的像素（第二张链接卡，验证离屏卡片会被临时移入视口再截图）
+const countCyan=async(image)=>{const pic=new Image();pic.src=image.dataURL;await new Promise((r,j)=>{pic.onload=r;pic.onerror=j});const c=document.createElement('canvas');c.width=pic.width;c.height=pic.height;const x=c.getContext('2d');x.drawImage(pic,0,0);const d=x.getImageData(0,0,c.width,c.height).data;let n=0;for(let i=0;i<d.length;i+=4){if(d[i]<80&&d[i+1]>200&&d[i+2]>200)n++}return n};
 await app.commands.findCommand('canvas:new-file').callback();await wait(250);
 const v=app.workspace.activeLeaf.view;ok(v.canvasRect.width>0,'canvas measured');
 // ---- 空画布不导出：命令入口在无节点时只提示，不弹保存对话框 ----
@@ -243,6 +249,44 @@ const logoImage=reopened.renderCanvasImage({showLogo:true});
 ok(await countNonBackgroundPixels(logoImage)>await countNonBackgroundPixels(fullImage),'logo adds drawn pixels');
 const privacyImage=reopened.renderCanvasImage({privacyMode:true});
 ok(await countTextInkPixels(fullImage)>0&&await countTextInkPixels(privacyImage)===0,'privacy mode replaces text with bars');
+// ---- 链接卡网页画面进入导出：webview.capturePage 真实截图 ----
+const http=require('http');
+const linkServer=http.createServer((req,res)=>{
+  const cyan=req.url.startsWith('/cyan');
+  res.writeHead(200,{'Content-Type':'text/html; charset=utf-8'});
+  res.end(`<!doctype html><html><head><title>${cyan?'Cyan Link':'Export Link'}</title></head><body style="margin:0;background:${cyan?'#00ffff':'#ff00ff'}"></body></html>`);
+});
+await new Promise(resolve=>linkServer.listen(0,'127.0.0.1',resolve));
+const exportLinkUrl=`http://127.0.0.1:${linkServer.address().port}/capture`;
+const exportLink=reopened.createLinkNode({pos:{x:600,y:500},size:{width:320,height:200},url:exportLinkUrl,focus:false,save:false});
+reopened.deselectAll();
+reopened.panIntoView(exportLink.getBBox(), 60);
+reopened.finishViewportAnimation=true;
+await until(()=>!reopened.viewportChanged,'链接卡进入视口');
+await until(()=>exportLink.frameLoaded&&!exportLink.frameError,'链接卡网页加载完成');
+await wait(400);
+const capturedDataURL=await Promise.race([exportLink.captureFrameImage(),wait(5000).then(()=>null)]);
+ok(typeof capturedDataURL==='string'&&capturedDataURL.startsWith('data:image/png;base64,'),
+  'webview.capturePage 返回真实 PNG '+JSON.stringify({
+    captured: capturedDataURL&&capturedDataURL.slice(0,40),
+    visible: exportLink.frameEl.getBoundingClientRect().width>0,
+    error: exportLink.frameError,
+  }));
+const capturedImage=new Image();capturedImage.src=capturedDataURL;await new Promise((res,rej)=>{capturedImage.onload=res;capturedImage.onerror=rej});
+const linkOnlyImage=reopened.renderCanvasImage({box:exportLink.getBBox(),scale:1,linkImages:new Map([[exportLink,capturedImage]])});
+ok(await countMagenta(linkOnlyImage)>0,'链接卡截图像素进入 renderCanvasImage');
+const offscreenLink=reopened.createLinkNode({pos:{x:4000,y:4000},size:{width:320,height:200},url:`http://127.0.0.1:${linkServer.address().port}/cyan`,focus:false,save:false});
+await until(()=>offscreenLink.frameLoaded&&!offscreenLink.frameError,'离屏链接卡网页加载完成');
+const linkExportPath=app.vaultPath+'/Link Capture.png';
+reopened.promptImageSavePath=()=>({canceled:false,filePath:linkExportPath});
+const linkExport=await reopened.generateHDImage({frame:'full',scale:1,showLogo:false,privacyMode:false,maxSize:1024});
+ok(!!linkExport&&linkExport.filePath===linkExportPath,'generateHDImage 经截图加载器写出 PNG');
+const linkPng=require('fs').readFileSync(linkExportPath);
+ok(await countMagenta({dataURL:'data:image/png;base64,'+linkPng.toString('base64')})>0,'落盘 PNG 含视口内链接卡网页画面');
+ok(await countCyan({dataURL:'data:image/png;base64,'+linkPng.toString('base64')})>0,'落盘 PNG 含离屏链接卡网页画面');
+reopened.removeNode(exportLink);
+reopened.removeNode(offscreenLink);
+await new Promise(resolve=>linkServer.close(resolve));
 // ---- 拖动对齐参考线 ----
 reopened.options.snapToGrid=false;reopened.options.snapToObjects=true;
 const dragB=(dx,dy)=>{const p={x:gB.x+gB.width/2,y:gB.y+gB.height/2};const a=reopened.domFromPos(p),b=reopened.domFromPos({x:p.x+dx,y:p.y+dy});evt(gB.containerEl,'pointerdown',a);evt(window,'pointermove',b);return b};

@@ -1,7 +1,8 @@
 /**
  * [INPUT]: 依赖 Editor、live-preview 的 CM6 DOM 与 tokens.css。
- * [OUTPUT]: 编辑区、折叠控件和实时预览部件样式。
- * [POS]: 编辑器样式入口；代码 token 颜色由 markdown-highlight.css 提供。
+ * [OUTPUT]: 编辑区、折叠控件、[[链接]] 单列补全浮窗（.suggestion-container.link-suggest）和实时预览部件样式。
+ * [POS]: 编辑器样式入口；代码 token 颜色由 markdown-highlight.css 提供。link-suggest 段补 .suggestion 基座（padding 6/overflow auto），
+ *        容器复用原版 popover 几何：absolute、1px 边框、8px 圆角、shadow-s、max 500×300。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 /* ==========================================================================
@@ -726,3 +727,32 @@ input[type="checkbox"].task-list-item-checkbox:checked:after {
   z-index: 1;
 }
 .markdown-source-view .markdown-embed .markdown-embed-link:hover { color: var(--text-normal); }
+
+/* ---------------------------------------------------------------------------
+ * [[ 链接补全浮窗（原版 EditorSuggest，app.css .popover + .suggestion-container）
+ * 单列：.suggestion-container > .suggestion + .prompt-instructions。
+ * 宽度由内容收缩，最大 500；高度由条目与指令栏决定，最大 300。
+ * 不接入 CM6 autocompletion，因此没有 .cm-completionInfo / 第二预览列。
+ * ------------------------------------------------------------------------- */
+.suggestion-container.link-suggest {
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  background-color: var(--suggestion-background);
+  backdrop-filter: var(--suggestion-backdrop-filter);
+  border: var(--border-width) solid var(--background-modifier-border);
+  border-radius: var(--radius-m);
+  box-shadow: var(--shadow-s);
+  max-width: 500px;
+  max-height: 300px;
+  overflow: hidden;
+  padding: 0;
+  z-index: var(--layer-notice);
+  font-size: var(--font-ui-medium);
+  line-height: var(--line-height-tight);
+  color: var(--text-normal);
+}
+.link-suggest .suggestion {
+  overflow-y: auto;
+  padding: var(--size-2-3);
+}

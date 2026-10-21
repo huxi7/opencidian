@@ -17,9 +17,11 @@ outgoing-link.js: 出链面板视图(type outgoing-link)。逐条列出当前文
 outline.js: 按标题层级建立大纲。跳级归最近父标题，同名标题按行号跳转，关闭释放资源。
 tag-pane.js: 标签面板视图(type tag)。标签树/排序/嵌套开关。
 properties.js: 属性插件(id properties，原版 properties)。all-properties 汇总全部属性键与出现文件数，四种排序(名称正/倒、频次高/低，默认频次高到低)，点击属性打开全局搜索 ["键"](Mod 点击切换 token)；file-properties 只读复用 markdown/properties.js 的行渲染并跟随活动文件；命令 properties:open / properties:open-local 与状态栏属性计数(点击打开 file-properties)。不自动创建窗格；禁用撤销视图、命令与状态栏条目。
-global-search.js: 全局搜索视图(type search)。关键词/正则/大小写、结果分组与跳转。
+global-search.js: 全局搜索视图(type search)。DOM 与 1.14.4 对齐（search-row/search-params/search-results-info/tree-item 分组），负责状态、排序、折叠、解释与键盘导航；查询与命中委托 search-query.js，复制结果弹窗委托 search-copy.js，自身不再实现匹配。
+search-query.js: 无 DOM 查询内核。parseQuery 解析 file/path/tag/content、line/section/block/task/task-todo/task-done、match-case/ignore-case、属性 [key]/[key:value]、引号、OR、括号、否定、正则与大小写；createSearchDocument 按行/章节/块/任务切正文，searchDocument 返回字段/正文/属性命中与行上下文；queryInfo 供解释视图。
+search-copy.js: 复制搜索结果弹窗。只读取结果文件列表，按路径/内链/列表前缀三项选项生成文本并写系统剪贴板，不触发搜索或改写搜索状态。
 editor-status.js: 状态栏视图状态图标与切换菜单(Reading/Source/Live Preview，tooltip，mod-clickable)。
-page-preview.js: 内部链接悬停预览 popover。五类来源(editor/preview/search/tab-header/graph)可配 Mod 门控（默认 search/editor/tab-header/graph 需 Mod，preview 不需要），未解析链接空态，设置写 page-preview.json。内容按原版嵌块结构 .markdown-embed > .markdown-embed-content > .markdown-preview-view（inline-title 文件名、32px padding、400px 限高内部滚动）；80ms --anim-motion-swing 淡入；内部滚动不关闭。graph 来源由 GraphEngine 经 workspace 的 hover-link 事件请求（无目标元素，按鼠标坐标定位），插件持有 parent.hoverPopover 句柄供引擎撤销悬停。
+page-preview.js: 内部链接悬停预览 popover。五类来源(editor/preview/search/tab-header/graph)可配 Mod 门控（默认 search/editor/tab-header/graph 需 Mod，preview 不需要），未解析链接空态，设置写 page-preview.json。内容按原版嵌块结构 .markdown-embed > .markdown-embed-content > .markdown-preview-view（inline-title 文件名、32px padding、400px 限高内部滚动）；80ms --anim-motion-swing 淡入；内部滚动不关闭。DOM 链接未按 Mod 时只在悬停期间挂临时 keydown/mousemove 监听，按下 Mod 补弹，移出/输入普通字符/2s 无移动即拆除；全局 keydown/keyup 仅在等待或 popover 存在时挂载。graph 来源由 GraphEngine 经 workspace 的 hover-link 事件请求（无目标元素，按鼠标坐标定位）；原版图谱无「先悬停再按 Mod」补弹，未按 Mod 直接忽略。插件持有 parent.hoverPopover 句柄供引擎撤销悬停。
 word-count.js: 状态栏字数统计(中英混排规则)；原版无点击弹窗。
 canvas.js: 注册画布视图、四个命令与新建功能区按钮。canvas:new-file 建空画布；canvas:export-as-image 仅在当前叶子是画布时可用（先弹设置弹窗：范围/缩放/水印/隐私，确认后渲染并弹保存对话框写 PNG，取消不落盘）；canvas:jump-to-group 仅在画布含分组时可用；canvas:convert-to-file 仅在单选文本卡片时可用。Mod 点击新标签并聚焦，禁用撤销按钮与注册。
 bookmarks.js: 持久化文件、目录、搜索与分组书签。目录改名同步子路径。

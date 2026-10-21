@@ -198,11 +198,14 @@ export class Settings extends Events {
   }
 
   setHotkey(commandId, hotkeys) {
-    if (hotkeys && hotkeys.length) this.hotkeys[commandId] = hotkeys;
+    // 数组（含空数组）表示自定义覆盖；空数组用于压制默认快捷键。
+    // null/undefined 表示删除覆盖，恢复默认。
+    const value = Array.isArray(hotkeys) ? hotkeys : null;
+    if (value) this.hotkeys[commandId] = value;
     else delete this.hotkeys[commandId];
-    this.writeJsonMerged('hotkeys.json', { [commandId]: hotkeys });
-    if (!hotkeys || !hotkeys.length) {
-      // remove entry entirely
+    if (value) {
+      this.writeJsonMerged('hotkeys.json', { [commandId]: value });
+    } else {
       const cur = this.readJson('hotkeys.json') || {};
       delete cur[commandId];
       try { fs.writeFileSync(nodePath.join(this.dir, 'hotkeys.json'), JSON.stringify(cur)); } catch (e) {}

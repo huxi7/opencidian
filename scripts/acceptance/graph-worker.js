@@ -2,7 +2,8 @@
  * [INPUT]: OBS_ACT eval 注入；由 run.mjs 新建的 obs-copy-graph-worker-* 临时库（5 篇互链笔记）。
  * [OUTPUT]: 返回 {role, passed, checks, backend, workerShared, fallbackReason}；断言失败抛错。
  * [POS]: 图谱力学 worker 化验收。覆盖后端选择（app:// 直载 → Blob 回退 → 本地）、位置由 worker 发布且主线程零物理、
- *        钉住/解钉、力参数唤醒与再沉降、关闭视图终止 worker、消息载荷与原版 sim.js 逐字段对齐、本地回退后端回归。
+ *        真实 worker 的 SAB/transfer 缓冲区形态与 crossOriginIsolated 平台限制、钉住/解钉、力参数唤醒与再沉降、
+ *        关闭视图终止 worker、消息载荷与原版 sim.js 逐字段对齐、本地回退后端回归。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  * 说明：本场景不做视觉断言；用 --no-screenshot 运行。
  */
@@ -45,6 +46,13 @@
   const engine = view.dataEngine || view.engine;
   assert(!!renderer && !!engine, '图谱视图与引擎加载');
   const sim = renderer.sim;
+  // 截获真实 worker → 主线程的位置消息，记录缓冲区类型（SAB 或 transfer ArrayBuffer）
+  let lastPositionBuffer = null;
+  const originalOnWorkerMessage = sim.onWorkerMessage.bind(sim);
+  sim.onWorkerMessage = (data) => {
+    if (data && data.buffer) lastPositionBuffer = data.buffer;
+    originalOnWorkerMessage(data);
+  };
   engine.setOptions({ showTags: false, showAttachments: false, hideUnresolved: true, showOrphans: true, close: false });
   await wait(() => Object.keys(renderer.nodeLookup).length === 5 && renderer.canvasEl.width > 0, '五个节点与画布就绪');
   assert(Object.keys(renderer.nodeLookup).length === 5, '五个节点入图');
@@ -82,10 +90,20 @@
   await delay(400);
   const after = sample('Alpha.md');
   assert(before !== after && after !== 'missing', '位置随时间变化（worker 发布 → 门面应用）');
+  const isolated = window.crossOriginIsolated === true;
+  let mainSharedCapable = false;
+  try { new SharedArrayBuffer(4); mainSharedCapable = true; } catch (error) { mainSharedCapable = false; }
+  note('SAB 环境：crossOriginIsolated=' + isolated + ' mainSAB=' + mainSharedCapable +
+    ' workerShared=' + sim.workerShared + ' buffer=' + (lastPositionBuffer ? lastPositionBuffer.constructor.name : 'none'));
   if (usesWorker) {
     assert(sim.localTicks === 0, '主线程零物理：沉降期 localTicks=0');
-    assert(sim.workerShared ? (sim.workerResults && sim.workerResults.buffer instanceof SharedArrayBuffer) : true,
-      '位置缓冲区形态：' + (sim.workerShared ? 'SharedArrayBuffer（末尾版本号）' : 'transfer ArrayBuffer'));
+    assert(!!lastPositionBuffer, '真实 worker 位置消息携带缓冲区');
+    if (sim.workerShared) {
+      assert(lastPositionBuffer instanceof SharedArrayBuffer, 'SAB 路径：真实 worker 发布 SharedArrayBuffer');
+    } else {
+      assert(lastPositionBuffer instanceof ArrayBuffer, '未跨源隔离：真实 worker 走 transfer ArrayBuffer');
+      if (!isolated) note('平台限制：页面未跨源隔离（crossOriginIsolated=false），SAB 构造不可用；SAB 分支由下方注入结果消息覆盖');
+    }
   } else {
     assert(sim.localTicks > 0, '本地回退由主线程 tick 推进（localTicks>0）');
   }

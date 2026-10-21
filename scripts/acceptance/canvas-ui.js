@@ -6,7 +6,9 @@
  *        always/hover/never 三态、文本卡占位图标、md 卡正文 padding 与弹性留白、图片卡宽高比回写、损坏媒体与缺文件占位、
  *        着色卡 rgba(...,0.07)）、边（双 path、箭头多边形顶点、普通/聚焦/交互描边宽度、标签字号与最大宽度）、
  *        交互（悬停 mod-handles 门控与手柄命中、连接点嵌在该侧 resizer 内、单选 focus 环与置顶、多选包围盒与工具条、
- *        只读、缩放断点下的占位与标签隐藏、滚轮平移/缩放与智能缩放、剪贴板复制/剪切/粘贴与内部/外部/URL/文本拖入）、帮助弹窗与空画布占位三行。
+ *        只读、缩放断点下的占位与标签隐藏、滚轮平移/缩放与智能缩放、右键拖拽平移与右键菜单顺序、剪贴板复制/剪切/粘贴与内部/外部/URL/文本拖入）、帮助弹窗与空画布占位三行。
+ *        链接卡用进程内 HTTP 页面验证真实标题回写；关闭端口触发 did-fail-load 验证失败占位（URL/原因/重试）。
+ *        分组背景验证文件重命名、移动到新文件夹、文件夹整体重命名与删除后 bgPath/getData/contentEl/落盘 JSON 均无死路径。
  *        数值一律对照原版 app.css/app.js 的取值（如 stroke-width: calc(2px * var(--zoom-multiplier))、分组 z = -w*h）。
  *        仅由 run.mjs 在带标记的临时库执行，不做视觉验收。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
@@ -42,6 +44,24 @@
   };
   const near = (a, b, tolerance = 0.02) => Math.abs(a - b) <= tolerance;
 
+  /* ------------------------------------------------ 本地网页（链接卡） */
+  // 链接卡用进程内 HTTP 页面，避免外网延迟/离线让标题回写与失败态验收变成抽奖。
+  const http = require('http');
+  const linkServer = http.createServer((req, res) => {
+    res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+    res.end('<!doctype html><html><head><title>Obsidian</title></head><body style="margin:0;background:#ff00ff;color:#fff">canvas link page</body></html>');
+  });
+  await new Promise((resolve) => linkServer.listen(0, '127.0.0.1', resolve));
+  const linkUrl = `http://127.0.0.1:${linkServer.address().port}/page`;
+  // 取一个刚释放的本机端口，保证连接被拒绝而不是触发 Chromium 的 ERR_UNSAFE_PORT。
+  const refusedPort = await new Promise((resolve) => {
+    const probe = require('net').createServer();
+    probe.listen(0, '127.0.0.1', () => {
+      const port = probe.address().port;
+      probe.close(() => resolve(port));
+    });
+  });
+
   /* ------------------------------------------------------- 建库与打开白板 */
   await app.vault.create('Note.md', '# Note\n\n正文 **粗体**\n\n- 项一\n- 项二\n');
   const PNG = 'iVBORw0KGgoAAAANSUhEUgAAAEAAAAAgCAIAAAAt/+nTAAAAc0lEQVR4nO3XQQnEQBAF0ZoSEiWRELlRshJWwUhYA8kph9mCvGPzDw0NDX/MObnyPY7L+Xaef5WXOImTOImTOImTuPHZ98S/327y+QtInMRJnMRJnMSNtw8sJnESJ3ESJ3ESN94+sJjESZzESZzEuXqBp37gpDJxZINNjwAAAABJRU5ErkJggg==';
@@ -57,7 +77,7 @@
       { id: 't2', type: 'text', text: '色卡', color: '4', x: -100, y: -280, width: 220, height: 160 },
       { id: 'i1', type: 'file', file: '资产.png', x: 160, y: -280, width: 220, height: 200 },
       { id: 'f1', type: 'file', file: 'Note.md', x: -500, y: -20, width: 360, height: 180 },
-      { id: 'l1', type: 'link', url: 'https://obsidian.md', x: -100, y: -60, width: 300, height: 120 },
+      { id: 'l1', type: 'link', url: linkUrl, x: -100, y: -60, width: 300, height: 120 },
       { id: 'b1', type: 'file', file: '损坏.png', x: 160, y: 40, width: 200, height: 160 },
       { id: 'm1', type: 'file', file: '不存在.md', x: 160, y: -120, width: 200, height: 120 },
     ],
@@ -151,22 +171,55 @@
   const labelOf = (n) => n.nodeEl.querySelector('.canvas-node-label');
   ok(labelOf(f1) && labelOf(f1).textContent === 'Note', 'md 卡片标签取短名');
   ok(labelOf(node('i1')) && labelOf(node('i1')).textContent === '资产.png', '非 md 卡片标签取全名');
-  ok(labelOf(node('l1')) && labelOf(node('l1')).textContent === 'https://obsidian.md', '链接卡片标签显示网址');
-  ok(!labelOf(node('t1')), '文本卡片无卡片标签');
-  // 链接卡：正文是 webview（Electron webviewTag 可用时），地址写入 src，标题事件回写标签
+  // 链接卡：本地网页标题真实回写到标签（原版 page-title-updated）
   const linkCard = node('l1');
+  await until(() => labelOf(linkCard) && labelOf(linkCard).textContent === 'Obsidian', '链接卡片标签显示网页标题');
+  ok(!labelOf(node('t1')), '文本卡片无卡片标签');
+  // 正文是 webview（Electron webviewTag 可用时），地址写入 src
   const linkFrame = linkCard.contentEl.querySelector('webview.canvas-link, iframe.canvas-link');
   ok(!!linkFrame && linkCard.useWebview === true, '链接卡正文是内嵌 webview');
-  ok(/^https:\/\/obsidian\.md\/?$/.test(linkFrame.src || linkFrame.getAttribute('src') || ''), 'webview src 为链接地址');
+  ok((linkFrame.src || linkFrame.getAttribute('src') || '').startsWith(linkUrl), 'webview src 为链接地址');
   const titleEvent = new Event('page-title-updated');
-  Object.defineProperty(titleEvent, 'title', { value: 'Obsidian' });
+  Object.defineProperty(titleEvent, 'title', { value: 'Obsidian Title' });
   linkFrame.dispatchEvent(titleEvent);
   await wait(60);
-  ok(labelOf(linkCard).textContent === 'Obsidian', '网页标题回写卡片标签');
+  ok(labelOf(linkCard).textContent === 'Obsidian Title', '网页标题回写卡片标签');
   linkCard.frameTitle = '';
   linkCard.updateNodeLabel(linkCard.url);
+  // 重载复用同一 webview，并真实调用 webview.reload
+  const frameBeforeReload = linkCard.frameEl;
+  const originalFrameReload = frameBeforeReload.reload.bind(frameBeforeReload);
+  let frameReloads = 0;
+  frameBeforeReload.reload = function patchedFrameReload(...args) { frameReloads += 1; return originalFrameReload(...args); };
+  linkCard.reloadFrame();
+  await wait(80);
+  ok(frameReloads === 1 && linkCard.frameEl === frameBeforeReload && frameBeforeReload.isConnected, '重载调用 webview.reload 并复用同一元素');
+  frameBeforeReload.reload = originalFrameReload;
   // 正文常驻 CM6：只读光标停在无 markdown 记号的空行，开局不露 # / 列表符号
-  ok(!linkCard.contentEl.textContent.includes('https://'), '链接卡正文不再显示 URL 文本');
+  ok(!linkCard.contentEl.textContent.includes(linkUrl), '链接卡正文不再显示 URL 文本');
+  // 失败/离线态：本地关闭端口触发真实 did-fail-load，显示 URL + 原因 + 重试
+  const failedLink = view.createLinkNode({
+    pos: { x: 700, y: 700 }, size: { width: 300, height: 160 }, url: `http://127.0.0.1:${refusedPort}/`, focus: false, save: false,
+  });
+  let failEvent = null;
+  failedLink.frameEl.addEventListener('did-fail-load', (e) => {
+    failEvent = { code: e.errorCode, description: e.errorDescription, main: e.isMainFrame, valid: e.validatedURL };
+  });
+  await until(() => !!failedLink.frameError || !!failEvent, '链接卡收到 did-fail-load');
+  ok(!!failedLink.frameError, '链接卡记录失败态 ' + JSON.stringify(failEvent));
+  ok(!!failedLink.errorEl && failedLink.errorEl.hasClass('is-visible'), '链接卡失败占位可见');
+  ok(failedLink.errorEl.textContent.includes(`http://127.0.0.1:${refusedPort}/`), '失败占位显示 URL');
+  ok(/ERR_|错误代码/.test(failedLink.errorEl.textContent), '失败占位显示失败原因');
+  const retryButton = failedLink.errorEl.querySelector('.canvas-link-error-retry');
+  ok(!!retryButton, '失败占位带重试按钮');
+  let reloadCalls = 0;
+  const originalReload = failedLink.reloadFrame;
+  failedLink.reloadFrame = function patchedReload(...args) { reloadCalls += 1; return originalReload.apply(this, args); };
+  retryButton.click();
+  await wait(60);
+  ok(reloadCalls === 1, '点击重试调用 reloadFrame');
+  failedLink.reloadFrame = originalReload;
+  view.removeNode(failedLink);
   const t1Card = node('t1');
   ok(t1Card.editor && !t1Card.editorEl.textContent.includes('# 卡片'), '未编辑文本卡不显示 markdown 标题记号');
   ok(t1Card.editorEl.textContent.includes('卡片'), '未编辑文本卡仍显示标题正文');
@@ -198,6 +251,8 @@
   ok(placeholderFill && near(placeholderFill.a, 0.1, 0.005), '文本卡占位底色为卡片色 10% 全幅平铺');
   ok(getComputedStyle(t1.placeholderEl, '::after').content === 'none', '文本卡占位没有内缩伪元素');
   ok(css(labelOf(f1), 'display') === 'none', '缩到断点以下隐藏卡片标签');
+  ok(linkCard.frameEl === frameBeforeReload && linkCard.frameEl.isConnected && linkCard.isContentMounted,
+    '链接卡缩到断点以下仍保活同一 webview');
   ok(css(g1.labelEl, 'display') !== 'none', '缩到断点以下保留分组标签');
   ok(near(parseFloat(patternEl.getAttribute('width')), view.gridSpacing * view.scale, 0.01) && view.gridSpacing === 160,
     '深度缩小时点阵格距升到 160');
@@ -247,6 +302,41 @@
   bgGroup.setBackgroundStyle('ratio');
   await until(() => bgGroup.height === 100, '分组背景 ratio 按图片 2:1 收高');
   ok(bgGroup.width === 200, '分组背景 ratio 保留宽度');
+  // 背景附件生命周期：重命名/移动更新路径，删除清空，不把旧路径留在 JSON
+  await app.vault.createFolder('背景素材');
+  const assetFile = app.vault.getAbstractFileByPath('资产.png');
+  await app.vault.rename(assetFile, '背景素材/资产.png');
+  await until(() => bgGroup.bgPath === '背景素材/资产.png', '背景图重命名后更新分组路径');
+  ok(bgGroup.getData().background === '背景素材/资产.png' && bgGroup.contentEl.style.backgroundImage.includes('背景素材/资产.png'),
+    '背景图重命名后写回 getData 与 contentEl');
+  await app.vault.createFolder('背景素材-移动');
+  await app.vault.rename(app.vault.getAbstractFileByPath('背景素材/资产.png'), '背景素材-移动/资产.png');
+  await until(() => bgGroup.bgPath === '背景素材-移动/资产.png', '背景图移动后更新分组路径');
+  ok(bgGroup.bgFile && bgGroup.bgFile.path === '背景素材-移动/资产.png', '移动后背景文件引用指向新路径');
+  const movedAsset = app.vault.getAbstractFileByPath('背景素材-移动/资产.png');
+  await app.vault.delete(movedAsset, true);
+  await until(() => bgGroup.bgPath === '' && bgGroup.bgFile === null, '背景图删除后清空分组背景');
+  ok(bgGroup.getData().background === undefined && bgGroup.contentEl.style.backgroundImage === '',
+    '背景图删除后 getData 与 contentEl 都不留死路径');
+  await wait(700);
+  const bgSaved = JSON.parse(await app.vault.read(file));
+  ok(!bgSaved.nodes.find((n) => n.id === 'bgGroup')?.background, '背景图删除后落盘 JSON 不留死路径');
+  // 文件夹整体重命名/删除：vault 索引可能滞后，背景仍以 bgPath 为准
+  await app.vault.createFolder('背景合集');
+  await app.vault.createBinary('背景合集/封面.png', Buffer.from(PNG, 'base64'));
+  const folderGroup = view.createGroupNode({ pos: { x: 1200, y: 900 }, size: { width: 200, height: 100 }, label: '文件夹背景组', save: false, focus: false });
+  folderGroup.setBackgroundFile(app.vault.getAbstractFileByPath('背景合集/封面.png'));
+  folderGroup.setBackgroundStyle('repeat');
+  await app.vault.rename(app.vault.getAbstractFileByPath('背景合集'), '背景合集-重命名');
+  await until(() => folderGroup.bgPath === '背景合集-重命名/封面.png', '背景文件夹重命名后更新分组路径');
+  ok(folderGroup.getData().background === '背景合集-重命名/封面.png'
+    && folderGroup.contentEl.style.backgroundImage.includes('背景合集-重命名/封面.png'),
+    '背景文件夹重命名后 getData 与 contentEl 使用新路径');
+  await app.vault.delete(app.vault.getAbstractFileByPath('背景合集-重命名'), true);
+  await until(() => folderGroup.bgPath === '' && folderGroup.bgFile === null, '背景文件夹删除后清空分组背景');
+  ok(folderGroup.getData().background === undefined && folderGroup.contentEl.style.backgroundImage === '',
+    '背景文件夹删除后 getData 与 contentEl 都不留死路径');
+  view.removeNode(folderGroup);
   view.removeNode(bgGroup);
   // 着色卡：is-themed + 主题色 0.07 透明背景
   const themed = node('t2');
@@ -390,6 +480,54 @@
     view.zoomToFit = originalFit;
     view.zoomToBbox = originalBbox;
   }
+
+  /* ------------------------------------- E2b 右键拖拽 / 右键菜单顺序 */
+  const rp = wrapperEl.getBoundingClientRect();
+  const rightDown = new PointerEvent('pointerdown', {
+    bubbles: true, cancelable: true, isPrimary: true, pointerType: 'mouse', pointerId: 87,
+    button: 2, buttons: 2, clientX: rp.left + 8, clientY: rp.top + 8,
+  });
+  // 先模拟 macOS 顺序：pointerdown → contextmenu → pointermove。菜单应被拖动关闭。
+  wrapperEl.dispatchEvent(rightDown);
+  wrapperEl.dispatchEvent(new MouseEvent('contextmenu', {
+    bubbles: true, cancelable: true, clientX: rp.left + 8, clientY: rp.top + 8,
+  }));
+  ok(!!document.querySelector('.menu'), '普通右键打开菜单（contextmenu 先于拖动）');
+  const panBeforeRight = view.tx;
+  window.dispatchEvent(new PointerEvent('pointermove', {
+    bubbles: true, isPrimary: true, pointerType: 'mouse', pointerId: 87,
+    button: 2, buttons: 2, clientX: rp.left + 28, clientY: rp.top + 18,
+  }));
+  window.dispatchEvent(new PointerEvent('pointerup', {
+    bubbles: true, isPrimary: true, pointerType: 'mouse', pointerId: 87,
+    button: 2, buttons: 0, clientX: rp.left + 28, clientY: rp.top + 18,
+  }));
+  await wait(80);
+  ok(view.tx !== panBeforeRight, '右键拖动超过阈值平移画布');
+  ok(!document.querySelector('.menu'), '右键拖动关闭已开的 contextmenu');
+  const suppressed = !wrapperEl.dispatchEvent(new MouseEvent('contextmenu', {
+    bubbles: true, cancelable: true, clientX: rp.left + 28, clientY: rp.top + 18,
+  }));
+  ok(suppressed, '拖动结束后的 contextmenu 被抑制（Windows 顺序）');
+  // 纯右键：不移动，菜单仍正常打开。
+  await wait(560);
+  const plainDown = new PointerEvent('pointerdown', {
+    bubbles: true, cancelable: true, isPrimary: true, pointerType: 'mouse', pointerId: 88,
+    button: 2, buttons: 2, clientX: rp.left + 40, clientY: rp.top + 40,
+  });
+  wrapperEl.dispatchEvent(plainDown);
+  wrapperEl.dispatchEvent(new MouseEvent('contextmenu', {
+    bubbles: true, cancelable: true, clientX: rp.left + 40, clientY: rp.top + 40,
+  }));
+  window.dispatchEvent(new PointerEvent('pointerup', {
+    bubbles: true, isPrimary: true, pointerType: 'mouse', pointerId: 88,
+    button: 2, buttons: 0, clientX: rp.left + 40, clientY: rp.top + 40,
+  }));
+  ok(!!document.querySelector('.menu'), '不拖动的右键仍打开菜单');
+  await wait(60);
+  document.body.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
+  await wait(60);
+  ok(!document.querySelector('.menu'), '右键菜单可正常关闭');
 
   /* ------------------------------------------------ E3 剪贴板复制/剪切/粘贴 */
   const clipboardEvent = (type, data) => {
@@ -550,6 +688,8 @@
   app.settings.updateAppearance({ theme: initialTheme });
   await wait(250);
   ok(resolve('var(--background-primary)').r === (initialTheme === 'obsidian' ? darkPrimary.r : lightPrimary.r), '还原初始主题');
+
+  await new Promise((resolve) => linkServer.close(resolve));
 
   return {
     pass: true,

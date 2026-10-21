@@ -1,7 +1,7 @@
 /**
  * [INPUT]: 依赖 ./dom.js 注入的全局 createDiv/createEl 助手；依赖 ./icons.js 的 setIcon
  * [OUTPUT]: 导出 Setting、SettingGroup 与组件类 ToggleComponent/DropdownComponent/SliderComponent/TextComponent/TextAreaComponent/SearchComponent/ButtonComponent/ExtraButtonComponent/ColorPickerComponent/ProgressBarComponent/MomentFormatComponent
- * [POS]: core/ 的设置控件层，逐字对齐原版组件 DOM（.setting-item/.checkbox-container/.dropdown/.slider）。settings-view.js 的标签页与插件设置页用它构建界面，行为与 Obsidian 公开 API 一致。
+ * [POS]: core/ 的设置控件层，逐字对齐原版组件 DOM（.setting-item/.checkbox-container/.dropdown/.slider）。SettingGroup 持有 .setting-group-search（裸 SearchComponent）与 .setting-group-search-control（筛选芯片行），settings-view.js 的标签页与插件设置页用它构建界面，行为与 Obsidian 公开 API 一致。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 /* Setting controls — DOM 1:1 with the original components. */
@@ -414,6 +414,7 @@ export class SettingGroup {
     this.headerEl = createDiv('setting-item setting-item-heading');
     this.headerInnerEl = this.headerEl.createDiv('setting-item-name');
     this.controlEl = this.headerEl.createDiv('setting-item-control');
+    this.searchContainerEl = this.groupEl.createDiv({ cls: 'setting-group-search', attr: { tabIndex: -1 } });
     this.listEl = this.groupEl.createDiv('setting-items');
   }
   setHeading(text) {
@@ -431,11 +432,13 @@ export class SettingGroup {
     return this;
   }
   addSearch(cb) {
-    const searchEl = this.groupEl.createDiv('setting-group-search');
-    this.groupEl.insertBefore(searchEl, this.listEl);
-    const setting = new Setting(searchEl);
-    this.components.push(setting);
-    cb(setting);
+    const search = new SearchComponent(this.searchContainerEl);
+    this.components.push(search);
+    cb(search);
+    return this;
+  }
+  addSearchControl(cb) {
+    cb(this.searchContainerEl.createDiv('setting-group-search-control'));
     return this;
   }
   addExtraButton(cb) {

@@ -4,6 +4,9 @@
  * [POS]: plugins-core/ 的页面预览。对齐原版 p7：悬停内部链接（阅读模式 a.internal-link[data-href]、实时预览 span.cm-wikilink[data-href]）
  *        显示 .popover.hover-popover；五类来源 editor/preview/search/tab-header/graph 各自可配置是否需按住 Mod。
  *        graph 来源由 GraphEngine 经 workspace 的 hover-link 事件请求，无目标元素，按鼠标坐标定位。
+ *        未按 Mod 时 DOM 链接只在悬停期间挂临时 keydown/mousemove 监听（原版 onHoverLink 延迟监听），
+ *        全局 keydown/keyup 仅在等待 Mod 或 popover 存在时挂载，空闲即拆除。图谱来源无目标元素，
+ *        按原版语义必须按住 Mod 才弹，未按 Mod 直接忽略。
  *        未解析链接显示 label-empty-note 提示。设置写 .obsidian/page-preview.json（loadPluginData/savePluginData）。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
@@ -61,8 +64,8 @@ export function create(app) {
   let hoverHandle = null;
   let hoverParent = null;
   let lastPointer = null;
-  let hoverAnchor = null;        // 已悬停但被 Mod 门控挡住的链接（等按下 Mod）
-  let pendingHoverLink = null;   // 同上，图谱等 hover-link 来源
+  let modWatch = null;           // 悬停但未按 Mod：只在悬停期间挂临时键盘/移动监听
+  let keysAttached = false;      // 全局 keydown/keyup 仅在等待 Mod 或 popover 存在时挂载
 
   const modPressed = (ev) => !!(ev && (ev.metaKey || ev.ctrlKey));
 
@@ -93,9 +96,58 @@ export function create(app) {
   function hidePopover() {
     clearTimeout(showTimer); clearTimeout(hideTimer);
     showTimer = null; hideTimer = null;
+    cleanupModWatch();
     if (popoverEl) { popoverEl.detach(); popoverEl = null; }
     targetEl = null;
     releaseHandle();
+    releaseKeysIfIdle();
+  }
+
+  /* 原版 onHoverLink 的延迟监听：不把 keydown 常驻在 document 上。
+     只有「已悬停但未按 Mod」时才挂一组临时监听；按下 Mod、移出目标、输入字符或 2s 无移动即拆除。 */
+  function ensureKeys() {
+    if (keysAttached) return;
+    document.addEventListener('keydown', onKeyDown, true);
+    document.addEventListener('keyup', onKeyUp, true);
+    keysAttached = true;
+  }
+
+  function releaseKeysIfIdle() {
+    if (!keysAttached || modWatch || popoverEl) return;
+    document.removeEventListener('keydown', onKeyDown, true);
+    document.removeEventListener('keyup', onKeyUp, true);
+    keysAttached = false;
+  }
+
+  function cleanupModWatch() {
+    if (!modWatch) { releaseKeysIfIdle(); return; }
+    clearTimeout(modWatch.timer);
+    document.removeEventListener('mousemove', modWatch.onMove, true);
+    document.removeEventListener('mouseover', modWatch.onOver, true);
+    modWatch = null;
+    releaseKeysIfIdle();
+  }
+
+  function armModWatch(target) {
+    cleanupModWatch();
+    modWatch = { anchor: target.anchor || null, timer: 0 };
+    const reset = () => {
+      if (!modWatch) return;
+      clearTimeout(modWatch.timer);
+      modWatch.timer = setTimeout(() => cleanupModWatch(), 2000);
+    };
+    modWatch.onMove = (ev) => {
+      lastPointer = { x: ev.clientX, y: ev.clientY };
+      reset();
+    };
+    modWatch.onOver = (ev) => {
+      const anchor = modWatch && modWatch.anchor;
+      if (anchor && ev.target !== anchor && !anchor.contains(ev.target)) cleanupModWatch();
+    };
+    document.addEventListener('mousemove', modWatch.onMove, true);
+    document.addEventListener('mouseover', modWatch.onOver, true);
+    ensureKeys();
+    reset();
   }
 
   /* hover-link 来源（图谱引擎）持有的句柄，对齐原版 parent.hoverPopover：onTarget/onHover + transition() */
@@ -211,6 +263,7 @@ export function create(app) {
     hidePopover();
     targetEl = anchor;
     const el = createPopover();
+    ensureKeys();
     await fillBody(el, href, findSourcePath(anchor));
     position(el, anchor);
     fadeIn(el);
@@ -224,6 +277,7 @@ export function create(app) {
     hidePopover();
     const el = createPopover();
     attachHandle(parent);
+    ensureKeys();
     await fillBody(el, info.linktext, info.sourcePath || '');
     positionAtPoint(el, info.event.clientX, info.event.clientY);
     fadeIn(el);
@@ -232,11 +286,12 @@ export function create(app) {
   const onPointerOver = (ev) => {
     const anchor = linkAnchor(ev.target);
     if (!anchor) return;
-    hoverAnchor = anchor;   // 原版：已悬停在链接上时，再按 Mod 也会弹预览
     if (anchor === targetEl) return;
     if (popoverEl && popoverEl.contains(ev.target)) { keepAlive(); return; }
     const source = sourceOf(anchor);
-    if (modRequired(source) && !modPressed(ev)) return;
+    /* 原版：未按 Mod 时先不弹，只挂临时监听；已悬停后再按 Mod 也能补弹 */
+    if (modRequired(source) && !modPressed(ev)) { armModWatch({ anchor }); return; }
+    cleanupModWatch();
     clearTimeout(showTimer);
     showTimer = setTimeout(() => {
       showTimer = null;
@@ -244,10 +299,13 @@ export function create(app) {
     }, SHOW_DELAY);
   };
 
-  /* workspace 的 hover-link 事件：图谱等非 DOM 来源请求预览（原版 app.workspace.on('hover-link')） */
+  /* workspace 的 hover-link 事件：图谱等非 DOM 来源请求预览（原版 app.workspace.on('hover-link')）。
+     原版图谱 onNodeHover 的 targetEl 为 null；page-preview 在需 Mod 且未按时直接 return，
+     所以图谱没有“先悬停、再按 Mod”的补弹路径。DOM 链接不受影响。 */
   const onHoverLink = (info) => {
     if (!info || !info.event || !info.linktext) return;
-    if (modRequired(info.source) && !modPressed(info.event)) { pendingHoverLink = info; return; }
+    if (modRequired(info.source) && !modPressed(info.event)) return;
+    cleanupModWatch();
     clearTimeout(showTimer);
     showTimer = setTimeout(() => {
       showTimer = null;
@@ -258,16 +316,18 @@ export function create(app) {
   const onPointerOut = (ev) => {
     const anchor = linkAnchor(ev.target);
     if (anchor && anchor === targetEl) scheduleHide();
-    if (anchor && anchor === hoverAnchor) {
+    if (anchor && modWatch && modWatch.anchor === anchor) {
       const intoPopover = popoverEl && ev.relatedTarget && popoverEl.contains(ev.relatedTarget);
-      if (!intoPopover) hoverAnchor = null;
+      if (!intoPopover) cleanupModWatch();
     }
   };
 
   const onDocMouseDown = (ev) => {
+    cleanupModWatch();
     if (popoverEl && !popoverEl.contains(ev.target)) hidePopover();
   };
   const onScroll = (ev) => {
+    cleanupModWatch();
     if (!popoverEl) return;
     // 嵌块自身在 400px 高度内滚动时不能关闭预览
     const target = ev && ev.target;
@@ -276,19 +336,15 @@ export function create(app) {
   };
   const onKeyDown = (ev) => {
     if (ev.key === 'Escape') { hidePopover(); return; }
-    if (!modPressed(ev) || popoverEl) return;
-    // 原版：悬停已发生但当时没按 Mod，按下后补弹（图谱来源用最后指针坐标）
-    if (pendingHoverLink) {
-      const info = pendingHoverLink;
-      pendingHoverLink = null;
-      const point = lastPointer || { x: info.event.clientX, y: info.event.clientY };
-      showForHoverLink({ ...info, event: { clientX: point.x, clientY: point.y } }).catch((e) => console.error(e));
+    if (!modWatch) return;
+    /* 原版：方向键或普通字符输入立即取消等待；Mod 按下则补弹 */
+    if (!modPressed(ev)) {
+      if (ev.key.startsWith('Arrow') || ev.key.length === 1) cleanupModWatch();
       return;
     }
-    if (hoverAnchor && hoverAnchor.isConnected) {
-      const anchor = hoverAnchor;
-      showFor(anchor).catch((e) => console.error(e));
-    }
+    const anchor = modWatch.anchor;
+    cleanupModWatch();
+    if (anchor && anchor.isConnected) showFor(anchor).catch((e) => console.error(e));
   };
 
   /* 松开 Mod：Mod 门控来源的预览随之收起（原版语义） */
@@ -306,8 +362,6 @@ export function create(app) {
       document.addEventListener('pointerover', onPointerOver, true);
       document.addEventListener('pointerout', onPointerOut, true);
       document.addEventListener('mousedown', onDocMouseDown, true);
-      document.addEventListener('keydown', onKeyDown, true);
-      document.addEventListener('keyup', onKeyUp, true);
       window.addEventListener('mousemove', onPointerMove, true);
       window.addEventListener('scroll', onScroll, true);
       hoverLinkRef = app.workspace.on('hover-link', onHoverLink);
@@ -316,10 +370,14 @@ export function create(app) {
       document.removeEventListener('pointerover', onPointerOver, true);
       document.removeEventListener('pointerout', onPointerOut, true);
       document.removeEventListener('mousedown', onDocMouseDown, true);
-      document.removeEventListener('keydown', onKeyDown, true);
-      document.removeEventListener('keyup', onKeyUp, true);
       window.removeEventListener('mousemove', onPointerMove, true);
       window.removeEventListener('scroll', onScroll, true);
+      cleanupModWatch();
+      if (keysAttached) {
+        document.removeEventListener('keydown', onKeyDown, true);
+        document.removeEventListener('keyup', onKeyUp, true);
+        keysAttached = false;
+      }
       if (hoverLinkRef) { hoverLinkRef.unregister(); hoverLinkRef = null; }
       hidePopover();
     },

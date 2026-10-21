@@ -7,6 +7,9 @@
  *        标签编辑只改标签，几何与写盘由 canvas-view 调度。
  *        背景图按原版 F5：background 存文件路径，backgroundStyle 取 cover（默认）/ratio/repeat；cover 与 repeat 直接写 contentEl 的内联背景，
  *        ratio 读取图片真实宽高比后把分组收成同一比例。菜单「设置背景 / 编辑背景」提供换图、移除与三种样式。
+ *        bgPath 是渲染、比例与导出的唯一来源；bgFile 只是 vault 索引缓存。文件夹重命名后索引可能滞后，
+ *        渲染不能依赖索引对象，否则合法的新路径会被误判为缺失并把背景清空。
+ *        setBackgroundPath 供 vault rename/delete 生命周期改路径：保留样式，删除时清空背景与样式，不把旧路径留在 JSON。
  *        标签前景色按分组色亮度切 mod-foreground-light/dark（亮度阈值 150，对齐原版 iT）。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
@@ -85,11 +88,19 @@ export class CanvasGroupNode extends CanvasNode {
   /* ------------------------------------------------------------- 背景图 */
 
   setBackgroundFile(file) {
-    const path = file ? file.path : '';
-    if (this.bgPath === path && this.bgFile === file) return;
+    this.setBackgroundPath(file ? file.path : '', file || null);
+  }
+
+  /**
+   * 重命名/移动事件用：保留 backgroundStyle，只替换路径与文件引用。
+   * file 尚未进入 vault 索引时允许为 null；此时仍写入新路径，避免把旧路径留成死引用。
+   */
+  setBackgroundPath(path, file) {
+    path = path || '';
+    if (this.bgPath === path && this.bgFile === (file || null)) return;
     this.bgPath = path;
     this.bgFile = file || null;
-    if (!file) this.bgStyle = '';
+    if (!path) this.bgStyle = '';
     this.updateAspectRatio();
     this.canvas.markDirty(this);
   }
@@ -102,19 +113,23 @@ export class CanvasGroupNode extends CanvasNode {
     this.canvas.markDirty(this);
   }
 
-  /** 原版 F5.updateAspectRatio：ratio 样式读取图片宽高比，把分组收成同一比例。 */
+  /**
+   * 原版 F5.updateAspectRatio：ratio 样式读取图片宽高比，把分组收成同一比例。
+   * 以 bgPath 为准而不是 bgFile：文件夹重命名后 vault 索引可能仍留旧路径，
+   * 但磁盘上的新路径已可读；用索引对象当门槛会让背景无故消失。
+   */
   async updateAspectRatio() {
-    if (this.bgStyle !== 'ratio' || !this.bgFile) { this.aspectRatio = 0; return; }
-    const file = this.bgFile;
+    if (this.bgStyle !== 'ratio' || !this.bgPath) { this.aspectRatio = 0; return; }
+    const path = this.bgPath;
     const img = new Image();
-    img.src = this.app.vault.adapter.getResourcePath(file.path);
+    img.src = this.app.vault.adapter.getResourcePath(path);
     try {
       if (img.decode) await img.decode();
       else await new Promise((resolve, reject) => { img.onload = resolve; img.onerror = reject; });
     } catch (e) {
       return;
     }
-    if (this.destroyed || this.bgFile !== file || this.bgStyle !== 'ratio') return;
+    if (this.destroyed || this.bgPath !== path || this.bgStyle !== 'ratio') return;
     const width = img.naturalWidth;
     const height = img.naturalHeight;
     if (!width || !height) return;
@@ -131,15 +146,15 @@ export class CanvasGroupNode extends CanvasNode {
   renderBackground() {
     const el = this.contentEl;
     if (!el) return;
-    const file = this.bgFile;
-    if (!file) {
+    const path = this.bgPath;
+    if (!path) {
       el.style.backgroundImage = '';
       el.style.backgroundRepeat = '';
       el.style.backgroundPosition = '';
       el.style.backgroundSize = '';
       return;
     }
-    const url = this.app.vault.adapter.getResourcePath(file.path).replace(/"/g, '\\"');
+    const url = this.app.vault.adapter.getResourcePath(path).replace(/"/g, '\\"');
     const repeat = this.bgStyle === 'repeat';
     el.style.backgroundImage = `url("${url}")`;
     el.style.backgroundRepeat = repeat ? 'repeat' : 'no-repeat';

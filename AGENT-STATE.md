@@ -568,3 +568,19 @@ node --experimental-vm-modules src/renderer/core/workspace-regression.js
 - 验收：canvas 96、canvas-edit 91、canvas-selection 72、canvas-ui 145、core-views 83、menu-family 57 全绿；单文件 ≤800 行（canvas-view 767、canvas-interactions 706、canvas-edge 393）。
 - **全量 56 场景 / 58 次执行**：全绿，3525 断言。日志 `/tmp/opensidian-full-1020-ui/`，干净汇总 `summary-clean.txt`；`vault-switcher --seed-vaults 3` 142 项；`settings-restart` / `graph-persist-read` 链式通过；`graph-perf --nodes 1000` 4 项。
 - 未完成：画布设置页（未动 settings-view）、右键拖拽平移（需先验平台 contextmenu 顺序）、分组背景文件重命名/删除监听、链接卡站点 UA 特判与离线失败占位、导出链接卡网页画面（webview 离屏截图管线）。
+
+## 23. 搜索/设置/画布/图谱/链接补全收口（2026-10-21）
+
+- 用户反馈：`[[` 链接补全出现“双列弹窗选择浮窗”。根因不是 CSS：`completions.js` 用了 CM6 默认 autocompletion，并给每个文件设置 `info: file.path`，右侧多出 `.cm-completionInfo` 预览列；默认列表还把标题与路径挤在同一行。
+- 原版 1.14.4 实测（隔离实例 CDP）：`[[` 使用单列 `.suggestion-container > .suggestion > .suggestion-item.mod-complex`，标题 + 灰色路径两行，底部 `.prompt-instructions`；初始容器约 382.8×110.6（两条建议），单条 382.8×78.1，行高 31.5，标题 15/19.5，路径 12/15.6；无第二列。
+- 修复：移除 CM6 autocompletion/completionKeymap 与 autocomplete 主题；`completions.js` 降为纯数据层；新增 `editor/link-suggest.js` 挂 body 的单列浮窗；`editor.js` 接入 LinkSuggest 并在 setValue/destroy 释放；`styles/editor.css` 补作用域样式。支持上下/Page/Home/End/Ctrl+P/N、Enter/Tab/Shift+Enter、点击/悬停、Esc/失焦/外部点击/滚动/缩放、空查询不预选、`#` 标题、`^` 块、`|` 显示文本、别名/未创建目标/重复路径。
+- 本批其余四路：
+  - 白板：右键/中键 5px 阈值平移（macOS 先 contextmenu 的关闭、Windows pointerup 后 contextmenu 的一次性捕获抑制）；分组背景附件重命名/移动/删除生命周期；链接卡失败占位/重试、URL 归一化、vault partition、YouTube UA 特判；`webview.capturePage()` 真实网页画面进入导出，4s 超时/iframe/失败回退 URL 文本。
+  - 图谱：新增 `views/graph-touch.js`（单指拖节点/轻点打开/空白平移/双指捏合）；悬停预览临时 Mod 监听，空闲拆除；原版图谱无“先悬停再按 Mod”补弹，删除该分支；高亮文字透明度与滚动条变量修正。
+  - 搜索：新增 `plugins-core/search-query.js`（字段/属性/范围/OR/括号/否定/正则/大小写）与 `search-copy.js`（复制结果弹窗）；`global-search.js` 负责 DOM/排序/折叠/解释/键盘；新增 `search` 场景 281 项。
+  - 设置：页签顺序 关于→外观→编辑器→文件与链接→快捷键→核心插件；`SettingGroup.addSearch` 改为裸 `SearchComponent` + `addSearchControl`；快捷键页行内录制、状态芯片、冲突计数；核心插件空态/入口显隐；编辑器/文件/关于/外观行级修复；拆出 `settings-tabs-dialogs.js`、`settings-hotkeys.css`、`settings-dialogs.css`，`settings.css` 750 行。
+- 本批新增/更新场景：`search` 281、`link-suggest` 168、`canvas-ui` 171、`canvas` 101、`canvas-edit` 91、`canvas-selection` 72、`graph` 87、`graph-worker` 58、`appearance` 45、`settings-ui` 69、`settings-plugins` 74、`editor` 131。
+- **全量 58 场景 / 60 次执行**：全部通过，**4101 断言**。日志 `/tmp/opensidian-full-1021-ui/`（`summary.txt`；`graph-persist-write/read` 链式补跑通过）。`vault-switcher --seed-vaults 3` 142、`graph-perf --nodes 1000` 4、`settings-restart`、`graph-persist-read` 均通过。
+- 内存回归修复：`workspace-regression.js` 的 VM 上下文补 `Element/Document/document`，mock `tab-animation.js`，拖拽落点补 `.workspace-tabs` 宿主语义；19/19 通过。
+- 未完成/边界：搜索仍未做虚拟列表、结果 hover 上下文按钮、拖拽/右键菜单、搜索历史；画布设置页、Windows 真实 `pointerup → contextmenu` 顺序、链接卡 iframe/失败态导出仍只能回退 URL；设置页仍跳过 Interface 独立页签/主题管理；链接补全未逐像素覆盖 80ms 入场、RTL 与 PageUp/Down 分页步长。
+
