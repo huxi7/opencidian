@@ -582,5 +582,6 @@ node --experimental-vm-modules src/renderer/core/workspace-regression.js
 - 本批新增/更新场景：`search` 281、`link-suggest` 168、`canvas-ui` 171、`canvas` 101、`canvas-edit` 91、`canvas-selection` 72、`graph` 87、`graph-worker` 58、`appearance` 45、`settings-ui` 69、`settings-plugins` 74、`editor` 131。
 - **全量 58 场景 / 60 次执行**：全部通过，**4101 断言**。日志 `/tmp/opensidian-full-1021-ui/`（`summary.txt`；`graph-persist-write/read` 链式补跑通过）。`vault-switcher --seed-vaults 3` 142、`graph-perf --nodes 1000` 4、`settings-restart`、`graph-persist-read` 均通过。
 - 内存回归修复：`workspace-regression.js` 的 VM 上下文补 `Element/Document/document`，mock `tab-animation.js`，拖拽落点补 `.workspace-tabs` 宿主语义；19/19 通过。
+- 本批提交：`912cd77`（链接补全浮窗单列重做 + 搜索/设置/白板/图谱收口），未推送。
 - 未完成/边界：搜索仍未做虚拟列表、结果 hover 上下文按钮、拖拽/右键菜单、搜索历史；画布设置页、Windows 真实 `pointerup → contextmenu` 顺序、链接卡 iframe/失败态导出仍只能回退 URL；设置页仍跳过 Interface 独立页签/主题管理；链接补全未逐像素覆盖 80ms 入场、RTL 与 PageUp/Down 分页步长。
 
