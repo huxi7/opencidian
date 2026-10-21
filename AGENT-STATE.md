@@ -8,7 +8,7 @@
 
 ## 0. 项目身份
 
-- 项目名：**OpenSidian**（包名 `opensidian`，中文名「开曜」）。2026-10-17 完成品牌化改名：产品名、窗口标题、菜单、About 页、README、包名、userData 目录全部改为 OpenSidian；库内配置目录继续使用 `.obsidian`（数据格式兼容的一部分，禁止改名）。
+- 项目名：**OpenSidian**（包名 `opensidian`）。2026-10-21 用户裁定：**对外一律只用 OpenSidian，不再出现中文名**（README 已改；应用界面/菜单/About 本就只有 OpenSidian）。GitHub 账号 `huxi7`，仓库 `huxi7/opencidian`（README 更新源示例与 AGPL 源码地址、package.json homepage/repository 均已写实）。2026-10-17 完成品牌化改名：产品名、窗口标题、菜单、About 页、README、包名、userData 目录全部改为 OpenSidian；库内配置目录继续使用 `.obsidian`（数据格式兼容的一部分，禁止改名）。
 - 目标：1:1 复刻 macOS 上的 Obsidian 1.14.4 桌面版（/Applications/Obsidian.app；提取源 `_analysis/obsidian-114/`）。
 - 仓库位置：`/Users/link/Desktop/opencidian`（本仓库；文件夹名为用户所改）。HANDOFF.md 已按用户要求删除，交接信息以本文件为准。
 - 技术栈：Electron 33 + esbuild（bundle/iife/chrome120，Node 内置 external）；renderer `nodeIntegration:true`；编辑器 CM6；阅读渲染 markdown-it。

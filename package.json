@@ -43,5 +43,10 @@
     "electron@33.4.11": true,
     "esbuild@0.24.2": true
   },
-  "author": "OpenSidian contributors"
+  "author": "OpenSidian contributors",
+  "homepage": "https://github.com/huxi7/opencidian",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/huxi7/opencidian.git"
+  }
 }
