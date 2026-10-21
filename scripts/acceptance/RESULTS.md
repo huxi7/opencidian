@@ -426,3 +426,13 @@ MathJax 独立适配器子代理的41项基础/故障测试见 assets/mathjax/SO
 - 图谱：命中半径对齐（原版桌面 1×、移动端 5× 规则保留）、右键菜单 10 段分节表 + view.linked 子菜单、hover-link 载荷收敛、力参数控件对齐、修新建颜色组色相恒 0° 的真 bug。
 - 跨路修正：`menu-family` 与 `editor-menu` 的期望同步原版新增项（原版 app.js E2.onFileMenu / E2.onEditorMenu 确有「在文件夹中查找」「查找 …」），并把图标断言改为按名查找（原版 qg.sort 按顶级节名插分隔线，selection.* 三节之间不插线）。
 - 全量：**61 场景 / 62 次执行全绿、4843 断言**；日志 `/tmp/opensidian-full-1021-b/summary.txt`；`settings-restart`、`graph-persist-write → graph-persist-read` 链式通过；`vault-switcher --seed-vaults 3` 142、`graph-perf --nodes 1000` 4。内存回归 19/19。
+
+## 模式钮图标 / 许可证 / 设置别名 / 笔记内嵌白板（2026-10-21 夜）
+
+- **视图头模式钮图标不换**（用户实机反馈）：根因是 `_applyMode()` 调 `_fillViewActions()` 不传参 → 函数直接 return，图标只在建头时填过一次。修法按原版 1.14.4 实测：图标表示「点它会切到哪个视图」（编辑 `lucide-book-open` / 阅读 `lucide-edit-3`）、aria-label 三行（状态句 + 动作句 + ⌘+单击新标签页提示）、去掉原版没有的 `is-active`、⌘+单击真的在新标签页打开且不切当前模式。view-header 74 → **82**。
+- **许可证 MIT → AGPL-3.0**（用户裁定）：LICENSE 换 gnu.org 官方全文 + 版权头，package.json `license: AGPL-3.0`，README 同步并补源码提供说明。
+- **设置搜索别名**：原版 `loe.search` 的 name/desc/aliases 三路匹配 + 子串 AND 匹配器（替掉模糊子序列）；4 个外观别名的 locale 键按原版 i18n 补齐；默认编辑模式接 ['live-preview','source']。settings-ui 185 → **220**（+35）。原版取证纠正两点：结果行只显示设置名（不拼描述）、只有名称命中才高亮。
+- **笔记内嵌白板**：`.canvas` 嵌入改走原版 `cte/lte`（`.canvas-embed` 容器 + inline-embed 图标/文件名 + 缩略图 SVG，限高 `--embed-canvas-max-height: 400px`），阅读视图与实时预览都支持；缺文件落 `.file-embed.mod-empty`。新增 `canvas-embed` 场景 **81** 项；主代理另裁决两处：把行内 widget 从 `live-preview.js`（817 行）拆到 `live-preview-inline-widgets.js`（该文件回到 660 行）；画布嵌入**右键不弹菜单**（原版渲染器只对链接/标签/图片派发右键）。
+- **修真 bug**：画布文件卡进编辑态后异步读原文会覆盖用户已输入内容（数据丢失竞态）→ 加 dirty 标志，不再覆盖。
+- **E2E 不再唤起系统浏览器/访达**：验收点「在默认浏览器打开/帮助/下载更新」曾真的拉起用户默认浏览器；现主进程在 E2E 下拦截 `open-external`/`open-url`/`help`/`show-item-in-folder`/`open-path`/`print-to-pdf(open)`。
+- 本轮最终全量：**62 场景 / 62 次执行全绿、4967 断言**；日志 `/tmp/opensidian-full-1021-d/summary.txt`；链式 `settings-restart` 与 `graph-persist-write → graph-persist-read` 通过；`vault-switcher --seed-vaults 3` 142、`graph-perf --nodes 1000` 4。

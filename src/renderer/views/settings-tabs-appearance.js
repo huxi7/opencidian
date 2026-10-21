@@ -1,7 +1,7 @@
 /**
  * [INPUT]: 依赖 ../core/i18n.js 的 tt；依赖 ../core/setting.js 的 SettingGroup/SettingTab；依赖 ../core/notices.js 的 Notice；依赖 ../core/ipc.js 的 Desktop；依赖 ../core/icons.js 的 setIcon；依赖 ../core/window-chrome.js 的 syncTrafficLightPosition；依赖 ./settings-tabs-dialogs.js 的 ThemeManagerModal/openFontPage/trackSliderFill/addSliderValue/readInstalledThemes；Node 内置 fs/path；Electron renderer 的 webFrame/ipcRenderer
  * [OUTPUT]: 导出 AppearanceTab（外观页签）、InterfaceTab（界面页签）
- * [POS]: views/ 的外观与界面设置页签。AppearanceTab 对齐原版 Jee：基础组（基础颜色/主题色/主题/已安装主题/CSS 样式代码片段）、字体组（三行字体为可导航子页面 + 字号/快速调整）、高级组（自定义应用图标/半透明效果）。InterfaceTab 对齐原版 1.14.4 独立的“界面”页签：显示标签页标题栏/显示功能区/功能区 + 高级组（缩放比例/原生菜单/窗口边框样式/在新窗口中打开设置）。功能区、CSS 片段与字体是原版的可导航子页面，走 SettingsHost.openPage。半透明效果写 appearance.json 的 translucency；硬件加速属于关于页高级组。
+ * [POS]: views/ 的外观与界面设置页签。AppearanceTab 对齐原版 Jee：基础组（基础颜色/主题色/主题/已安装主题/CSS 样式代码片段）、字体组（三行字体为可导航子页面 + 字号/快速调整）、高级组（自定义应用图标/半透明效果）。InterfaceTab 对齐原版 1.14.4 独立的“界面”页签：显示标签页标题栏/显示功能区/功能区 + 高级组（缩放比例/原生菜单/窗口边框样式/在新窗口中打开设置）。功能区、CSS 片段与字体是原版的可导航子页面，走 SettingsHost.openPage。半透明效果写 appearance.json 的 translucency；硬件加速属于关于页高级组。基础颜色/主题色/主题/字体大小四行按原版带 aliases（经 setting.setSettingAliases 挂到 data-aliases），供设置侧栏全局搜索匹配。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 /* Appearance + Interface settings tabs — DOM 1:1 with the original. */
@@ -72,21 +72,26 @@ export class AppearanceTab extends SettingTab {
 
     /* ---------------------------------------------------------- 基础 */
     const base = new SettingGroup(this.containerEl);
-    base.addSetting((s) => s
-      .setName(tt('setting.appearance.option-base-theme', '基础颜色'))
-      .setDesc(tt('setting.appearance.option-base-theme-description', '设置 OpenSidian 的基础颜色。'))
-      .addDropdown((d) => {
+    base.addSetting((s) => {
+      s.setName(tt('setting.appearance.option-base-theme', '基础颜色'))
+        .setDesc(tt('setting.appearance.option-base-theme-description', '设置 OpenSidian 的基础颜色。'));
+      // 原版 aliases：别名参与全局搜索（深色/浅色/系统/夜间模式/配色方案）
+      this.setting.setSettingAliases(s, [tt('setting.appearance.alias-base-theme', '深色 浅色 系统 夜间模式 配色方案')]);
+      s.addDropdown((d) => {
         d.addOption('obsidian', tt('setting.appearance.dark-theme', '深色'));
         d.addOption('moonstone', tt('setting.appearance.light-theme', '浅色'));
         d.addOption('system', tt('setting.appearance.system-theme', '跟随系统'));
         d.setValue(appearance.theme || 'obsidian');
         d.onChange((v) => update({ theme: v }));
-      }));
+      });
+    });
 
     base.addSetting((s) => {
       s.setClass('mod-toggle');
       s.setName(tt('setting.appearance.option-accent-color', '主题色'))
         .setDesc(tt('setting.appearance.option-accent-color-description', '为 OpenSidian 选择一个主题色。主题色将影响选中、链接等元素的颜色。'));
+      // 原版 aliases：高亮/品牌/主色
+      this.setting.setSettingAliases(s, [tt('setting.appearance.alias-accent-color', '高亮 品牌 主色')]);
       let picker = null;
       let resetBtn = null;
       const syncResetState = () => {
@@ -114,26 +119,29 @@ export class AppearanceTab extends SettingTab {
     });
 
     const { themes, legacy } = this.listThemes();
-    base.addSetting((s) => s
-      .setName(tt('setting.appearance.option-themes', '主题'))
-      .setDesc(tt('setting.appearance.option-manage-themes-description', '管理已安装的主题，或浏览社区主题。'))
-      .addExtraButton((b) => b
+    base.addSetting((s) => {
+      s.setName(tt('setting.appearance.option-themes', '主题'))
+        .setDesc(tt('setting.appearance.option-manage-themes-description', '管理已安装的主题，或浏览社区主题。'));
+      // 原版 aliases：社区/浏览/安装/下载
+      this.setting.setSettingAliases(s, [tt('setting.appearance.alias-themes', '社区 浏览 安装 下载')]);
+      s.addExtraButton((b) => b
         .setIcon('lucide-folder-open')
         .setTooltip(tt('setting.appearance.button-open-themes-folder', '打开主题文件夹'))
         .onClick(() => this.openFolder(this.themesDir)))
-      .addDropdown((d) => {
-        d.addOption('', tt('setting.appearance.label-default-theme', '默认'));
-        for (const theme of themes) d.addOption(theme.name, theme.name);
-        for (const theme of legacy) d.addOption(theme.name, theme.name + ' (Legacy)');
-        // 原版：只有已安装的主题才作为当前值
-        const installed = themes.some((t) => t.name === appearance.cssTheme)
-          || legacy.some((t) => t.name === appearance.cssTheme);
-        d.setValue(installed ? appearance.cssTheme : '');
-        d.onChange((v) => update({ cssTheme: v }));
-      })
-      .addButton((b) => b
-        .setButtonText(tt('setting.appearance.option-theme-button-manage', '管理'))
-        .onClick(() => new ThemeManagerModal(app, () => this.display()).open())));
+        .addDropdown((d) => {
+          d.addOption('', tt('setting.appearance.label-default-theme', '默认'));
+          for (const theme of themes) d.addOption(theme.name, theme.name);
+          for (const theme of legacy) d.addOption(theme.name, theme.name + ' (Legacy)');
+          // 原版：只有已安装的主题才作为当前值
+          const installed = themes.some((t) => t.name === appearance.cssTheme)
+            || legacy.some((t) => t.name === appearance.cssTheme);
+          d.setValue(installed ? appearance.cssTheme : '');
+          d.onChange((v) => update({ cssTheme: v }));
+        })
+        .addButton((b) => b
+          .setButtonText(tt('setting.appearance.option-theme-button-manage', '管理'))
+          .onClick(() => new ThemeManagerModal(app, () => this.display()).open()));
+    });
     base.addSetting((s) => s
       .setName(tt('setting.appearance.label-current-themes', '已安装主题'))
       .setDesc(tt('setting.appearance.label-currently-installed', '你目前已经安装了 {{count}} 个主题', { count: themes.length + legacy.length })));
@@ -180,11 +188,13 @@ export class AppearanceTab extends SettingTab {
         app.settings.updateAppearance({ baseFontSize: v });
       };
       s.setName(tt('setting.appearance.option-font-size', '字体大小'))
-        .setDesc(tt('setting.appearance.option-font-size-description', '调整编辑视图及预览视图中的字体大小（单位为像素）。'))
-        .addExtraButton((b) => b
-          .setIcon('lucide-rotate-ccw')
-          .setTooltip(tt('setting.hotkeys.tooltip-restore-default', '恢复默认'))
-          .onClick(() => setSize(16)))
+        .setDesc(tt('setting.appearance.option-font-size-description', '调整编辑视图及预览视图中的字体大小（单位为像素）。'));
+      // 原版 aliases：文本大小/缩放
+      this.setting.setSettingAliases(s, [tt('setting.appearance.alias-font-size', '文本大小 缩放')]);
+      s.addExtraButton((b) => b
+        .setIcon('lucide-rotate-ccw')
+        .setTooltip(tt('setting.hotkeys.tooltip-restore-default', '恢复默认'))
+        .onClick(() => setSize(16)))
         .addSlider((sl) => {
           slider = sl;
           sl.setLimits(10, 30, 1).setDynamicTooltip()

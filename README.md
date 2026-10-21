@@ -94,4 +94,7 @@ OpenSidian 内置**检查更新**（命令面板搜「检查更新」，或启�
 
 ## 许可证
 
-MIT License（见 LICENSE）。
+GNU Affero General Public License v3.0（AGPL-3.0，见 [LICENSE](LICENSE)）。
+
+- 本仓库即该版本的**完整对应源码**（AGPL 第 13 条要求的源码提供方式）。
+- 转载、二次分发或基于本项目提供网络服务时，请保留版权声明与许可证全文，并按 AGPL-3.0 提供修改后的对应源码。

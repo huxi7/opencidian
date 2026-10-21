@@ -1,7 +1,7 @@
 /**
- * [INPUT]: 依赖 markdown-it、footnote/task-lists、Desktop、图标和 vault 路径；代码块委托 highlight.js，公式委托 math.js；转义、frontmatter 剥离与图片尺寸语法来自 source-text.js。
+ * [INPUT]: 依赖 markdown-it、footnote/task-lists、Desktop、图标和 vault 路径；代码块委托 highlight.js，公式委托 math.js；转义、frontmatter 剥离与图片尺寸语法来自 source-text.js；画布嵌入委托 views/canvas-minimap.js 的 mountCanvasEmbed。
  * [OUTPUT]: 导出 getMarkdownIt、renderMarkdown、attachMarkdownInteractions、stripFrontmatter、scrollToSubpath、resolvePath、resolveFileUrl 与 escapeHtml
- * [POS]: markdown/ 的阅读视图渲染器，被 markdown-view.js（阅读模式）与 live-preview.js（块级 widget 内嵌 HTML）共同调用。callout 渲染为 div.callout（原版 DOM 非 blockquote），标题行 softbreak 剥离且图标走 lucide- 原名（note=pencil，不走 pencil→edit-3 别名）。图片尺寸语法 `|300` / `|300x200` 由 source-text.js 解析，这里负责落成 img 的 width/height 与 .image-wrapper 结构；带尺寸的图片另外带 data-source-* 区间提示，图片右键交给 source-text.js 的 fillImageContextMenu。渲染后由 decorateReadingDom 补齐原版阅读 DOM：无序列表的 has-list-bullet/.list-bullet 圆点、任务项的 data-task/is-checked 与可点击复选框、脚注的 .footnote-link；笔记嵌块走原版 inline-embed 结构（标题 + 内容 + 右上角链接按钮），不可渲染附件走 .file-embed.mod-generic。
+ * [POS]: markdown/ 的阅读视图渲染器，被 markdown-view.js（阅读模式）与 live-preview.js（块级 widget 内嵌 HTML）共同调用。callout 渲染为 div.callout（原版 DOM 非 blockquote），标题行 softbreak 剥离且图标走 lucide- 原名（note=pencil，不走 pencil→edit-3 别名）。图片尺寸语法 `|300` / `|300x200` 由 source-text.js 解析，这里负责落成 img 的 width/height 与 .image-wrapper 结构；带尺寸的图片另外带 data-source-* 区间提示，图片右键交给 source-text.js 的 fillImageContextMenu。渲染后由 decorateReadingDom 补齐原版阅读 DOM：无序列表的 has-list-bullet/.list-bullet 圆点、任务项的 data-task/is-checked 与可点击复选框、脚注的 .footnote-link；笔记嵌块走原版 inline-embed 结构（标题 + 内容 + 右上角链接按钮），不可渲染附件走 .file-embed.mod-generic。.canvas 嵌入改走「画布嵌入」（原版 cte）：这里只放占位标记，容器与缩略图由 views/canvas-minimap.js 异步补齐；目标文件不存在时按原版落 .file-embed.mod-empty 提示。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 /*
@@ -21,6 +21,7 @@ import {
   escapeAttr, escapeHtml, fillImageContextMenu, installSourceOffsets, sizeAttrText,
   sourceRangeAttrs, splitEmbedSize, splitImageSize, stripFrontmatter,
 } from './source-text.js';
+import { missingCanvasNote, mountCanvasEmbed } from '../views/canvas-minimap.js';
 
 const IMAGE_EXTS = ['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'bmp', 'avif'];
 const AUDIO_EXTS = ['mp3', 'wav', 'm4a', 'ogg', '3gp', 'flac', 'opus'];
@@ -401,20 +402,18 @@ function fileEmbedIcon() {
 
 function defaultCalloutTitle(type) {
   const names = {
-    note: 'Note', abstract: 'Abstract', summary: 'Summary', tldr: 'Tldr', info: 'Info', todo: 'Todo',
-    tip: 'Tip', hint: 'Hint', important: 'Important', success: 'Success', check: 'Check', done: 'Done',
-    question: 'Question', help: 'Help', faq: 'Faq', warning: 'Warning', caution: 'Caution', attention: 'Attention',
-    failure: 'Failure', fail: 'Fail', missing: 'Missing', danger: 'Danger', error: 'Error', bug: 'Bug',
-    example: 'Example', quote: 'Quote', cite: 'Cite',
+    note: 'Note', abstract: 'Abstract', summary: 'Summary', tldr: 'Tldr', info: 'Info', todo: 'Todo', tip: 'Tip',
+    hint: 'Hint', important: 'Important', success: 'Success', check: 'Check', done: 'Done', question: 'Question',
+    help: 'Help', faq: 'Faq', warning: 'Warning', caution: 'Caution', attention: 'Attention', failure: 'Failure',
+    fail: 'Fail', missing: 'Missing', danger: 'Danger', error: 'Error', bug: 'Bug', example: 'Example', quote: 'Quote', cite: 'Cite',
   };
   return names[type] || type.charAt(0).toUpperCase() + type.slice(1);
 }
 
 function calloutIcon(type) {
   const icons = {
-    note: 'pencil', abstract: 'clipboard-list', info: 'info', todo: 'check-circle-2', tip: 'flame',
-    success: 'check', question: 'help-circle', warning: 'alert-triangle', failure: 'x', danger: 'zap',
-    bug: 'bug', example: 'list', quote: 'quote',
+    note: 'pencil', abstract: 'clipboard-list', info: 'info', todo: 'check-circle-2', tip: 'flame', success: 'check',
+    question: 'help-circle', warning: 'alert-triangle', failure: 'x', danger: 'zap', bug: 'bug', example: 'list', quote: 'quote',
   };
   const name = icons[type] || 'pencil';
   try {
@@ -447,10 +446,18 @@ function renderEmbed(env, target, subpath, alias, token, inner) {
   const dest = app.metadataCache.getFirstLinkpathDest(target, env.sourcePath, true);
   const file = dest && app.vault.getFileByPath(dest);
   if (!file) {
+    // 原版画布嵌入缺文件时落到通用附件嵌块（.file-embed.mod-empty + 「未创建，点击以创建。」）
+    if (/\.canvas$/i.test(target)) return `<span class="internal-embed is-loaded file-embed mod-empty" data-href="${escapeAttr(target)}">${escapeHtml(missingCanvasNote(target))}</span>`;
     return `<span class="internal-embed is-unresolved">${escapeHtml(target)}</span>`;
   }
   const ext = file.extension;
   const url = app.vault.adapter.getResourcePath(file.path);
+  if (ext === 'canvas' && app.plugins?.getInternalPlugin?.('canvas')?.enabled !== false) {
+    // 原版 cte：.canvas 走画布嵌入（容器由 views/canvas-minimap.js 造）；插件停用时原版注销该扩展，退回通用附件嵌块
+    const id = 'embed-' + Math.random().toString(36).slice(2);
+    pendingEmbeds.push({ id, kind: 'canvas', path: file.path, linktext: target, sourcePath: env.sourcePath });
+    return `<span data-canvas-embed="${id}"></span>`;
+  }
   if (IMAGE_EXTS.includes(ext)) {
     const split = splitEmbedSize(alias);
     const size = sizeAttrText(split.size);
@@ -504,6 +511,10 @@ export async function renderMarkdown(app, markdown, el, sourcePath, options = {}
   const embeds = pendingEmbeds;
   pendingEmbeds = [];
   for (const emb of embeds) {
+    if (emb.kind === 'canvas') {
+      await mountCanvasEmbed(app, el, emb);
+      continue;
+    }
     const mount = el.querySelector(`[data-embed-mount="${emb.id}"]`);
     if (!mount) continue;
     const file = app.vault.getFileByPath(emb.path);
@@ -756,8 +767,9 @@ export function attachMarkdownInteractions(app, container, getSourcePath) {
       menu.showAtMouseEvent(ev);
       return;
     }
-    // 笔记/音频/视频/PDF 嵌块：原版同样挂链接菜单
-    const embed = target.closest('.internal-embed[data-href]:not(.image-embed)');
+    // 笔记/音频/视频/PDF 嵌块：原版同样挂链接菜单；原版只对链接/标签/图片派发右键，
+    // 画布嵌入（.canvas-embed）无右键菜单，故排除。
+    const embed = target.closest('.internal-embed[data-href]:not(.image-embed):not(.canvas-embed)');
     if (embed) {
       ev.preventDefault();
       const menu = app.workspace.buildLinkMenu();

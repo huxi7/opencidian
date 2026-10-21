@@ -1,7 +1,7 @@
 /**
  * [INPUT]: 独立临时 vault 与 OBS_ACT eval 注入的应用实例。
  * [OUTPUT]: 返回验收断言结果；失败抛出异常，供运行器判定。
- * [POS]: settings-ui 场景：侧栏页签顺序（含原版独立的“界面”页签）、侧栏全局搜索（位置/结构/跨页签过滤/命中高亮/还有 N 个/跳转闪烁/清空）、界面页（标题栏/功能区/缩放/原生菜单/窗口边框/新窗口设置）、功能区子页面、编辑器（拼写词典/语言胶囊/Not available/Vim 验证/默认模式同步）、文件页（路径建议、忽略文件子页面与新增表单、附件位置、重建缓存）、关于页（版本行、检查更新、可以更新行、语言重启状态、硬件加速、启动时间弹窗）；
+ * [POS]: settings-ui 场景：侧栏页签顺序（含原版独立的“界面”页签）、侧栏全局搜索（位置/结构/跨页签过滤/命中高亮/还有 N 个/跳转闪烁/清空 + 原版 aliases 别名三路匹配：别名挂载、别名命中、别名命中不高亮、名称命中仍高亮、描述命中不高亮、别名命中跳转闪烁）、界面页（标题栏/功能区/缩放/原生菜单/窗口边框/新窗口设置）、功能区子页面、编辑器（拼写词典/语言胶囊/Not available/Vim 验证/默认模式同步）、文件页（路径建议、忽略文件子页面与新增表单、附件位置、重建缓存）、关于页（版本行、检查更新、可以更新行、语言重启状态、硬件加速、启动时间弹窗）；
  *        并锁住导航无 hover、开关无 hover 阴影、按钮/输入无过渡与输入 focus 焦点环。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
@@ -100,6 +100,87 @@ searchContainer.querySelector('.search-input-clear-button').click();await wait(2
 check(searchInput.value==='','清除钮清空输入');
 check(getComputedStyle(resultsEl).display==='none','清除钮隐藏结果区');
 check(getComputedStyle(groupContainer).display!=='none','清除钮恢复页签分组');
+searchInput.value='';
+searchInput.dispatchEvent(new Event('input',{bubbles:true}));await wait(150);
+
+/* ---------------- 全局搜索：别名匹配（原版 1.14.4 loe.search 的 aliases 第三路） ---------------- */
+const aliasOf=(row)=>{try{return JSON.parse((row&&row.getAttribute('data-aliases'))||'[]');}catch(e){return [];}};
+app.setting.openTabById('appearance');await wait(180);
+const appearanceTab=app.setting.activeTab.containerEl;
+const baseThemeRow=rowByName(appearanceTab,/^基础颜色$|^Base color scheme$/);
+check(!!baseThemeRow,'外观页有基础颜色行');
+check(aliasOf(baseThemeRow).some((a)=>/夜间模式/.test(a)&&/配色方案/.test(a)),'基础颜色行带原版别名（深色 浅色 系统 夜间模式 配色方案）:: '+JSON.stringify(aliasOf(baseThemeRow)));
+check(!/夜间模式/.test(text(baseThemeRow)),'别名不进设置行文案（原版只显示名称与描述）');
+const accentRow=rowByName(appearanceTab,/^主题色$|^Accent color$/);
+check(!!accentRow&&aliasOf(accentRow).some((a)=>/高亮/.test(a)&&/主色/.test(a)),'主题色行带原版别名（高亮 品牌 主色）:: '+JSON.stringify(aliasOf(accentRow)));
+const themesRow=rowByName(appearanceTab,/^主题$|^Themes$/);
+check(!!themesRow&&aliasOf(themesRow).some((a)=>/社区/.test(a)&&/下载/.test(a)),'主题行带原版别名（社区 浏览 安装 下载）:: '+JSON.stringify(aliasOf(themesRow)));
+const fontSizeRow=rowByName(appearanceTab,/^字体大小$|^Font size$/);
+check(!!fontSizeRow&&aliasOf(fontSizeRow).some((a)=>/文本大小/.test(a)&&/缩放/.test(a)),'字体大小行带原版别名（文本大小 缩放）:: '+JSON.stringify(aliasOf(fontSizeRow)));
+app.setting.openTabById('editor');await wait(180);
+const editorAliasTab=app.setting.activeTab.containerEl;
+const modeAliasRow=rowByName(editorAliasTab,/默认编辑模式|Default editing mode/);
+check(!!modeAliasRow&&aliasOf(modeAliasRow).includes('live-preview')&&aliasOf(modeAliasRow).includes('source'),'默认编辑模式行带原版别名（live-preview source）:: '+JSON.stringify(aliasOf(modeAliasRow)));
+const searchAlias=async(q)=>{searchInput.value=q;searchInput.dispatchEvent(new Event('input',{bubbles:true}));await wait(280);
+  return [...resultsEl.querySelectorAll('.setting-search-result-item')].map((el)=>({
+    title:text(el.querySelector('.vertical-tab-nav-item-title')),
+    html:(el.querySelector('.vertical-tab-nav-item-title')||{}).innerHTML||'',
+    tab:text(el.closest('.setting-search-result-group').querySelector('.setting-search-result-tab-label')),
+  }));};
+const hit=(rows,title,tab)=>rows.find((r)=>r.title===title&&(!tab||r.tab===tab));
+let aliasRows=await searchAlias('夜间模式');
+const baseHit=hit(aliasRows,'基础颜色','外观');
+check(!!baseHit,'别名「夜间模式」命中基础颜色 :: '+JSON.stringify(aliasRows.map((r)=>r.title+'@'+r.tab)));
+check(!!baseHit&&!/suggestion-highlight/.test(baseHit.html),'别名命中的结果行不高亮（原版只高亮名称命中）:: '+(baseHit?baseHit.html:'no row'));
+check(!/夜间模式/.test(baseHit?baseHit.html:''),'别名命中的结果行只显示名称（原版不拼别名文案）');
+check(!hit(aliasRows,'字体大小'),'别名「夜间模式」不命中字体大小');
+check(!hit(aliasRows,'主题色'),'别名「夜间模式」不命中主题色');
+aliasRows=await searchAlias('主色');
+const accentHit=hit(aliasRows,'主题色','外观');
+check(!!accentHit,'别名「主色」命中主题色 :: '+JSON.stringify(aliasRows.map((r)=>r.title+'@'+r.tab)));
+check(!!accentHit&&!/suggestion-highlight/.test(accentHit.html),'别名「主色」命中主题色不高亮（原版名称里没有连续的“主色”）:: '+(accentHit?accentHit.html:'no row'));
+check(!hit(aliasRows,'基础颜色'),'别名「主色」不命中基础颜色');
+check(!hit(aliasRows,'主题'),'别名「主色」不命中主题');
+aliasRows=await searchAlias('缩放');
+const fontHit=hit(aliasRows,'字体大小','外观');
+check(!!fontHit,'别名「缩放」命中字体大小 :: '+JSON.stringify(aliasRows.map((r)=>r.title+'@'+r.tab)));
+check(!!fontHit&&!/suggestion-highlight/.test(fontHit.html),'别名「缩放」命中的结果行不高亮');
+aliasRows=await searchAlias('文本大小');
+check(!!hit(aliasRows,'字体大小'),'别名「文本大小」命中字体大小');
+aliasRows=await searchAlias('live-preview');
+const modeHit=hit(aliasRows,'默认编辑模式','编辑器');
+check(!!modeHit,'别名「live-preview」命中默认编辑模式 :: '+JSON.stringify(aliasRows.map((r)=>r.title+'@'+r.tab)));
+check(!!modeHit&&!/suggestion-highlight/.test(modeHit.html),'别名「live-preview」命中的结果行不高亮');
+aliasRows=await searchAlias('source');
+check(!!hit(aliasRows,'默认编辑模式'),'别名「source」命中默认编辑模式');
+aliasRows=await searchAlias('配色方案');
+check(!!hit(aliasRows,'基础颜色'),'别名「配色方案」命中基础颜色');
+aliasRows=await searchAlias('高亮');
+check(!!hit(aliasRows,'主题色'),'别名「高亮」命中主题色');
+check(!hit(aliasRows,'基础颜色'),'别名「高亮」不命中基础颜色');
+aliasRows=await searchAlias('品牌');
+check(!!hit(aliasRows,'主题色'),'别名「品牌」命中主题色');
+aliasRows=await searchAlias('下载');
+check(!!hit(aliasRows,'主题'),'别名「下载」命中主题');
+aliasRows=await searchAlias('安装');
+check(!!hit(aliasRows,'主题'),'别名「安装」命中主题');
+/* 名称命中仍高亮；描述命中不高亮（原版：只有名称命中才包 suggestion-highlight） */
+aliasRows=await searchAlias('主题');
+const nameHit=hit(aliasRows,'主题','外观');
+check(!!nameHit&&/suggestion-highlight/.test(nameHit.html),'名称命中的结果行高亮 :: '+(nameHit?nameHit.html:'no row'));
+const descHit=hit(aliasRows,'原生菜单','界面');
+check(!!descHit,'描述命中的结果行仍在列表里 :: '+JSON.stringify(aliasRows.map((r)=>r.title+'@'+r.tab)));
+check(!!descHit&&!/suggestion-highlight/.test(descHit.html),'描述命中的结果行不高亮 :: '+(descHit?descHit.html:'no row'));
+/* 别名并入后仍守原版上限：每组只显前 3 条 */
+const groupCounts=[...resultsEl.querySelectorAll('.setting-search-result-group')].map((g)=>[...g.querySelectorAll('.setting-search-result-item')].filter((el)=>el.style.display!=='none').length);
+check(groupCounts.every((n)=>n<=3),'每组最多显示 3 条（原版上限）:: '+JSON.stringify(groupCounts));
+/* 别名命中同样可跳转并闪烁 */
+aliasRows=await searchAlias('夜间模式');
+const aliasRowEl=[...resultsEl.querySelectorAll('.setting-search-result-item')].find((el)=>text(el.querySelector('.vertical-tab-nav-item-title'))==='基础颜色');
+check(!!aliasRowEl,'别名命中结果行存在');
+aliasRowEl.click();await wait(340);
+check(app.setting.activeTab&&app.setting.activeTab.id==='appearance','点击别名命中结果跳到外观页');
+check(!!document.querySelector('.setting-item.is-flashing'),'别名命中跳转后目标行 is-flashing');
 searchInput.value='';
 searchInput.dispatchEvent(new Event('input',{bubbles:true}));await wait(150);
 

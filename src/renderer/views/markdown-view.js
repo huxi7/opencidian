@@ -1,7 +1,7 @@
 /**
- * [INPUT]: 依赖 ../core/view.js 的 View 基类；依赖 ../core/i18n.js 的 t；依赖 ../core/icons.js 的 setIcon；依赖 ../editor/editor.js 的 Editor 与 livePreviewExtension；依赖 ../markdown/reading.js 的 renderMarkdown/attachMarkdownInteractions；依赖 ../markdown/properties.js 的 renderProperties
+ * [INPUT]: 依赖 ../core/view.js 的 View 基类；依赖 ../core/i18n.js 的 t；依赖 ../core/icons.js 的 setIcon；依赖 ../core/keymap.js 的 IS_MAC；依赖 ../editor/editor.js 的 Editor 与 livePreviewExtension；依赖 ../markdown/reading.js 的 renderMarkdown/attachMarkdownInteractions；依赖 ../markdown/properties.js 的 renderProperties
  * [OUTPUT]: 导出 MarkdownView 类（三模式：source/live/preview），registerView 注册 'markdown'
- * [POS]: views/ 的 Markdown 生命周期入口。行内标题挂在编辑器 .cm-sizer 内；行宽 class 挂视图元素。换文件前保存正文；首次加载与布局恢复均同步模式 DOM；设置事件热重配编辑器。阅读正文交给 markdown/ 渲染。重命名/换文件后由 _updateTitles 回填视图头标题与面包屑。
+ * [POS]: views/ 的 Markdown 生命周期入口。行内标题挂在编辑器 .cm-sizer 内；行宽 class 挂视图元素。换文件前保存正文；首次加载与布局恢复均同步模式 DOM；设置事件热重配编辑器。阅读正文交给 markdown/ 渲染。重命名/换文件后由 _updateTitles 回填视图头标题与面包屑。视图头模式钮按原版 1.14.4：图标表示「点它会切到哪个视图」（编辑视图 lucide-book-open / 阅读视图 lucide-edit-3），aria-label 三行（状态句 + 动作句 + ⌘+单击在新标签页打开），模式切换后随 _applyMode 立即换图标与文案。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 /*
@@ -20,6 +20,7 @@ import {
 import { renderProperties } from '../markdown/properties.js';
 import { Notice } from '../core/notices.js';
 import { normalizePath } from '../core/vault.js';
+import { IS_MAC } from '../core/keymap.js';
 import { PromptModal } from '../core/modals.js';
 import { showEditorContextMenu } from '../editor/editor-menu.js';
 
@@ -456,16 +457,36 @@ export class MarkdownView extends View {
   // View header actions
   // -------------------------------------------------------------------------
   _fillViewActions(actions) {
-    if (!actions) return;
-    actions.empty();
+    // 原版 1.14.4：模式切换后视图头按钮要跟着换图标与文案，
+    // 所以这里没传 actions 时取叶子上的动作区（_applyMode 走的就是这条）。
+    const el = actions || (this.leaf && this.leaf._viewActionsEl);
+    if (!el) return;
+    el.empty();
     const preview = this.mode === 'preview';
-    const toggle = actions.createDiv('clickable-icon view-action');
-    toggle.setAttr('aria-label', preview ? (t('interface.menu.switch-to-edit-view') || 'Click to edit') : (t('interface.menu.switch-to-read-view') || 'Click to read'));
-    toggle.toggleClass('is-active', preview);
-    setIcon(toggle, preview ? 'pencil' : 'book-open');
-    toggle.onclick = () => this.toggleMode();
+    const toggle = el.createDiv('clickable-icon view-action');
+    // 原版 tooltip 三行：当前状态 + 点击动作 + 修饰键提示（app.css 同款 aria）
+    const stateText = preview
+      ? (t('interface.menu.read-view') || '该标签页处于阅读视图中')
+      : (t('interface.menu.edit-view') || '该标签页处于编辑视图中');
+    const actionText = preview
+      ? (t('interface.menu.switch-to-edit-view') || '点击此处切换至编辑视图')
+      : (t('interface.menu.switch-to-read-view') || '点击此处切换至阅读视图');
+    const modText = t('interface.menu.mod-click-open-new-tab', { key: IS_MAC ? '⌘' : 'Ctrl' })
+      || (IS_MAC ? '⌘' : 'Ctrl') + '+单击以在新标签页中打开';
+    toggle.setAttr('aria-label', `${stateText}\n${actionText}\n${modText}`);
+    // 原版图标表示「点它会切到哪个视图」：阅读视图 → 编辑（lucide-edit-3）；编辑视图 → 阅读（lucide-book-open）
+    setIcon(toggle, preview ? 'edit-3' : 'book-open');
+    toggle.onclick = (ev) => {
+      if (ev && (ev.metaKey || ev.ctrlKey)) {
+        // 原版 tooltip 第三行：⌘+单击以在新标签页中打开
+        if (!this.file) return;
+        this.app.workspace.openFile(this.file, { newLeaf: 'tab' });
+        return;
+      }
+      this.toggleMode();
+    };
 
-    const more = actions.createDiv('clickable-icon view-action mod-more-options');
+    const more = el.createDiv('clickable-icon view-action mod-more-options');
     more.setAttr('aria-label', t('interface.menu.more-options') || 'More options');
     setIcon(more, 'more-horizontal');
     more.onclick = (ev) => this._showMoreMenu(ev);

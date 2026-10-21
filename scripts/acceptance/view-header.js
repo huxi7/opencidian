@@ -97,11 +97,31 @@ modeBtn.click();
 await wait(320);
 check(deepLeaf.view.mode==='preview','头部模式钮切到阅读视图');
 check(getComputedStyle(deepLeaf.view.readingEl).display!=='none'&&getComputedStyle(deepLeaf.view.sourceEl).display==='none','阅读视图显示、编辑视图隐藏');
+// 原版 1.14.4：按钮图标表示「点它会切到哪个视图」，且随模式实时更换
+// （编辑视图 = lucide-book-open；阅读视图 = lucide-edit-3；aria-label 三行：状态 + 动作 + ⌘+单击提示）
+const modeIcon=(el)=>{const svg=el&&el.querySelector('svg');return svg?svg.getAttribute('class')||'':'';};
+const modeBtnNow=()=>[...header.querySelectorAll('.view-actions .view-action')]
+  .find((el)=>/切换至阅读|切换至编辑|switch to (read|edit)/i.test(el.getAttr('aria-label')||''));
+check(modeIcon(modeBtnNow()).includes('lucide-edit-3'),'阅读视图下模式钮图标为 lucide-edit-3 :: '+modeIcon(modeBtnNow()));
+const readLabel=modeBtnNow().getAttr('aria-label')||'';
+check(readLabel.includes('该标签页处于阅读视图中')&&readLabel.includes('点击此处切换至编辑视图')&&readLabel.split('\n').length===3,
+  '阅读视图下 aria-label 三行（状态/动作/修饰键提示）:: '+JSON.stringify(readLabel));
+check(!modeBtnNow().classList.contains('is-active'),'模式钮不带 is-active（原版按钮类只有 clickable-icon view-action）');
 [...header.querySelectorAll('.view-actions .view-action')]
   .find((el)=>/切换至阅读|切换至编辑|switch to (read|edit)/i.test(el.getAttr('aria-label')||''))
   .click();
 await wait(320);
 check(deepLeaf.view.mode==='live','头部模式钮切回编辑视图');
+check(modeIcon(modeBtnNow()).includes('lucide-book-open'),'切回编辑视图后图标换回 lucide-book-open :: '+modeIcon(modeBtnNow()));
+check((modeBtnNow().getAttr('aria-label')||'').includes('该标签页处于编辑视图中'),'编辑视图下 aria-label 首行为编辑状态句');
+// 原版 tooltip 第三行承诺「⌘+单击以在新标签页中打开」：Mod+点击走「在新标签页打开」链路，且不改当前视图模式
+const tabsBefore=document.querySelectorAll('.mod-root .workspace-tab-header').length;
+modeBtnNow().dispatchEvent(new MouseEvent('click',{bubbles:true,cancelable:true,metaKey:true}));
+await wait(420);
+const tabsAfter=document.querySelectorAll('.mod-root .workspace-tab-header').length;
+check(tabsAfter<=tabsBefore+1,'⌘+单击走新标签页打开（不多开空标签）:: '+tabsBefore+'→'+tabsAfter);
+check(deepLeaf.view.mode==='live','⌘+单击不改当前视图模式');
+check(ws.getLeavesOfType('markdown').some((l)=>fileOf(l)===fileOf(deepLeaf)),'⌘+单击后该文件仍在某个 markdown 叶子中打开');
 
 /* ---------------------------------------------------------------- 面包屑 */
 const crumbs=[...parentEl.querySelectorAll('.view-header-breadcrumb')].map((el)=>el.textContent);

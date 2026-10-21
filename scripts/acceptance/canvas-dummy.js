@@ -276,8 +276,13 @@
   await until(() => mdCard.isEditing, '已聚焦的文件卡单击正文进编辑（原版 hg）');
   ok(mdCard.editor.cm.contentDOM.getAttribute('contenteditable') === 'true', '文件卡编辑器可写');
   mdCard.editor.setValue('# 标题\n\n改过的正文');
-  await wait(800);
-  ok((await app.vault.read(noteFile)).includes('改过的正文'), '文件卡编辑写回真实文件');
+  // 400ms 防抖 + 异步落盘：全量并发时 800ms 可能不够，改为轮询等待（最多 3s）。
+  let written = false;
+  for (let n = 0; n < 120 && !written; n++) {
+    written = (await app.vault.read(noteFile)).includes('改过的正文');
+    if (!written) await wait(25);
+  }
+  ok(written, '文件卡编辑写回真实文件');
   view.removeNode(mdCard);
   await wait(120);
 

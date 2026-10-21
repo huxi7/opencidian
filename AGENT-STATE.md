@@ -599,3 +599,36 @@ node --experimental-vm-modules src/renderer/core/workspace-regression.js
 - 视觉复核（探针 probe-canvas-drop + 截图）：拖入文件与三次点击卡片菜单后 `.is-dummy` 恒为 0、无选框/落点条/抓取态残留，画布内唯一带色元素是聚焦卡自身的 accent 边框（原版 selectOnly 行为）；md 卡显示 inline title + 正文（对齐原版），`.canvas` 卡显示缩略图。
 - 本批提交：未推送。
 
+
+## 25. 视图头模式钮图标 + 笔记内嵌白板 + 设置搜索别名（2026-10-21 夜）
+
+- 用户反馈：编辑视图/阅读视图切换时**头部按钮图标不换**（一直停在阅读视图的图标）。
+  根因：`_applyMode()` 调 `this._fillViewActions()` **不传参数**，而 `_fillViewActions(actions)` 缺参时直接 return → 模式切换后按钮图标与文案永不刷新（只在建头时填过一次）。
+  修复（按原版 1.14.4 实测）：`_fillViewActions` 缺参时取 `leaf._viewActionsEl`；图标改为表示「点它会切到哪个视图」——编辑视图 `lucide-book-open`、阅读视图 `lucide-edit-3`；aria-label 改原版三行（`interface.menu.read-view|edit-view` 状态句 + `switch-to-edit-view|switch-to-read-view` 动作句 + `mod-click-open-new-tab` 修饰键提示）；去掉原版没有的 `is-active`；并实现 tooltip 承诺的 ⌘+单击在新标签页打开（走 `openFile(file,{newLeaf:'tab'})`，不切当前视图模式）。
+  验收：view-header 74 → 82（图标随模式更换、三行 aria、无 is-active、⌘+点击链路），reading-ui 219 / editor 131 / editor-layout 26 / notes 72 / reading-menus 13 回归全绿。
+
+### 取证纪律：原版实例后台化、绝不抢用户焦点（2026-10-21 用户投诉后立规）
+
+- 事实：用户正在正常使用电脑时投诉「弹出窗口干扰」。根因有二：① 主代理为取证起的原版 Obsidian 实例是**可见**窗口；② 有智能体执行了 `osascript ... set frontmost of ... to true` 主动把原版窗口拉到前台；还有智能体违规直启 `electron .`（可见窗口），违反「只用 run.mjs 隐形 E2E」纪律。
+- 处理：杀掉违规直启的 `electron .` 实例；原版取证实例改为**后台启动**（nohup，不激活）并把窗口挪到屏幕外（位置 -984,33）；两个在跑智能体收到硬规矩（见下）。
+- **立规（长期）**：
+  1. 原版 1.14.4 取证实例由主代理统一托管（CDP 9351），子代理**只准只读 CDP 连接**，禁止自行启停/置前台/移动窗口；需要真实系统焦点的检查项（macOS 原生右键菜单、剪贴板焦点）**直接跳过并在报告注明**，不得置前台硬做。
+  2. 我们自己的应用：只准 `node scripts/acceptance/run.mjs <场景> --no-screenshot`（E2E 隐形：opacity 0 + accessory + showInactive）；**禁止** `electron .` / `npx electron .` 直连。
+  3. 后台/离屏不影响取证数据：DOM 结构、计算样式、几何、JS 状态与前台完全一致，CDP 截图仍取到真实像素；仅「真实系统焦点」类原生交互有差别，按第 1 条跳过。
+  4. 子代理不得在仓库留临时脚本（scripts/tmp-*），收尾自清。
+- **设置搜索别名**（原版 loe.search：name/desc/aliases 三路取最高分）：补 4 个外观别名的 locale 键（基础颜色=深色 浅色 系统 夜间模式 配色方案；主题色=高亮 品牌 主色；字体大小=文本大小 缩放；主题=社区 浏览 安装 下载，译文抄原版 zh.txt / 英文基线）；默认编辑模式接 ['live-preview','source']；别名由 setSettingAliases 挂到设置行的 data-aliases，搜索索引从 DOM 采集。
+  **原版取证纠正两处此前的误读**：① 结果行**只显示设置名**，不做 desc 拼接——搜「主题」出现「已安装**主题**」是因为外观页另有一个独立设置项就叫「已安装主题」；② **只有名称命中才包 suggestion-highlight**，desc/别名命中的行显示不带高亮的名称。③ 原版匹配器是**子串 AND**（按空格切词，每词必须是连续子串）而非模糊子序列——settings-view.js 换成 createSettingMatcher/mergeMatchRanges/scoreMatchRanges（core/suggest.js 未动，快速切换器不受影响）。
+  验收：settings-ui 185→220（+35）、settings-plugins 105、appearance 99 全绿。
+
+### 许可证变更（2026-10-21，用户裁定）：MIT → AGPL-3.0
+
+- 用户裁定：不再用 MIT，改用 **GNU Affero General Public License v3.0**（此前 §16 记录的「LICENSE 保持 MIT」是历史决策，现被本条取代）。
+- 落地：`LICENSE` 换成 AGPL-3.0 官方全文（自 gnu.org 取，逐字未改，顶部附版权与「如何应用」提示，Copyright (C) 2026 OpenSidian contributors）；`package.json` 的 `license` 字段改 `AGPL-3.0`；`README.md` 许可证段同步。
+- 影响提示（仅告知，不展开）：AGPL-3.0 属强 copyleft，且第 13 条要求「通过网络与用户交互的修改版需向用户提供对应源码」；对外分发/提供在线服务时需按 AGPL 条款提供源码与版权声明。
+- **笔记内嵌白板**（原版 cte/lte）：`.canvas` 嵌入不再落通用文件条，改走画布嵌入——`.canvas-embed` 容器 + inline-embed 形态（图标 + 文件名标题）+ 缩略图 SVG（复用 views/canvas-minimap.js 的 renderCanvasMinimap：圆角矩形卡片、贝塞尔边、viewBox 外扩 5%），限高 `--embed-canvas-max-height: 400px`（原版 app.css 2238）；目标文件不存在时按原版落 `.file-embed.mod-empty`「未创建，点击以创建。」；阅读视图与实时预览都支持。
+  验收：新增 `canvas-embed` 场景 81 项全绿；reading-ui 219 / reading-menus 13 / canvas 101 / canvas-ui 192 / editor-block-button 11 / notes 72 回归全绿；视觉复核截图确认笔记内出现「图标+文件名+缩略图」，缺失白板显示原版空态文案。
+- **主代理裁决两处**（子代理交付后复核）：① `editor/live-preview.js` 被越界改动（本就 805 行超标，改后 817）→ 把**行内 widget 整块**（复选框/列表记号/图片/行内数学/水平线/代码块角标/链接与嵌入）拆到新文件 `editor/live-preview-inline-widgets.js`（189 行），live-preview.js 回到 **660 行**；画布嵌入功能保留（实时预览是默认编辑视图，砍掉等于功能不可见）。editor 131 / editor-layout 26 / editor-block-button 11 / image-size 36 / notes 72 / reading-ui 219 / editor-menu 51 回归全绿。
+  ② 画布嵌入的**右键菜单**与原版不符：原版渲染器只对 `a.internal-link / a.external-link / a.tag / img,video` 派发右键，**画布嵌入没有右键菜单**；我们因保留 data-href 而弹了链接菜单 → 阅读视图右键分派排除 `.canvas-embed`，断言改为「右键不弹菜单」（canvas-embed 82 → 81 项，全绿）。点击/Mod+点击打开白板仍由 canvas-minimap.js 自己的监听处理，不受影响。
+- **修掉一个真数据丢失竞态**（画布文件卡）：进卡片编辑态后异步 `cachedRead` 读取原文，会把用户在读取返回前敲下的内容**整段覆盖**（旧代码无条件 `editor.setValue(text)`）。现加 `dirty` 标志：读取返回时若编辑器已被改动则**不覆盖**，只 focus。canvas-dummy 连跑 3 次全绿（该用例正是"进编辑态立刻改内容"）。
+- **E2E 不再拉起系统浏览器/访达**（用户投诉"跑着跑着就打开一个网站"）：真凶是验收里点「在默认浏览器打开」「帮助」「下载更新」等动作会走主进程 `shell.openExternal` **真的打开你默认浏览器**。现主进程在 E2E 模式下拦截 `open-external` / `open-url` / `help` / `show-item-in-folder` / `open-path` / `print-to-pdf(open)`，只打日志不执行；macOS 应用菜单的 Homepage 项属用户手动操作，不受影响。
+- **本轮最终全量**：**62 场景 / 62 次执行全绿、4967 断言**（含 `settings-restart`、`graph-persist-write → graph-persist-read` 链式、`vault-switcher --seed-vaults 3` 142、`graph-perf --nodes 1000` 4）。日志 `/tmp/opensidian-full-1021-d/summary.txt`。新增场景 `canvas-embed` 81；更新 `view-header` 82、`settings-ui` 220、`canvas-dummy` 59（竞态修复后连跑 3 次稳定）。

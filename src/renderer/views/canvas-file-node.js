@@ -272,7 +272,9 @@ export class CanvasFileNode extends CanvasContentNode {
     sourceEl.toggleClass('is-live-preview', live);
     sourceEl.toggleClass('is-source-mode', !live);
     editor.setLivePreview(live);
-    editor.onChange(() => this.scheduleSave());
+    // 原版：进编辑态后异步读原文；若用户在读取返回前已经输入，不得用原文覆盖输入。
+    let dirty = false;
+    editor.onChange(() => { dirty = true; this.scheduleSave(); });
     this.editorEl.addEventListener('keydown', (e) => {
       if (e.isComposing) return;
       if (e.key === 'Escape') { this.stopEditing(); return; }
@@ -280,8 +282,10 @@ export class CanvasFileNode extends CanvasContentNode {
     }, true);
     this.app.vault.cachedRead(file).then((text) => {
       if (token !== this._renderToken || this.editor !== editor || this.file !== file) return;
-      this._lastSaved = text;
-      editor.setValue(text);
+      if (!dirty) {
+        this._lastSaved = text;
+        editor.setValue(text);
+      }
       editor.focus();
     }).catch((e) => console.error('canvas file edit failed', e));
   }

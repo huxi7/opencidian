@@ -1,7 +1,7 @@
 /**
  * [INPUT]: 依赖 ../core/i18n.js 的 tt/getLanguage/setLanguage；依赖 ../core/setting.js 的 SettingGroup/SettingTab；依赖 ../core/notices.js 的 Notice；依赖 ../core/ipc.js 的 Desktop/ipcSync；依赖 ../core/update-check.js 的 checkForUpdates；依赖 ../core/icons.js 的 setIcon；依赖 ./settings-tabs-dialogs.js 的 VERSION/StartupTimeModal/VimTestModal/AddExcludedFilterModal/SpellcheckDictModal/trackSliderFill/isRegexFilterValue/FilePathSuggest/FolderPathSuggest
  * [OUTPUT]: 导出 AboutTab、EditorTab、FileTab 三个内置页签类
- * [POS]: views/ 的内置设置页签（选项组）。逐字对齐原版 O7/nte/lte 的 display()：关于（版本/检查更新/语言/高级+启动耗时弹窗/硬件加速）、编辑器（行为+拼写检查词典/语言+Vim 验证）、文件与链接（打开行为/新建位置/附件/链接/回收站/忽略文件子页面/重建缓存）。文案走 tt() 兜底，配置写 app.settings.updateAppSettings（app.json）与 updateAppearance（appearance.json）；拼写检查词典/语言经 Desktop IPC 读写主进程。硬件加速不落库：由主进程 disable-gpu 通道持有，改动后显示“重新启动应用”。
+ * [POS]: views/ 的内置设置页签（选项组）。逐字对齐原版 O7/nte/lte 的 display()：关于（版本/检查更新/语言/高级+启动耗时弹窗/硬件加速）、编辑器（行为+拼写检查词典/语言+Vim 验证）、文件与链接（打开行为/新建位置/附件/链接/回收站/忽略文件子页面/重建缓存）。文案走 tt() 兜底，配置写 app.settings.updateAppSettings（app.json）与 updateAppearance（appearance.json）；拼写检查词典/语言经 Desktop IPC 读写主进程。硬件加速不落库：由主进程 disable-gpu 通道持有，改动后显示“重新启动应用”。默认编辑模式行按原版带 aliases（live-preview/source），供设置侧栏全局搜索匹配。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 /* Built-in settings tabs: About / Editor / File & Links. */
@@ -263,10 +263,12 @@ export class EditorTab extends SettingTab {
         d.setValue(settings.defaultViewMode === 'preview' ? 'preview' : 'source');
         d.onChange((v) => update({ defaultViewMode: v }));
       }));
-    group.addSetting((s) => s
-      .setName(tt('setting.editor.option-default-editing-mode', '默认编辑模式'))
-      .setDesc(tt('setting.editor.option-default-editing-mode-description', '在编辑视图下，新标签页默认采用的编辑模式。'))
-      .addDropdown((d) => {
+    group.addSetting((s) => {
+      s.setName(tt('setting.editor.option-default-editing-mode', '默认编辑模式'))
+        .setDesc(tt('setting.editor.option-default-editing-mode-description', '在编辑视图下，新标签页默认采用的编辑模式。'));
+      // 原版 aliases：live-preview / source
+      this.setting.setSettingAliases(s, ['live-preview', 'source']);
+      s.addDropdown((d) => {
         d.addOption('live-preview', tt('setting.editor.option-default-editing-mode-live-preview', '实时预览'));
         d.addOption('source', tt('setting.editor.option-default-editing-mode-source', '源码模式'));
         d.setValue(settings.livePreview === false ? 'source' : 'live-preview');
@@ -281,7 +283,8 @@ export class EditorTab extends SettingTab {
             leaf.setViewState({ type: 'markdown', state });
           }
         });
-      }));
+      });
+    });
     group.addSetting((s) => {
       const entry = app.plugins.getInternalPlugin('editor-status');
       s.setName(tt('plugins.editor-status.name', '视图状态'))

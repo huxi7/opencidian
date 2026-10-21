@@ -31,7 +31,7 @@ settings-hotkeys.css: 快捷键页专属样式。setting-group-search 裸搜索�
 settings-dialogs.css: 设置弹窗与路径建议样式。启动耗时 mod-plugin-debug 树、Vim 验证、忽略文件、拼写词典、字体管理/ribbon 配置与路径建议列表；主题管理弹窗的 community-item 卡片体系（名称/徽标/截图位/作者/下载数）；只服务 views/settings-tabs-dialogs.js 与外观页弹窗。
 canvas.css: 画布样式入口。按序导入节点规则与连接线规则。
 canvas-nodes.css: 原版画布布局、节点、分组与手柄规则。含链接卡 webview/iframe 容器、分组背景图三态（cover/ratio/repeat）、文本卡未编辑占位底色；拖拽虚影 .canvas-node.is-dummy 为 4px accent 描边 + 20% accent 填充且 pointer-events:none（原版必被摘除，我们加此兜底避免残留时挡住拖拽）。文本卡片编辑器规则逐字移植 app.css 的 .markdown-source-view.mod-inside-iframe 段（原版编辑器跑在铺满卡片的内嵌 iframe，本复刻内联，10vh 换成卡片高度）：scroller 纵向布局 + 0 16px 内边距、::before/::after 上下留白、sizer 不撑满、--file-margins 归零、不挂行宽 class；另承接原版卡片内 callout 的 mix-blend-mode: normal、非编辑态正文不可选中（user-select: none）与卡片内容层的文本字体上下文（导出取该层计算样式）。末尾补导出弹窗用到的原版类 .modal.mod-narrow(宽度 400px) 与 .u-muted(次级说明文字，仅弹窗内)。
-canvas-edges.css: 原版连接线与标签规则、拖动对齐参考线（.canvas-snaps 的 line/circle 取强调色，位于 .canvas-edges 之前）、编辑控件与链接卡失败占位（.canvas-link-error 图标/标题/URL/原因/重试按钮，is-visible 切换）。
+canvas-edges.css: 原版连接线与标签规则、拖动对齐参考线（.canvas-snaps 的 line/circle 取强调色，位于 .canvas-edges 之前）、编辑控件与链接卡失败占位（.canvas-link-error 图标/标题/URL/原因/重试按钮，is-visible 切换）。 另含行内画布嵌入限高 --embed-canvas-max-height（400px，原版 app.css 2238）与 .canvas-minimap 缩略图段（app.css 18999-19023）。
 bookmarks.css: 书签树滚动、操作图标与视图头部收藏状态。
 slides.css: 全窗口演示覆盖层。.slides-container/.slides-close-btn/.collapse-indicator/.controls 段移植自原版 app.css slides 段；deck/section/progress 为翻页渲染新增；容器 position:fixed 覆盖全窗口(对齐原版)，背景走 --background-primary（原版硬编码 #191919 由 reveal 主题覆盖，此处取应用主题色）。
 

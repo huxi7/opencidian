@@ -684,7 +684,7 @@ function setupIpc() {
     e.returnValue = '';
   });
   ipcMain.on('starter', (e) => { e.returnValue = null; openVaultStarter(); });
-  ipcMain.on('help', (e) => { e.returnValue = null; shell.openExternal('https://help.obsidian.md/'); });
+  ipcMain.on('help', (e) => { e.returnValue = null; if (E2E) { console.log('[e2e] suppressed help'); return; } shell.openExternal('https://help.obsidian.md/'); });
   ipcMain.on('sandbox', (e) => { e.returnValue = null; });
 
   ipcMain.on('context-menu', (e) => { customContextWindows.add(e.sender.id); });
@@ -743,6 +743,7 @@ function setupIpc() {
 
   ipcMain.on('open-url', (e, url) => {
     const win = BrowserWindow.fromWebContents(e.sender);
+    if (E2E) { console.log('[e2e] suppressed open-url', url); return; }
     if (win && typeof url === 'string') shell.openExternal(url);
   });
 
@@ -781,14 +782,19 @@ function setupIpc() {
       const { filepath, open } = options;
       const data = await wc.printToPDF(options);
       await fs.promises.writeFile(filepath, data);
-      if (open) shell.openPath(filepath);
+      if (open && !E2E) shell.openPath(filepath);
     } catch (err) { console.error(err); }
     finally { wc.send('print-to-pdf', {}); }
   });
 
-  ipcMain.on('show-item-in-folder', (e, p) => { shell.showItemInFolder(p); });
-  ipcMain.on('open-path', (e, p) => { shell.openPath(p); });
-  ipcMain.on('open-external', (e, url) => { if (/^https?:/.test(url)) shell.openExternal(url); });
+  ipcMain.on('show-item-in-folder', (e, p) => { if (!E2E) shell.showItemInFolder(p); });
+  ipcMain.on('open-path', (e, p) => { if (!E2E) shell.openPath(p); });
+  // E2E（验收）模式：绝不真的拉起系统浏览器/访达，否则会打断用户正常使用电脑。
+  ipcMain.on('open-external', (e, url) => {
+    if (!/^https?:/.test(url)) return;
+    if (E2E) { console.log('[e2e] suppressed open-external', url); return; }
+    shell.openExternal(url);
+  });
 
   ipcMain.on('set-menu', (e, arg) => { /* menu overrides from renderer: accepted but unused */ });
   ipcMain.on('update-menu-items', (e, items, refresh) => {});

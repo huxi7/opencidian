@@ -1,7 +1,7 @@
 /**
- * [INPUT]: 依赖 ../core/modals.js 的 Modal；依赖 ../core/ipc.js 的 Desktop；依赖 ../core/icons.js 的 setIcon；依赖 ../core/i18n.js 的 tt；依赖 ../core/suggest.js 的 fuzzyMatch/renderHighlightedText；依赖 ./settings-tabs.js 的 AboutTab/EditorTab/FileTab；依赖 ./settings-tabs-appearance.js 的 AppearanceTab/InterfaceTab；依赖 ./settings-tabs-plugins.js 的 HotkeysTab/CorePluginsTab
+ * [INPUT]: 依赖 ../core/modals.js 的 Modal；依赖 ../core/ipc.js 的 Desktop；依赖 ../core/icons.js 的 setIcon；依赖 ../core/i18n.js 的 tt；依赖 ../core/suggest.js 的 renderHighlightedText；依赖 ./settings-tabs.js 的 AboutTab/EditorTab/FileTab；依赖 ./settings-tabs-appearance.js 的 AppearanceTab/InterfaceTab；依赖 ./settings-tabs-plugins.js 的 HotkeysTab/CorePluginsTab
  * [OUTPUT]: 导出 SettingTab（页签基类）、SettingsHost（设置模态宿主）、installSettingsHost(app)
- * [POS]: views/ 的设置模态宿主，逐字对齐原版 fte 类 DOM：modal.mod-settings.mod-sidebar-layout > .modal-content.vertical-tabs-container > .vertical-tab-header + .vertical-tab-content-container。app.setting 即本类实例；内置页签注册顺序为 关于 → 外观 → 界面 → 编辑器 → 文件与链接 → 快捷键 → 核心插件，第三方插件页不注册。1.14.4 popout：shouldUsePopout 读 vault 配置 settingsPopoutWindow，开启时主进程开独立窗口，窗口内 modalEl 直接挂 body（is-popout-modal）。子页面机制 openPage/closePage 对齐原版 openPage/closePage：.setting-page.vertical-tab-content > .setting-page-titlebar（返回钮 + 标题）+ .setting-page-content，栈顶页面标题写入弹窗标题。侧栏顶部是全局搜索（.setting-search-container + .setting-search-results），跨页签匹配设置项名与描述，命中项高亮并可跳转到对应设置行。
+ * [POS]: views/ 的设置模态宿主，逐字对齐原版 fte 类 DOM：modal.mod-settings.mod-sidebar-layout > .modal-content.vertical-tabs-container > .vertical-tab-header + .vertical-tab-content-container。app.setting 即本类实例；内置页签注册顺序为 关于 → 外观 → 界面 → 编辑器 → 文件与链接 → 快捷键 → 核心插件，第三方插件页不注册。1.14.4 popout：shouldUsePopout 读 vault 配置 settingsPopoutWindow，开启时主进程开独立窗口，窗口内 modalEl 直接挂 body（is-popout-modal）。子页面机制 openPage/closePage 对齐原版 openPage/closePage：.setting-page.vertical-tab-content > .setting-page-titlebar（返回钮 + 标题）+ .setting-page-content，栈顶页面标题写入弹窗标题。侧栏顶部是全局搜索（.setting-search-container + .setting-search-results），跨页签三路匹配设置项名、描述与别名（原版 loe.search：name/desc/aliases 取最高分），命中项高亮并可跳转到对应设置行。别名由 setSettingAliases 挂在设置行的 data-aliases 上（原版定义树的 aliases 字段），搜索索引从 DOM 采集它。匹配器与原版一致：查询按空格切词，每个词都必须是文本的子串（createSettingMatcher），故只有名称命中才高亮，描述或别名命中的行显示不带高亮的名称。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 /* Settings host — modal shell + tab management, DOM 1:1 with the original. */
@@ -11,12 +11,87 @@ import { syncTrafficLightPosition } from '../core/window-chrome.js';
 import { setIcon } from '../core/icons.js';
 import { tt } from '../core/i18n.js';
 import { SettingTab } from '../core/setting.js';
-import { fuzzyMatch, renderHighlightedText } from '../core/suggest.js';
+import { renderHighlightedText } from '../core/suggest.js';
 import { AboutTab, EditorTab, FileTab } from './settings-tabs.js';
 import { AppearanceTab, InterfaceTab } from './settings-tabs-appearance.js';
 import { HotkeysTab, CorePluginsTab } from './settings-tabs-plugins.js';
 
 export { SettingTab };
+
+/** 别名载体：设置行的 data-aliases（JSON 字符串数组），对应原版定义树的 aliases 字段。 */
+function readSettingAliases(el) {
+  const raw = el.getAttribute('data-aliases');
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed.filter((a) => typeof a === 'string' && a) : [];
+  } catch (e) {
+    return [];
+  }
+}
+
+/**
+ * 原版 gx/vx/fx：查询按空格切词，每个词都必须是文本的子串（AND），命中区间合并后返回。
+ * 设置搜索的名称、描述、别名三路与页签名共用它，原版即用这一套。
+ */
+function createSettingMatcher(query) {
+  const tokens = String(query || '').toLowerCase().split(' ').filter(Boolean);
+  return (text) => {
+    if (!text) return null;
+    const lower = text.toLowerCase();
+    const ranges = [];
+    for (const token of tokens) {
+      let from = 0;
+      let hit = false;
+      for (;;) {
+        const at = lower.indexOf(token, from);
+        if (at === -1) break;
+        hit = true;
+        ranges.push([at, at + token.length]);
+        from = at + token.length + 1;
+      }
+      if (!hit) return null;
+    }
+    if (!ranges.length) return null;
+    const matches = mergeMatchRanges(ranges);
+    return { score: scoreMatchRanges(matches, query.length, text.length), matches };
+  };
+}
+
+/** 原版 ix：按起点排序，合并相交或相接的命中区间。 */
+function mergeMatchRanges(ranges) {
+  const sorted = ranges.slice().sort((a, b) => a[0] - b[0]);
+  const merged = [sorted[0].slice()];
+  for (let i = 1; i < sorted.length; i++) {
+    const last = merged[merged.length - 1];
+    if (last[1] < sorted[i][0]) merged.push(sorted[i].slice());
+    else if (last[1] < sorted[i][1]) last[1] = sorted[i][1];
+  }
+  return merged;
+}
+
+/** 原版 cx：区间数、命中跨度、命中起点与文本长度的加权惩罚（分数越高越靠前）。 */
+function scoreMatchRanges(ranges, queryLength, textLength) {
+  if (!ranges.length) return 0;
+  let score = 0;
+  score -= Math.max(0, ranges.length - 1);
+  const first = ranges[0][0];
+  const last = ranges[ranges.length - 1][1];
+  score -= (last - first + 1 - queryLength) / 100;
+  score -= first / 1000;
+  score -= textLength / 10000;
+  return score;
+}
+
+/** 原版：别名逐条比对，取分数最高的一条作为该项的别名命中。 */
+function matchAliases(match, aliases) {
+  let best = null;
+  for (const alias of aliases || []) {
+    const hit = match(alias);
+    if (hit && (!best || hit.score > best.score)) best = hit;
+  }
+  return best;
+}
 
 export class SettingsHost extends Modal {
   constructor(app) {
@@ -143,7 +218,7 @@ export class SettingsHost extends Modal {
   }
 
   /**
-   * 采集页签的可搜索条目（名称 + 描述）。
+   * 采集页签的可搜索条目（名称 + 描述 + 别名）。
    * 原版从页签定义树取值；本仓库页签直接建 DOM，故从已渲染的 DOM 采集；
    * 从未渲染过的页签离屏渲染一次并缓存，保证搜索跨页签。
    */
@@ -151,7 +226,7 @@ export class SettingsHost extends Modal {
     const items = [];
     for (const tab of this.settingTabs.concat(this.pluginTabs)) {
       for (const item of this.harvestTabItems(tab)) {
-        items.push({ tab, name: item.name, desc: item.desc });
+        items.push({ tab, name: item.name, desc: item.desc, aliases: item.aliases });
       }
     }
     return items;
@@ -177,7 +252,7 @@ export class SettingsHost extends Modal {
     return items;
   }
 
-  /** 从渲染结果里取“名称 + 描述”（跳过标题行）。 */
+  /** 从渲染结果里取“名称 + 描述 + 别名”（跳过标题行）。 */
   harvestItemsFrom(root) {
     const out = [];
     for (const el of root.querySelectorAll('.setting-item:not(.setting-item-heading)')) {
@@ -187,9 +262,21 @@ export class SettingsHost extends Modal {
       out.push({
         name: (nameEl.textContent || '').trim(),
         desc: descEl ? (descEl.textContent || '').trim() : '',
+        aliases: readSettingAliases(el),
       });
     }
     return out;
+  }
+
+  /**
+   * 原版 aliases：设置定义可带别名数组，搜索时与名称、描述同权重参与匹配。
+   * 本仓库的搜索索引从 DOM 采集，故别名挂在设置行的 data-aliases 上（JSON 字符串数组）。
+   */
+  setSettingAliases(setting, aliases) {
+    const list = (aliases || []).filter((a) => typeof a === 'string' && a.trim());
+    if (!list.length) return setting;
+    setting.settingEl.setAttr('data-aliases', JSON.stringify(list));
+    return setting;
   }
 
   /** 原版 onSearchChanged：空查询恢复页签分组；有查询则渲染结果并隐藏分组。 */
@@ -214,20 +301,30 @@ export class SettingsHost extends Modal {
     for (const group of groups) this.renderSearchGroup(group);
   }
 
-  /** 按页签分组：匹配设置项名与描述，组内按分数降序，组间按最高分降序。 */
+  /**
+   * 按页签分组：匹配设置项名、描述与别名（原版 loe.search 三路取最高分），
+   * 组内按分数降序，组间按最高分降序。匹配器与原版一致：查询按空格切词，
+   * 每个词都必须是文本的子串。
+   */
   searchGroups(query) {
+    const match = createSettingMatcher(query);
     const byTab = new Map();
     for (const item of this.collectSearchItems()) {
-      const nameMatch = fuzzyMatch(query, item.name);
-      const descMatch = item.desc ? fuzzyMatch(query, item.desc) : null;
-      if (!nameMatch && !descMatch) continue;
-      const score = Math.max(nameMatch ? nameMatch.score : -Infinity, descMatch ? descMatch.score : -Infinity);
+      const nameMatch = match(item.name);
+      const descMatch = item.desc ? match(item.desc) : null;
+      const aliasMatch = matchAliases(match, item.aliases);
+      if (!nameMatch && !descMatch && !aliasMatch) continue;
+      const score = Math.max(
+        nameMatch ? nameMatch.score : -Infinity,
+        descMatch ? descMatch.score : -Infinity,
+        aliasMatch ? aliasMatch.score : -Infinity,
+      );
       let group = byTab.get(item.tab);
       if (!group) {
-        group = { tab: item.tab, tabNameMatch: fuzzyMatch(query, item.tab.name), results: [], best: -Infinity };
+        group = { tab: item.tab, tabNameMatch: match(item.tab.name), results: [], best: -Infinity };
         byTab.set(item.tab, group);
       }
-      group.results.push({ name: item.name, desc: item.desc, nameMatch, descMatch, score });
+      group.results.push({ name: item.name, desc: item.desc, nameMatch, descMatch, aliasMatch, score });
       group.best = Math.max(group.best, score);
     }
     const groups = [...byTab.values()].filter((g) => g.results.length || g.tabNameMatch);
@@ -258,6 +355,7 @@ export class SettingsHost extends Modal {
       row.setAttr('tabindex', '-1');
       if (index >= 3) { row.hide(); hidden.push(row); }
       const titleEl = row.createDiv('vertical-tab-nav-item-title');
+      // 原版 hoe：只有名称命中才高亮；描述或别名命中的行显示不带高亮的名称
       renderHighlightedText(titleEl, result.name, result.nameMatch ? result.nameMatch.matches : null);
       row.createDiv('vertical-tab-nav-item-chevron', (el) => setIcon(el, 'lucide-chevron-right'));
       row.addEventListener('click', () => this.openSearchResult(group, result));
