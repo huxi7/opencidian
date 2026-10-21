@@ -3,6 +3,7 @@
  * [OUTPUT]: 导出 FilterSection、ColorGroupSection、DisplaySection、ForceSection。
  * [POS]: 图谱控制面板；读取引擎选项，提交筛选、显示与力学变更。
  *        颜色组行数即优先色顺序：颜色圆点上的拖动排序改写顺序并立即重绘。
+ *        控件外观逐条对齐原版：滑块不挂动态提示、动画按钮与新建组按钮都是普通按钮。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 import { t } from '../core/i18n.js';
@@ -81,7 +82,7 @@ export class FilterSection extends GraphControlSection {
       new Setting(children).setName(t('plugins.graph-view.option-depth')).setTooltip(t('plugins.graph-view.option-depth-description'))
         .setClass('mod-local-jumps').setClass('mod-slider').addSlider((slider) => {
           const apply = (value) => { engine.options.localJumps = value; engine.render(); };
-          slider.setLimits(1, 5, 1).setValue(engine.options.localJumps).setDynamicTooltip().setInstant(true)
+          slider.setLimits(1, 5, 1).setValue(engine.options.localJumps).setInstant(true)
             .onChange((value) => { apply(value); engine.onOptionsChange(); });
           this._listen('localJumps', slider, apply);
         });
@@ -133,41 +134,48 @@ export class ColorGroupSection extends GraphControlSection {
     const children = this.childrenEl;
     children.empty();
     const groups = [];
-    const container = children.createDiv('graph-color-groups-container');
-    for (const entry of queries) {
-      const groupEl = container.createDiv('graph-color-group');
-      const query = new TextComponent(groupEl).setPlaceholder(t('plugins.graph-view.placeholder-enter-query'))
-        .setValue(entry.query).onChange(() => this.engine.requestUpdateSearch());
-      const rgb = entry.color ? entry.color.rgb : 0;
-      const color = new ColorPickerComponent(groupEl).setValue(`#${rgb.toString(16).padStart(6, '0')}`)
-        .onChange(() => this.engine.updateSearch());
-      color.colorPickerEl.setAttr('aria-label', t('plugins.graph-view.tooltip-click-to-change-drag-to-reorder'));
-      const record = { el: groupEl, query, color };
-      /* 原版：拖动排序的落点由颜色圆点上的 mousedown 启动（单击仍是打开取色器） */
-      color.colorPickerEl.addEventListener('mousedown', (ev) => this.onDragOption(ev, record));
-      groupEl.createDiv('clickable-icon', (el) => {
-        setIcon(el, 'x');
-        el.setAttr('aria-label', t('plugins.graph-view.tooltip-delete-graph'));
-        el.addEventListener('click', () => {
-          const index = groups.indexOf(record);
-          if (index >= 0) groups.splice(index, 1);
-          groupEl.detach();
-          this.engine.updateSearch();
-        });
-      });
-      groups.push(record);
-    }
     this.groups = groups;
+    this.groupContainer = children.createDiv('graph-color-groups-container');
+    for (const entry of queries) this.appendGroup(entry);
     children.createDiv('graph-color-button-container', (containerEl) => {
-      containerEl.createEl('button', { cls: 'mod-cta', text: t('plugins.graph-view.button-new-group') }, (button) => {
+      /* 原版新建组是普通 button（无 mod-cta）：宽度由 .graph-color-button-container button 规则给出 */
+      containerEl.createEl('button', { text: t('plugins.graph-view.button-new-group') }, (button) => {
         button.addEventListener('click', () => {
+          /* 原版用当前组数算默认色相：h = 40 × 组序（新建行直接追加，不重建整表） */
           const dark = document.body.hasClass('theme-dark');
-          const hex = hslToHex(40 * groups.length, dark ? 70 : 60, 60);
-          this.setColorQueries(this.getColoredQueries().concat([{ query: '', color: { a: 1, rgb: parseInt(hex.slice(1), 16) } }]));
+          const hex = hslToHex(40 * this.groups.length, dark ? 70 : 60, 60);
+          this.appendGroup({ query: '', color: { a: 1, rgb: parseInt(hex.slice(1), 16) } });
           this.engine.updateSearch();
         });
       });
     });
+  }
+
+  /* 原版 setColorQueries 内的行构造：一行 = 检索式 + 取色器 + 删除按钮 */
+  appendGroup(entry) {
+    const groups = this.groups;
+    const groupEl = this.groupContainer.createDiv('graph-color-group');
+    const query = new TextComponent(groupEl).setPlaceholder(t('plugins.graph-view.placeholder-enter-query'))
+      .setValue(entry.query).onChange(() => this.engine.requestUpdateSearch());
+    const rgb = entry.color ? entry.color.rgb : 0;
+    const color = new ColorPickerComponent(groupEl).setValue(`#${rgb.toString(16).padStart(6, '0')}`)
+      .onChange(() => this.engine.updateSearch());
+    color.colorPickerEl.setAttr('aria-label', t('plugins.graph-view.tooltip-click-to-change-drag-to-reorder'));
+    const record = { el: groupEl, query, color };
+    /* 原版：拖动排序的落点由颜色圆点上的 mousedown 启动（单击仍是打开取色器） */
+    color.colorPickerEl.addEventListener('mousedown', (ev) => this.onDragOption(ev, record));
+    groupEl.createDiv('clickable-icon', (el) => {
+      setIcon(el, 'x');
+      el.setAttr('aria-label', t('plugins.graph-view.tooltip-delete-graph'));
+      el.addEventListener('click', () => {
+        const index = groups.indexOf(record);
+        if (index >= 0) groups.splice(index, 1);
+        groupEl.detach();
+        this.engine.updateSearch();
+      });
+    });
+    groups.push(record);
+    return record;
   }
 
   /* 原版 onDragOption：移动超过 5px 才进入拖拽；幽灵行跟随光标，其余行让位；松手按落点重排并重绘 */
@@ -256,14 +264,15 @@ export class DisplaySection extends GraphControlSection {
     for (const [key, labelKey, limits] of sliders) {
       new Setting(children).setName(t(`plugins.graph-view.${labelKey}`)).setClass('mod-slider').addSlider((slider) => {
         const apply = (value) => { engine.options[key] = value; engine.renderer.setRenderOptions({ [key]: value }); };
-        slider.setLimits(limits[0], limits[1], limits[2]).setDynamicTooltip().setInstant(true)
+        slider.setLimits(limits[0], limits[1], limits[2]).setInstant(true)
           .onChange((value) => { apply(value); engine.onOptionsChange(); });
         this._listen(key, slider, apply);
       });
     }
     if (!isLocal) {
+      /* 原版 addButton 不带 setCta：按钮是普通按钮，不是主按钮 */
       new Setting(children).addButton((button) => {
-        button.setButtonText(t('plugins.graph-view.button-animate-timelapse')).setCta().onClick(() => engine.renderProgression());
+        button.setButtonText(t('plugins.graph-view.button-animate-timelapse')).onClick(() => engine.renderProgression());
       });
     }
   }
@@ -285,7 +294,7 @@ export class ForceSection extends GraphControlSection {
     for (const [key, labelKey, limits, transform] of sliders) {
       new Setting(children).setName(t(`plugins.graph-view.${labelKey}`)).setClass('mod-slider').addSlider((slider) => {
         const apply = (value) => { engine.options[key] = value; engine.renderer.setForces({ [key]: transform(value) }); };
-        slider.setLimits(limits[0], limits[1], limits[2]).setDynamicTooltip().setInstant(true)
+        slider.setLimits(limits[0], limits[1], limits[2]).setInstant(true)
           .onChange((value) => { apply(value); engine.onOptionsChange(); });
         this._listen(key, slider, apply);
       });

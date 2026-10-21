@@ -1,7 +1,7 @@
 /**
  * [INPUT]: 独立临时 vault 与 OBS_ACT eval 注入的应用实例；--screen light|dark 切换主题（OBS_SIDEBAR_VIEW）；OBS_SCREENSHOT 目录用于设置窗口截图。
  * [OUTPUT]: 返回验收断言结果；失败抛出异常，供运行器判定。
- * [POS]: settings-window 场景。锁 1.14.4 设置独立窗口：默认配置、窗口/标题/尺寸/最小尺寸、单实例复用、内容铺满、关闭再开、开关切换回退模态（含窗口内点击开关的真实发送方路径）。
+ * [POS]: settings-window 场景。锁 1.14.4 设置独立窗口：默认配置、窗口/标题/尺寸/最小尺寸、单实例复用、内容铺满、关闭再开、页签接力（外观页 + 独立“界面”页签的「在新窗口中打开设置」开关）、开关切换回退模态（含窗口内点击开关的真实发送方路径）。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 (async()=>{
@@ -79,12 +79,19 @@ const fresh=await probe();
 ok(fresh.navItems>=5,'复用窗口内容仍在');
 checks.push('single instance reuse');
 
-// 7.5) 页签接力：主窗口 openTabById → 设置窗口切到外观页；新开关行存在（截图前切页）
+// 7.5) 页签接力：主窗口 openTabById → 设置窗口切到外观页（截图前切页）
 app.setting.openTabById('appearance');
 const onAppearance=await waitFor(async()=>{const p=await probe();return p&&p.activeTab&&/外观|Appearance/.test(p.activeTab)?p:null},6000,200);
 ok(onAppearance,'主窗口 openTabById 接力到设置窗口外观页（activeTab='+((onAppearance&&onAppearance.activeTab)||'null')+'）');
-ok(onAppearance.popoutToggle===true,'外观页存在「在新窗口中打开设置」开关');
-checks.push('tab relay + popout toggle row');
+checks.push('tab relay');
+// 原版 1.14.4：「在新窗口中打开设置」在独立的“界面”页签，不在外观页
+app.setting.openTabById('interface');
+const onInterface=await waitFor(async()=>{const p=await probe();return p&&p.activeTab&&/界面|Interface/.test(p.activeTab)?p:null},6000,200);
+ok(onInterface,'主窗口 openTabById 接力到设置窗口界面页（activeTab='+((onInterface&&onInterface.activeTab)||'null')+'）');
+ok(!!onInterface&&onInterface.popoutToggle===true,'界面页存在「在新窗口中打开设置」开关');
+checks.push('interface tab + popout toggle row');
+app.setting.openTabById('appearance');
+await waitFor(async()=>{const p=await probe();return p&&p.activeTab&&/外观|Appearance/.test(p.activeTab)?p:null},6000,200);
 
 // 8) 截图（浅/深各一张）
 const shot=process.env.OBS_SCREENSHOT;
@@ -172,14 +179,14 @@ checks.push('window frame follows config (native)');
 // 16) 设置窗口内点击开关（真实发送方路径）：窗口在自身 sendSync 期间关闭不死锁，主窗口模态接力页签
 window.__SETTINGS_POPOUT_FORCE__=true;
 app.settings.updateAppSettings({settingsPopoutWindow:true});
-app.setting.openTabById('appearance');
+app.setting.openTabById('interface');
 const toggleReady=await waitFor(async()=>{const p=await probe();return p&&p.open&&p.popoutToggle?p:null});
 ok(toggleReady,'开关场景：窗口打开并定位开关行');
 const clickResult=await ipcRenderer.invoke('settings-window-probe',{action:'toggle-off'});
 ok(clickResult==='clicked','设置窗口内点击开关: '+JSON.stringify(clickResult));
 ok(await waitFor(()=>{return info().open?null:true},6000),'点击后设置窗口关闭（sendSync 不死锁）');
 ok(await waitFor(()=>document.querySelector('.modal-container .modal.mod-settings')?true:null,6000),'主窗口以模态重开');
-ok(app.setting.activeTab&&app.setting.activeTab.id==='appearance','模态接力到外观页');
+ok(app.setting.activeTab&&app.setting.activeTab.id==='interface','模态接力到界面页');
 ok(app.settings.appSettings.settingsPopoutWindow===false,'主窗口缓存同步为 false');
 app.setting.close();await wait(250);
 checks.push('in-window toggle click → modal');

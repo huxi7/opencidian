@@ -1,13 +1,15 @@
 /**
- * [INPUT]: 依赖 tokens-*.css 的 --setting-*、--size-*；消费设置页弹窗 DOM。
- * [OUTPUT]: 字体管理、功能区配置、启动耗时三个弹窗的样式。
- * [POS]: settings.css 的弹窗分片。仅设置页打开的模态使用，不改变通用 .modal 基座。
+ * [INPUT]: 依赖 tokens-*.css 的 --setting-*、--size-*；消费设置页弹窗、表单控件与浮层 DOM。
+ * [OUTPUT]: 开关/下拉/滑块/颜色等表单控件皮肤，以及字体管理、启动耗时、主题管理、拼写词典弹窗与语言胶囊、flair 徽标。
+ * [POS]: settings.css 的控件与弹窗分片。控件皮肤逐字移植自 app.css（9199 开关 / 7051 下拉 / 7769 滑块）；community-item 系列来自原版社区主题弹窗卡片。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 /* ==========================================================================
-   settings-dialogs.css — 设置页弹窗样式。
-   字体管理/功能区配置沿用 mobile-option-setting-item 行结构；
-   启动耗时弹窗逐字移植自 app.css 5084-5135。
+   settings-dialogs.css — 设置页弹窗与浮层组件样式。
+   字体管理沿用 mobile-option-setting-item 行结构；
+   启动耗时弹窗逐字移植自 app.css 5084-5135；
+   主题管理弹窗沿用 app.css 的 community-item 卡片；
+   拼写词典弹窗、语言胶囊与 flair 徽标来自原版 app.css。
    ========================================================================== */
 
 /* -------------------------------------------------- font manager */
@@ -22,14 +24,7 @@
 .font-missing-icon { display: inline-flex; vertical-align: middle; margin-inline-end: 2px; }
 .font-missing-icon .svg-icon { width: var(--icon-xs); height: var(--icon-xs); }
 
-/* ------------------------------------------------- ribbon configuration */
-.ribbon-config-item {
-  display: flex;
-  align-items: center;
-  gap: var(--size-2-3);
-  padding: var(--size-4-1) 0;
-}
-.ribbon-config-item .mobile-option-setting-item-name { flex: 1; }
+/* -------------------------------------------------- mobile option rows */
 .mobile-option-setting-item-remove-icon,
 .mobile-option-setting-item-add-icon {
   display: flex;
@@ -40,9 +35,135 @@
 .mobile-option-setting-item-remove-icon:hover,
 .mobile-option-setting-item-add-icon:hover { color: var(--text-normal); }
 .mobile-option-setting-item-option-icon { display: flex; align-items: center; color: var(--text-faint); }
-.ribbon-config-item.is-being-dragged { opacity: 0.5; }
-.ribbon-config-item.is-drop-target { box-shadow: inset 0 2px 0 0 var(--interactive-accent); }
-.ribbon-config-hidden { margin-top: var(--size-4-4); }
+
+/* --------------------------------------------- community theme modal (app.css) */
+.modal.mod-community-modal {
+  width: 900px;
+  height: 620px;
+  max-width: min(1000px, 92vw);
+  max-height: 82vh;
+  padding: 0;
+  overflow: hidden;
+}
+.modal.mod-community-modal .modal-content {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+}
+.modal.mod-community-modal .community-modal-body {
+  display: flex;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+.modal.mod-community-modal .modal-sidebar {
+  flex: 0 0 var(--modal-community-sidebar-width, 260px);
+  overflow-y: auto;
+  padding: var(--size-4-3) 0;
+}
+.community-modal-controls {
+  display: flex;
+  flex-direction: column;
+  gap: var(--size-4-3);
+}
+.community-modal-search {
+  display: flex;
+  align-items: center;
+  gap: var(--size-4-2);
+  max-width: 500px;
+  padding: 0 var(--size-4-3) var(--size-4-1);
+  margin-bottom: var(--size-4-2);
+}
+.community-modal-search .search-input-container { flex: 1; width: 100%; }
+.community-modal-search-summary {
+  font-size: var(--font-ui-smaller);
+  padding: 0 var(--size-4-3);
+}
+.community-modal-search-results-wrapper {
+  flex: 1 0 auto;
+  overflow: auto;
+  border-top: var(--border-width) solid var(--divider-color);
+}
+.community-modal-search-results {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: var(--size-4-3);
+  padding: var(--size-4-3);
+  align-content: start;
+}
+.community-item {
+  position: relative;
+  background-color: var(--background-primary);
+  padding: var(--size-4-3);
+  cursor: var(--cursor);
+  border-radius: var(--radius-m);
+  border: var(--border-width) solid var(--background-modifier-border);
+  display: flex;
+  flex-direction: column;
+  gap: var(--size-2-1);
+}
+.community-item:hover { border-color: var(--background-modifier-border-hover); }
+.community-item:focus-visible { box-shadow: 0 0 0 3px var(--background-modifier-border-focus); }
+.community-item.is-selected {
+  border-color: var(--interactive-normal);
+  background-color: var(--interactive-normal);
+}
+.community-item .flair {
+  --flair-background: var(--background-modifier-active-hover);
+  --flair-color: var(--text-accent);
+  margin-inline-start: var(--size-4-1);
+  vertical-align: middle;
+  top: -1px;
+}
+.community-item-name {
+  font-size: var(--font-ui-medium);
+  line-height: var(--line-height-tight);
+  font-weight: var(--font-medium);
+}
+.community-item-author {
+  font-size: var(--font-ui-smaller);
+  line-height: var(--line-height-tight);
+  color: var(--text-muted);
+}
+.community-item-badge.mod-update {
+  --icon-size: var(--icon-xs);
+  --icon-stroke: var(--icon-xs-stroke-width);
+  color: var(--interactive-accent);
+  position: absolute;
+  top: var(--size-4-3);
+  inset-inline-end: var(--size-4-3);
+}
+.community-item-screenshot {
+  max-width: 100%;
+  margin-top: var(--size-4-1);
+  object-fit: cover;
+  border-radius: var(--radius-s);
+  aspect-ratio: 16/9;
+  image-rendering: -webkit-optimize-contrast;
+}
+.community-item-screenshot.mod-unavailable {
+  text-align: center;
+  color: var(--text-muted);
+}
+.community-item-screenshot .placeholder-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+}
+.community-item-screenshot .placeholder-icon .svg-icon {
+  color: var(--text-faint);
+  width: var(--size-4-8);
+  height: var(--size-4-8);
+}
+.community-modal-button-container {
+  display: flex;
+  gap: var(--size-4-2);
+  justify-content: flex-end;
+  padding: var(--size-4-3) var(--size-4-4);
+  border-top: var(--border-width) solid var(--divider-color);
+}
 
 /* --------------------------------------------------- startup time modal */
 .modal.mod-plugin-debug {
@@ -92,4 +213,329 @@
   font-variant-numeric: tabular-nums;
   font-size: var(--font-ui-small);
   color: var(--text-muted);
+}
+
+/* ------------------------------------------- spellcheck dict & language pills */
+/* 原版 app.css：拼写检查词典弹窗与多选 pill（设置页语言行） */
+.spellchecker-dictionary-container {
+  max-height: 60vh;
+  overflow: auto;
+}
+.spellchecker-dictionary-item {
+  display: flex;
+  margin-bottom: 10px;
+}
+.spellchecker-dictionary-word {
+  flex-grow: 1;
+}
+.spellchecker-dictionary-remove-button {
+  cursor: var(--cursor);
+  color: var(--text-muted);
+  margin-inline-end: 10px;
+}
+.spellchecker-dictionary-remove-button:hover { color: var(--text-normal); }
+
+.multi-select-container {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--size-2-2);
+  align-items: center;
+}
+.multi-select-pill {
+  --icon-size: var(--icon-xs);
+  --icon-stroke: var(--icon-xs-stroke-width);
+  display: flex;
+  align-items: center;
+  background-color: var(--pill-background);
+  border: var(--pill-border-width, 1px) solid var(--pill-border-color, var(--background-modifier-border));
+  border-radius: var(--pill-radius);
+  color: var(--pill-color, var(--text-normal));
+  cursor: var(--cursor);
+  font-weight: var(--pill-weight, var(--font-normal));
+  padding: var(--pill-padding-y) 0;
+  line-height: 1;
+  max-width: calc(100% - var(--size-2-3) - 1ch);
+  gap: var(--size-2-1);
+}
+.multi-select-pill:hover { background-color: var(--pill-background-hover, var(--background-modifier-hover)); }
+.multi-select-pill-content {
+  word-break: break-word;
+  margin-inline-start: var(--pill-padding-x, var(--size-4-2));
+  overflow: hidden;
+}
+.multi-select-pill-remove-button {
+  margin-inline-end: var(--size-2-3);
+  cursor: var(--cursor);
+  color: var(--pill-color-remove, var(--text-muted));
+  border-radius: var(--radius-s);
+  display: flex;
+  align-items: center;
+  --icon-size: var(--icon-xs);
+  --icon-stroke: var(--icon-xs-stroke-width);
+}
+.multi-select-pill-remove-button:hover { color: var(--pill-color-remove-hover, var(--text-normal)); }
+
+/* ------------------------------------------------------- flair / warning */
+/* 原版 app.css：.flair 徽标（忽略文件正则标记等）与通用 .mod-warning 文本色 */
+.flair {
+  background-color: var(--flair-background, var(--background-modifier-hover));
+  border-radius: var(--radius-s);
+  color: var(--flair-color, var(--text-muted));
+  font-size: 10px;
+  letter-spacing: 0.05em;
+  margin-inline-start: var(--size-4-2);
+  padding: var(--size-2-1) var(--size-2-2);
+  position: relative;
+  text-transform: uppercase;
+  white-space: nowrap;
+  vertical-align: middle;
+}
+.flair.mod-flat { vertical-align: top; }
+.mod-warning { color: var(--text-error); }
+
+/* ------------------------------------------- 设置页表单控件皮肤（app.css 7051/7769/9199） */
+/* ---------------------------------------------------------- toggle (app.css 9199) */
+.checkbox-container {
+  -webkit-app-region: no-drag;
+  cursor: var(--cursor);
+  background-color: var(--background-modifier-border-hover);
+  border-radius: var(--toggle-radius);
+  display: inline-block;
+  flex-shrink: 0;
+  position: relative;
+  user-select: none;
+  box-shadow: inset 0 4px 10px rgba(0, 0, 0, 0.07);
+  transition: box-shadow 0.15s ease-in-out, outline 0.15s ease-in-out, border 0.15s ease-in-out, opacity 0.15s ease-in-out;
+  outline: 0 solid var(--background-modifier-border-focus);
+  width: var(--toggle-s-width);
+  height: calc(var(--toggle-s-thumb-height) + var(--toggle-s-border-width) * 2);
+}
+.checkbox-container input[type='checkbox'] {
+  position: absolute;
+  opacity: 0;
+  left: 0;
+}
+.checkbox-container.is-enabled {
+  background-color: var(--interactive-accent);
+}
+.checkbox-container:before {
+  content: '';
+  display: block;
+  position: absolute;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  right: 0;
+  opacity: 0;
+}
+.checkbox-container:after {
+  pointer-events: none;
+  content: '';
+  display: block;
+  position: absolute;
+  background-color: var(--toggle-thumb-color);
+  border-radius: var(--toggle-thumb-radius);
+  transition: transform 0.15s ease-in-out, width 0.1s ease-in-out 0.05s, height 0.1s ease-in-out 0.05s, margin-top 0.1s ease-in-out 0.05s, left 0.1s ease-in-out 0.05s, opacity 0.1s ease-in-out 0.05s;
+  left: 0;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.15);
+}
+.checkbox-container:focus-visible {
+  outline: var(--toggle-s-border-width) solid var(--background-modifier-border-focus);
+}
+.checkbox-container:after {
+  width: var(--toggle-s-thumb-width);
+  height: var(--toggle-s-thumb-height);
+  margin: var(--toggle-s-border-width) 0 0 0;
+  transform: translate3d(var(--toggle-s-border-width), 0, 0);
+}
+.checkbox-container.is-enabled:after {
+  transform: translate3d(calc(var(--toggle-s-width) - var(--toggle-s-thumb-width) - var(--toggle-s-border-width)), 0, 0);
+}
+.checkbox-container:where(:not(.is-disabled)):active:after {
+  opacity: var(--toggle-thumb-opacity-active);
+  width: calc(var(--toggle-s-thumb-width) + var(--toggle-s-border-width) * 2);
+  height: calc(var(--toggle-s-thumb-height) + var(--toggle-s-border-width) * 2);
+  margin-top: 0;
+}
+.modal .checkbox-container {
+  width: var(--toggle-width);
+  height: calc(var(--toggle-thumb-height) + var(--toggle-border-width) * 2);
+}
+.modal .checkbox-container:focus-visible {
+  outline: var(--toggle-border-width) solid var(--background-modifier-border-focus);
+}
+.modal .checkbox-container:after {
+  width: var(--toggle-thumb-width);
+  height: var(--toggle-thumb-height);
+  margin: var(--toggle-border-width) 0 0 0;
+  transform: translate3d(var(--toggle-border-width), 0, 0);
+}
+.modal .checkbox-container.is-enabled:after {
+  transform: translate3d(calc(var(--toggle-width) - var(--toggle-thumb-width) - var(--toggle-border-width)), 0, 0);
+}
+.modal .checkbox-container.is-enabled:where(:not(.is-disabled)):active:after {
+  left: -4px;
+}
+.modal .checkbox-container:where(:not(.is-disabled)):active:after {
+  opacity: var(--toggle-thumb-opacity-active);
+  width: calc(var(--toggle-thumb-width) + var(--toggle-border-width) * 4);
+  height: calc(var(--toggle-thumb-height) + var(--toggle-border-width) * 4);
+  margin-top: calc(var(--toggle-border-width) * -1);
+}
+.checkbox-container.mod-small {
+  width: var(--toggle-s-width);
+  height: calc(var(--toggle-s-thumb-height) + var(--toggle-s-border-width) * 2);
+}
+.checkbox-container.mod-small:after {
+  width: var(--toggle-s-thumb-width);
+  height: var(--toggle-s-thumb-height);
+  margin: var(--toggle-s-border-width) 0 0 0;
+  transform: translate3d(var(--toggle-s-border-width), 0, 0);
+}
+.checkbox-container.mod-small.is-enabled:after {
+  transform: translate3d(calc(var(--toggle-s-width) - var(--toggle-s-thumb-width) - var(--toggle-s-border-width)), 0, 0);
+}
+.checkbox-container.mod-small:where(:not(.is-disabled)):active:after {
+  opacity: var(--toggle-thumb-opacity-active);
+  width: calc(var(--toggle-s-thumb-width) + var(--toggle-s-border-width) * 2);
+  height: calc(var(--toggle-s-thumb-height) + var(--toggle-s-border-width) * 2);
+  margin-top: 0;
+}
+.checkbox-container.is-disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* --------------------------------------------------------- dropdown (app.css 7051) */
+.dropdown {
+  -webkit-app-region: no-drag;
+  height: var(--input-height);
+  font-size: var(--font-ui-small);
+  font-family: inherit;
+  font-weight: var(--input-font-weight);
+  color: var(--text-normal);
+  line-height: var(--line-height-tight);
+  max-width: 100%;
+  box-sizing: border-box;
+  margin: 0;
+  border: 0;
+  box-shadow: var(--input-shadow);
+  border-radius: var(--input-radius);
+  corner-shape: var(--input-corner-shape);
+  -webkit-appearance: none;
+  appearance: none;
+  background-color: var(--dropdown-background);
+  padding: var(--dropdown-padding);
+  background-repeat: no-repeat, repeat;
+  background-position: var(--dropdown-background-position);
+  background-size: var(--dropdown-background-size);
+  background-blend-mode: hard-light;
+}
+@media (hover: hover) {
+  select:hover,
+  .dropdown:hover {
+    box-shadow: var(--input-shadow-hover);
+    background-color: var(--dropdown-background-hover);
+  }
+}
+select:focus-visible,
+.dropdown:focus-visible {
+  box-shadow: 0 0 0px 3px var(--background-modifier-border-focus);
+  outline: none;
+}
+.dropdown {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 width=%2724%27 height=%2724%27 viewBox=%270 0 24 24%27 fill=%27none%27 stroke=%27%23000%27 opacity=%270.9%27 stroke-width=%272%27 stroke-linecap=%27round%27 stroke-linejoin=%27round%27 %3E%3Cpath d=%27m7 15 5 5 5-5%27/%3E%3Cpath d=%27m7 9 5-5 5 5%27/%3E%3C/svg%3E");
+}
+.theme-dark .dropdown {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 width=%2724%27 height=%2724%27 viewBox=%270 0 24 24%27 fill=%27none%27 stroke=%27%23FFF%27 opacity=%270.6%27 stroke-width=%272%27 stroke-linecap=%27round%27 stroke-linejoin=%27round%27 %3E%3Cpath d=%27m7 15 5 5 5-5%27/%3E%3Cpath d=%27m7 9 5-5 5 5%27/%3E%3C/svg%3E");
+}
+.dropdown option {
+  font-weight: normal;
+  background-color: var(--background-primary);
+}
+
+/* ----------------------------------------------------- slider + color (app.css 7769) */
+input[type='range'] {
+  width: 100px;
+  -webkit-appearance: none;
+  background-color: var(--slider-track-background);
+  border-radius: var(--slider-track-height);
+  height: var(--slider-track-height);
+  padding: 0;
+  outline: none;
+}
+input[type='range'].slider {
+  --slider-fill-position: calc(var(--slider-thumb-width) / 2 + (100% - var(--slider-thumb-width)) * var(--slider-fill-ratio, 0));
+  background-image: linear-gradient(to var(--inset-end, right), var(--slider-fill-background, var(--interactive-accent)) var(--slider-fill-position), transparent var(--slider-fill-position));
+}
+input[type='range']::-webkit-slider-runnable-track {
+  height: 6px;
+  -webkit-appearance: none;
+}
+input[type='range']::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  height: var(--slider-thumb-height);
+  width: var(--slider-thumb-width);
+  border-radius: var(--slider-thumb-radius);
+  cursor: default;
+  background: var(--slider-thumb-background, #FFF);
+  border: var(--slider-thumb-border-width) solid var(--slider-thumb-border-color);
+  position: relative;
+  top: var(--slider-thumb-y);
+  transition: all 0.1s linear;
+  box-shadow: var(--slider-thumb-shadow, 0 0px 2px 0px rgba(0, 0, 0, 0.1), 0 2px 6px 0px rgba(0, 0, 0, 0.1));
+}
+input[type='range']:where(:not(:disabled))::-webkit-slider-thumb:hover,
+input[type='range']:where(:not(:disabled))::-webkit-slider-thumb:active {
+  background: var(--slider-thumb-background-hover, #FFF);
+  border-color: var(--background-modifier-border-focus);
+  box-shadow: var(--slider-thumb-shadow-hover, var(--slider-thumb-shadow, 0 0px 2px 0px rgba(0, 0, 0, 0.1), 0 2px 6px 0px rgba(0, 0, 0, 0.1)));
+  transition: all 0.1s linear;
+}
+input[type='range']:where(:not(:disabled))::-webkit-slider-thumb:active {
+  width: var(--slider-thumb-width-active, calc(var(--slider-thumb-width) + 4px));
+  height: var(--slider-thumb-height-active, calc(var(--slider-thumb-height) + 4px));
+  opacity: var(--slider-thumb-opacity-active, 0.7);
+  top: var(--slider-thumb-y-active, calc(var(--slider-thumb-y) - 2px));
+}
+body:not(.is-mobile) input[type=range]:focus {
+  box-shadow: none;
+}
+body:not(.is-mobile) input[type=range]:focus::-webkit-slider-thumb {
+  box-shadow: var(--slider-thumb-shadow-active, var(--slider-thumb-shadow, 0 0px 2px 0px rgba(0, 0, 0, 0.1), 0 2px 6px 0px rgba(0, 0, 0, 0.1)));
+}
+body:not(.is-mobile) input[type=range]:focus-visible::-webkit-slider-thumb {
+  border-color: var(--background-modifier-border-focus);
+  box-shadow: var(--slider-thumb-shadow-focus, var(--slider-thumb-shadow, 0 0px 2px 0px rgba(0, 0, 0, 0.1), 0 2px 6px 0px rgba(0, 0, 0, 0.1)), 0 0 0px 2px var(--background-modifier-border-focus));
+}
+input[type="color"] {
+  -webkit-appearance: none;
+  width: calc(var(--swatch-width) + 4px);
+  background-color: transparent;
+  border: none;
+  cursor: var(--cursor);
+  padding: 0;
+}
+input[type="color"]::-webkit-color-swatch-wrapper {
+  padding: 2px;
+}
+input[type="color"]::-webkit-color-swatch {
+  border: 0px;
+  box-shadow: var(--swatch-shadow);
+  border-radius: var(--swatch-radius);
+  height: var(--swatch-height);
+  width: var(--swatch-width);
+  align-self: center;
+}
+@media (hover: hover) {
+  input[type="color"]::-webkit-color-swatch:hover {
+    box-shadow: inset 0 0 0 1px rgba(var(--mono-rgb-100), 0.25), 0 0 0 var(--input-border-width-focus) var(--background-modifier-border-hover);
+  }
+}
+input[type="color"]:focus-visible::-webkit-color-swatch,
+input[type="color"]:focus::-webkit-color-swatch {
+  box-shadow: var(--swatch-shadow), 0 0 0 var(--input-border-width-focus) var(--background-modifier-border-focus);
+}
+select.mod-hidden {
+  display: none;
 }

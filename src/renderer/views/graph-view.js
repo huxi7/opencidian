@@ -2,6 +2,8 @@
  * [INPUT]: 依赖 View、GraphEngine、GraphRenderer、图谱选项读写与剪贴板接口。
  * [OUTPUT]: 导出 GraphView 与 LocalGraphView；保留 graph/localgraph 视图类型。
  * [POS]: 图谱视图壳；全局选项写 graph.json，局部文件与选项随布局保存。
+ *        面板菜单（原版 onPaneMenu）只追加「复制截图」一项，放在 action 段；
+ *        原版没有局部图/导出/聚焦等图谱专属菜单项，其余来自通用叶子菜单。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 import { View } from '../core/view.js';
@@ -40,6 +42,7 @@ class GraphViewBase extends View {
     this._children.push(() => el.removeEventListener(type, callback));
   }
   registerInterval(id) { this._children.push(() => clearInterval(id)); }
+  /* 原版 onPaneMenu：通用叶子菜单之外只加一条「复制截图」（action 段，图标 lucide-image） */
   onPaneMenu(menu) {
     menu.addItem((item) => item.setSection('action')
       .setTitle(t('plugins.graph-view.action-copy-screenshot')).setIcon('image')
@@ -106,7 +109,8 @@ export class LocalGraphView extends GraphViewBase {
   }
   getViewType() { return 'localgraph'; }
   getDisplayText() {
-    if (!this.file) return t('plugins.graph-view.name');
+    /* 原版：绑定文件时显示「X 的关系图」，未绑定文件时显示「局部关系图」 */
+    if (!this.file) return t('plugins.graph-view.local-name');
     return t('plugins.graph-view.tab-title', { displayText: this.file.basename });
   }
   getState() {

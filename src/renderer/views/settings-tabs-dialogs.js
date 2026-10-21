@@ -1,17 +1,21 @@
 /**
- * [INPUT]: 依赖 ../core/i18n.js 的 tt；依赖 ../core/modals.js 的 Modal；依赖 ../core/notices.js 的 Notice；依赖 ../core/ipc.js 的 Desktop；依赖 ../core/suggest.js 的 AbstractInputSuggest；依赖 ../core/vault.js 的 TFolder；依赖 ../core/icons.js 的 setIcon
- * [OUTPUT]: 导出 VERSION、StartupTimeModal、VimTestModal、ExcludedFilesModal、SpellcheckDictModal、trackSliderFill、isRegexFilterValue、FilePathSuggest、FolderPathSuggest
- * [POS]: views/ 的设置页签配套件。弹窗与路径建议器从 settings-tabs.js 拆出，供关于/编辑器/文件页复用；只依赖 core，不反向依赖页签类。
+ * [INPUT]: 依赖 ../core/i18n.js 的 tt；依赖 ../core/modals.js 的 Modal；依赖 ../core/notices.js 的 Notice；依赖 ../core/ipc.js 的 Desktop；依赖 ../core/suggest.js 的 AbstractInputSuggest；依赖 ../core/vault.js 的 TFolder；依赖 ../core/icons.js 的 setIcon；Node 内置 fs/path
+ * [OUTPUT]: 导出 VERSION、StartupTimeModal、VimTestModal、SpellcheckDictModal、ThemeManagerModal、openFontPage、listFontCandidates、AddExcludedFilterModal、trackSliderFill、addSliderValue、isRegexFilterValue、fontExists、readInstalledThemes、FilePathSuggest、FolderPathSuggest
+ * [POS]: views/ 的设置页签配套件。弹窗与路径建议器从 settings-tabs.js 拆出，供关于/编辑器/文件/外观页复用；只依赖 core，不反向依赖页签类。ThemeManagerModal 对齐原版 1.14.4 的社区主题弹窗骨架（mod-community-modal.mod-sidebar-layout.mod-community-theme + community-item 列表），但只列本机 .obsidian/themes 已安装主题（原版依赖社区目录，本复刻无该目录）。openFontPage 是原版 Ire 字体子页面（说明段 + 当前字体列表 + 字体建议组）。AddExcludedFilterModal 对齐原版 mod-form-sheet 表单弹窗。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 /* Settings-tab support: dialogs, path suggesters, shared helpers. */
 import { tt } from '../core/i18n.js';
 import { Modal } from '../core/modals.js';
+import { Setting, SettingGroup } from '../core/setting.js';
 import { Notice } from '../core/notices.js';
 import { Desktop } from '../core/ipc.js';
 import { AbstractInputSuggest } from '../core/suggest.js';
 import { TFolder } from '../core/vault.js';
 import { setIcon } from '../core/icons.js';
+
+const fs = require('fs');
+const nodePath = require('path');
 
 export const VERSION = '1.0.0';
 
@@ -100,73 +104,33 @@ export class VimTestModal extends Modal {
   }
 }
 
-/** 忽略文件管理弹窗：列表 + 添加输入 + 保存/取消（对齐原版行为，简化 UI）。 */
-export class ExcludedFilesModal extends Modal {
-  constructor(app, onDone) {
+/**
+ * 原版 1.14.4「忽略文件」子页面的新增表单弹窗：mod-lg.mod-form-sheet，
+ * 单输入框 + form-field-help 说明 + 完成/取消按钮。
+ */
+export class AddExcludedFilterModal extends Modal {
+  constructor(app, onAdd) {
     super(app);
-    this.app = app;
-    this.onDone = onDone;
-    this.values = [...(app.settings.appSettings.userIgnoreFilters || [])];
-    this.setTitle(tt('setting.file.option-excluded-files', '忽略文件'));
-  }
-
-  onOpen() {
-    this.display();
-  }
-
-  display() {
-    const container = this.contentEl;
-    container.empty();
-    const listEl = container.createDiv('excluded-files-list');
-    for (const value of this.values) {
-      listEl.createDiv('mobile-option-setting-item', (row) => {
-        row.createSpan({ cls: 'mobile-option-setting-item-name', text: value });
-        if (isRegexFilterValue(value)) row.createSpan({ cls: 'flair mod-flat', text: tt('setting.file.label-regex', '正则') });
-        const btn = row.createDiv('clickable-icon mobile-option-setting-item-option-icon');
-        setIcon(btn, 'lucide-x');
-        btn.addEventListener('click', () => {
-          this.values = this.values.filter((x) => x !== value);
-          this.display();
-        });
+    this.onAdd = onAdd;
+    this.setTitle(tt('setting.file.title-add-excluded-filter', '添加排除项'));
+    this.modalEl.addClass('mod-lg', 'mod-form-sheet');
+    const field = this.contentEl.createEl('p', { cls: 'form-field' });
+    field.createEl('label');
+    this.inputEl = field.createEl('input', { type: 'text', attr: { spellcheck: 'false' } });
+    field.createDiv('form-field-help').setText(tt('setting.file.help-excluded-filter', '输入路径或正则表达式，例如 /daily-.*/'));
+    const buttons = this.contentEl.createDiv('modal-button-container');
+    buttons.createEl('button', { cls: 'mod-cta', text: tt('dialogue.button-done', '完成') })
+      .addEventListener('click', () => {
+        const value = this.inputEl.value.trim();
+        if (!value) {
+          new Notice(tt('setting.file.message-empty-filter', '条件不可为空'));
+          return;
+        }
+        this.close();
+        if (this.onAdd) this.onAdd(value);
       });
-    }
-    if (!this.values.length) {
-      container.createEl('p', { text: tt('setting.file.label-no-excluded-filters-applied', '目前没有需要忽略的文件。') });
-    }
-    container.createDiv('setting-item-name', (t2) => t2.setText(tt('setting.file.label-filter-conditions', '条件')));
-    const addRow = container.createDiv('excluded-files-add-row');
-    const input = addRow.createEl('input', {
-      type: 'text',
-      attr: { placeholder: tt('setting.file.placeholder-excluded-filter', '请输入文件路径或正则表达式') },
-    });
-    input.style.flex = '1';
-    const errorEl = container.createDiv('mod-warning');
-    errorEl.hide();
-    const suggest = new ExcludedPathSuggest(this.app, input);
-    const add = () => {
-      const value = input.value.trim();
-      if (!value) {
-        errorEl.setText(tt('setting.file.message-empty-filter', '条件不能为空。'));
-        errorEl.show();
-        return;
-      }
-      errorEl.hide();
-      this.values.push(value);
-      input.value = '';
-      this.display();
-    };
-    input.addEventListener('keydown', (ev) => {
-      if (ev.key === 'Enter') { ev.preventDefault(); add(); }
-    });
-    suggest.onSelect = () => add();
-    addRow.createEl('button', { text: tt('interface.button-add', '添加') }).addEventListener('click', add);
-    const buttons = container.createDiv('modal-button-container');
-    buttons.createEl('button', { text: tt('dialogue.button-cancel', '取消') }).addEventListener('click', () => this.close());
-    buttons.createEl('button', { cls: 'mod-cta', text: tt('dialogue.button-save', '保存') }).addEventListener('click', () => {
-      this.app.settings.updateAppSettings({ userIgnoreFilters: this.values.length ? this.values : null });
-      this.close();
-      this.onDone && this.onDone();
-    });
+    buttons.createEl('button', { text: tt('dialogue.button-cancel', '取消') })
+      .addEventListener('click', () => this.close());
   }
 }
 
@@ -201,6 +165,293 @@ export class SpellcheckDictModal extends Modal {
   }
 }
 
+/**
+ * 读取本机已安装主题（原版 customCss.readThemes）：
+ * 现代主题 = themes/<name>/manifest.json 且 manifest.name 与目录同名；
+ * 旧版主题 = themes/ 下的裸 .css 文件（显示带 “ (Legacy)” 后缀）。
+ */
+export function readInstalledThemes(settingsDir) {
+  const dir = nodePath.join(settingsDir, 'themes');
+  const themes = [];
+  const legacy = [];
+  try {
+    if (!fs.existsSync(dir)) return { themes, legacy };
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+      if (entry.isDirectory()) {
+        const manifestPath = nodePath.join(dir, entry.name, 'manifest.json');
+        try {
+          if (!fs.existsSync(manifestPath)) continue;
+          const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+          if (!manifest || manifest.name !== entry.name) continue;
+        } catch (e) { continue; }
+        themes.push({ name: entry.name, dir: nodePath.join(dir, entry.name), legacy: false });
+      } else if (entry.name.toLowerCase().endsWith('.css')) {
+        legacy.push({ name: entry.name.replace(/\.css$/i, ''), dir: null, legacy: true });
+      }
+    }
+  } catch (e) { /* 目录不可读时返回空列表 */ }
+  return { themes, legacy };
+}
+
+/**
+ * 主题管理弹窗：对齐原版 1.14.4「社区主题」弹窗的骨架
+ * （.modal.mod-community-modal.mod-sidebar-layout.mod-community-theme，
+ *   .community-modal-search 搜索 + .community-modal-search-summary 计数 +
+ *   .community-modal-search-results 里的 .community-item 卡片）。
+ * 原版数据来自社区主题目录；OpenSidian 无该目录，故只列 .obsidian/themes 下已安装主题，
+ * 保留“默认”项、截图位与“使用中”徽标。
+ */
+export class ThemeManagerModal extends Modal {
+  constructor(app, onChange) {
+    super(app);
+    this.app = app;
+    this.onChange = onChange;
+    this.selected = '';
+    this.modalEl.addClass('mod-community-modal', 'mod-sidebar-layout', 'mod-community-theme');
+    this.setTitle(tt('setting.appearance.label-installed-themes', '已安装主题'));
+  }
+
+  onOpen() { this.render(); }
+
+  /** 主题截图：读 theme/screenshot.png 转 data URL；缺失时用占位图标。 */
+  screenshotUrl(dir) {
+    if (!dir) return '';
+    try {
+      const file = nodePath.join(dir, 'screenshot.png');
+      if (!fs.existsSync(file)) return '';
+      const buf = fs.readFileSync(file);
+      return 'data:image/png;base64,' + buf.toString('base64');
+    } catch (e) { return ''; }
+  }
+
+  render() {
+    const app = this.app;
+    const current = String(app.settings.appearance.cssTheme || '');
+    const { themes, legacy } = readInstalledThemes(app.settings.dir);
+    const all = [{ name: '', label: tt('setting.appearance.label-default-theme', '默认'), legacy: false }, ...themes, ...legacy];
+    if (!this.selected) this.selected = current;
+
+    const content = this.contentEl;
+    content.empty();
+    const body = content.createDiv('community-modal-body');
+    const sidebar = body.createDiv('modal-sidebar');
+    const controls = sidebar.createDiv('community-modal-controls');
+    const searchWrap = controls.createDiv('community-modal-search');
+    const searchContainer = searchWrap.createDiv('search-input-container mod-raised');
+    const input = searchContainer.createEl('input', { type: 'search', attr: { enterkeyhint: 'search', spellcheck: 'false' } });
+    input.setAttribute('placeholder', tt('plugins.custom-css.prompt-filter', '搜索…'));
+    const clearBtn = searchContainer.createDiv('search-input-clear-button');
+    clearBtn.addEventListener('click', () => { input.value = ''; this.render(); });
+
+    const wrapper = body.createDiv('community-modal-search-results-wrapper');
+    const emptyState = wrapper.createDiv('community-modal-empty-state');
+    emptyState.hide();
+    const status = wrapper.createDiv('community-modal-search-results-status');
+    status.hide();
+    const results = wrapper.createDiv('community-modal-search-results');
+
+    const query = String(input.value || '').trim().toLowerCase();
+    const filtered = all.filter((item) => !query || item.name.toLowerCase().includes(query));
+    // 原版：计数行 = labelSearchSummary(themeCount: nouns.themeWithCount(n))
+    const themeCount = tt('nouns.theme-with-count', '{{count}} 个主题', { count: filtered.length });
+    controls.createDiv('community-modal-search-summary u-muted')
+      .setText(tt('plugins.custom-css.label-search-summary', '显示 {{themeCount}}:', { themeCount }));
+
+    for (const item of filtered) {
+      const label = item.name || item.label;
+      const card = results.createDiv('community-item tappable');
+      if (item.name === this.selected) card.addClass('mod-active');
+      const nameEl = card.createDiv('community-item-name');
+      nameEl.setText(label);
+      if (item.name === current) nameEl.createSpan({ cls: 'flair mod-pop', text: tt('setting.appearance.label-currently-active', '使用中') });
+      else if (item.legacy) nameEl.createSpan({ cls: 'flair', text: tt('plugins.custom-css.label-legacy', '旧版') });
+      else if (item.name) nameEl.createSpan({ cls: 'flair', text: tt('plugins.custom-css.label-installed', '已下载') });
+      const screenshot = this.screenshotUrl(item.dir);
+      if (screenshot) {
+        const img = card.createEl('img', { cls: 'community-item-screenshot', attr: { alt: label, loading: 'lazy' } });
+        img.src = screenshot;
+      } else {
+        const holder = card.createDiv('community-item-screenshot mod-unavailable');
+        setIcon(holder.createDiv('placeholder-icon'), 'lucide-camera-off');
+      }
+      card.addEventListener('click', () => {
+        this.selected = item.name;
+        this.render();
+      });
+    }
+    if (!filtered.length) {
+      emptyState.setText(tt('setting.no-search-results', '未找到设置。'));
+      emptyState.show();
+    }
+
+    const footer = content.createDiv('community-modal-button-container');
+    const active = String(app.settings.appearance.cssTheme || '');
+    if (active) {
+      footer.createEl('button', { text: tt('plugins.custom-css.label-stop-use', '禁用该主题') })
+        .addEventListener('click', () => {
+          app.settings.updateAppearance({ cssTheme: '' });
+          this.selected = '';
+          this.close();
+          if (this.onChange) this.onChange();
+        });
+    }
+    const useBtn = footer.createEl('button', { cls: 'mod-cta', text: tt('plugins.custom-css.label-use', '使用') });
+    useBtn.disabled = this.selected === active;
+    useBtn.addEventListener('click', () => {
+      app.settings.updateAppearance({ cssTheme: this.selected });
+      this.close();
+      if (this.onChange) this.onChange();
+    });
+  }
+}
+
+/** 字体候选（对齐原版 Lre 系统字体清单的常用子集 + 浏览器已加载字体）。 */
+export function listFontCandidates() {
+  const common = ['Inter', 'Arial', 'Arial Black', 'Bahnschrift', 'Calibri', 'Cambria', 'Candara',
+    'Comic Sans MS', 'Consolas', 'Courier New', 'Georgia', 'Impact', 'Lucida Console',
+    'Menlo', 'Microsoft YaHei', 'Monaco', 'Noto Sans', 'PingFang SC', 'Segoe UI', 'SimSun',
+    'Songti SC', 'Times New Roman', 'Verdana', '微软雅黑', '苹方', '等线'];
+  const loaded = [];
+  try { if (document.fonts) for (const face of document.fonts) loaded.push(String(face.family).replace(/^"|"$/g, '')); } catch (e) {}
+  return [...new Set([...loaded, ...common])];
+}
+
+/**
+ * 字体子页面（原版 Ire）：
+ * .setting-page-content > p.setting-page-desc + 两个 .setting-group.mod-list
+ *  - 当前字体：每行 .setting-item（名称按自身字体预览 + 缺失提示 mod-warning + 删除钮 + 拖拽手柄）
+ *  - 字体建议：搜索框 + .setting-items 里的 mod-action tappable 行（含手输字体行）
+ * 变更立即落盘（原版 onChange → setConfig(key, fonts.join(','))）。
+ */
+export function openFontPage(setting, app, options) {
+  const { title, key } = options || {};
+  const fonts = String((app.settings.appearance || {})[key] || '').split(',').map((x) => x.trim()).filter(Boolean);
+  const commit = (next) => app.settings.updateAppearance({ [key]: next.join(',') });
+  setting.openPage({
+    title: title || '',
+    build: (contentEl) => renderFontPage(contentEl, app, fonts, commit),
+  });
+}
+
+/** 字体页渲染（原版 Ire.display）。 */
+function renderFontPage(containerEl, app, fonts, commit) {
+  containerEl.empty();
+  const descEl = containerEl.createEl('p', { cls: 'setting-page-desc' });
+
+  /* 当前字体列表 */
+  let dragFont = null;
+  const listGroup = new SettingGroup(containerEl);
+  listGroup.addClass('mod-list');
+  const renderList = () => {
+    descEl.setText(fonts.length
+      ? tt('setting.appearance.label-font-applied', '列表中第一种字体将被应用。若该字体不存在于当前设备上，则顺延至存在于当前设备上的字体。')
+      : tt('setting.appearance.label-no-custom-font-set', '当前未指定自定义字体。请在下方添加一个。'));
+    listGroup.listEl.empty();
+    fonts.forEach((font) => {
+      const setting = new Setting(listGroup.listEl);
+      setting.setName(font);
+      setting.nameEl.style.fontFamily = font;
+      if (!fontExists(font)) {
+        setting.setDesc(tt('setting.appearance.msg-font-not-found', '系统中不存在此字体。'));
+        setting.descEl.addClass('mod-warning');
+      }
+      setting.addExtraButton((b) => b
+        .setIcon('lucide-x')
+        .setTooltip(tt('interface.delete-action-short-name', '删除'))
+        .onClick(() => {
+          fonts.splice(fonts.indexOf(font), 1);
+          commit(fonts);
+          renderList();
+          renderSuggest();
+        }));
+      setting.addExtraButton((b) => {
+        b.setIcon('lucide-menu');
+        b.setTooltip(tt('interface.drag-to-rearrange', '拖动可调整布局'));
+        b.extraSettingsEl.addClass('mod-drag-handle');
+        b.extraSettingsEl.setAttr('tabindex', '-1');
+      });
+      // 原版：手柄拖拽重排
+      const handle = setting.controlEl.querySelector('.mod-drag-handle');
+      if (handle) {
+        handle.setAttr('draggable', 'true');
+        handle.addEventListener('dragstart', (ev) => {
+          dragFont = font;
+          setting.settingEl.addClass('is-being-dragged');
+          try { ev.dataTransfer.setData('text/plain', font); } catch (e) {}
+        });
+        handle.addEventListener('dragend', () => setting.settingEl.removeClass('is-being-dragged'));
+      }
+      setting.settingEl.addEventListener('dragover', (ev) => {
+        if (!dragFont) return;
+        ev.preventDefault();
+        setting.settingEl.addClass('is-drop-target');
+      });
+      setting.settingEl.addEventListener('dragleave', () => setting.settingEl.removeClass('is-drop-target'));
+      setting.settingEl.addEventListener('drop', (ev) => {
+        ev.preventDefault();
+        setting.settingEl.removeClass('is-drop-target');
+        const from = dragFont;
+        dragFont = null;
+        if (!from || from === font) return;
+        const fromIndex = fonts.indexOf(from);
+        const toIndex = fonts.indexOf(font);
+        if (fromIndex < 0 || toIndex < 0) return;
+        fonts.splice(fromIndex, 1);
+        fonts.splice(toIndex, 0, from);
+        commit(fonts);
+        renderList();
+      });
+    });
+  };
+
+  /* 字体建议 */
+  const suggestGroup = new SettingGroup(containerEl);
+  suggestGroup.addClass('mod-list');
+  let searchInput = null;
+  suggestGroup.addSearch((search) => {
+    searchInput = search.inputEl;
+    search.setPlaceholder(tt('setting.appearance.option-font-placeholder', '请输入字体名称…'));
+    search.onChange(() => renderSuggest());
+  });
+  const renderSuggest = () => {
+    const query = (searchInput && searchInput.value ? searchInput.value : '').trim();
+    const lower = query.toLowerCase();
+    suggestGroup.listEl.empty();
+    suggestGroup.listEl.addClass('is-loading');
+    const candidates = listFontCandidates();
+    const addSuggestion = (name, isManual) => {
+      const row = new Setting(suggestGroup.listEl);
+      row.setClass('mod-action');
+      row.setClass('tappable');
+      row.setName(name);
+      row.nameEl.style.fontFamily = name;
+      row.nameEl.style.color = 'var(--text-normal)';
+      if (isManual && !fontExists(name)) {
+        row.setDesc(tt('setting.appearance.msg-font-not-found', '系统中不存在此字体。'));
+        row.descEl.addClass('mod-warning');
+      }
+      row.settingEl.addEventListener('click', () => {
+        fonts.push(name);
+        commit(fonts);
+        renderList();
+        renderSuggest();
+      });
+    };
+    for (const name of candidates) {
+      if (fonts.includes(name)) continue;
+      if (query && !name.toLowerCase().includes(lower)) continue;
+      addSuggestion(name, false);
+    }
+    if (query && !fonts.includes(query) && !candidates.some((n) => n.toLowerCase() === lower)) {
+      addSuggestion(query, true);
+    }
+    suggestGroup.listEl.removeClass('is-loading');
+  };
+
+  renderList();
+  renderSuggest();
+}
+
 /* -------------------------------------------------------- helpers & suggesters */
 
 /** 原版 1.14.4 滑杆填充：--slider-fill-ratio 随值更新，setValue 也要同步。 */
@@ -223,6 +474,53 @@ export function trackSliderFill(slider) {
 /** 原版正则条件检测：/pattern/ 形式。 */
 export function isRegexFilterValue(value) {
   return /^\/.+\/$/.test(String(value || '').trim());
+}
+
+/**
+ * 原版 SliderComponent 在输入框前放一个 .slider-value 文本（显示格式化后的当前值）。
+ * core/setting.js 只读，这里在页签侧补齐，并随滑块输入同步。
+ */
+export function addSliderValue(setting, slider, format) {
+  const valueEl = setting.controlEl.createSpan('slider-value');
+  setting.controlEl.insertBefore(valueEl, slider.sliderEl);
+  const sync = () => valueEl.setText(format(slider.getValue()));
+  slider.sliderEl.addEventListener('input', sync);
+  slider.sliderEl.addEventListener('change', sync);
+  sync();
+  return valueEl;
+}
+
+/**
+ * 字体是否存在（原版字体检测的等价实现）。
+ * Chromium 的 document.fonts.check 对未知族也返回 true，这里用“与回退字体测量宽度对比”判定：
+ * 未知字体在所有回退族下的宽度都与回退一致；已安装/已加载字体至少一个回退下的宽度不同。
+ */
+const fontExistsCache = new Map();
+export function fontExists(font) {
+  try {
+    if (!font) return false;
+    const family = String(font).split(',')[0].trim().replace(/^['"]|['"]$/g, '');
+    if (!family) return false;
+    if (fontExistsCache.has(family)) return fontExistsCache.get(family);
+    const probe = document.createElement('span');
+    probe.textContent = 'mmmmmmmmmmlli';
+    probe.style.cssText = 'position:absolute;left:-9999px;top:-9999px;font-size:72px;white-space:nowrap;visibility:hidden;';
+    document.body.appendChild(probe);
+    let exists = false;
+    try {
+      for (const fallback of ['monospace', 'sans-serif', 'serif']) {
+        probe.style.fontFamily = fallback;
+        const baseWidth = probe.offsetWidth;
+        probe.style.fontFamily = '"' + family.replace(/"/g, '') + '",' + fallback;
+        if (probe.offsetWidth !== baseWidth) { exists = true; break; }
+      }
+    } finally {
+      probe.remove();
+    }
+    fontExistsCache.set(family, exists);
+    return exists;
+  } catch (e) {}
+  return true;
 }
 
 /** 递归收集仓库内文件夹相对路径（建议列表用）。 */

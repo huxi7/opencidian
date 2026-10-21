@@ -13,6 +13,9 @@
  *        右键拖拽平移在 capture 阶段处理（原版 onPriorityPointerdown 的 button 2 分支，macOS 额外接受 Ctrl+左键）：
  *        移动超过 5px 才进入拖动；macOS 的 contextmenu 先于 pointermove，进入拖动时主动关闭已弹出的菜单；
  *        Windows 的 contextmenu 在 pointerup 之后，拖动收尾用一次性的捕获监听吞掉它。未拖动的右键保留原菜单。
+ *        handleDragWithPan 的 handlers.start 在拖拽真正开始（越过阈值）时调用一次：原版把临时节点建在 oM 的工厂里，
+ *        故 dragTempNode 的虚影纯点击不建、不会留下 .is-dummy accent 蓝框；克隆替身用 removeDummyNode 注销，不留孤儿虚影。
+ *        dragTempNode 的虚影按原版：目标尺寸、以指针为中心、随 getSnapping 吸附偏移；落点副本存 box（cleanup 先于 end）。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 /* Canvas pointer + keyboard interactions (class chain layer 3). */
@@ -506,7 +509,10 @@ export class CanvasInteractions extends CanvasViewport {
 
   /* ------------------------------------------------------------ 拖拽助手 */
 
-  /** 拖拽通用：靠近视口边缘时自动平移（原版 handleDragWithPan）。 */
+  /**
+   * 拖拽通用：靠近视口边缘时自动平移（原版 handleDragWithPan）。
+   * handlers.start 在拖拽真正开始（越过阈值）时调用一次：原版 oM 把临时节点的创建放在工厂里，纯点击不建临时节点、不留残影。
+   */
   handleDragWithPan(e, handlers) {
     const rect = this.wrapperEl.getBoundingClientRect();
     const inner = { minX: rect.x + 30, minY: rect.y + 30, maxX: rect.right - 30, maxY: rect.bottom - 30 };
@@ -514,36 +520,40 @@ export class CanvasInteractions extends CanvasViewport {
     let panX = 0;
     let panY = 0;
     let timer = 0;
-    startDrag(e, () => ({
-      ...handlers,
-      move: (ev) => {
-        panX = 0; panY = 0;
-        if (ev.clientX < inner.minX) panX = ev.clientX - inner.minX;
-        else if (ev.clientX > inner.maxX) panX = ev.clientX - inner.maxX;
-        if (ev.clientY < inner.minY) panY = ev.clientY - inner.minY;
-        else if (ev.clientY > inner.maxY) panY = ev.clientY - inner.maxY;
-        if (panX !== 0 || panY !== 0) {
-          panX = clamp(panX, -40, 40);
-          panY = clamp(panY, -40, 40);
-          if (!timer) {
-            timer = window.setInterval(() => {
-              const speed = 0.5 / Math.sqrt(this.scale);
-              this.panBy(panX * speed, panY * speed);
-            }, 1000 / 60);
+    const { start, ...rest } = handlers;
+    startDrag(e, () => {
+      if (start) start();
+      return {
+        ...rest,
+        move: (ev) => {
+          panX = 0; panY = 0;
+          if (ev.clientX < inner.minX) panX = ev.clientX - inner.minX;
+          else if (ev.clientX > inner.maxX) panX = ev.clientX - inner.maxX;
+          if (ev.clientY < inner.minY) panY = ev.clientY - inner.minY;
+          else if (ev.clientY > inner.maxY) panY = ev.clientY - inner.maxY;
+          if (panX !== 0 || panY !== 0) {
+            panX = clamp(panX, -40, 40);
+            panY = clamp(panY, -40, 40);
+            if (!timer) {
+              timer = window.setInterval(() => {
+                const speed = 0.5 / Math.sqrt(this.scale);
+                this.panBy(panX * speed, panY * speed);
+              }, 1000 / 60);
+            }
+          } else if (timer) {
+            window.clearInterval(timer);
+            timer = 0;
           }
-        } else if (timer) {
-          window.clearInterval(timer);
-          timer = 0;
-        }
-        if (handlers.move) handlers.move(ev);
-      },
-      cleanup: () => {
-        if (timer) { window.clearInterval(timer); timer = 0; }
-        this.endSnapPointRendering();
-        this.setDragging(false);
-        if (handlers.cleanup) handlers.cleanup();
-      },
-    }), 0);
+          if (rest.move) rest.move(ev);
+        },
+        cleanup: () => {
+          if (timer) { window.clearInterval(timer); timer = 0; }
+          this.endSnapPointRendering();
+          this.setDragging(false);
+          if (rest.cleanup) rest.cleanup();
+        },
+      };
+    }, 0);
   }
 
   /** 拖动选中节点（分组会带上内部节点；mac 按住 Alt / 其他平台按住 Ctrl 改为克隆整组）。 */
@@ -589,7 +599,7 @@ export class CanvasInteractions extends CanvasViewport {
       } else if (!cloneKey && clones) {
         for (let i = 0; i < originals.length; i++) {
           originals[i].moveTo({ x: clones[i].x, y: clones[i].y });
-          clones[i].detach();
+          this.removeDummyNode(clones[i]);
         }
         clones = null;
         dragged = originals;
@@ -657,7 +667,7 @@ export class CanvasInteractions extends CanvasViewport {
         for (const item of originals) { item.moveTo(origin.get(item)); item.nodeEl.removeClass('is-dragging'); }
       },
       cleanup: () => {
-        if (clones) for (const clone of clones) clone.detach();
+        if (clones) for (const clone of clones) this.removeDummyNode(clone);
         if (nodeEl) suppressClick(nodeEl);
       },
       keydown: (ev) => setCloneMode(ev),
@@ -735,22 +745,55 @@ export class CanvasInteractions extends CanvasViewport {
     }
   }
 
-  /** 卡片菜单拖动建卡：先拖一个虚影，落点再创建。 */
+  /**
+   * 卡片菜单拖动建卡：先拖一个虚影，落点再创建。
+   * 原版 dragTempNode（app.js 3346799）：虚影建在 oM 的工厂里（纯点击不建、不留 .is-dummy 蓝框），
+   * 用目标尺寸（文本卡 250×60、笔记/媒体 400×400）、以指针为中心、随 getSnapping 吸附，落下建同尺寸节点。
+   */
   dragTempNode(e, size, cb) {
     if (!e.isPrimary || e.button !== 0) return;
     e.preventDefault();
-    const dummy = this.createDummyNode();
-    dummy.moveAndResize({ x: this.posFromEvt(e).x - size.width / 2, y: this.posFromEvt(e).y - size.height / 2, width: size.width, height: size.height });
-    dummy.nodeEl.addClass('is-dragging');
+    const canvas = this;
+    let dummy = null;
+    let box = null;   // 虚影当前位置：cleanup 先于 end 执行，落点必须留副本
+    const place = (pos, ev) => {
+      const next = {
+        x: pos.x - size.width / 2, y: pos.y - size.height / 2, width: size.width, height: size.height,
+      };
+      // 原版：canSnap 为真时按物体/网格吸附，吸附量加在虚影位置上。
+      if (ev && canvas.canSnap(ev)) {
+        canvas.clearSnapPoints();
+        const others = [];
+        for (const node of canvas.nodes.values()) {
+          if (node.isGroup || node === dummy) continue;
+          others.push(bboxOf(node));
+        }
+        const snap = canvas.getSnapping([next], others, true, true);
+        next.x += snap.x;
+        next.y += snap.y;
+      }
+      box = next;
+      dummy.moveAndResize(next);
+    };
     this.handleDragWithPan(e, {
+      start: () => {
+        dummy = canvas.createDummyNode();
+        dummy.nodeEl.addClass('is-dragging');
+        place(canvas.posFromEvt(e), e);
+      },
       move: (ev) => {
-        const pos = this.posFromEvt(ev);
-        dummy.moveAndResize({ x: pos.x - size.width / 2, y: pos.y - size.height / 2, width: size.width, height: size.height });
+        if (!dummy) return;
+        place(canvas.posFromEvt(ev), ev);
       },
       end: (ev) => {
-        if (this.posInViewport(this.domPosFromEvt(ev))) cb({ x: dummy.x, y: dummy.y }, size);
+        if (!box) return;
+        if (canvas.posInViewport(canvas.domPosFromEvt(ev))) cb({ x: box.x, y: box.y }, size);
       },
-      cleanup: () => this.removeDummyNode(dummy),
+      cleanup: () => {
+        if (!dummy) return;
+        canvas.removeDummyNode(dummy);
+        dummy = null;
+      },
     });
   }
 }

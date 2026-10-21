@@ -1,7 +1,7 @@
 /**
- * [INPUT]: 依赖 ../core/modals.js 的 Modal；依赖 ../core/ipc.js 的 Desktop；依赖 ../core/icons.js 的 setIcon；依赖 ../core/i18n.js 的 t；依赖 ./settings-tabs.js 的 AboutTab/EditorTab/FileTab；依赖 ./settings-tabs-appearance.js 的 AppearanceTab；依赖 ./settings-tabs-plugins.js 的 HotkeysTab/CorePluginsTab
+ * [INPUT]: 依赖 ../core/modals.js 的 Modal；依赖 ../core/ipc.js 的 Desktop；依赖 ../core/icons.js 的 setIcon；依赖 ../core/i18n.js 的 tt；依赖 ../core/suggest.js 的 fuzzyMatch/renderHighlightedText；依赖 ./settings-tabs.js 的 AboutTab/EditorTab/FileTab；依赖 ./settings-tabs-appearance.js 的 AppearanceTab/InterfaceTab；依赖 ./settings-tabs-plugins.js 的 HotkeysTab/CorePluginsTab
  * [OUTPUT]: 导出 SettingTab（页签基类）、SettingsHost（设置模态宿主）、installSettingsHost(app)
- * [POS]: views/ 的设置模态宿主，逐字对齐原版 fte 类 DOM：modal.mod-settings.mod-sidebar-layout > .modal-content.vertical-tabs-container > .vertical-tab-header + .vertical-tab-content-container。app.setting 即本类实例；内置页签注册顺序为 关于 → 外观 → 编辑器 → 文件与链接 → 快捷键 → 核心插件，第三方插件页不注册。1.14.4 popout：shouldUsePopout 读 vault 配置 settingsPopoutWindow，开启时主进程开独立窗口，窗口内 modalEl 直接挂 body（is-popout-modal）。
+ * [POS]: views/ 的设置模态宿主，逐字对齐原版 fte 类 DOM：modal.mod-settings.mod-sidebar-layout > .modal-content.vertical-tabs-container > .vertical-tab-header + .vertical-tab-content-container。app.setting 即本类实例；内置页签注册顺序为 关于 → 外观 → 界面 → 编辑器 → 文件与链接 → 快捷键 → 核心插件，第三方插件页不注册。1.14.4 popout：shouldUsePopout 读 vault 配置 settingsPopoutWindow，开启时主进程开独立窗口，窗口内 modalEl 直接挂 body（is-popout-modal）。子页面机制 openPage/closePage 对齐原版 openPage/closePage：.setting-page.vertical-tab-content > .setting-page-titlebar（返回钮 + 标题）+ .setting-page-content，栈顶页面标题写入弹窗标题。侧栏顶部是全局搜索（.setting-search-container + .setting-search-results），跨页签匹配设置项名与描述，命中项高亮并可跳转到对应设置行。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 /* Settings host — modal shell + tab management, DOM 1:1 with the original. */
@@ -11,8 +11,9 @@ import { syncTrafficLightPosition } from '../core/window-chrome.js';
 import { setIcon } from '../core/icons.js';
 import { tt } from '../core/i18n.js';
 import { SettingTab } from '../core/setting.js';
+import { fuzzyMatch, renderHighlightedText } from '../core/suggest.js';
 import { AboutTab, EditorTab, FileTab } from './settings-tabs.js';
-import { AppearanceTab } from './settings-tabs-appearance.js';
+import { AppearanceTab, InterfaceTab } from './settings-tabs-appearance.js';
 import { HotkeysTab, CorePluginsTab } from './settings-tabs-plugins.js';
 
 export { SettingTab };
@@ -24,28 +25,39 @@ export class SettingsHost extends Modal {
     this.pluginTabs = [];       // 插件页签：{ id, name, icon, group: 'core', ... }
     this.activeTab = null;
     this.lastTabId = '';
+    this.pageStack = [];        // 子页面栈：{ el, title }（对齐原版 openPage/closePage）
+    this.searchItemCache = new Map();  // 页签 id → 离屏采集的搜索条目
+    this.isSearchActive = false;
     this.modalEl.addClass('mod-settings', 'mod-sidebar-layout');
     this.updateModalTitle();
     this.contentEl.addClass('vertical-tabs-container');
 
     this.tabHeadersEl = this.contentEl.createDiv('vertical-tab-header', (header) => {
-      header.createDiv('vertical-tab-header-group', (group) => {
-        group.createDiv({ cls: 'vertical-tab-header-group-title', text: tt('setting.options', 'Options') });
-        this.tabContainer = group.createDiv('vertical-tab-header-group-items');
-        this.tabContainer.setAttr('data-section', 'options');
-      });
-      header.createDiv('vertical-tab-header-group', (group) => {
-        this.corePluginTabHeaderGroup = group.createDiv({ cls: 'vertical-tab-header-group-title', text: tt('setting.builtin-plugins', 'Core plugins') });
-        this.corePluginTabHeaderGroup.hide();
-        this.corePluginTabContainer = group.createDiv('vertical-tab-header-group-items');
-        this.corePluginTabContainer.setAttr('data-section', 'core-plugins');
+      // 原版：侧栏顶部是全局搜索，下面才是页签分组（两组都在 group-container 里）
+      this.searchContainerEl = header.createDiv('setting-search-container');
+      this.searchResultsEl = header.createDiv('setting-search-results');
+      this.searchResultsEl.hide();
+      this.tabGroupContainerEl = header.createDiv('vertical-tab-header-group-container', (groups) => {
+        groups.createDiv('vertical-tab-header-group', (group) => {
+          group.createDiv({ cls: 'vertical-tab-header-group-title', text: tt('setting.options', 'Options') });
+          this.tabContainer = group.createDiv('vertical-tab-header-group-items');
+          this.tabContainer.setAttr('data-section', 'options');
+        });
+        groups.createDiv('vertical-tab-header-group', (group) => {
+          this.corePluginTabHeaderGroup = group.createDiv({ cls: 'vertical-tab-header-group-title', text: tt('setting.builtin-plugins', 'Core plugins') });
+          this.corePluginTabHeaderGroup.hide();
+          this.corePluginTabContainer = group.createDiv('vertical-tab-header-group-items');
+          this.corePluginTabContainer.setAttr('data-section', 'core-plugins');
+        });
       });
     });
     this.tabContentContainer = createDiv('vertical-tab-content-container');
+    this.buildSearchInput();
 
-    // 内置页签顺序对齐原版 1.14.4：关于 → 外观 →（界面已并入外观）→ 编辑器 → 文件与链接 → 快捷键 → 核心插件
+    // 内置页签顺序对齐原版 1.14.4：关于 → 外观 → 界面 → 编辑器 → 文件与链接 → 快捷键 → 核心插件
     this.addSettingTab(new AboutTab(app, this));
     this.addSettingTab(new AppearanceTab(app, this));
+    this.addSettingTab(new InterfaceTab(app, this));
     this.addSettingTab(new EditorTab(app, this));
     this.addSettingTab(new FileTab(app, this));
     this.addSettingTab(new HotkeysTab(app, this));
@@ -54,8 +66,233 @@ export class SettingsHost extends Modal {
 
   updateModalTitle(tab) {
     this.titleEl.empty();
-    if (tab) this.titleEl.setText(tab.name);
-    else this.titleEl.setText(tt('interface.settings', 'Settings'));
+    // 原版 titleTextEl：.modal-title 内的裸 div，返回按钮作为它的前一个兄弟
+    this.titleTextEl = this.titleEl.createDiv();
+    this.titleTextEl.setText(tab ? tab.name : tt('interface.settings', 'Settings'));
+  }
+
+  // -------------------------------------------------------------------------
+  // 子页面（原版 openPage/closePage）：.setting-page 覆盖页签内容
+  // -------------------------------------------------------------------------
+  /**
+   * 打开设置子页面。
+   * @param {{title: string, build?: (contentEl: HTMLElement) => void}} options
+   * @returns {HTMLElement} 页面根元素
+   */
+  openPage(options) {
+    const { title, build } = options || {};
+    this.closePage(true);
+    const pageEl = createDiv('setting-page vertical-tab-content');
+    const titlebar = pageEl.createDiv('setting-page-titlebar');
+    const back = titlebar.createDiv('clickable-icon setting-page-back-button');
+    setIcon(back, 'lucide-chevron-left');
+    back.addEventListener('click', () => this.closePage());
+    titlebar.createDiv('setting-page-title').setText(title || '');
+    const contentEl = pageEl.createDiv('setting-page-content');
+    const tab = this.activeTab;
+    if (tab && tab.containerEl && tab.containerEl.parentElement === this.tabContentContainer) {
+      tab.containerEl.detach();
+    }
+    this.tabContentContainer.appendChild(pageEl);
+    this.pageStack.push({ el: pageEl, title: title || '' });
+    this.updatePageTitle();
+    if (typeof build === 'function') build(contentEl);
+    this.markToggleRows(contentEl);
+    return pageEl;
+  }
+
+  /** 关闭子页面：移除页面并把页签内容放回内容容器。 */
+  closePage(silent) {
+    const page = this.pageStack.pop();
+    if (!page) return false;
+    page.el.remove();
+    const tab = this.activeTab;
+    if (tab && tab.containerEl && !tab.containerEl.parentElement) {
+      this.tabContentContainer.appendChild(tab.containerEl);
+    }
+    if (!silent) this.updatePageTitle();
+    return true;
+  }
+
+  /** 标题栏文案：栈顶页面优先，其次当前页签（对齐原版 updatePageTitle）。 */
+  updatePageTitle() {
+    if (!this.titleTextEl) return;
+    if (this.pageStack.length) {
+      this.titleTextEl.setText(this.pageStack[this.pageStack.length - 1].title);
+      return;
+    }
+    if (this.activeTab) this.titleTextEl.setText(this.activeTab.name);
+  }
+
+  // -------------------------------------------------------------------------
+  // 侧栏全局搜索（原版 searchIndex + onSearchChanged）
+  // -------------------------------------------------------------------------
+  /** 搜索框：.search-input-container.mod-raised > input[type=search] + 清除钮。 */
+  buildSearchInput() {
+    const wrap = this.searchContainerEl.createDiv('search-input-container mod-raised');
+    this.searchInputEl = wrap.createEl('input', { type: 'search', attr: { enterkeyhint: 'search', spellcheck: 'false' } });
+    this.searchInputEl.setAttribute('placeholder', tt('setting.search-settings', '搜索设置...'));
+    this.searchClearEl = wrap.createDiv('search-input-clear-button');
+    this.searchClearEl.addEventListener('mousedown', (ev) => ev.preventDefault());
+    this.searchClearEl.addEventListener('click', () => {
+      this.searchInputEl.value = '';
+      this.onSearchChanged();
+      this.searchInputEl.focus();
+    });
+    this.searchInputEl.addEventListener('input', () => this.onSearchChanged());
+  }
+
+  /**
+   * 采集页签的可搜索条目（名称 + 描述）。
+   * 原版从页签定义树取值；本仓库页签直接建 DOM，故从已渲染的 DOM 采集；
+   * 从未渲染过的页签离屏渲染一次并缓存，保证搜索跨页签。
+   */
+  collectSearchItems() {
+    const items = [];
+    for (const tab of this.settingTabs.concat(this.pluginTabs)) {
+      for (const item of this.harvestTabItems(tab)) {
+        items.push({ tab, name: item.name, desc: item.desc });
+      }
+    }
+    return items;
+  }
+
+  /** 采集单个页签的条目；页签未渲染过时离屏渲染一次（结果缓存）。 */
+  harvestTabItems(tab) {
+    const container = tab.containerEl;
+    if (container && container.childElementCount) return this.harvestItemsFrom(container);
+    if (this.searchItemCache.has(tab.id)) return this.searchItemCache.get(tab.id);
+    const probe = createDiv('vertical-tab-content');
+    const original = tab.containerEl;
+    tab.containerEl = probe;
+    let items = [];
+    try {
+      tab.display();
+      items = this.harvestItemsFrom(probe);
+    } catch (e) {
+      console.error('Settings search index failed', tab.id, (e && e.stack) || e);
+    }
+    tab.containerEl = original;
+    this.searchItemCache.set(tab.id, items);
+    return items;
+  }
+
+  /** 从渲染结果里取“名称 + 描述”（跳过标题行）。 */
+  harvestItemsFrom(root) {
+    const out = [];
+    for (const el of root.querySelectorAll('.setting-item:not(.setting-item-heading)')) {
+      const nameEl = el.querySelector('.setting-item-name');
+      if (!nameEl) continue;
+      const descEl = el.querySelector('.setting-item-description');
+      out.push({
+        name: (nameEl.textContent || '').trim(),
+        desc: descEl ? (descEl.textContent || '').trim() : '',
+      });
+    }
+    return out;
+  }
+
+  /** 原版 onSearchChanged：空查询恢复页签分组；有查询则渲染结果并隐藏分组。 */
+  onSearchChanged() {
+    const query = (this.searchInputEl.value || '').trim();
+    if (!query) {
+      this.isSearchActive = false;
+      this.searchResultsEl.hide();
+      this.searchResultsEl.empty();
+      this.tabGroupContainerEl.show();
+      return;
+    }
+    this.isSearchActive = true;
+    this.tabGroupContainerEl.hide();
+    this.searchResultsEl.show();
+    this.searchResultsEl.empty();
+    const groups = this.searchGroups(query);
+    if (!groups.length) {
+      this.searchResultsEl.createDiv({ cls: 'setting-search-empty', text: tt('setting.no-search-results', '未找到设置。') });
+      return;
+    }
+    for (const group of groups) this.renderSearchGroup(group);
+  }
+
+  /** 按页签分组：匹配设置项名与描述，组内按分数降序，组间按最高分降序。 */
+  searchGroups(query) {
+    const byTab = new Map();
+    for (const item of this.collectSearchItems()) {
+      const nameMatch = fuzzyMatch(query, item.name);
+      const descMatch = item.desc ? fuzzyMatch(query, item.desc) : null;
+      if (!nameMatch && !descMatch) continue;
+      const score = Math.max(nameMatch ? nameMatch.score : -Infinity, descMatch ? descMatch.score : -Infinity);
+      let group = byTab.get(item.tab);
+      if (!group) {
+        group = { tab: item.tab, tabNameMatch: fuzzyMatch(query, item.tab.name), results: [], best: -Infinity };
+        byTab.set(item.tab, group);
+      }
+      group.results.push({ name: item.name, desc: item.desc, nameMatch, descMatch, score });
+      group.best = Math.max(group.best, score);
+    }
+    const groups = [...byTab.values()].filter((g) => g.results.length || g.tabNameMatch);
+    for (const group of groups) {
+      group.best = Math.max(group.best, group.tabNameMatch ? group.tabNameMatch.score : -Infinity);
+      group.results.sort((a, b) => b.score - a.score);
+    }
+    groups.sort((a, b) => b.best - a.best);
+    return groups;
+  }
+
+  /** 渲染一组结果：页签行 + 设置项行（最多显示 3 条，其余收进“还有 N 个”）。 */
+  renderSearchGroup(group) {
+    const groupEl = this.searchResultsEl.createDiv('setting-search-result-group');
+    const tabRow = groupEl.createDiv('vertical-tab-nav-item setting-search-result-tab tappable');
+    tabRow.setAttr('tabindex', '-1');
+    if (group.tab.icon) tabRow.createDiv('vertical-tab-nav-item-icon', (el) => setIcon(el, group.tab.icon));
+    const textEl = tabRow.createDiv('setting-search-result-tab-text');
+    const labelEl = textEl.createDiv('setting-search-result-tab-label');
+    renderHighlightedText(labelEl, group.tab.name, group.tabNameMatch ? group.tabNameMatch.matches : null);
+    tabRow.createDiv('vertical-tab-nav-item-chevron', (el) => setIcon(el, 'lucide-chevron-right'));
+    tabRow.addEventListener('click', () => this.openSearchResult(group, null));
+
+    const itemsEl = groupEl.createDiv('setting-search-result-group-items');
+    const hidden = [];
+    group.results.forEach((result, index) => {
+      const row = itemsEl.createDiv('vertical-tab-nav-item setting-search-result-item tappable');
+      row.setAttr('tabindex', '-1');
+      if (index >= 3) { row.hide(); hidden.push(row); }
+      const titleEl = row.createDiv('vertical-tab-nav-item-title');
+      renderHighlightedText(titleEl, result.name, result.nameMatch ? result.nameMatch.matches : null);
+      row.createDiv('vertical-tab-nav-item-chevron', (el) => setIcon(el, 'lucide-chevron-right'));
+      row.addEventListener('click', () => this.openSearchResult(group, result));
+    });
+    if (hidden.length) {
+      const more = itemsEl.createDiv('vertical-tab-nav-item setting-search-result-item setting-search-result-show-more tappable');
+      more.setAttr('tabindex', '-1');
+      more.setText(tt('setting.search-show-more', '还有 {{count}} 个', { count: hidden.length }));
+      more.addEventListener('click', () => {
+        for (const el of hidden) el.show();
+        more.detach();
+        if (hidden[0]) hidden[0].focus();
+      });
+    }
+  }
+
+  /** 打开搜索结果所在页签，并滚动/闪烁高亮对应设置行（原版 scrollToDefinition）。 */
+  openSearchResult(group, result) {
+    this.openTab(group.tab);
+    if (!result) return;
+    const el = this.findSettingRow(group.tab, result.name);
+    if (!el) return;
+    try { el.scrollIntoView({ block: 'center' }); } catch (e) {}
+    el.addClass('is-flashing');
+    setTimeout(() => el.removeClass('is-flashing'), 750);
+  }
+
+  /** 在页签内容里找名称匹配的行。 */
+  findSettingRow(tab, name) {
+    if (!tab || !tab.containerEl) return null;
+    for (const el of tab.containerEl.querySelectorAll('.setting-item')) {
+      const nameEl = el.querySelector('.setting-item-name');
+      if (nameEl && (nameEl.textContent || '').trim() === name) return el;
+    }
+    return null;
   }
 
   // -------------------------------------------------------------------------
@@ -168,6 +405,7 @@ export class SettingsHost extends Modal {
   openTab(tab) {
     if (!tab || !tab.containerEl) return;
     if (this.shouldUsePopout()) { this.lastTabId = tab.id; this._openPopoutWindow(tab.id); return; }
+    this.pageStack = [];
     this.tabContentContainer.empty();
     this.updateModalTitle(tab);
     if (this.activeTab) {
@@ -186,14 +424,29 @@ export class SettingsHost extends Modal {
     this.contentEl.appendChild(this.tabContentContainer);
     try {
       tab.display();
+      this.markToggleRows(tab.containerEl);
+      this.searchItemCache.set(tab.id, this.harvestItemsFrom(tab.containerEl));
     } catch (e) {
-      console.error('Settings tab failed', tab.id, e);
+      console.error('Settings tab failed', tab.id, (e && e.stack) || e);
+    }
+  }
+
+  /**
+   * 原版：带开关控件的设置行带 mod-toggle 类（决定 info/control 的对齐与宽度）。
+   * core/setting.js 只读，这里在渲染后统一补齐。
+   */
+  markToggleRows(containerEl) {
+    if (!containerEl) return;
+    for (const row of containerEl.querySelectorAll('.setting-item')) {
+      const control = row.querySelector(':scope > .setting-item-control');
+      if (control && control.querySelector(':scope > .checkbox-container')) row.addClass('mod-toggle');
     }
   }
 
   closeActiveTab() {
     const tab = this.activeTab;
     if (tab) {
+      this.pageStack = [];
       this.tabContentContainer.empty();
       tab.navEl.removeClass('is-active');
       tab.hide();

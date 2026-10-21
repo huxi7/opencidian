@@ -1,7 +1,9 @@
 /**
  * [INPUT]: 独立临时 vault 与 OBS_ACT eval 注入的应用实例；搜索插件、元数据缓存与 DOM。
  * [OUTPUT]: 返回验收断言结果；失败抛出异常，供运行器判定。
- * [POS]: search 场景。仅由 run.mjs 在带标记的临时库执行；覆盖语法、开关、分组、键盘、空态与复制。
+ * [POS]: search 场景。仅由 run.mjs 在带标记的临时库执行；覆盖语法、开关、分组、键盘、空态，
+ *        520 条结果下的虚拟列表（DOM 节点上限、滚动窗口正确性、键盘跨虚拟边界、计数与排序不变），
+ *        以及搜索框建议弹层（算子建议、搜索历史存取与清除、键盘导航与插入）。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 (async () => {
@@ -134,6 +136,11 @@
     check(view.sortSelect.options.length === 6, '排序菜单六项');
     check(view.sortSelect.value === 'alphabetical', '默认按文件名 A-Z 排序');
     check(view.sortSelect.options[0].textContent.includes('A-Z'), '首项为 A-Z 文案');
+    const measureSelect = view.contentEl.querySelector('.search-results-info select.dropdown.is-measuring');
+    check(!!measureSelect, '排序下拉带原版测量 select');
+    check(measureSelect.getAttribute('aria-hidden') === 'true', '测量 select 对辅助技术隐藏');
+    check(measureSelect.tabIndex === -1, '测量 select 不可聚焦');
+    check(css(measureSelect).visibility === 'hidden', '测量 select 不可见');
     check(css(view.paramsEl).display === 'none', '参数面板默认隐藏');
     row.querySelector(':scope > .clickable-icon').click();
     check(css(view.paramsEl).display === 'flex', '设置按钮展开参数面板');
@@ -407,24 +414,33 @@
     const firstArrow = firstResult.querySelector('.collapse-icon');
     check(css(firstArrow).visibility === 'visible', '有正文命中时折叠箭头可见');
     firstArrow.click();
-    check(firstResult.classList.contains('is-collapsed'), '点击箭头折叠文件');
-    check(css(firstMatches).display === 'none', '折叠后匹配行隐藏');
-    check(firstArrow.classList.contains('is-collapsed'), '折叠后箭头旋转态');
-    firstArrow.click();
-    check(!firstResult.classList.contains('is-collapsed'), '再次点击展开文件');
-    check(css(firstMatches).display !== 'none', '展开后匹配行可见');
-    const title = firstResult.querySelector('.search-result-file-title');
+    const collapsedResult = view.childrenEl.querySelector('.search-result');
+    const collapsedMatches = collapsedResult.querySelector('.search-result-file-matches');
+    const collapsedArrow = collapsedResult.querySelector('.collapse-icon');
+    check(collapsedResult.classList.contains('is-collapsed'), '点击箭头折叠文件');
+    check(css(collapsedMatches).display === 'none', '折叠后匹配行隐藏');
+    check(collapsedArrow.classList.contains('is-collapsed'), '折叠后箭头旋转态');
+    collapsedArrow.click();
+    const expandedResult = view.childrenEl.querySelector('.search-result');
+    const expandedMatches = expandedResult.querySelector('.search-result-file-matches');
+    check(!expandedResult.classList.contains('is-collapsed'), '再次点击展开文件');
+    check(css(expandedMatches).display !== 'none', '展开后匹配行可见');
+    const title = expandedResult.querySelector('.search-result-file-title');
     opened = null;
     title.click();
     check(!!opened && opened.path === view._results[0].file.path, '点击文件标题打开文件');
-    check(!firstResult.classList.contains('is-collapsed'), '点击文件标题不折叠');
-    const matchRow = firstResult.querySelector('.search-result-file-match');
+    check(!expandedResult.classList.contains('is-collapsed'), '点击文件标题不折叠');
+    const matchRow = expandedResult.querySelector('.search-result-file-match');
     const expectedLine = matchRow._line;
     opened = null;
     matchRow.click();
     check(!!opened && opened.path === view._results[0].file.path, '点击匹配行打开文件');
     check(opened.options.eState && opened.options.eState.line === expectedLine, '匹配行携带行号');
     check(typeof opened.options.eState.ch === 'number', '匹配行携带列号');
+    check(!!matchRow.querySelector('.search-result-hover-button.mod-top'), '命中行带向上更多上下文按钮');
+    check(!!matchRow.querySelector('.search-result-hover-button.mod-bottom'), '命中行带向下更多上下文按钮');
+    check(css(matchRow.querySelector('.search-result-hover-button.mod-top')).position === 'absolute', '更多上下文按钮绝对定位');
+    check(matchRow.querySelector('.search-result-hover-button.mod-top').getAttribute('aria-label').includes('上下文'), '更多上下文按钮带原版文案');
 
     view.collapseToggle.setValue(true);
     check(view._collapseAll === true, '折叠全部开关置为开启');
@@ -444,28 +460,29 @@
 
     // ------------------------------------------------------------- 键盘
     await view.setQuery('alpha');
-    view._focusedIndex = -1;
-    view._focusItems.forEach((item) => item.el.removeClass('has-focus'));
+    view._list.clearFocus();
     view.contentEl.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }));
-    check(view._focusedIndex === 0, 'ArrowDown 聚焦首个条目');
-    check(view._focusItems[0].el.classList.contains('has-focus'), '首个条目显示焦点环');
-    check(css(view._focusItems[0].el.querySelector('.search-result-file-title')).boxShadow.includes('inset'), '文件焦点显示内嵌描边');
-    const firstFocus = view._focusItems[0];
+    check(view._list.focusedIndex === 0, 'ArrowDown 聚焦首个条目');
+    check(view._list.focusedElement() !== null, '首个条目有焦点元素');
+    check(view._list.focusedElement().classList.contains('has-focus'), '首个条目显示焦点环');
+    check(css(view._list.focusedElement().querySelector('.search-result-file-title')).boxShadow.includes('inset'), '文件焦点显示内嵌描边');
+    const firstFocus = view._list.focusedElement();
     view.contentEl.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }));
-    check(view._focusedIndex === 1, 'ArrowDown 移动到下一个条目');
-    check(!firstFocus.el.classList.contains('has-focus'), '旧焦点移除');
+    check(view._list.focusedIndex === 1, 'ArrowDown 移动到下一个条目');
+    check(!firstFocus.classList.contains('has-focus'), '旧焦点移除');
+    check(view._list.focusedElement() !== firstFocus, '焦点转移到新条目');
     opened = null;
     view.contentEl.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
-    check(!!opened && opened.path === view._focusItems[1].file.path, 'Enter 打开当前焦点');
+    check(!!opened && opened.path === view._list.focusRows[1].result.file.path, 'Enter 打开当前焦点');
     view.contentEl.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowUp', bubbles: true }));
-    check(view._focusedIndex === 0, 'ArrowUp 回到上一个条目');
+    check(view._list.focusedIndex === 0, 'ArrowUp 回到上一个条目');
     view.contentEl.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowUp', bubbles: true }));
-    check(view._focusedIndex === 0, '首个条目 ArrowUp 不越界');
+    check(view._list.focusedIndex === 0, '首个条目 ArrowUp 不越界');
     view.contentEl.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowLeft', bubbles: true }));
-    const focusResult = view._focusItems[0].el.closest('.search-result');
+    const focusResult = view.childrenEl.querySelector('.search-result');
     check(focusResult.classList.contains('is-collapsed'), 'ArrowLeft 折叠当前文件');
     view.contentEl.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }));
-    check(!focusResult.classList.contains('is-collapsed'), 'ArrowRight 展开当前文件');
+    check(!view.childrenEl.querySelector('.search-result').classList.contains('is-collapsed'), 'ArrowRight 展开当前文件');
 
     // ------------------------------------------------------------- 空态/解释/复制
     await view.setQuery('zzzz-no-match');
@@ -478,7 +495,7 @@
     check(view.searchInfoEl.style.display === 'none', '清空查询隐藏解释区');
     check(view.childrenEl.children.length === 0, '清空查询清空结果');
     check(view.emptyEl.style.display !== 'none', '清空查询显示空态');
-    check(view.resultsInfoEl.style.display !== 'none', '清空查询保留结果信息行');
+    check(view.resultsInfoEl.style.display === 'none', '清空查询隐藏结果信息行');
     view.inputEl.value = 'alpha';
     view.inputEl.dispatchEvent(new Event('input', { bubbles: true }));
     await until(() => view.childrenEl.querySelectorAll('.search-result').length > 0, '输入事件触发搜索');
@@ -489,6 +506,7 @@
     check(view.childrenEl.children.length === 0, '清除按钮清空结果');
     check(view.searchInfoEl.style.display === 'none', '清除按钮隐藏解释区');
     check(view.emptyEl.style.display !== 'none', '清除按钮显示空态');
+    check(view.resultsInfoEl.style.display === 'none', '清除按钮隐藏结果信息行');
     check(view.resultCountEl.textContent === countBeforeClear, '清除按钮保留上次计数');
 
     await view.setQuery('file:Alpha -path:Sub');
@@ -502,40 +520,213 @@
     view.explainToggle.setValue(false);
     check(view.searchInfoEl.style.display === 'none', '关闭解释隐藏解释区');
 
+    // ------------------------------------------------------------- 虚拟列表
+    const bulkFolder = 'Bulk ' + Date.now().toString(36);
+    await app.vault.createFolder(bulkFolder);
+    const bulkCount = 520;
+    const bulkFiles = [];
+    for (let i = 0; i < bulkCount; i++) {
+      bulkFiles.push(await app.vault.create(
+        bulkFolder + '/Bulk Note ' + String(i).padStart(4, '0') + '.md',
+        '# Bulk Note ' + i + '\n\nzebra token line one\n\nzebra token line two\n',
+      ));
+    }
+    for (const file of bulkFiles) await metadata.parseFile(file);
+    metadata.rebuildIndices();
+    await view.setQuery('zebra');
+    check(view._results.length === bulkCount, '虚拟列表：命中全部批量文件');
+    check(view._countMatches() === bulkCount * 2, '虚拟列表：计数为每文件两处命中');
+    check(view.resultCountEl.textContent.replace(/[^0-9]/g, '') === String(bulkCount * 2), '虚拟列表：计数文案与命中数一致');
+    const domGroups = view.childrenEl.querySelectorAll('.search-result').length;
+    check(domGroups > 0, '虚拟列表：渲染出结果分组');
+    check(domGroups < 30, '虚拟列表：结果分组 DOM 节点有上限');
+    check(domGroups * 10 < bulkCount, '虚拟列表：渲染分组远少于总结果数');
+    check(view.childrenEl.querySelectorAll('.search-result-file-match').length < 90, '虚拟列表：命中行 DOM 节点有上限');
+    check(view.childrenEl.querySelectorAll('.search-results-spacer').length === 2, '虚拟列表：上下占位块存在');
+    check(view.resultEl.scrollHeight > view.resultEl.clientHeight * 4, '虚拟列表：滚动条高度与总条目数成比例');
+    check(view.resultEl.scrollHeight > 2000, '虚拟列表：滚动高度覆盖全部结果');
+    const bulkNames = () => [...view.childrenEl.querySelectorAll('.search-result-file-title .tree-item-inner')].map((el) => el.textContent);
+    const bulkIndices = (names) => names.map((name) => view._results.findIndex((item) => item.file.basename === name));
+    const firstRendered = bulkNames();
+    check(firstRendered.length > 0, '虚拟列表：首屏有渲染条目');
+    check(firstRendered[0] === 'Bulk Note 0000', '虚拟列表：首屏从第一条结果开始');
+    const firstIndices = bulkIndices(firstRendered);
+    check(firstIndices.every((value, index) => index === 0 || value === firstIndices[index - 1] + 1), '虚拟列表：首屏条目连续有序');
+    // 渲染窗口与模型对齐：逐个分组核对文件名、命中行数、高亮与徽标
+    const checkGroups = (names, indices, label) => {
+      const groups = [...view.childrenEl.querySelectorAll('.search-result')];
+      check(groups.length === names.length, '虚拟列表：' + label + '分组数与标题数一致');
+      groups.forEach((groupEl, index) => {
+        const result = view._results[indices[index]];
+        const title = groupEl.querySelector('.tree-item-inner').textContent;
+        const rows = groupEl.querySelectorAll('.search-result-file-match');
+        const flair = groupEl.querySelector('.tree-item-flair');
+        check(title === result.file.basename, '虚拟列表：' + label + '分组 ' + index + ' 文件名与模型一致');
+        check(rows.length === result.evaluation.content.length, '虚拟列表：' + label + '分组 ' + index + ' 命中行数与模型一致');
+        check(groupEl.querySelectorAll('.search-result-file-matched-text').length >= result.evaluation.content.length, '虚拟列表：' + label + '分组 ' + index + ' 命中高亮存在');
+        check(!!flair && Number(flair.textContent) === result.evaluation.flair, '虚拟列表：' + label + '分组 ' + index + ' 徽标与模型一致');
+        check(!!groupEl.querySelector('.collapse-icon'), '虚拟列表：' + label + '分组 ' + index + ' 带折叠箭头');
+      });
+    };
+    checkGroups(firstRendered, firstIndices, '首屏');
+    check(view.childrenEl.children.length === view.childrenEl.querySelectorAll('.search-result').length + 2, '虚拟列表：结果容器只含占位块与分组');
+    const spacers = [...view.childrenEl.querySelectorAll('.search-results-spacer')];
+    check(spacers.length === 2, '虚拟列表：占位块仍是两个');
+    check(parseFloat(spacers[0].style.height) === 0, '虚拟列表：顶部时上占位块为零');
+    check(parseFloat(spacers[1].style.height) > 0, '虚拟列表：顶部时下占位块有高度');
+
+    // 滚动：窗口随位置移动，条目仍与模型一致
+    view.resultEl.scrollTop = Math.floor(view.resultEl.scrollHeight * 0.5);
+    await wait(160);
+    const midGroups = view.childrenEl.querySelectorAll('.search-result').length;
+    check(midGroups > 0, '虚拟列表：滚动后仍有分组');
+    check(midGroups < 30, '虚拟列表：滚动后 DOM 节点仍有上限');
+    check(view.childrenEl.querySelectorAll('.search-result-file-match').length < 90, '虚拟列表：滚动后命中行仍有上限');
+    const midNames = bulkNames();
+    check(midNames[0] !== firstRendered[0], '虚拟列表：滚动后渲染内容随位置变化');
+    const midIndices = bulkIndices(midNames);
+    check(midIndices.every((value) => value >= 0), '虚拟列表：滚动后条目来自结果集');
+    check(midIndices.every((value, index) => index === 0 || value === midIndices[index - 1] + 1), '虚拟列表：滚动后条目连续有序');
+    check(midIndices[0] > 0, '虚拟列表：滚动到中段后不再从首项开始');
+    const midSpacers = [...view.childrenEl.querySelectorAll('.search-results-spacer')];
+    check(parseFloat(midSpacers[0].style.height) > 0, '虚拟列表：滚动后上占位块有高度');
+    check(parseFloat(midSpacers[1].style.height) > 0, '虚拟列表：滚动后下占位块有高度');
+    checkGroups(midNames, midIndices, '滚动后');
+
+    // 键盘导航跨虚拟边界
+    view._list.clearFocus();
+    view.contentEl.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }));
+    check(view._list.focusedIndex === 0, '虚拟列表：ArrowDown 聚焦首行');
+    for (let i = 0; i < 40; i++) view.contentEl.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }));
+    check(view._list.focusedIndex === 40, '虚拟列表：连续下移索引不错位');
+    const focusedRow = view._list.focusRows[40];
+    check(focusedRow.kind === 'match', '虚拟列表：第 41 行是命中行');
+    check(focusedRow.result.file.basename === 'Bulk Note 0013', '虚拟列表：焦点行对应第 14 个文件');
+    check(view._list.focusedElement() !== null, '虚拟列表：焦点行已滚进视口并渲染');
+    check(view._list.focusedElement().closest('.search-result').querySelector('.tree-item-inner').textContent === 'Bulk Note 0013', '虚拟列表：焦点元素与模型一致');
+    check(view.childrenEl.querySelectorAll('.search-result').length < 30, '虚拟列表：键盘移动后 DOM 节点仍有上限');
+    opened = null;
+    view.contentEl.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    check(!!opened && opened.path === focusedRow.result.file.path, '虚拟列表：Enter 打开焦点所在文件');
+    view.contentEl.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowUp', bubbles: true }));
+    check(view._list.focusedIndex === 39, '虚拟列表：ArrowUp 回到上一行');
+    check(view._list.focusRows[39].kind === 'file', '虚拟列表：文件行在命中行之前');
+    view.contentEl.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowUp', bubbles: true }));
+    check(view._list.focusedIndex === 38, '虚拟列表：ArrowUp 继续回到命中行');
+
+    // 排序不改变计数与结果数
+    const countBeforeSort = view.resultCountEl.textContent;
+    for (let i = 0; i < bulkFiles.length; i++) bulkFiles[i].stat.mtime = 1000 + i;
+    view.setSortOrder('byModifiedTime');
+    check(view._results.length === bulkCount, '虚拟列表：排序不改变结果数');
+    check(view.resultCountEl.textContent === countBeforeSort, '虚拟列表：排序不改变计数');
+    check(view._results[0].file.basename === 'Bulk Note 0519', '虚拟列表：按修改时间新到旧');
+    check(view._results[bulkCount - 1].file.basename === 'Bulk Note 0000', '虚拟列表：按修改时间旧到新在末尾');
+    const sortedNames = bulkNames();
+    const sortedIndices = bulkIndices(sortedNames);
+    check(sortedIndices.every((value, index) => index === 0 || value === sortedIndices[index - 1] + 1), '虚拟列表：排序后 DOM 顺序与结果集一致');
+    view.setSortOrder('alphabetical');
+    check(view._results[0].file.basename === 'Bulk Note 0000', '虚拟列表：恢复文件名升序');
+    check(view._results[bulkCount - 1].file.basename === 'Bulk Note 0519', '虚拟列表：文件名升序末尾正确');
+
+    // 折叠全部在虚拟列表下依然生效
+    view.setCollapseAll(true);
+    check([...view.childrenEl.querySelectorAll('.search-result')].every((el) => el.classList.contains('is-collapsed')), '虚拟列表：折叠全部生效');
+    check(view.childrenEl.querySelectorAll('.search-result-file-match').length === 0, '虚拟列表：折叠全部后不渲染命中行');
+    // 折叠后每组只剩标题行，视口内可容纳的分组变多，但仍远少于总数
+    check(view.childrenEl.querySelectorAll('.search-result').length < 80, '虚拟列表：折叠全部后节点仍有上限');
+    check(view.childrenEl.querySelectorAll('.search-result').length * 5 < bulkCount, '虚拟列表：折叠全部后渲染分组远少于总结果数');
+    view.setCollapseAll(false);
+    check(view.childrenEl.querySelectorAll('.search-result-file-match').length > 0, '虚拟列表：展开全部恢复命中行');
+
+    // 解释区、空态与大小写开关在大结果集下仍可用
+    view.explainToggle.setValue(true);
+    check(view.searchInfoEl.style.display !== 'none', '虚拟列表：解释区在大结果集下可见');
+    check(view.searchInfoEl.textContent.includes('匹配') || view.searchInfoEl.textContent.includes('Match'), '虚拟列表：解释区内容存在');
+    view.explainToggle.setValue(false);
+    check(view.searchInfoEl.style.display === 'none', '虚拟列表：关闭解释隐藏解释区');
+    await view.setQuery('quokka-no-such-token');
+    check(view.childrenEl.querySelectorAll('.search-result').length === 0, '虚拟列表：无结果不渲染分组');
+    check(view.emptyEl.style.display !== 'none', '虚拟列表：无结果显示空态');
+    check(view.resultCountEl.textContent.replace(/[^0-9]/g, '') === '0', '虚拟列表：无结果计数为零');
+    await view.setQuery('zebra');
+    check(view._results.length === bulkCount, '虚拟列表：重新搜索恢复结果数');
+    view.caseButtonEl.click();
+    await wait(80);
+    check(view._matchCase === true, '虚拟列表：大小写开关生效');
+    check(view._results.length === bulkCount, '虚拟列表：大小写开关不改变命中文件数');
+    view.caseButtonEl.click();
+    await wait(80);
+    check(view._matchCase === false, '虚拟列表：大小写开关可关闭');
+
+    // 继续滚动：窗口继续前移，条目仍与模型一致
+    view.resultEl.scrollTop = Math.floor(view.resultEl.scrollHeight * 0.75);
+    await wait(160);
+    const quarterNames = bulkNames();
+    const quarterIndices = bulkIndices(quarterNames);
+    check(quarterIndices[0] > midIndices[0], '虚拟列表：继续滚动后窗口继续前移');
+    check(quarterIndices.every((value, index) => index === 0 || value === quarterIndices[index - 1] + 1), '虚拟列表：继续滚动后条目连续有序');
+    check(quarterNames.length < 30, '虚拟列表：继续滚动后节点仍有上限');
+    check(quarterIndices.every((value) => value >= 0), '虚拟列表：继续滚动后条目来自结果集');
+    view.resultEl.scrollTop = 0;
+    await wait(160);
+    check(bulkNames()[0] === 'Bulk Note 0000', '虚拟列表：滚回顶部恢复首条');
+    check(view.childrenEl.querySelectorAll('.search-result').length < 30, '虚拟列表：滚回顶部后节点仍有上限');
     await view.setQuery('file:Alpha');
-    view.countEl.click();
-    await wait(30);
-    check(!!document.querySelector('.menu'), '结果计数打开菜单');
-    const copyItem = [...document.querySelectorAll('.menu .menu-item')].find((el) => el.textContent.includes('复制') || el.textContent.toLowerCase().includes('copy'));
-    check(!!copyItem, '菜单包含复制搜索结果');
-    copyItem.click();
-    await wait(30);
-    const modal = document.querySelector('.modal-container .modal');
-    check(!!modal, '复制弹窗打开');
-    check(!!modal.querySelector('.modal-title'), '复制弹窗标题存在');
-    check(!!modal.querySelector('.copy-search-result-container'), '复制弹窗使用原版容器');
-    const textarea = modal.querySelector('.copy-search-result-textarea');
-    check(!!textarea, '复制弹窗包含文本框');
-    check(textarea.value.includes('Search Acceptance'), '文本框包含结果短路径');
-    check(textarea.value.includes('Alpha Note'), '文本框包含文件名');
-    const modalSettings = modal.querySelectorAll('.copy-search-result-container .setting-item');
-    check(modalSettings.length === 3, '复制弹窗三个设置项');
-    check(modal.querySelectorAll('.copy-search-result-container .dropdown').length === 2, '复制弹窗两个下拉框');
-    modal.querySelector('.copy-search-result-container .setting-item.mod-toggle .checkbox-container').click();
-    await wait(20);
-    check(textarea.value.includes('Alpha Note.md'), '显示路径切换后包含扩展名');
-    const selects = modal.querySelectorAll('.copy-search-result-container select');
-    selects[0].value = 'wikilink';
-    selects[0].dispatchEvent(new Event('change', { bubbles: true }));
-    check(textarea.value.includes('[['), '链接样式切换为 Wiki 链接');
-    selects[1].value = '-';
-    selects[1].dispatchEvent(new Event('change', { bubbles: true }));
-    check(textarea.value.startsWith('- '), '列表前缀切换为无序列表');
-    const done = [...modal.querySelectorAll('.modal-button-container button')].find((el) => el.textContent.includes('完成') || el.textContent.includes('Done'));
-    check(!!done, '复制弹窗有完成按钮');
-    done.click();
-    await wait(30);
-    check(!document.querySelector('.modal-container .modal') || document.querySelector('.modal-container .modal').classList.contains('is-hidden'), '完成关闭复制弹窗');
+
+    // ------------------------------------------------------------- 建议弹层
+    const panel = () => document.querySelector('.suggestion-container.mod-search-suggestion');
+    const suggItems = () => (panel() ? [...panel().querySelectorAll('.suggestion-item')] : []);
+    const zh = (re, text) => re.test(String(text || ''));
+    view._suggest.saveHistory('zeta query');
+    check(JSON.parse(localStorage.getItem('recent-searches') || '[]')[0] === 'zeta query', '历史写入 recent-searches 键');
+    view.inputEl.value = '';
+    view.inputEl.dispatchEvent(new Event('input', { bubbles: true }));
+    view.inputEl.focus();
+    await wait(150);
+    check(!!panel(), '聚焦输入框弹出建议面板');
+    check(panel().firstElementChild.className === 'suggestion', '建议面板内层是 .suggestion');
+    const optGroup = suggItems()[0];
+    check(optGroup.classList.contains('mod-group'), '首项是分组头');
+    check(!!optGroup.querySelector('.suggestion-title.list-item-part.mod-extended'), '分组头用 list-item-part mod-extended');
+    check(!!optGroup.querySelector('.suggestion-aux .search-suggest-icon.clickable-icon'), '分组头带图标按钮');
+    check(zh(/了解更多|Read more/i, optGroup.querySelector('.search-suggest-icon').getAttribute('aria-label')), '搜索选项组图标带原版文案');
+    check(optGroup.querySelector('.search-suggest-icon svg').getAttribute('class').includes('lucide-info'), '搜索选项组用 lucide-info');
+    const opNames = suggItems().slice(1, 7).map((el) => el.querySelector('.suggestion-title span').textContent);
+    check(opNames.join('|') === 'path:|file:|tag:|line:|section:|[property]', '算子建议六项且顺序对齐原版');
+    check(zh(/路径|path/i, suggItems()[1].querySelector('.search-suggest-info-text').textContent), '算子项带说明文案');
+    check(suggItems()[1].classList.contains('is-selected'), '默认选中第一项算子（跳过组头）');
+    const historyGroup = suggItems()[7];
+    check(historyGroup.classList.contains('mod-group'), '历史分组存在');
+    check(zh(/清除|clear/i, historyGroup.querySelector('.search-suggest-icon').getAttribute('aria-label')), '历史组图标带清除文案');
+    check(historyGroup.querySelector('.search-suggest-icon svg').getAttribute('class').includes('lucide-x'), '历史组用 lucide-x');
+    check(suggItems()[8].textContent === 'zeta query', '历史项显示最近搜索');
+    check(parseFloat(panel().style.width) >= 300, '建议面板宽度不小于 300px');
+    const suggestRect = view.inputEl.getBoundingClientRect();
+    check(Math.abs(parseFloat(panel().style.top) - (suggestRect.bottom + 5)) < 2, '建议面板贴在输入框下方 5px');
+    view.inputEl.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }));
+    check(suggItems()[2].classList.contains('is-selected'), 'ArrowDown 移动选中项');
+    view.inputEl.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    await wait(80);
+    check(view.inputEl.value === 'file:' && view.inputEl.selectionStart === 5, 'Enter 插入算子 token 且光标在末尾');
+    check(!panel(), '选中后面板关闭');
+    view.inputEl.value = 'pa';
+    view.inputEl.dispatchEvent(new Event('input', { bubbles: true }));
+    await wait(120);
+    check(suggItems().length === 2 && suggItems()[1].textContent.startsWith('path:'), '按前缀过滤算子建议');
+    view.inputEl.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    await wait(60);
+    check(!panel(), 'Escape 关闭建议面板');
+    view.inputEl.value = '';
+    view.inputEl.dispatchEvent(new Event('input', { bubbles: true }));
+    await wait(120);
+    panel().querySelectorAll('.search-suggest-icon')[1].click();
+    await wait(120);
+    check(localStorage.getItem('recent-searches') === null, '清除历史按钮删除 recent-searches');
+    check(!panel().textContent.includes('zeta query'), '清除后历史项消失');
+    await view.setQuery('file:Alpha');
+    await wait(5300);
+    check(JSON.parse(localStorage.getItem('recent-searches') || '[]').includes('file:Alpha'), '搜索结束后写入最近搜索');
 
     // ------------------------------------------------------------- 状态
     view.setSortOrder('byModifiedTime');
@@ -572,6 +763,7 @@
       extraContext: false,
       sortOrder: 'alphabetical',
     });
+
     result.ok = true;
     result.pass = true;
     result.count = checks.length;

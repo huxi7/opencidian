@@ -2,6 +2,8 @@
  * [INPUT]: 依赖 vault、metadataCache、workspace、Menu 与图谱数据、查询、面板模块。
  * [OUTPUT]: 导出 GraphEngine；连接筛选、节点动作、悬停预览、动画与渲染器。
  * [POS]: 图谱编排层；由全局和局部视图共同持有，关闭时停止异步任务并收起悬停预览。
+ *        节点右键菜单按原版分节表排布，并向 workspace 触发 file-menu（供核心层与图谱插件补项）。
+ *        悬停预览走 workspace 的 hover-link 事件（source=graph、targetEl=null），需按住 Mod 才弹。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 import { t } from '../core/i18n.js';
@@ -271,7 +273,9 @@ export class GraphEngine {
     else this.openTagSearch(id);
   }
 
-  /* 原版右键菜单：标题（文件名）/ 在新标签页中打开 / 删除文件；file-menu 事件本项目无来源，省略 */
+  /* 原版右键菜单：分节表 title/open/action/info/info.copy/view/view.linked/system/''/danger，
+     view.linked 是子菜单（打开关联视图），条目依次为标题（短文件名）/ 在新标签页中打开 /
+     file-menu 事件贡献项 / 删除文件。file-menu 事件本项目由核心层与图谱插件各贡献一段。 */
   onNodeRightClick(ev, id, type) {
     if (type === 'tag') { this.openTagSearch(id); return; }
     const app = this.app;
@@ -279,10 +283,13 @@ export class GraphEngine {
     const file = path ? app.vault.getFileByPath(path) : null;
     if (!file || !(ev instanceof MouseEvent)) return;
     const menu = new Menu(app);
-    menu.addItem((item) => item.setSection('title').setTitle(file.name).setIsLabel(true));
+    menu.addSections(['title', 'open', 'action', 'info', 'info.copy', 'view', 'view.linked', 'system', '', 'danger']);
+    menu.setSectionSubmenu('view.linked', { title: t('interface.menu.open-linked-view'), icon: 'lucide-link' });
+    menu.addItem((item) => item.setSection('title').setTitle(file.basename).setIsLabel(true));
     menu.addItem((item) => item.setSection('open')
       .setTitle(t('interface.menu.open-in-new-tab')).setIcon('file-plus')
       .onClick(() => app.workspace.openLinkText(id, '', true)));
+    app.workspace.trigger('file-menu', menu, file, 'graph-context-menu', this.view.leaf);
     menu.addItem((item) => item.setSection('danger')
       .setTitle(t('interface.menu.delete-file')).setIcon('trash-2').setWarning(true)
       .onClick(() => { app.fileManager.promptForDeletion(file); }));
@@ -290,7 +297,8 @@ export class GraphEngine {
   }
 
   /* 原版 onNodeHover：文件、焦点与附件节点经 workspace 的 hover-link 事件请求页面预览；
-     标签与未解析节点不触发。同一节点的预览仍在时只续命，不重复请求。 */
+     标签与未解析节点不触发。同一节点的预览仍在时只续命，不重复请求。
+     原版载荷只有 event/source/hoverParent/targetEl/linktext 五项，没有 sourcePath。 */
   onNodeHover(ev, id, type) {
     this.onNodeUnhover();
     if (!(ev instanceof MouseEvent)) return;
@@ -303,7 +311,7 @@ export class GraphEngine {
     }
     this.lastHoverLink = id;
     this.app.workspace.trigger('hover-link', {
-      event: ev, source: 'graph', hoverParent: this, targetEl: null, linktext: id, sourcePath: '',
+      event: ev, source: 'graph', hoverParent: this, targetEl: null, linktext: id,
     });
   }
 

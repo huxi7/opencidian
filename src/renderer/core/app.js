@@ -3,6 +3,7 @@
  * [OUTPUT]: 导出 App，装配启动、外观、事件与布局保存。
  * [POS]: 应用组合根。新建和修改进入元数据解析，启动修复固定侧栏入口。isSettingsWindow（1.14.4 设置独立窗口）只跳过看门狗/后台索引/布局加载，其余状态照常装配。
  *        新库默认只展开左栏（右栏反链/大纲收起）；body 补 obsidian-app 与 show-inline-title，不再挂 body.is-folding。
+ *        _applyCustomCss 注入当前主题：现代主题 themes/<name>/theme.css，旧版主题（themes/ 下的裸 .css）读 themes/<name>.css（对齐原版 customCss.getThemePath）。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 /*
@@ -216,8 +217,10 @@ export class App extends Events {
   }
 
   /**
-   * 注入 .obsidian/themes/<cssTheme>/theme.css 与 .obsidian/snippets 中启用的片段。
+   * 注入当前主题 CSS 与 .obsidian/snippets 中启用的片段。
    * 主题/片段开关变化时由 settings 'change' 事件触发。
+   * 主题路径对齐原版 customCss.getThemePath：现代主题 themes/<name>/theme.css；
+   * 旧版主题（themes/ 下的裸 .css）读 themes/<name>.css。
    */
   _applyCustomCss() {
     const fs = require('fs');
@@ -226,16 +229,29 @@ export class App extends Events {
     let themeEl = document.getElementById('obsidian-theme-css');
     const cssTheme = appearance.cssTheme || '';
     if (cssTheme) {
+      const themesDir = nodePath.join(this.settings.dir, 'themes');
+      const modernPath = nodePath.join(themesDir, cssTheme, 'theme.css');
+      const legacyPath = nodePath.join(themesDir, cssTheme + '.css');
+      let file = '';
       try {
-        const css = fs.readFileSync(nodePath.join(this.settings.dir, 'themes', cssTheme, 'theme.css'), 'utf8');
-        if (!themeEl) {
-          themeEl = document.createElement('style');
-          themeEl.id = 'obsidian-theme-css';
-          document.head.appendChild(themeEl);
+        if (fs.existsSync(modernPath)) file = modernPath;
+        else if (fs.existsSync(legacyPath)) file = legacyPath;
+      } catch (e) { file = ''; }
+      if (file) {
+        try {
+          const css = fs.readFileSync(file, 'utf8');
+          if (!themeEl) {
+            themeEl = document.createElement('style');
+            themeEl.id = 'obsidian-theme-css';
+            themeEl.setAttribute('data-css-theme', cssTheme);
+            document.head.appendChild(themeEl);
+          }
+          themeEl.textContent = css;
+        } catch (e) {
+          if (themeEl) { themeEl.remove(); themeEl = null; }
         }
-        themeEl.textContent = css;
-      } catch (e) {
-        if (themeEl) { themeEl.remove(); themeEl = null; }
+      } else if (themeEl) {
+        themeEl.remove();
       }
     } else if (themeEl) {
       themeEl.remove();

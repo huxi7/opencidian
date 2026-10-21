@@ -9,6 +9,10 @@
  *        只读、缩放断点下的占位与标签隐藏、滚轮平移/缩放与智能缩放、右键拖拽平移与右键菜单顺序、剪贴板复制/剪切/粘贴与内部/外部/URL/文本拖入）、帮助弹窗与空画布占位三行。
  *        链接卡用进程内 HTTP 页面验证真实标题回写；关闭端口触发 did-fail-load 验证失败占位（URL/原因/重试）。
  *        分组背景验证文件重命名、移动到新文件夹、文件夹整体重命名与删除后 bgPath/getData/contentEl/落盘 JSON 均无死路径。
+ *        蓝框残留：卡片菜单纯点击与连接点纯点击都不留 .is-dummy 虚影（原版把临时节点建在拖拽工厂里），画布内也无 accent 填充色块；
+ *        文件卡渲染页内标题（.mod-header.mod-ui > .inline-title，文案是文件名）；.canvas 文件卡渲染缩略图（svg.canvas-minimap）而非 JSON 原文；
+ *        核心插件页的白板齿轮入口能打开白板设定页签。
+ *        残留虚影的逐路径体检、虚影几何、拖拽可用性、新建卡编辑态见 canvas-dummy 场景。
  *        数值一律对照原版 app.css/app.js 的取值（如 stroke-width: calc(2px * var(--zoom-multiplier))、分组 z = -w*h）。
  *        仅由 run.mjs 在带标记的临时库执行，不做视觉验收。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
@@ -634,6 +638,94 @@
   ok(!!droppedText, '文本拖入建文本卡');
   if (droppedText) view.removeNode(droppedText);
   await wait(80);
+
+  /* ------------------------------------- E5 画布内不留彩色蓝框（原版无 .is-dummy 残影） */
+  // 原版 dragTempNode / onConnectionPointerdown 把临时节点建在拖拽工厂里：
+  // 纯点击（无位移）不建临时节点，故画布上不留 .is-dummy 的 accent 蓝框。
+  const dummies = () => document.querySelectorAll('.canvas-node.is-dummy').length;
+  const accentFilled = () => {
+    const accent = resolve('var(--color-accent)');
+    return [...document.querySelectorAll('.canvas-wrapper *')].filter((el) => {
+      const cs = getComputedStyle(el);
+      const m = /rgba?\((\d+), (\d+), (\d+)(?:, ([\d.]+))?\)/.exec(cs.backgroundColor);
+      if (!m) return false;
+      if (m[4] !== undefined && parseFloat(m[4]) < 0.05) return false;
+      return Math.abs(+m[1] - accent.r) < 12 && Math.abs(+m[2] - accent.g) < 12 && Math.abs(+m[3] - accent.b) < 12;
+    });
+  };
+  const clickWithoutMove = (el) => {
+    const r = el.getBoundingClientRect();
+    const init = {
+      bubbles: true, cancelable: true, isPrimary: true, pointerType: 'mouse', pointerId: 77,
+      button: 0, buttons: 1, clientX: r.x + r.width / 2, clientY: r.y + r.height / 2,
+    };
+    el.dispatchEvent(new PointerEvent('pointerdown', init));
+    el.dispatchEvent(new PointerEvent('pointerup', { ...init, buttons: 0 }));
+    el.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, clientX: init.clientX, clientY: init.clientY }));
+  };
+  ok(dummies() === 0, '画布内没有 .is-dummy 临时节点');
+  const cardMenuButtons = Array.from(view.cardMenuEl.querySelectorAll('.canvas-card-menu-button'));
+  const nodesBeforeCardClick = view.nodes.size;
+  clickWithoutMove(cardMenuButtons[0]);
+  await wait(200);
+  ok(view.nodes.size === nodesBeforeCardClick + 1, '卡片菜单纯点击仍能建卡（点击语义保留）');
+  ok(dummies() === 0, '卡片菜单纯点击不留 .is-dummy 蓝框');
+  ok(accentFilled().length === 0, '卡片菜单纯点击后画布内无 accent 填充色块');
+  const cardNode = Array.from(view.nodes.values()).find((n) => n.id !== 'g1' && n.id !== 'g2' && n.id !== 't1' && n.id !== 't2' && n.id !== 'i1' && n.id !== 'f1' && n.id !== 'l1' && n.id !== 'b1' && n.id !== 'm1');
+  if (cardNode) view.removeNode(cardNode);
+  await wait(120);
+  // 连接点纯点击：原版不在画布上留虚影，也不留悬空边
+  const edgesBeforePoint = view.edges.size;
+  const connectPoint = node('f1').nodeEl.querySelector('.canvas-node-connection-point[data-side="right"]');
+  ok(!!connectPoint, '文件卡带右侧连接点');
+  clickWithoutMove(connectPoint);
+  await wait(200);
+  ok(dummies() === 0, '连接点纯点击不留 .is-dummy 蓝框');
+  ok(view.edges.size === edgesBeforePoint, '连接点纯点击不留悬空边');
+  ok(accentFilled().length === 0, '连接点纯点击后画布内无 accent 填充色块');
+
+  /* --------------------------------------------- E6 文件卡的页内标题（inline title） */
+  const fileCard = node('f1');
+  await until(() => !!fileCard.nodeEl.querySelector('.canvas-node-content.markdown-embed .inline-title'), 'md 卡片渲染出页内标题');
+  const inlineTitle = fileCard.nodeEl.querySelector('.inline-title');
+  ok(inlineTitle.textContent === 'Note', '页内标题是文件名（短名）');
+  const titleSizer = fileCard.nodeEl.querySelector('.markdown-preview-sizer');
+  ok(titleSizer.firstElementChild && titleSizer.firstElementChild.classList.contains('mod-header'), '页内标题在正文层首位（原版 mod-header > inline-title）');
+  ok(!!fileCard.nodeEl.querySelector('.mod-header.mod-ui > .inline-title'), '页内标题结构是 .mod-header.mod-ui > .inline-title');
+  ok(parseFloat(css(inlineTitle, 'font-size')) > parseFloat(css(fileCard.nodeEl.querySelector('.markdown-preview-view p'), 'font-size')),
+    '页内标题字号大于正文（原版 h1 尺寸）');
+
+  /* ------------------------------------------------------ E7 白板设定入口 */
+  app.setting.open();
+  await wait(200);
+  const pluginsTab = app.setting.openTabById('plugins');
+  await wait(200);
+  const canvasRow = [...pluginsTab.containerEl.querySelectorAll('.setting-items > .setting-item')]
+    .find((row) => {
+      const name = String((row.querySelector('.setting-item-name') || {}).textContent || '').trim();
+      return name === '白板' || name === 'Canvas';
+    });
+  ok(!!canvasRow, '核心插件页有白板行');
+  const canvasGear = canvasRow && [...canvasRow.querySelectorAll('.extra-setting-button')].find((b) => b.querySelector('svg.lucide-settings'));
+  ok(!!canvasGear && canvasGear.style.display !== 'none', '白板行显示设置齿轮（settingTab 入口）');
+  canvasGear.click();
+  await wait(250);
+  ok(app.setting.activeTab && app.setting.activeTab.id === 'canvas', '点击齿轮打开白板设定页签');
+  const canvasSettingRows = [...app.setting.activeTab.containerEl.querySelectorAll('.setting-items > .setting-item')];
+  ok(canvasSettingRows.length === 8, '白板设定页有八条设置项');
+  app.setting.close();
+  await wait(150);
+
+  /* ---------------- E8 .canvas 文件卡渲染缩略图（不再显示 JSON 原文） */
+  const canvasCard = view.createFileNode({
+    pos: { x: 900, y: 600 }, size: { width: 400, height: 400 }, file: file, focus: false, save: false,
+  });
+  await until(() => !!canvasCard.nodeEl.querySelector('svg.canvas-minimap'), '.canvas 卡渲染出缩略图');
+  ok(canvasCard.contentEl.hasClass('canvas-embed'), '.canvas 卡内容层是画布嵌入（原版 cte）');
+  ok(!canvasCard.contentEl.textContent.includes('"nodes"'), '.canvas 卡不显示原始 JSON 文本');
+  ok(canvasCard.nodeEl.querySelectorAll('svg.canvas-minimap rect').length === 9, '缩略图给九个节点各画一个矩形');
+  view.removeNode(canvasCard);
+  await wait(120);
 
 
   const helpButton = Array.from(view.canvasControlsEl.querySelectorAll('.canvas-control-item')).pop();

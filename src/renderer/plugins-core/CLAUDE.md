@@ -17,20 +17,24 @@ outgoing-link.js: 出链面板视图(type outgoing-link)。逐条列出当前文
 outline.js: 按标题层级建立大纲。跳级归最近父标题，同名标题按行号跳转，关闭释放资源。
 tag-pane.js: 标签面板视图(type tag)。标签树/排序/嵌套开关。
 properties.js: 属性插件(id properties，原版 properties)。all-properties 汇总全部属性键与出现文件数，四种排序(名称正/倒、频次高/低，默认频次高到低)，点击属性打开全局搜索 ["键"](Mod 点击切换 token)；file-properties 只读复用 markdown/properties.js 的行渲染并跟随活动文件；命令 properties:open / properties:open-local 与状态栏属性计数(点击打开 file-properties)。不自动创建窗格；禁用撤销视图、命令与状态栏条目。
-global-search.js: 全局搜索视图(type search)。DOM 与 1.14.4 对齐（search-row/search-params/search-results-info/tree-item 分组），负责状态、排序、折叠、解释与键盘导航；查询与命中委托 search-query.js，复制结果弹窗委托 search-copy.js，自身不再实现匹配。
-search-query.js: 无 DOM 查询内核。parseQuery 解析 file/path/tag/content、line/section/block/task/task-todo/task-done、match-case/ignore-case、属性 [key]/[key:value]、引号、OR、括号、否定、正则与大小写；createSearchDocument 按行/章节/块/任务切正文，searchDocument 返回字段/正文/属性命中与行上下文；queryInfo 供解释视图。
+global-search.js: 全局搜索视图(type search)。DOM 与 1.14.4 对齐（search-row/search-params/search-results-info/tree-item 分组），负责状态、排序、折叠、解释与键盘导航；结果列表的虚拟化与分组模型委托 search-results.js，查询与命中委托 search-query.js，复制结果弹窗委托 search-copy.js，输入框建议弹层委托 search-suggest.js，自身不再实现匹配。file-menu/editor-menu 事件按原版补「在文件夹中查找」（非根文件夹，action 段，lucide-folder-search，查询 path:"<目录>/"）与「查找 …」（选区，selection 段）。
+search-query.js: 查询门面。只转出 parseQuery/queryInfo（search-query-parse.js）与 createSearchDocument/searchDocument（search-query-match.js），保持旧导入路径可用。
+search-query-parse.js: 无 DOM 查询解析层。parseQuery 解析 file/path/tag/content、line/section/block/task/task-todo/task-done、match-case/ignore-case、属性 [key]/[key:value]、引号、OR、括号、否定、正则与大小写；queryInfo 供解释视图。
+search-query-match.js: 无 DOM 匹配层。createSearchDocument 按行/章节/块/任务切正文并建立属性表，searchDocument 返回字段/正文/属性命中与行上下文、评分与徽标。
+search-results.js: 结果列表内核。SearchVirtualList 只渲染视口内分组（上下占位块撑总高，滚动条与总条目成比例）、行高实测缓存与复用；SearchResults 负责分组模型、折叠态不参与键盘导航、命中行按段落边界扩展上下文、焦点与计数。标题与命中行的 mouseover 抛 workspace 的 hover-link（source=search，带目标元素与行号 state），供 page-preview 贴目标定位。
 search-copy.js: 复制搜索结果弹窗。只读取结果文件列表，按路径/内链/列表前缀三项选项生成文本并写系统剪贴板，不触发搜索或改写搜索状态。
+search-suggest.js: 搜索框建议弹层（对齐原版 k2/w2）。DOM 为 .suggestion-container.mod-search-suggestion > .suggestion > .suggestion-item.mod-complex.search-suggest-item，算子表逐字取原版 6 项（path:、file:、tag:、line:()、section:()、[property]）并带说明文案；含「搜索选项/搜索历史」组头与图标按钮（了解更多、清除历史）；历史存 localStorage 的 recent-searches（去重、最近在前、上限 20、搜索结束后 5s 防抖写入、清除即删键）；↑/↓/Home/End/Enter/Escape 与算子插入语义（替换当前词元、光标停在括号前）同原版；定位贴输入框底，宽 max(输入框宽, 300)。
 editor-status.js: 状态栏视图状态图标与切换菜单(Reading/Source/Live Preview，tooltip，mod-clickable)。
-page-preview.js: 内部链接悬停预览 popover。五类来源(editor/preview/search/tab-header/graph)可配 Mod 门控（默认 search/editor/tab-header/graph 需 Mod，preview 不需要），未解析链接空态，设置写 page-preview.json。内容按原版嵌块结构 .markdown-embed > .markdown-embed-content > .markdown-preview-view（inline-title 文件名、32px padding、400px 限高内部滚动）；80ms --anim-motion-swing 淡入；内部滚动不关闭。DOM 链接未按 Mod 时只在悬停期间挂临时 keydown/mousemove 监听，按下 Mod 补弹，移出/输入普通字符/2s 无移动即拆除；全局 keydown/keyup 仅在等待或 popover 存在时挂载。graph 来源由 GraphEngine 经 workspace 的 hover-link 事件请求（无目标元素，按鼠标坐标定位）；原版图谱无「先悬停再按 Mod」补弹，未按 Mod 直接忽略。插件持有 parent.hoverPopover 句柄供引擎撤销悬停。
+page-preview.js: 内部链接悬停预览 popover。五类来源(editor/preview/search/tab-header/graph)可配置是否需按住 Mod（默认 search/editor/tab-header/graph 需 Mod，preview 不需要），未解析链接空态，设置写 page-preview.json。内容按原版嵌块结构 .markdown-embed > .markdown-embed-content > .markdown-preview-view（inline-title 文件名、32px padding、400px 限高内部滚动）；80ms --anim-motion-swing 淡入；内部滚动不关闭。DOM 链接未按 Mod 时只在悬停期间挂临时 keydown/mousemove 监听，按下 Mod 补弹，移出/输入普通字符/2s 无移动即拆除；全局 keydown/keyup 仅在等待或 popover 存在时挂载。hover-link 事件带 targetEl 时（搜索结果、DOM 链接）贴目标元素定位、指针移出即收起（移进浮层不算）；图谱来源无 targetEl，按原版必须按住 Mod 才弹，不提供「先悬停再按 Mod」补弹。插件持有 parent.hoverPopover 句柄供引擎撤销悬停。
 word-count.js: 状态栏字数统计(中英混排规则)；原版无点击弹窗。
-canvas.js: 注册画布视图、四个命令与新建功能区按钮。canvas:new-file 建空画布；canvas:export-as-image 仅在当前叶子是画布时可用（先弹设置弹窗：范围/缩放/水印/隐私，确认后渲染并弹保存对话框写 PNG，取消不落盘）；canvas:jump-to-group 仅在画布含分组时可用；canvas:convert-to-file 仅在单选文本卡片时可用。Mod 点击新标签并聚焦，禁用撤销按钮与注册。
+canvas.js: 注册画布视图、四个命令与新建功能区按钮。canvas:new-file 按白板设定里的「新白板位置」建空画布；canvas:export-as-image 仅在当前叶子是画布时可用（先弹设置弹窗：范围/缩放/水印/隐私，确认后渲染并弹保存对话框写 PNG，取消不落盘）；canvas:jump-to-group 仅在画布含分组时可用；canvas:convert-to-file 仅在单选文本卡片时可用。settingTab 导出白板设定页（新白板位置/文件夹、滚轮行为、默认 Mod 行为、卡片标签可见性、对齐网格/物体、缩放阈值），选项落 .obsidian/canvas.json 并即时灌回打开的视图。Mod 点击新标签并聚焦，禁用撤销按钮与注册。
 bookmarks.js: 持久化文件、目录、搜索与分组书签。目录改名同步子路径。
 daily-notes.js: 串行创建日期笔记与嵌套目录。模板变量及 createMarkdownNote 供其余笔记插件复用。
 templates.js: 模板功能区执行已有插入命令。展开变量、合并属性；属性函数供重组复用。
 note-composer.js: 提取或合并未保存文本。目标确认落盘后替换来源并重定向反链，遵循回收策略。
-graph.js: 图谱视图、命令与功能区入口。普通点击复用中心，Mod 点击新标签并聚焦；禁用撤销按钮和命令。
-graph-engine.js: 协调查询、元数据变化、图谱选项、悬停预览与节点操作。悬停仅对文件/焦点/附件节点触发 hover-link 事件；标签与未解析节点不预览。
-graph-controls.js: 筛选、颜色、显示与力学控件。变更交给引擎。颜色组顺序即优先色顺序，按住颜色圆点拖动重排。
+graph.js: 图谱视图、命令与功能区入口。普通点击复用中心，Mod 点击新标签并聚焦；禁用撤销按钮和命令。实现原版 onFileMenu：文件树上下文菜单里为 md 文件补「打开局部关系图」（view.linked 段，lucide-git-fork）。
+graph-engine.js: 协调查询、元数据变化、图谱选项、悬停预览与节点操作。悬停仅对文件/焦点/附件节点触发 hover-link 事件（载荷按原版五项，不带多余字段）；标签与未解析节点不预览。节点右键菜单按原版分节表（title/open/action/info/info.copy/view/view.linked/system/danger）+ view.linked 子菜单 + file-menu 事件联动。
+graph-controls.js: 筛选、颜色、显示与力学控件。变更交给引擎。颜色组顺序即优先色顺序，按住颜色圆点拖动重排；新建颜色组按原版以当前组序 ×40° 递增色相（追加行，不重建整表），组以检索式表达、无右键菜单。力参数滑杆区间与换算对齐原版（向心力 0-1、排斥力 0-20 连线力 0-1、连线距离 30-500），不带原版没有的动态提示与 CTA 按钮。
 graph-data.js: 根据 Vault 清单构图。计算局部邻域和孤立节点。
 graph-query.js: 文件、正文、路径与标签查询。供筛选及颜色组复用。
 graph-simulation.js: 图谱力学的线程门面（对外方法名与旧实现一致）。worker 后端按原版 sim.js 协议发消息：app:// 直载 Worker → fetch + Blob URL（原版 Rz 手法）→ 本地线程三级回退；worker 更换（直载失败或崩溃）时重发镜像状态。收到位置写 nodeById（尊重 fx/fy）后回调 onUpdate，SAB 用末尾 Uint32 版本守卫、transfer 的 ArrayBuffer 应用后清空。镜像 alpha 只跟随命令抬高（graph.js 直接写 alpha=0 冻结模拟）；worker 后端 finished = 静默 250ms 且 alphaTarget=0，tick() 为 no-op（localTicks 计主线程物理帧数）。

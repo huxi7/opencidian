@@ -1,7 +1,7 @@
 /**
  * [INPUT]: 独立临时 vault 与 OBS_ACT eval 注入的应用实例。
  * [OUTPUT]: 返回验收断言结果；失败抛出异常，供运行器判定。
- * [POS]: settings-ui 场景：编辑器（拼写词典/语言胶囊/Not available/Vim 验证/默认模式同步）、文件页（路径建议、忽略文件、重点击聚焦、附件位置、重建缓存）、关于页（语言重启状态、硬件加速、版本行、启动时间弹窗）；
+ * [POS]: settings-ui 场景：侧栏页签顺序（含原版独立的“界面”页签）、侧栏全局搜索（位置/结构/跨页签过滤/命中高亮/还有 N 个/跳转闪烁/清空）、界面页（标题栏/功能区/缩放/原生菜单/窗口边框/新窗口设置）、功能区子页面、编辑器（拼写词典/语言胶囊/Not available/Vim 验证/默认模式同步）、文件页（路径建议、忽略文件子页面与新增表单、附件位置、重建缓存）、关于页（版本行、检查更新、可以更新行、语言重启状态、硬件加速、启动时间弹窗）；
  *        并锁住导航无 hover、开关无 hover 阴影、按钮/输入无过渡与输入 focus 焦点环。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
@@ -15,13 +15,14 @@ const rowByName=(root,re)=>[...root.querySelectorAll('.setting-item')].find((el)
 const text=el=>String((el&&el.textContent)||'').trim();
 const modalByTitle=(re)=>[...document.querySelectorAll('.modal:not(.is-hidden)')].find((m)=>{
   const t=m.querySelector('.modal-title');return t&&re.test(t.textContent||'');});
+const pageEl=()=>document.querySelector('.vertical-tab-content-container > .setting-page');
 
-/* ---------------- 编辑器页 ---------------- */
+/* ---------------- 侧栏页签顺序（原版 1.14.4：关于/外观/界面/编辑器/文件与链接/快捷键/核心插件） ---------------- */
 app.setting.open();app.setting.openTabById('editor');await wait(150);
 let editorTab=app.setting.activeTab.containerEl;
 check(!!editorTab&&editorTab.isConnected,'编辑器页打开');
 const navOrder=[...document.querySelectorAll('.vertical-tab-header-group-items[data-section="options"] .vertical-tab-nav-item')].map(n=>n.getAttribute('data-setting-id'));
-check(navOrder.join(',')==='about,appearance,editor,file,hotkeys,plugins','侧栏顺序对齐原版（关于/外观/编辑器/文件/快捷键/核心插件）:: '+navOrder.join(','));
+check(navOrder.join(',')==='about,appearance,interface,editor,file,hotkeys,plugins','侧栏顺序对齐原版（关于/外观/界面/编辑器/文件/快捷键/核心插件）:: '+navOrder.join(','));
 // 导航/开关/按钮的 hover 与过渡（原版 1.14.4 桌面：hover 不变色、无过渡）
 const activeNav=document.querySelector('.vertical-tab-nav-item.is-active');
 check(!!activeNav,'设置页有活动导航项');
@@ -35,6 +36,150 @@ check(!!toggle,'编辑器页有开关');
 check(!getComputedStyle(toggle).boxShadow.includes('0.14'),'开关无悬停重阴影（原版单层 inset）');
 const toggleHoverRules=cssRules().filter((r)=>r.selectorText.includes('.checkbox-container:hover')&&r.style.getPropertyValue('box-shadow'));
 check(toggleHoverRules.length===0,'开关无 hover 阴影规则');
+
+/* ---------------- 侧栏全局搜索（原版 1.14.4：跨页签搜索设置项） ---------------- */
+const searchContainer=document.querySelector('.setting-search-container');
+check(!!searchContainer,'设置侧栏有搜索容器');
+const searchInput=searchContainer.querySelector('input[type=search]');
+check(!!searchInput,'搜索框是 type=search');
+check(searchInput.getAttribute('enterkeyhint')==='search','搜索框 enterkeyhint=search');
+check(searchInput.getAttribute('placeholder')==='搜索设置...','搜索框占位为搜索设置... :: '+(searchInput.getAttribute('placeholder')||''));
+check(!!searchContainer.querySelector('.search-input-clear-button'),'搜索框有清除钮');
+const sideHeader=document.querySelector('.vertical-tab-header');
+check(sideHeader.children[0]===searchContainer,'搜索容器在侧栏顶部');
+check(!!sideHeader.querySelector('.setting-search-results'),'侧栏有搜索结果容器');
+check(!!sideHeader.querySelector('.vertical-tab-header-group-container'),'页签分组在 group-container 里');
+check(getComputedStyle(searchContainer).paddingTop!=='0px','搜索容器有上内边距');
+const groupContainer=sideHeader.querySelector('.vertical-tab-header-group-container');
+const resultsEl=sideHeader.querySelector('.setting-search-results');
+check(getComputedStyle(resultsEl).display==='none','无查询时结果区隐藏');
+// 跨页签过滤
+searchInput.value='主题';
+searchInput.dispatchEvent(new Event('input',{bubbles:true}));await wait(260);
+check(getComputedStyle(resultsEl).display!=='none','有查询时结果区可见');
+check(getComputedStyle(groupContainer).display==='none','有查询时页签分组隐藏');
+const resultGroups=resultsEl.querySelectorAll('.setting-search-result-group');
+check(resultGroups.length>=2,'结果跨页签分组:: '+resultGroups.length);
+const resultTabLabels=[...resultsEl.querySelectorAll('.setting-search-result-tab-label')].map((el)=>text(el));
+check(resultTabLabels.includes('外观'),'结果含外观页签');
+check(resultTabLabels.includes('界面'),'结果含界面页签（跨页签匹配描述）');
+const resultItems=[...resultsEl.querySelectorAll('.setting-search-result-item .vertical-tab-nav-item-title')].map((el)=>text(el));
+check(resultItems.some((t)=>/主题/.test(t)),'结果含主题相关设置项');
+check(!!resultsEl.querySelector('.suggestion-highlight'),'命中文字用 suggestion-highlight 高亮');
+check(!!resultsEl.querySelector('.setting-search-result-tab .vertical-tab-nav-item-icon svg'),'结果组带页签图标');
+check(!!resultsEl.querySelector('.setting-search-result-item .vertical-tab-nav-item-chevron svg.lucide-chevron-right'),'结果项带 chevron-right');
+// 超过 3 条折叠为“还有 N 个”
+searchInput.value='字体';
+searchInput.dispatchEvent(new Event('input',{bubbles:true}));await wait(260);
+const moreRow=resultsEl.querySelector('.setting-search-result-show-more');
+check(!!moreRow,'同组超过 3 条时出现“还有 N 个”行');
+check(/还有 \d+ 个|\d+ more/.test(text(moreRow)),'“还有 N 个”文案正确 :: '+text(moreRow));
+const hiddenResultItems=[...resultsEl.querySelectorAll('.setting-search-result-item')].filter((el)=>el.style.display==='none');
+check(hiddenResultItems.length>0,'多余结果默认隐藏');
+moreRow.click();await wait(200);
+check(![...resultsEl.querySelectorAll('.setting-search-result-item')].some((el)=>el.style.display==='none'),'点击后展开全部结果');
+check(!resultsEl.querySelector('.setting-search-result-show-more'),'展开后“还有 N 个”行移除');
+// 点击结果跳转并闪烁高亮
+searchInput.value='主题';
+searchInput.dispatchEvent(new Event('input',{bubbles:true}));await wait(260);
+const themeResult=[...resultsEl.querySelectorAll('.setting-search-result-item')].find((el)=>text(el.querySelector('.vertical-tab-nav-item-title'))==='主题');
+check(!!themeResult,'找到主题设置项结果');
+themeResult.click();await wait(320);
+check(app.setting.activeTab&&app.setting.activeTab.id==='appearance','点击搜索结果跳到外观页');
+check(!!document.querySelector('.setting-item.is-flashing'),'跳转后目标设置行 is-flashing 高亮');
+// 无结果空态
+searchInput.value='zzzz-no-such-setting';
+searchInput.dispatchEvent(new Event('input',{bubbles:true}));await wait(240);
+check(!!resultsEl.querySelector('.setting-search-empty'),'无命中显示 setting-search-empty 空态');
+check(/未找到设置/.test(text(resultsEl.querySelector('.setting-search-empty'))),'空态文案为未找到设置。');
+// 清除钮
+searchInput.value='主题';
+searchInput.dispatchEvent(new Event('input',{bubbles:true}));await wait(220);
+check(getComputedStyle(searchContainer.querySelector('.search-input-clear-button')).display!=='none','有输入时清除钮可见');
+searchContainer.querySelector('.search-input-clear-button').click();await wait(220);
+check(searchInput.value==='','清除钮清空输入');
+check(getComputedStyle(resultsEl).display==='none','清除钮隐藏结果区');
+check(getComputedStyle(groupContainer).display!=='none','清除钮恢复页签分组');
+searchInput.value='';
+searchInput.dispatchEvent(new Event('input',{bubbles:true}));await wait(150);
+
+/* ---------------- 界面页（原版 1.14.4 独立页签，图标 lucide-monitor） ---------------- */
+app.setting.openTabById('interface');await wait(150);
+const ifaceTab=app.setting.activeTab.containerEl;
+check(!!ifaceTab&&ifaceTab.isConnected,'界面页打开');
+const ifaceNav=document.querySelector('.vertical-tab-nav-item[data-setting-id="interface"]');
+check(!!ifaceNav,'侧栏有界面页签');
+check(!!ifaceNav.querySelector('.vertical-tab-nav-item-icon svg.lucide-monitor'),'界面页签图标是 lucide-monitor');
+check(text(ifaceNav.querySelector('.vertical-tab-nav-item-title'))==='界面','界面页签标题为界面');
+const ifaceGroups=[...ifaceTab.querySelectorAll('.setting-group')];
+check(ifaceGroups.length===2,'界面页两组（主组 + 高级组）:: '+ifaceGroups.length);
+check(!ifaceGroups[0].querySelector('.setting-item-heading'),'界面页主组无标题行');
+check(text(ifaceGroups[1].querySelector('.setting-item-heading .setting-item-name'))==='高级','界面页第二组标题为高级');
+const viewHeaderRow=rowByName(ifaceTab,/显示标签页标题栏|Show view header/);
+check(!!viewHeaderRow&&viewHeaderRow.classList.contains('mod-toggle'),'显示标签页标题栏是开关行');
+const showRibbonRow=rowByName(ifaceTab,/显示功能区|Show ribbon/);
+check(!!showRibbonRow&&showRibbonRow.classList.contains('mod-toggle'),'显示功能区是开关行');
+const ribbonNavRow=rowByName(ifaceTab,/^功能区$|^Ribbon$/);
+check(!!ribbonNavRow&&ribbonNavRow.classList.contains('mod-navigable')&&ribbonNavRow.classList.contains('tappable'),'功能区行是可导航行（原版 mod-navigable tappable）');
+check(!!ribbonNavRow.querySelector('.setting-item-chevron svg.lucide-chevron-right'),'功能区行有 chevron-right 箭头');
+const zoomRow=rowByName(ifaceTab,/缩放比例|Zoom level/);
+const zoomSlider=zoomRow.querySelector('input.slider');
+check(!!zoomSlider,'缩放比例有滑块');
+check(zoomSlider.min==='-2.5'&&zoomSlider.max==='3'&&zoomSlider.step==='0.5','缩放滑块范围 -2.5..3 步长 0.5 :: '+zoomSlider.min+'/'+zoomSlider.max+'/'+zoomSlider.step);
+check(!!zoomRow.querySelector('.slider-value'),'缩放比例显示百分比数值');
+const zoomReset=zoomRow.querySelector('.extra-setting-button');
+check(!!zoomReset&&/恢复默认|Restore/.test(zoomReset.getAttribute('aria-label')||''),'缩放比例有恢复默认按钮');
+const nativeMenusRow=rowByName(ifaceTab,/原生菜单|Native menus/);
+check(!!nativeMenusRow&&nativeMenusRow.classList.contains('mod-toggle'),'原生菜单是开关行');
+const frameRow=rowByName(ifaceTab,/窗口边框样式|Frame style/);
+check(!!frameRow,'窗口边框样式行存在');
+check(frameRow.querySelectorAll('option').length===3,'窗口边框样式有三个选项');
+const frameCta=[...frameRow.querySelectorAll('button')].find((b)=>/重新启动|Relaunch/.test(text(b)));
+check(!!frameCta&&frameCta.style.display==='none','窗口边框样式重启按钮默认隐藏');
+const popoutRow=rowByName(ifaceTab,/在新窗口中打开设置|Open settings in new window/);
+check(!!popoutRow&&popoutRow.classList.contains('mod-toggle'),'在新窗口中打开设置是开关行');
+// 落盘键：showViewHeader/showRibbon → appearance.json；settingsPopoutWindow → app.json
+const beforeHeader=app.settings.appearance.showViewHeader;
+viewHeaderRow.querySelector('.checkbox-container').click();await wait(60);
+check(app.settings.appearance.showViewHeader!==beforeHeader,'显示标签页标题栏写入 appearance.showViewHeader');
+viewHeaderRow.querySelector('.checkbox-container').click();await wait(60);
+check(app.settings.appearance.showViewHeader===beforeHeader,'恢复显示标签页标题栏');
+const beforeRibbon=app.settings.appearance.showRibbon;
+showRibbonRow.querySelector('.checkbox-container').click();await wait(60);
+check(app.settings.appearance.showRibbon!==beforeRibbon,'显示功能区写入 appearance.showRibbon');
+showRibbonRow.querySelector('.checkbox-container').click();await wait(60);
+check(app.settings.appearance.showRibbon===beforeRibbon,'恢复显示功能区');
+const beforePopout=app.settings.appSettings.settingsPopoutWindow;
+popoutRow.querySelector('.checkbox-container').click();await wait(320);
+check(app.settings.appSettings.settingsPopoutWindow!==beforePopout,'在新窗口中打开设置写入 app.json 的 settingsPopoutWindow');
+app.setting.openTabById('interface');await wait(150);
+const popoutRow2=rowByName(app.setting.activeTab.containerEl,/在新窗口中打开设置|Open settings in new window/);
+popoutRow2.querySelector('.checkbox-container').click();await wait(320);
+check(app.settings.appSettings.settingsPopoutWindow===beforePopout,'恢复在新窗口中打开设置');
+app.setting.openTabById('interface');await wait(120);
+
+/* ---------------- 功能区子页面（原版 openPage） ---------------- */
+const ribbonNavRow2=rowByName(app.setting.activeTab.containerEl,/^功能区$|^Ribbon$/);
+ribbonNavRow2.click();await wait(180);
+let page=pageEl();
+check(!!page,'功能区子页面打开');
+check(!!page.querySelector('.setting-page-titlebar'),'子页面有标题栏');
+check(!!page.querySelector('.setting-page-back-button svg.lucide-chevron-left'),'子页面返回按钮是 chevron-left');
+check(text(page.querySelector('.setting-page-title'))==='功能区','子页面标题为功能区');
+check(!!page.querySelector('.setting-group.mod-list'),'子页面列表组带 mod-list');
+const ribbonRows=[...page.querySelectorAll('.setting-items > .setting-item')];
+check(ribbonRows.length>0,'子页面列出功能区按钮');
+check(!!ribbonRows[0].querySelector('.setting-item-icon svg'),'功能区行有图标');
+check(!!ribbonRows[0].querySelector('.extra-setting-button.mod-drag-handle'),'功能区行有拖拽手柄');
+check(/拖动可调整布局/.test(ribbonRows[0].querySelector('.mod-drag-handle').getAttribute('aria-label')||''),'拖拽手柄 aria-label 为拖动可调整布局');
+check(/删除/.test(ribbonRows[0].querySelector('.extra-setting-button:not(.mod-drag-handle)').getAttribute('aria-label')||''),'功能区行有删除按钮');
+page.querySelector('.setting-page-back-button').click();await wait(120);
+check(!pageEl(),'返回后子页面关闭');
+check(!!document.querySelector('.vertical-tab-content-container > .vertical-tab-content'),'返回后页签内容恢复');
+
+/* ---------------- 编辑器页 ---------------- */
+app.setting.openTabById('editor');await wait(150);
+editorTab=app.setting.activeTab.containerEl;
 const spellRow=rowByName(editorTab,/拼写检查$|Spell ?check$/);
 check(!!spellRow,'拼写检查行存在');
 const extra=spellRow.querySelector('.extra-setting-button');
@@ -124,28 +269,54 @@ check((app.settings.appSettings.focusNewTab===true)===focusBefore,'恢复 focusN
 const attachRow=rowByName(fileTab,/附件默认存放路径|Default location for new attachments/);
 check(!!attachRow&&attachRow.querySelectorAll('option').length===4,'附件位置下拉有四个选项');
 check(attachRow.querySelector('select').value==='root','默认附件位置为仓库根目录');
+
+/* 忽略文件：原版 1.14.4 是可导航子页面 + 新增表单弹窗 */
 const ignoreRow=rowByName(fileTab,/忽略文件|Excluded files/);
 check(!!ignoreRow,'忽略文件行存在');
-const manageBtn=[...ignoreRow.querySelectorAll('button')].find((b)=>/管理|Manage/.test(b.textContent||''));
-check(!!manageBtn,'忽略文件行有管理按钮');
-const manageStyle=getComputedStyle(manageBtn);
-check(manageStyle.transitionDuration.split(',')[0].trim()==='0s','按钮无过渡（桌面 --button-transition:none）');
-const buttonShadowProbe=document.body.createDiv();
-buttonShadowProbe.style.cssText='position:absolute;visibility:hidden;box-shadow:var(--input-shadow)';
-check(manageStyle.boxShadow===getComputedStyle(buttonShadowProbe).boxShadow&&manageStyle.padding==='4px 12px','按钮阴影=--input-shadow、padding 4/12 :: '+manageStyle.padding);
-buttonShadowProbe.detach();
-manageBtn.click();await wait(150);
-const exModal=modalByTitle(/忽略文件|Excluded files/);
-check(!!exModal,'忽略文件弹窗打开');
-const addBtn=[...exModal.querySelectorAll('button')].find((b)=>/添加|Add/.test(b.textContent||''));
-check(!!addBtn,'忽略文件弹窗有添加按钮');
-addBtn.click();await wait(40);
-check(!!exModal.querySelector('.mod-warning:not(.is-hidden)'),'空值给出错误提示');
-const inp=exModal.querySelector('input');
-inp.value='/^draft-/';inp.dispatchEvent(new Event('input',{bubbles:true}));
-addBtn.click();await wait(80);
-check(!!exModal.querySelector('.flair.mod-flat'),'regex 条件显示徽标');
-[...exModal.querySelectorAll('button')].find((b)=>/取消|Cancel/.test(b.textContent||'')).click();await wait(60);
+check(ignoreRow.classList.contains('mod-navigable')&&ignoreRow.classList.contains('tappable'),'忽略文件行是可导航行（原版 mod-navigable tappable）');
+check(!!ignoreRow.querySelector('.setting-item-value'),'忽略文件行显示规则条数');
+check(/条规则|rules?/.test(text(ignoreRow.querySelector('.setting-item-value'))),'规则条数文案为 N 条规则');
+check(!!ignoreRow.querySelector('.setting-item-chevron svg.lucide-chevron-right'),'忽略文件行有 chevron-right 箭头');
+ignoreRow.click();await wait(180);
+page=pageEl();
+check(!!page,'忽略文件子页面打开');
+check(!!page.querySelector('.setting-page-titlebar'),'忽略文件页有标题栏');
+check(text(page.querySelector('.setting-page-title'))==='忽略文件','忽略文件页标题为忽略文件');
+check(page.querySelector('.setting-group').classList.contains('mod-list'),'忽略文件页列表组带 mod-list');
+check(page.querySelector('.setting-group').classList.contains('mod-no-icon'),'忽略文件页列表组带 mod-no-icon');
+const addFilterBtn=[...page.querySelectorAll('.extra-setting-button')].find((b)=>/添加排除项/.test(b.getAttribute('aria-label')||''));
+check(!!addFilterBtn,'忽略文件页有添加按钮');
+check(!!page.querySelector('.setting-item.mod-empty-state'),'无规则时显示空态');
+check(/未添加排除项/.test(text(page.querySelector('.setting-item.mod-empty-state .setting-item-name'))),'空态文案为未添加排除项。');
+addFilterBtn.click();await wait(180);
+const addModal=modalByTitle(/添加排除项|Add excluded/);
+check(!!addModal,'添加排除项弹窗打开');
+check(addModal.classList.contains('mod-lg')&&addModal.classList.contains('mod-form-sheet'),'添加弹窗是 mod-lg mod-form-sheet');
+check(!!addModal.querySelector('input[type=text]'),'添加弹窗有输入框');
+check(/正则表达式/.test(text(addModal.querySelector('.form-field-help'))),'添加弹窗有正则表达式说明');
+const addModalButtons=[...addModal.querySelectorAll('.modal-button-container button')].map(text);
+check(addModalButtons.some((t)=>/完成|Done/.test(t)),'添加弹窗有完成按钮');
+check(addModalButtons.some((t)=>/取消|Cancel/.test(t)),'添加弹窗有取消按钮');
+[...addModal.querySelectorAll('.modal-button-container button')].find((b)=>/完成|Done/.test(text(b))).click();await wait(100);
+check(!!modalByTitle(/添加排除项|Add excluded/),'空条件时不关闭弹窗');
+check(!!document.querySelector('.notice-message'),'空条件时给出提示');
+const addInput=addModal.querySelector('input[type=text]');
+addInput.value='/^draft-/';
+[...addModal.querySelectorAll('.modal-button-container button')].find((b)=>/完成|Done/.test(text(b))).click();await wait(200);
+check((app.settings.appSettings.userIgnoreFilters||[]).includes('/^draft-/'),'新增规则写入 userIgnoreFilters');
+page=pageEl();
+check(!!page,'新增后回到忽略文件子页面');
+const ruleRow=rowByName(page,/draft-/);
+check(!!ruleRow,'规则行显示条件');
+check(!!ruleRow.querySelector('.flair.mod-flat'),'正则条件显示 flair mod-flat 徽标 :: '+(ruleRow?ruleRow.outerHTML.slice(0,600):'no row'));
+check(/Regex/.test(text(ruleRow.querySelector('.flair.mod-flat'))),'徽标文案为 Regex（原版硬编码）');
+const delBtn=ruleRow.querySelector('.extra-setting-button');
+check(!!delBtn&&/删除|Delete/.test(delBtn.getAttribute('aria-label')||''),'规则行有删除按钮');
+delBtn.click();await wait(200);
+check(!(app.settings.appSettings.userIgnoreFilters||[]).includes('/^draft-/'),'删除规则生效');
+check(!!document.querySelector('.setting-item.mod-empty-state'),'删除后回到空态');
+page.querySelector('.setting-page-back-button').click();await wait(120);
+check(!pageEl(),'忽略文件页返回后子页面关闭');
 
 const rebuildRow=rowByName(fileTab,/重建仓库缓存|Rebuild vault cache/i);
 check(!!rebuildRow&&!rebuildRow.querySelector('button.mod-destructive'),'重建缓存按钮不是危险按钮（原版默认样式）');
@@ -160,6 +331,43 @@ const versionRow=rowByName(aboutTab,/版本 1\.|Version 1\./);
 check(!!versionRow,'版本行存在');
 check(/安装程序版本|Installer version/.test(versionRow.textContent||''),'版本行显示安装程序版本');
 check([...versionRow.querySelectorAll('a')].some(a=>/changelog/i.test(a.href||'')),'版本行有更新日志链接');
+const checkBtn=[...versionRow.querySelectorAll('button')].find((b)=>/检查更新|Check for updates/.test(text(b)));
+check(!!checkBtn,'版本行有检查更新按钮');
+check(!checkBtn.classList.contains('mod-cta'),'检查更新按钮不是 CTA（原版普通按钮）');
+const updateRow=rowByName(aboutTab,/^可以更新$|^Update Available$/);
+check(!!updateRow,'关于页有可以更新行');
+check(updateRow.style.display==='none'||!updateRow.isConnected,'可以更新行默认隐藏');
+// 检查更新：主进程无更新器时走渲染层版本比较
+const {ipcRenderer}=require('electron');
+const sentChannels=[];
+const origSend=ipcRenderer.send;
+ipcRenderer.send=function(channel,...args){sentChannels.push([channel,...args]);return origSend.apply(this,arguments);};
+const origFetch=app.requestUrl;
+app.requestUrl=async()=>({status:200,body:JSON.stringify({version:'99.0.0',url:'https://example.invalid/download'})});
+app.settings.updateAppSettings({updateFeed:'https://example.invalid/feed.json'});
+checkBtn.click();
+check(checkBtn.classList.contains('mod-loading'),'检查期间按钮显示加载态');
+await wait(600);
+check(!checkBtn.classList.contains('mod-loading'),'检查结束移除加载态');
+const notices=[...document.querySelectorAll('.notice-message')].map(text);
+check(notices.some((t)=>/发现新版本 99\.0\.0/.test(t)),'发现新版本时提示版本号 :: '+JSON.stringify(notices));
+const noticeCta=[...document.querySelectorAll('.notice-cta')].find((b)=>/更新|Update/.test(text(b)));
+check(!!noticeCta,'新版本提示带更新按钮');
+noticeCta.click();await wait(120);
+check(sentChannels.some((c)=>c[0]==='open-external'&&c[1]==='https://example.invalid/download'),'更新按钮打开下载页');
+const updateRowShown=rowByName(app.setting.activeTab.containerEl,/^可以更新$|^Update Available$/);
+check(!!updateRowShown&&updateRowShown.style.display!=='none','可以更新行在发现新版本后显示');
+check(!!updateRowShown.querySelector('button'),'可以更新行有下载按钮');
+// 已是最新
+app.requestUrl=async()=>({status:200,body:JSON.stringify({version:'1.0.0',url:'https://example.invalid/download'})});
+checkBtn.click();await wait(700);
+const latestNotices=[...document.querySelectorAll('.notice-message')].map(text);
+check(latestNotices.some((t)=>/已是最新版本/.test(t)),'版本一致时提示已是最新版本 :: '+JSON.stringify(latestNotices));
+const updateRowHidden=rowByName(app.setting.activeTab.containerEl,/^可以更新$|^Update Available$/);
+check(!!updateRowHidden&&(updateRowHidden.style.display==='none'||!updateRowHidden.isConnected),'已是最新时可以更新行隐藏');
+app.requestUrl=origFetch;
+ipcRenderer.send=origSend;
+app.settings.updateAppSettings({updateFeed:null});
 const aboutLangRow=rowByName(aboutTab,/^语言$|^Language$/);
 check(!!aboutLangRow,'关于页语言行存在');
 const aboutLangSelect=aboutLangRow.querySelector('select');
@@ -177,9 +385,28 @@ check(aboutRelaunch.style.display==='none','切回当前语言后重启按钮隐
 const hwRow=rowByName(aboutTab,/硬件加速|Hardware acceleration/);
 check(!!hwRow,'硬件加速行在关于页');
 check(/高级|Advanced/.test(text(hwRow.closest('.setting-group').querySelector('.setting-item-heading .setting-item-name'))),'硬件加速位于高级组');
+check(!!hwRow.querySelector('.setting-item-description > div'),'硬件加速描述包一层 div（原版结构）');
 check(!!hwRow.querySelector('.mod-warning'),'硬件加速描述含性能警告');
 const hwRelaunch=[...hwRow.querySelectorAll('button')].find(b=>/重新启动|Relaunch/.test(text(b)));
 check(!!hwRelaunch&&hwRelaunch.style.display==='none','硬件加速未改动时重启按钮隐藏');
+/* 落盘位置：硬件加速不写 app.json/appearance.json（原版由主进程 disable-gpu 通道持有） */
+const fs2=require('fs');const path2=require('path');
+const readJson=(name)=>{try{return JSON.parse(fs2.readFileSync(path2.join(app.settings.dir,name),'utf8')||'{}');}catch(e){return {};}};
+const appJsonBefore=JSON.stringify(readJson('app.json'));
+const appearanceJsonBefore=JSON.stringify(readJson('appearance.json'));
+const gpuDisabledBefore=require('electron').ipcRenderer.sendSync('disable-gpu');
+hwRow.querySelector('.checkbox-container').click();await wait(120);
+check(require('electron').ipcRenderer.sendSync('disable-gpu')!==gpuDisabledBefore,'硬件加速写主进程 disable-gpu 通道');
+check(hwRelaunch.style.display!=='none','硬件加速改动后显示重启按钮');
+check(JSON.stringify(readJson('app.json'))===appJsonBefore,'硬件加速不写 app.json');
+check(JSON.stringify(readJson('appearance.json'))===appearanceJsonBefore,'硬件加速不写 appearance.json');
+require('electron').ipcRenderer.sendSync('disable-gpu',gpuDisabledBefore);
+hwRow.querySelector('.checkbox-container').click();await wait(120);
+check(require('electron').ipcRenderer.sendSync('disable-gpu')===gpuDisabledBefore,'硬件加速恢复原状态');
+/* 落盘位置：在新窗口中打开设置写 app.json 的 settingsPopoutWindow */
+const appJson=readJson('app.json');
+check('settingsPopoutWindow' in appJson,'在新窗口中打开设置落在 app.json :: '+Object.keys(appJson).join(','));
+check(!('settingsPopoutWindow' in readJson('appearance.json')),'在新窗口中打开设置不落 appearance.json');
 const timerBtn=[...aboutTab.querySelectorAll('.extra-setting-button')].find((b)=>/立即检查|Check/.test(b.getAttribute('aria-label')||''))
   || aboutTab.querySelector('.extra-setting-button');
 check(!!timerBtn,'启动检查按钮存在');
@@ -197,6 +424,8 @@ check(stButtons.some(t=>/完成|Done/.test(t)),'启动时间弹窗有完成按�
 stModal.querySelector('.modal-close-button').click();await wait(60);
 app.setting.openTabById('appearance');await wait(120);
 check(!rowByName(app.setting.activeTab.containerEl,/硬件加速|Hardware acceleration/),'外观页不再重复硬件加速行');
+check(!rowByName(app.setting.activeTab.containerEl,/显示标签页标题栏|Show view header/),'外观页不再重复显示标签页标题栏行');
+check(!rowByName(app.setting.activeTab.containerEl,/窗口边框样式|Frame style/),'外观页不再重复窗口边框样式行');
 app.setting.openTabById('about');await wait(120);
 app.setting.close();
 return {pass:true,count};

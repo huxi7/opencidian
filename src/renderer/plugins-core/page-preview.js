@@ -3,7 +3,8 @@
  * [OUTPUT]: 导出 nameKey、create(app)（page-preview 核心插件实例）与 settingTab(app, containerEl)。
  * [POS]: plugins-core/ 的页面预览。对齐原版 p7：悬停内部链接（阅读模式 a.internal-link[data-href]、实时预览 span.cm-wikilink[data-href]）
  *        显示 .popover.hover-popover；五类来源 editor/preview/search/tab-header/graph 各自可配置是否需按住 Mod。
- *        graph 来源由 GraphEngine 经 workspace 的 hover-link 事件请求，无目标元素，按鼠标坐标定位。
+ *        workspace 的 hover-link 事件带 targetEl 时（搜索结果行/出链/大纲等）贴目标元素定位，指针离开即收起，
+ *        未按 Mod 时可「先悬停、再按 Mod」补弹；图谱节点无 targetEl，仍按指针坐标定位且不补弹。
  *        未按 Mod 时 DOM 链接只在悬停期间挂临时 keydown/mousemove 监听（原版 onHoverLink 延迟监听），
  *        全局 keydown/keyup 仅在等待 Mod 或 popover 存在时挂载，空闲即拆除。图谱来源无目标元素，
  *        按原版语义必须按住 Mod 才弹，未按 Mod 直接忽略。
@@ -66,6 +67,7 @@ export function create(app) {
   let lastPointer = null;
   let modWatch = null;           // 悬停但未按 Mod：只在悬停期间挂临时键盘/移动监听
   let keysAttached = false;      // 全局 keydown/keyup 仅在等待 Mod 或 popover 存在时挂载
+  let targetWatch = null;        // hover-link 带 targetEl 时：指针离开目标即收起
 
   const modPressed = (ev) => !!(ev && (ev.metaKey || ev.ctrlKey));
 
@@ -97,6 +99,7 @@ export function create(app) {
     clearTimeout(showTimer); clearTimeout(hideTimer);
     showTimer = null; hideTimer = null;
     cleanupModWatch();
+    releaseTargetWatch();
     if (popoverEl) { popoverEl.detach(); popoverEl = null; }
     targetEl = null;
     releaseHandle();
@@ -130,7 +133,7 @@ export function create(app) {
 
   function armModWatch(target) {
     cleanupModWatch();
-    modWatch = { anchor: target.anchor || null, timer: 0 };
+    modWatch = { anchor: target.anchor || null, show: target.show || null, timer: 0 };
     const reset = () => {
       if (!modWatch) return;
       clearTimeout(modWatch.timer);
@@ -279,8 +282,36 @@ export function create(app) {
     attachHandle(parent);
     ensureKeys();
     await fillBody(el, info.linktext, info.sourcePath || '');
-    positionAtPoint(el, info.event.clientX, info.event.clientY);
+    /* 原版 E1.create：有 targetEl 时贴目标元素定位（搜索结果行/出链/大纲等），
+       没有 targetEl（图谱画布节点）时按指针坐标定位。 */
+    const target = info.targetEl;
+    if (target && target.isConnected) {
+      position(el, target);
+      watchTarget(target);
+    } else {
+      positionAtPoint(el, info.event.clientX, info.event.clientY);
+    }
     fadeIn(el);
+  }
+
+  /* 原版 hoverPopover 的 onTarget/onHover 语义：指针离开目标元素即收起，
+     移进浮层本身不算离开（浮层自身 hover 会 keepAlive）。 */
+  function watchTarget(target) {
+    releaseTargetWatch();
+    const onOut = (ev) => {
+      const to = ev.relatedTarget;
+      if (to && popoverEl && popoverEl.contains(to)) return;
+      if (to && target.contains(to)) return;
+      scheduleHide();
+    };
+    target.addEventListener('pointerout', onOut, true);
+    targetWatch = { target, onOut };
+  }
+
+  function releaseTargetWatch() {
+    if (!targetWatch) return;
+    targetWatch.target.removeEventListener('pointerout', targetWatch.onOut, true);
+    targetWatch = null;
   }
 
   const onPointerOver = (ev) => {
@@ -299,12 +330,26 @@ export function create(app) {
     }, SHOW_DELAY);
   };
 
-  /* workspace 的 hover-link 事件：图谱等非 DOM 来源请求预览（原版 app.workspace.on('hover-link')）。
-     原版图谱 onNodeHover 的 targetEl 为 null；page-preview 在需 Mod 且未按时直接 return，
-     所以图谱没有“先悬停、再按 Mod”的补弹路径。DOM 链接不受影响。 */
+  /* workspace 的 hover-link 事件：图谱、搜索结果行、出链等非 DOM 链接来源请求预览
+     （原版 app.workspace.on('hover-link') → onLinkHover）。
+     原版：来源默认门控为需按住 Mod 时，不按 Mod 不显示；有 targetEl 时可「先悬停、再按 Mod」补弹，
+     图谱节点没有 targetEl，所以没有补弹路径。 */
   const onHoverLink = (info) => {
     if (!info || !info.event || !info.linktext) return;
-    if (modRequired(info.source) && !modPressed(info.event)) return;
+    if (modRequired(info.source) && !modPressed(info.event)) {
+      if (!info.targetEl) return;
+      armModWatch({
+        anchor: info.targetEl,
+        show: () => {
+          clearTimeout(showTimer);
+          showTimer = setTimeout(() => {
+            showTimer = null;
+            showForHoverLink(info).catch((e) => console.error(e));
+          }, SHOW_DELAY);
+        },
+      });
+      return;
+    }
     cleanupModWatch();
     clearTimeout(showTimer);
     showTimer = setTimeout(() => {
@@ -343,7 +388,9 @@ export function create(app) {
       return;
     }
     const anchor = modWatch.anchor;
+    const show = modWatch.show;
     cleanupModWatch();
+    if (show) { show(); return; }
     if (anchor && anchor.isConnected) showFor(anchor).catch((e) => console.error(e));
   };
 

@@ -585,3 +585,17 @@ node --experimental-vm-modules src/renderer/core/workspace-regression.js
 - 本批提交：`912cd77`（链接补全浮窗单列重做 + 搜索/设置/白板/图谱收口），未推送。
 - 未完成/边界：搜索仍未做虚拟列表、结果 hover 上下文按钮、拖拽/右键菜单、搜索历史；画布设置页、Windows 真实 `pointerup → contextmenu` 顺序、链接卡 iframe/失败态导出仍只能回退 URL；设置页仍跳过 Interface 独立页签/主题管理；链接补全未逐像素覆盖 80ms 入场、RTL 与 PageUp/Down 分页步长。
 
+
+## 24. 四路并行：画布残影/搜索虚拟化/设置补漏/图谱深挖（2026-10-21 夜）
+
+- 触发：用户实机截图指出「画布里添加文件后下方出现蓝色方框（偶发、错位）」「有时移不动、拖不动」「添加笔记后无修改」。四路并行、文件所有权互斥，主代理统一回环文档与提交。
+- **画布（残影根因）**：紫框 = 拖拽虚影 `.canvas-node.is-dummy`（4px accent 描边 + 20% accent 填充）。真正泄漏路径是**边端点改接**（canvas-edge.js 在 pointerdown 里建虚影，而 cleanup 只在拖拽越过阈值后才注册 → 纯点击永不回收）；残留的是默认 100×100、停在边端点，故「小方块 + 错位」。另两条路径（卡片菜单加卡、节点连线手柄）上轮已改为懒建，本轮统一：虚影/临时边一律在 handleDragWithPan 的 handlers.start（拖拽真正开始）里建；并加 `.canvas-node.is-dummy { pointer-events: none }` 兜底，避免残影挡住拖拽。回归：上轮引入的副作用也修了（cleanup 先于 end 执行导致「从卡片菜单拖出建卡」根本不建节点）。「移不动」主因即残影吞 pointerdown（残影 100×100 覆盖真节点）。
+- **画布（其余 1:1 补齐）**：新建文本卡进编辑态并落盘（原版 createTextNode = selectOnly + startEditing）；md 文件卡**已聚焦后单击正文**即可进卡片内编辑并写回真实文件（原版 hg 语义）；`.canvas` 文件卡改为渲染**缩略图**（新增 views/canvas-minimap.js，移植原版 lte：分组/卡片画 rx/ry=20 圆角矩形、边画贝塞尔、viewBox 外扩 5%），不再把原始 JSON 当 markdown；白板设定页（plugins-core/canvas.js 导出 settingTab + 新增 views/canvas-options.js 单一选项源，写 .obsidian/canvas.json，改完即时灌回视图；条目含新白板位置/文件夹、滚轮行为、默认 Mod 行为、卡片标签可见性、对齐网格/物体、缩放阈值）。
+- **搜索**：虚拟列表（新增 plugins-core/search-results.js：SearchVirtualList 视口窗口 = scrollTop ± max(25% 视口, 300px)、行高实测缓存、上下占位块撑总高使滚动条与总条目成比例；SearchResults 分组模型 + 折叠不参与键盘导航 + 命中行按段落边界扩展上下文）；查询内核拆 search-query-parse.js / search-query-match.js，search-query.js 变门面；新增 plugins-core/search-suggest.js（搜索框建议弹层，算子表逐字取原版 6 项 path:/file:/tag:/line:()/section:()/[property]，含「搜索选项/搜索历史」组头与图标按钮；历史 localStorage recent-searches，去重/最近在前/上限 20/搜索结束后 5s 写入/清除即删键）；结果悬停预览（原版 onResultMouseover → hover-link，page-preview 贴目标定位、移出即收起、可「悬停后按 Mod」补弹；图谱路径无 targetEl，仍不补弹）；搜索范围扩到 .canvas 节点文本（命中不计入计数，与原版一致）；file-menu/editor-menu 补原版「在文件夹中查找」「查找 …」。
+- **设置**：按原版补出独立**界面页签**（显示标签页标题栏/功能区/高级：缩放·原生菜单·窗口边框·新窗口打开设置），功能区与 CSS 片段改可导航子页面；主题管理弹窗（读 .obsidian/themes，徽标/截图位/使用中）；检查更新改真实版本比较 + 可更新行；硬件加速断言锁住「写主进程配置、不写 app.json/appearance.json、改后出现重启钮」；侧栏顶部**全局搜索框**（跨页签索引：从未渲染过的页签离屏渲染一次并缓存；结果按页签分组、suggestion-highlight 高亮、前 3 条 + 「还有 N 个」、跳转 scrollIntoView + is-flashing 750ms、空态/清空）；字体三行改子页面（立即落盘、缺失字体 mod-warning、手输字体）；旧版主题真正生效（core/app.js 的 _applyCustomCss 回退 themes/<x>.css，与原版 getThemePath 同规则）；补 15 个缺失 locale 键（译文取原版 i18n）。
+- **图谱**：节点命中半径按原版 = 节点半径（桌面 1×，移动端 5× 规则以 setHitScale 保留）；节点右键菜单补原版 10 段分节表 + view.linked 子菜单 + file-menu 联动（标题用 basename）；hover-link 载荷收敛为原版五项（去掉多余 sourcePath），图谱仍不提供「悬停后按 Mod」补弹；力参数区间/换算与原版一致并去掉原版没有的动态提示与 CTA；**修掉真 bug**：新建颜色组色相恒为 0°（闭包捕获旧数组）→ 按原版以组序 ×40° 递增；面板菜单确认原版只有 1 条图谱专属项（复制截图），不加自造项；键盘表确认原版无 Shift+1/2、无总览/聚焦选中，故不加。
+- **跨路修正**：搜索新增的「在文件夹中查找」使 menu-family 旧期望变红——原版 app.js E2.onFileMenu 确有该项（action 段、lucide-folder-search、查询 path:"<目录>/"），遂更新期望并加图标断言（58 项全绿）。
+- 验收：**61 场景 / 62 次执行全绿，4843 断言**（含 `settings-restart`、`graph-persist-write → graph-persist-read` 链式、`vault-switcher --seed-vaults 3` 142、`graph-perf --nodes 1000` 4）。日志 `/tmp/opensidian-full-1021-b/summary.txt`。新增场景 `canvas-dummy` 59、`canvas-settings` 83、`search-views` 69；更新 `search` 489、`graph` 142、`graph-worker` 100、`settings-ui` 185、`settings-plugins` 105、`appearance` 99、`canvas-ui` 192、`menu-family` 58、`editor-menu` 51。内存回归 19/19。
+- 视觉复核（探针 probe-canvas-drop + 截图）：拖入文件与三次点击卡片菜单后 `.is-dummy` 恒为 0、无选框/落点条/抓取态残留，画布内唯一带色元素是聚焦卡自身的 accent 边框（原版 selectOnly 行为）；md 卡显示 inline title + 正文（对齐原版），`.canvas` 卡显示缩略图。
+- 本批提交：未推送。
+

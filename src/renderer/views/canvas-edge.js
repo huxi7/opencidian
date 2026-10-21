@@ -5,6 +5,8 @@
  *        g 内 path.canvas-display-path 负责可见线，path.canvas-interaction-path 负责命中与 hover；箭头是 polygon.canvas-path-end。
  *        坐标完全由 CanvasNode.getBBox() 推导（边中点 → 外移 7px → 三次贝塞尔），本文件不持有节点状态。
  *        标签是 .canvas-path-label-wrapper > .canvas-path-label（contenteditable），与原版一致的编辑方式。
+ *        端点拖拽的虚影建在拖拽真正开始时（handlers.start）：原版把临时节点放在 oM 的工厂里，
+ *        纯点击边端点不留 .is-dummy 蓝框，也不留半途改接的悬空边。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 /* Canvas edge — mirrors the original W5 edge class and _5 label class. */
@@ -265,7 +267,11 @@ export class CanvasEdge {
     this.canvas.app.workspace.trigger('canvas:edge-menu', menu, this);
   }
 
-  /** 从边中点拖出，重新接一端（原版 onConnectionPointerdown 的简化版）。 */
+  /**
+   * 从边中点拖出，重新接一端（原版 onConnectionPointerdown 的简化版）。
+   * 虚影建在拖拽真正开始时（handlers.start）：原版把临时节点放在 oM 的工厂里，
+   * 纯点击不留 .is-dummy 蓝框；边本身在拖拽期间临时改接虚影，收尾复原或删除。
+   */
   onConnectionPointerdown(e) {
     const canvas = this.canvas;
     if (!e.isPrimary || e.button !== 0 || canvas.readonly) return;
@@ -277,13 +283,17 @@ export class CanvasEdge {
     const toPt = sidePoint(to.node.getBBox(), to.side);
     const movingEnd = dist(start, fromPt) > dist(start, toPt) ? 'to' : 'from';
     const fixedEnd = movingEnd === 'from' ? to : from;
-    const dummy = canvas.createDummyNode();
+    let dummy = null;
     let snapped = null;
-    canvas.canvasEl.addClass('is-connecting');
-    canvas.deselectAll();
 
     canvas.handleDragWithPan(e, {
+      start: () => {
+        dummy = canvas.createDummyNode();
+        canvas.canvasEl.addClass('is-connecting');
+        canvas.deselectAll();
+      },
       move: (ev) => {
+        if (!dummy) return;
         const pos = canvas.posFromEvt(ev);
         dummy.x = pos.x;
         dummy.y = pos.y;
@@ -305,7 +315,7 @@ export class CanvasEdge {
       cancel: () => this.update(from, to),
       cleanup: () => {
         canvas.canvasEl.removeClass('is-connecting');
-        canvas.removeDummyNode(dummy);
+        if (dummy) canvas.removeDummyNode(dummy);
       },
     });
   }

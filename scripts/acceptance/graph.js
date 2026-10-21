@@ -4,6 +4,8 @@
  * [POS]: 图谱集成验收；创建独立 fixture，通过 DOM 事件验证交互。
  *        覆盖筛选/局部图/画布交互之外，另验收颜色组拖拽排序、鼠标与触屏 PointerEvent 拖拽/平移/捏合、
  *        悬停预览（hover-link、按住 Mod；图谱不支持先悬停后补 Mod）与力参数落盘。
+ *        本批追加：节点命中区（桌面 1 倍 / 移动端 5 倍）、右键菜单分节表与子菜单、面板菜单项集、
+ *        键盘（方向键/加减号/Shift/焦点与活动叶子门控）、颜色组语义（查询式、无右键、默认色相）。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  * 截图终态：OBS_GRAPH_SCREEN=global|filter|local|menu，默认 local。
  */
@@ -125,6 +127,33 @@
   const newGroupButton = groupSection.childrenEl.querySelector('.graph-color-button-container button');
   newGroupButton.click(); newGroupButton.click(); newGroupButton.click();
   assert(groupSection.groups.length === 3, '新建颜色组按钮建出三行');
+  assert(!newGroupButton.hasClass('mod-cta'), '新建颜色组按钮是普通按钮（原版 createEl("button") 无 mod-cta）');
+  const animateButton = engine.displayOptions.childrenEl.querySelector('button');
+  assert(!!animateButton && !animateButton.hasClass('mod-cta'), '播放动画按钮是普通按钮（原版 addButton 未 setCta）');
+  // 原版：颜色组只是「检索式 + 颜色」，没有右键菜单，也没有把选中节点加入组的入口
+  assert(groupSection.groups.every(group => group.query.inputEl && group.query.inputEl.tagName === 'INPUT'), '颜色组以检索式表达（原版 query 文本框）');
+  groupSection.groups[0].el.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, button: 2 }));
+  await delay(140);
+  assert(!document.querySelector('body > .menu'), '颜色组行没有右键菜单（原版无此交互）');
+  // 原版新建组默认色：色相 = 40 × 组序（Yx({h:40*groups.length, s:暗色70/亮色60, l:60})）
+  const hueOf = (rgb) => {
+    const r = ((rgb >> 16) & 255) / 255;
+    const g = ((rgb >> 8) & 255) / 255;
+    const b = (rgb & 255) / 255;
+    const max = Math.max(r, g, b);
+    const min = Math.min(r, g, b);
+    const d = max - min;
+    if (!d) return 0;
+    let h;
+    if (max === r) h = ((g - b) / d) % 6;
+    else if (max === g) h = (b - r) / d + 2;
+    else h = (r - g) / d + 4;
+    return ((h * 60) % 360 + 360) % 360;
+  };
+  const groupHues = groupSection.groups.map(group => hueOf(group.color.getValueInt()));
+  assert(Math.abs(groupHues[0]) < 1.5, '第一个颜色组默认色相 0°');
+  assert(Math.abs(groupHues[1] - 40) < 1.5, '第二个颜色组默认色相 40°（原版 40×组序）');
+  assert(Math.abs(groupHues[2] - 80) < 1.5, '第三个颜色组默认色相 80°');
   const setGroup = (index, query, hex) => {
     const group = groupSection.groups[index];
     group.query.inputEl.value = query;
@@ -318,11 +347,38 @@
   let markdownBefore = countMarkdown();
   mouse(renderer.canvasEl, 'contextmenu', point(a), 2);
   await wait(() => !!document.querySelector('.menu'), '右键菜单');
-  assert(document.querySelector('.menu').textContent.includes('A.md'), '右键菜单显示节点文件名');
-  const menuItems = document.querySelectorAll('.menu .menu-item');
+  const nodeMenu = document.querySelector('.menu');
+  const menuTitles = [...nodeMenu.querySelectorAll('.menu-item-title')].map(el => el.textContent);
+  assert(menuTitles[0] === 'A', '右键菜单标题是短文件名（原版 getShortName：md 去掉扩展名）');
+  assert(nodeMenu.querySelector('.menu-item').classList.contains('is-label'), '右键菜单标题项是 label 样式');
+  assert(menuTitles[1].includes('在新标签页中打开'), '第二项是「在新标签页中打开」（open 段）');
+  assert(menuTitles[menuTitles.length - 1].includes('删除文件'), '最后一项是「删除文件」（danger 段）');
+  assert(menuTitles.some(title => title.includes('打开当前笔记的…')), 'view.linked 是子菜单（打开当前笔记的…）');
+  assert(menuTitles.some(title => title.includes('复制路径')), 'info.copy 是子菜单（复制路径）');
+  assert(menuTitles.some(title => title.includes('使用默认应用打开')), 'file-menu 事件贡献 system 段项');
+  const deleteItem = [...nodeMenu.querySelectorAll('.menu-item')].find(el => el.textContent.includes('删除文件'));
+  assert(deleteItem.classList.contains('is-warning'), '删除项是警告样式（原版 setWarning）');
+  const openIcon = [...nodeMenu.querySelectorAll('.menu-item')].find(el => el.textContent.includes('在新标签页中打开'));
+  assert(openIcon.querySelector('.menu-item-icon svg').getAttribute('class').includes('lucide-file-plus'), '新标签页图标 lucide-file-plus');
+  assert(deleteItem.querySelector('.menu-item-icon svg').getAttribute('class').includes('lucide-trash-2'), '删除图标 lucide-trash-2');
+  const menuGroups = nodeMenu.querySelectorAll('.menu-scroll > .menu-group');
+  assert(menuGroups.length >= 5, '菜单按分节表分组（原版 qg.sort 每节一个 menu-group），实际 ' + menuGroups.length);
+  // view.linked 子菜单里的「打开局部关系图」由图谱插件经 file-menu 事件贡献（原版 onFileMenu）
+  const linkedItem = [...nodeMenu.querySelectorAll('.menu-item')].find(el => el.textContent.includes('打开当前笔记的…'));
+  linkedItem.dispatchEvent(new MouseEvent('mouseenter'));
+  await delay(420);
+  const subMenus = [...document.querySelectorAll('body > .menu')];
+  const linkedMenu = subMenus[subMenus.length - 1];
+  assert(linkedMenu !== nodeMenu && linkedMenu.textContent.includes('打开局部关系图'), 'view.linked 子菜单含「打开局部关系图」');
+  assert(linkedMenu.querySelector('.menu-item-icon svg').getAttribute('class').includes('lucide-git-fork'), '打开局部关系图图标 lucide-git-fork');
+  const menuItems = nodeMenu.querySelectorAll('.menu-item');
   assert(menuItems.length >= 3, '菜单包含标题、新标签页和删除');
-  menuItems[1].dispatchEvent(new MouseEvent('mousedown',{bubbles:true,button:0})); menuItems[1].click();
+  const openNewTab = [...menuItems].find(el => el.textContent.includes('在新标签页中打开'));
+  openNewTab.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, button: 0 }));
+  openNewTab.click();
   await wait(() => countMarkdown() > markdownBefore, '菜单新标签页');
+  await delay(120);
+  assert(!document.querySelector('body > .menu'), '点击菜单项后菜单关闭');
   assert(app.workspace.getLeavesOfType('graph').includes(globalLeaf), '右键新标签页保留图谱');
   app.workspace.revealLeaf(globalLeaf);
   markdownBefore = countMarkdown();
@@ -356,6 +412,130 @@
   distanceSlider.value = String(previousDistance);
   distanceSlider.dispatchEvent(new Event('input', { bubbles: true }));
   await delay(120);
+  // D. 命中区：原版 PIXI 命中区就是节点实心圆（size×nodeScale）；500 半径透明圆只在移动端
+  app.workspace.revealLeaf(globalLeaf);
+  await delay(100);
+  renderer.sim.alpha = 0; renderer.sim.alphaTarget = 0;
+  for (const [index, node] of renderer.nodes.entries()) {
+    node.x = (index + 1) * 160; node.y = (index + 1) * 90;
+    Object.assign(renderer.sim.nodeById.get(node.id), { x: node.x, y: node.y, vx: 0, vy: 0 });
+  }
+  renderer.setScale(1); renderer.targetScale = 1; renderer.resetPan();
+  a.x = a.y = 0; Object.assign(renderer.sim.nodeById.get(a.id), { x: 0, y: 0, vx: 0, vy: 0 });
+  const worldPoint = (node, dx = 0, dy = 0) => {
+    const rect = renderer.canvasEl.getBoundingClientRect();
+    return {
+      clientX: rect.left + (node.x * renderer.scale + renderer.panX) / devicePixelRatio + dx * renderer.scale / devicePixelRatio,
+      clientY: rect.top + (node.y * renderer.scale + renderer.panY) / devicePixelRatio + dy * renderer.scale / devicePixelRatio,
+    };
+  };
+  assert(renderer.hitScale === 1, '桌面端命中倍数为 1（原版 isMobile 恒假，没有 500 半径透明圆）');
+  assert(renderer.constructor.MOBILE_HIT_SCALE === 5, '移动端命中倍数为 5（原版 500 半径透明圆 / 100 半径可见圆）');
+  const hitA = renderer.hitRadius(a);
+  assert(Math.abs(hitA - a.getSize() * renderer.nodeScale) < 1e-9, '命中半径等于节点实心圆半径（无 +2 容差）');
+  assert(renderer.nodeAt(worldPoint(a)) === a, '节点中心命中');
+  assert(renderer.nodeAt(worldPoint(a, hitA + 1, 0)) === null, '超出实心圆半径即不命中（原版命中区无 +2 容差）');
+  renderer.setHitScale(5);
+  assert(renderer.hitScale === 5 && Math.abs(renderer.hitRadius(a) - hitA * 5) < 1e-9, '移动端规则：命中半径放大 5 倍（500/100）');
+  assert(renderer.nodeAt(worldPoint(a, hitA + 1, 0)) === a, '移动端命中区覆盖到 5 倍半径外');
+  renderer.setHitScale(0);
+  assert(renderer.hitScale === 1, '非法命中倍数回退为 1');
+  assert(renderer.nodeAt(worldPoint(a, hitA + 1, 0)) === null, '回退后恢复实心圆命中');
+  renderer.setHitScale(renderer.constructor.MOBILE_HIT_SCALE);
+  assert(renderer.hitScale === 5, '按原版常量切换移动端命中区');
+  renderer.setHitScale(1);
+  renderer.setScale(0.25);
+  assert(Math.abs(renderer.nodeScale - 2) < 1e-9 && Math.abs(renderer.hitRadius(a) - a.getSize() * 2) < 1e-9, '缩放时命中半径按 nodeScale=1/√scale 放大');
+  renderer.setScale(1); renderer.targetScale = 1; renderer.resetPan();
+  // E. 键盘：方向键平移、加减号缩放、Shift 加速；原版没有 Shift+1/2
+  if (document.activeElement && document.activeElement !== document.body && document.activeElement.blur) document.activeElement.blur();
+  assert(document.activeElement === document.body, '焦点在 body 上，图谱快捷键生效');
+  const keyEvent = (type, which, shiftKey = false) => {
+    const ev = new KeyboardEvent(type, { key: 'ArrowRight', shiftKey, bubbles: true, cancelable: true });
+    Object.defineProperty(ev, 'which', { value: which });
+    Object.defineProperty(ev, 'keyCode', { value: which });
+    return ev;
+  };
+  window.dispatchEvent(keyEvent('keydown', 39));
+  assert(renderer.keyboardActions.right === true, '方向右键登记为 right');
+  await delay(150);
+  assert(renderer.panvX < 0, '方向右键产生向左的平移速度');
+  window.dispatchEvent(keyEvent('keyup', 39));
+  assert(renderer.keyboardActions.right === false, '方向右键抬起清除');
+  window.dispatchEvent(keyEvent('keydown', 38, true));
+  assert(renderer.keyboardActions.shift === true && renderer.keyboardActions.up === true, 'Shift 加速键与上方向同时登记');
+  await delay(150);
+  assert(renderer.panvY > 0, '上方向产生向上的平移速度');
+  window.dispatchEvent(keyEvent('keyup', 38, true));
+  window.dispatchEvent(keyEvent('keyup', 38));
+  const scaleBefore = renderer.targetScale;
+  window.dispatchEvent(keyEvent('keydown', 187));
+  await delay(150);
+  assert(renderer.targetScale > scaleBefore, '加号键放大（原版 187=zoomin）');
+  window.dispatchEvent(keyEvent('keyup', 187));
+  const scaleAfter = renderer.targetScale;
+  window.dispatchEvent(keyEvent('keydown', 189));
+  await delay(150);
+  assert(renderer.targetScale < scaleAfter, '减号键缩小（原版 189=zoomout）');
+  window.dispatchEvent(keyEvent('keyup', 189));
+  renderer.zoomTo(1);
+  const scaleDigits = renderer.targetScale;
+  window.dispatchEvent(keyEvent('keydown', 49));
+  window.dispatchEvent(keyEvent('keydown', 50));
+  await delay(120);
+  assert(renderer.targetScale === scaleDigits && !renderer.keyboardActions.zoomin && !renderer.keyboardActions.zoomout,
+    '原版没有 Shift+1/2 缩放快捷键（数字键不触发缩放）');
+  const focusInput = engine.filterOptions.search.inputEl;
+  engine.setOptions({ close: false });
+  engine.filterOptions.setCollapsed(false);
+  await delay(160);
+  focusInput.focus();
+  assert(document.activeElement === focusInput, '搜索框获得焦点');
+  window.dispatchEvent(keyEvent('keydown', 37));
+  assert(renderer.keyboardActions.left !== true, '输入框聚焦时方向键被忽略（原版 activeElement 检查）');
+  focusInput.blur();
+  const otherLeaf = app.workspace.getLeaf(true);
+  await otherLeaf.setViewState({ type: 'markdown', state: { file: 'A.md' } });
+  app.workspace.revealLeaf(otherLeaf);
+  await delay(120);
+  window.dispatchEvent(keyEvent('keydown', 40));
+  assert(renderer.keyboardActions.down !== true, '非活动叶子时方向键被忽略（原版 activeLeaf 检查）');
+  await otherLeaf.setViewState({ type: 'empty' });
+  otherLeaf.detach();
+  app.workspace.revealLeaf(globalLeaf);
+  await delay(120);
+  // F. 面板菜单（原版 onPaneMenu）：通用叶子菜单之外只加「复制截图」
+  const tabHeader = globalLeaf._tabHeaderEl;
+  assert(!!tabHeader, '图谱叶子有标签头');
+  tabHeader.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, button: 2, clientX: 120, clientY: 60 }));
+  await wait(() => !!document.querySelector('body > .menu'), '标签页菜单');
+  const paneMenu = document.querySelector('body > .menu');
+  const paneTitles = [...paneMenu.querySelectorAll('.menu-item-title')].map(el => el.textContent);
+  assert(paneTitles.filter(title => title.includes('复制截图')).length === 1, '面板菜单只有一条图谱专属项：复制截图');
+  const shotItem = [...paneMenu.querySelectorAll('.menu-item')].find(el => el.textContent.includes('复制截图'));
+  assert(shotItem.querySelector('.menu-item-icon svg').getAttribute('class').includes('lucide-image'), '复制截图图标 lucide-image');
+  assert(!paneTitles.some(title => /局部|导出|聚焦|总览/.test(title)), '原版图谱面板菜单没有局部图/导出/聚焦项');
+  await delay(80); // 菜单的全局关闭监听在下一轮事件循环挂载
+  document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+  await delay(140);
+  assert(!document.querySelector('body > .menu'), '关闭面板菜单');
+  // G. 悬停预览载荷：原版 hover-link 只有 event/source/hoverParent/targetEl/linktext 五项
+  const realTrigger = app.workspace.trigger;
+  let hoverPayload = null;
+  app.workspace.trigger = (name, ...args) => {
+    if (name === 'hover-link') hoverPayload = args[0];
+    return realTrigger.call(app.workspace, name, ...args);
+  };
+  mouse(renderer.canvasEl, 'mousemove', worldPoint(a));
+  await delay(80);
+  delete app.workspace.trigger;
+  assert(!!hoverPayload, '悬停节点触发 hover-link 事件');
+  assert(hoverPayload.source === 'graph', 'hover-link 来源是 graph');
+  assert(hoverPayload.targetEl === null, 'hover-link 无目标元素（原版 targetEl:null）');
+  assert(hoverPayload.hoverParent === engine, 'hover-link 归属当前引擎');
+  assert(hoverPayload.linktext === 'A.md', 'hover-link 载荷是节点 id');
+  assert(!('sourcePath' in hoverPayload), 'hover-link 载荷不含 sourcePath（原版五项）');
+  renderer.onMouseOut();
   const localLeaf = app.workspace.createLeafBySplit(globalLeaf, 'vertical');
   await localLeaf.setViewState({ type: 'localgraph', state: { file: 'A.md', options: { hideUnresolved: true, showAttachments: false, showTags: false } } });
   app.workspace.revealLeaf(localLeaf);
@@ -385,6 +565,7 @@
   await app.vault.delete(app.vault.getFileByPath('B-renamed.md'), true);
   await wait(() => local.file === null && local.renderer.nodes.length === 0, '删除局部根');
   assert(true, '删除根文件清空局部图');
+  assert(local.getDisplayText() === '局部关系图', '无根文件时局部图标题是「局部关系图」（原版 localName）');
   // 恢复截图 fixture；同时保留全局与局部面板供视觉验收。
   await app.vault.create('B.md', fixture['B.md']);
   await wait(() => !!app.metadataCache.resolvedLinks['A.md']?.['B.md'], '恢复截图 fixture');

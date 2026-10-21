@@ -9,6 +9,8 @@
  *        setColor 把自定义色归一化为 "r,g,b" 后交给帧渲染或立即重绘，供选择浮动工具条的取色器调用。
  *        可读缩放与编辑态挂载正文；输入逐次请求防抖保存。几何与事件写回由 canvas-view 统一调度。
  *        文本卡片（含内嵌 CM6 编辑器）在 canvas-text-node.js；本文件只保留基类、正文容器与拖拽替身。
+ *        onConnectionPointerdown 的虚影与临时边建在拖拽真正开始时（handlers.start）：原版 oM 把它们放在工厂里，
+ *        纯点击连接点不建、不留 .is-dummy 蓝框，也不留悬空边。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 /* Canvas nodes — mirrors the original E5 / M5 base and content classes. */
@@ -352,21 +354,32 @@ export class CanvasNode {
     });
   }
 
-  /** 连接点拖出：新建一条边，松手时吸附到目标节点，否则弹出建卡菜单。 */
+  /**
+   * 连接点拖出：新建一条边，松手时吸附到目标节点，否则弹出建卡菜单。
+   * 原版 onConnectionPointerdown（app.js 3371857）把虚影与临时边都建在 oM 的工厂里：
+   * 只有拖拽真正开始才建，纯点击不留 .is-dummy 蓝框，也不留悬空边。
+   */
   onConnectionPointerdown(e, side) {
     if (!e.isPrimary || e.button !== 0) return;
     const canvas = this.canvas;
     const opposite = { right: 'left', left: 'right', top: 'bottom', bottom: 'top' }[side] || 'top';
     e.preventDefault();
-    const dummy = canvas.createDummyNode();
-    const from = { side, node: this, end: 'none' };
-    const to = { side: opposite, node: dummy, end: 'arrow' };
-    const edge = canvas.createEdge(from, to, false);
+    let dummy = null;
+    let edge = null;
+    let from = null;
+    let to = null;
     let snapped = null;
-    canvas.canvasEl.addClass('is-connecting');
-    canvas.deselectAll();
     canvas.handleDragWithPan(e, {
+      start: () => {
+        dummy = canvas.createDummyNode();
+        from = { side, node: this, end: 'none' };
+        to = { side: opposite, node: dummy, end: 'arrow' };
+        edge = canvas.createEdge(from, to, false);
+        canvas.canvasEl.addClass('is-connecting');
+        canvas.deselectAll();
+      },
       move: (ev) => {
+        if (!dummy) return;
         const pos = canvas.posFromEvt(ev);
         dummy.x = pos.x;
         dummy.y = pos.y;
@@ -379,13 +392,14 @@ export class CanvasNode {
         else edge.update(from, to);
       },
       end: () => {
+        if (!edge) return;
         if (snapped) canvas.requestSave();
         else this.onConnectionDrop(e, edge, from, to);
       },
-      cancel: () => canvas.removeEdge(edge),
+      cancel: () => { if (edge) canvas.removeEdge(edge); },
       cleanup: () => {
         canvas.canvasEl.removeClass('is-connecting');
-        canvas.removeDummyNode(dummy);
+        if (dummy) canvas.removeDummyNode(dummy);
       },
     });
   }

@@ -2,12 +2,19 @@
  * [INPUT]: 搜索结果视图的 getFiles()、Modal/Setting/Notice 与剪贴板。
  * [OUTPUT]: CopySearchResultsModal；复制结果弹窗与路径/链接/列表前缀三项设置。
  * [POS]: global-search 的复制结果子界面。只读取结果文件列表，不触发搜索或改写搜索状态。
+ *        文件名取原版 TFile.getShortName 口径：md 用不含扩展名的短名，其它文件用全名；
+ *        勾选“显示路径”时用完整路径（含扩展名）。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 import { t, tt } from '../core/i18n.js';
 import { Modal } from '../core/modals.js';
 import { Setting } from '../core/setting.js';
 import { Notice } from '../core/notices.js';
+
+/** 原版 TFile.getShortName：md 用不含扩展名的短名，其余文件用全名。 */
+function shortName(file) {
+  return file.extension === 'md' ? file.basename : file.name;
+}
 
 async function copyText(value) {
   try {
@@ -86,7 +93,7 @@ export class CopySearchResultsModal extends Modal {
   update() {
     const files = this.view.getFiles();
     this.textareaEl.value = files.map((file, index) => {
-      let name = this.showPath ? file.path : file.path.replace(/\.md$/, '');
+      let name = this.showPath ? file.path : shortName(file);
       if (this.linkStyle === 'wikilink') name = '[[' + name + ']]';
       else if (this.linkStyle === 'markdown') name = '[' + file.basename + '](' + name + ')';
       if (this.listStyle === '-') name = '- ' + name;

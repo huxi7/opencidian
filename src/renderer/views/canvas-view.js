@@ -4,7 +4,8 @@
  *          依赖 ./canvas-node.js 的 CanvasNode/CanvasDummyNode；依赖 ./canvas-text-node.js 的 CanvasTextNode；依赖 ./canvas-link-node.js 的 CanvasLinkNode；依赖 ./canvas-group-node.js 的 CanvasGroupNode；依赖 ./canvas-file-node.js 的 CanvasFileNode；依赖 ./canvas-edge.js 的 CanvasEdge；
  *          依赖 ./canvas-menu.js 的 FileSuggestModal/LinkSuggestModal/JumpToGroupModal/installCanvasViewActions；
  *          依赖 ./canvas-controls.js 的 buildCardMenu/buildControls（建卡菜单与控件组的 DOM 构建）；依赖 ./canvas-arrange.js 的 buildCanvasMenu（选择浮动工具条与多选包围盒）；依赖 ./canvas-export.js 的 renderCanvasImage/exportCanvasImage；
- *          依赖 ./canvas-clipboard.js 的 handleCanvasCopy/handleCanvasCut/handleCanvasPaste；依赖 ./canvas-drop.js 的 installCanvasDrop
+ *          依赖 ./canvas-clipboard.js 的 handleCanvasCopy/handleCanvasCut/handleCanvasPaste；依赖 ./canvas-drop.js 的 installCanvasDrop；
+ *          依赖 ./canvas-options.js 的 loadCanvasOptions/saveCanvasOptions（.obsidian/canvas.json，与白板设定页共用同一份选项）
  * [OUTPUT]: 导出 CanvasView 类（含 renderCanvasImage 渲染入口、generateHDImage 导出入口与 promptImageSavePath 保存对话框入口）
  * [POS]: views/ 画布类链的末端：View → CanvasViewport（视口）→ CanvasInteractions（交互）→ CanvasView（装配与调度）。持有 .canvas-wrapper DOM、节点/边集合、选择集合、JSON Canvas 读写。
  *        ResizeObserver 在挂载后更新视口。节点与边几何分层；数据防抖 500ms 写回，关闭时 flush。
@@ -21,6 +22,8 @@
  *        剪贴板与拖入：copy/cut/paste 监听挂在 wrapper（canvas-clipboard.js），文件树/系统文件/URL/文本 drop 由 canvas-drop.js 处理。
  *        导出图片：绘制在 canvas-export.js，选项弹窗在 canvas-export-dialog.js；本类只提供 renderCanvasImage（可测试）、generateHDImage（命令/面板菜单入口）
  *        与 promptImageSavePath（保存对话框，验收场景替换它即可跳过原生对话框）。
+ *        选项（吸附/滚轮/卡片标签/缩放阈值/新白板位置）统一走 canvas-options.js：视图读同一份 .obsidian/canvas.json，
+ *        白板设定页改动后由 applyCanvasOptions 灌回打开的视图，故改完立即生效。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 /* Canvas view — DOM assembly + scheduling on top of the viewport and interaction layers. */
@@ -44,6 +47,7 @@ import { handleCanvasCopy, handleCanvasCut, handleCanvasPaste } from './canvas-c
 import { installCanvasDrop } from './canvas-drop.js';
 import { CanvasGroupNode } from './canvas-group-node.js';
 import { CanvasFileNode } from './canvas-file-node.js';
+import { loadCanvasOptions, saveCanvasOptions } from './canvas-options.js';
 import { loadCanvasLocalData, saveCanvasLocalData, migrateCanvasLocalData, dropCanvasLocalData } from './canvas-local-data.js';
 import { CanvasEdge } from './canvas-edge.js';
 import { FileSuggestModal, LinkSuggestModal, JumpToGroupModal, installCanvasViewActions } from './canvas-menu.js';
@@ -143,7 +147,7 @@ export class CanvasView extends CanvasInteractions {
     this.buildDom();
     this._resizeObserver = new ResizeObserver(() => this.onResize());
     this._resizeObserver.observe(this.wrapperEl);
-    this.options = { snapToGrid: true, snapToObjects: true, ...this.loadOptions() };
+    this.options = { ...this.loadOptions() };
     window.addEventListener('keydown', this.onGlobalKeydown);
     window.addEventListener('keyup', this.onGlobalKeyup);
     // 原版文本文件视图基类行为：外部修改（同步、文件恢复）重载磁盘内容
@@ -670,23 +674,20 @@ export class CanvasView extends CanvasInteractions {
   }
 
   loadOptions() {
-    try {
-      return this.app.settings.loadPluginData('canvas.json', {}) || {};
-    } catch (e) {
-      return {};
-    }
+    return loadCanvasOptions(this.app);
   }
 
   saveOptions() {
-    try {
-      const data = {
-        snapToGrid: this.options.snapToGrid,
-        snapToObjects: this.options.snapToObjects,
-      };
-      if (this.options.defaultWheelBehavior !== undefined) data.defaultWheelBehavior = this.options.defaultWheelBehavior;
-      if (this.options.cardLabelVisibility !== undefined) data.cardLabelVisibility = this.options.cardLabelVisibility;
-      this.app.settings.savePluginData('canvas.json', data);
-    } catch (e) { /* 选项写盘失败不影响使用 */ }
+    saveCanvasOptions(this.app, {
+      snapToGrid: this.options.snapToGrid,
+      snapToObjects: this.options.snapToObjects,
+      defaultWheelBehavior: this.options.defaultWheelBehavior,
+      cardLabelVisibility: this.options.cardLabelVisibility,
+      defaultModDragBehavior: this.options.defaultModDragBehavior,
+      zoomBreakpoint: this.options.zoomBreakpoint,
+      newFileLocation: this.options.newFileLocation,
+      newFileFolderPath: this.options.newFileFolderPath,
+    });
   }
 
   async loadFile(path) {

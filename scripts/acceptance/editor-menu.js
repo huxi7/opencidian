@@ -42,19 +42,23 @@ check(has('文本格式')||has('Formatting'),'含文本格式子菜单');
 check(has('段落设置')||has('Paragraph'),'含段落设置子菜单');
 check(has('插入')||has('Insert'),'含插入子菜单');
 check(!!fired,'editor-menu 事件触发');
-// 原版 1.14 项序：selection-link（新增链接）→ selection.format → selection.paragraph → selection.insert → clipboard
-check(JSON.stringify(titles())===JSON.stringify(['新增链接','新增外部链接','文本格式','段落设置','插入','剪切','复制','粘贴','以纯文本形式粘贴','全选']),'编辑器菜单项序与原版分节一致：'+titles().join('/'));
+// 原版 1.14 项序：selection-link（新增链接）→ selection（查找 “…”）→ selection.format → selection.paragraph → selection.insert → clipboard
+check(JSON.stringify(titles())===JSON.stringify(['新增链接','新增外部链接','查找 “hello”','文本格式','段落设置','插入','剪切','复制','粘贴','以纯文本形式粘贴','全选']),'编辑器菜单项序与原版分节一致：'+titles().join('/'));
+check(/查找/.test(titles()[2]||''),'选区存在时补原版「查找 …」项（E2.onEditorMenu，selection 段）');
 check(!has('复制路径')&&!has('Copy path'),'普通正文右键不含复制路径（原版由 file-menu 提供，仅链接场景出现）');
 const visibleSeps=(m)=>[...m.querySelectorAll(':scope > .menu-scroll > .menu-separator')].filter((el)=>getComputedStyle(el).display!=='none').length;
-check(visibleSeps(menu)===2,'普通正文右键仅两处分隔线（文本格式前 / 剪切前），实际 '+visibleSeps(menu));
-const iconList=iconsOf();
-check(iconList[0]&&iconList[0].includes('lucide-link'),'新增链接图标 lucide-link');
-check(iconList[1]&&iconList[1].includes('lucide-external-link'),'新增外部链接图标 lucide-external-link');
-check(iconList[2]&&iconList[2].includes('lucide-paintbrush'),'文本格式图标 lucide-paintbrush');
-check(iconList[3]&&iconList[3].includes('lucide-pilcrow'),'段落设置图标 lucide-pilcrow');
-check(iconList[4]&&iconList[4].includes('lucide-list-plus'),'插入图标 lucide-list-plus');
-check(iconList[5]&&iconList[5].includes('lucide-scissors'),'剪切图标 lucide-scissors');
-check(iconList[9]&&iconList[9].includes('lucide-box-select'),'全选图标 lucide-box-select');
+check(visibleSeps(menu)===2,'普通正文右键两处分隔线（selection-link→selection / selection→clipboard），实际 '+visibleSeps(menu));
+// 原版 qg.sort：分隔线插在「顶级节名变化」处（selection-link → selection → selection.* → clipboard），
+// 故 selection.* 三节之间不插线；选区存在时原版 E2.onEditorMenu 会在 selection 节补「查找 …」。
+const iconOf=(name)=>{const el=[...menu.querySelectorAll('.menu-item')].find((it)=>it.textContent.includes(name));const svg=el&&el.querySelector('svg');return svg?svg.getAttribute('class'):'';};
+check(iconOf('新增链接').includes('lucide-link'),'新增链接图标 lucide-link');
+check(iconOf('新增外部链接').includes('lucide-external-link'),'新增外部链接图标 lucide-external-link');
+check(iconOf('查找').includes('lucide-search'),'查找 … 图标 lucide-search');
+check(iconOf('文本格式').includes('lucide-paintbrush'),'文本格式图标 lucide-paintbrush');
+check(iconOf('段落设置').includes('lucide-pilcrow'),'段落设置图标 lucide-pilcrow');
+check(iconOf('插入').includes('lucide-list-plus'),'插入图标 lucide-list-plus');
+check(iconOf('剪切').includes('lucide-scissors'),'剪切图标 lucide-scissors');
+check(iconOf('全选').includes('lucide-box-select'),'全选图标 lucide-box-select');
 
 const fmtItem=[...menu.querySelectorAll('.menu-item')].find(el=>el.textContent.includes('文本格式')||el.textContent.includes('Formatting'));
 fmtItem.dispatchEvent(new MouseEvent('mouseenter',{bubbles:false}));

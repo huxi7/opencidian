@@ -4,6 +4,7 @@
  * [POS]: 图谱力学 worker 化验收。覆盖后端选择（app:// 直载 → Blob 回退 → 本地）、位置由 worker 发布且主线程零物理、
  *        真实 worker 的 SAB/transfer 缓冲区形态与 crossOriginIsolated 平台限制、钉住/解钉、力参数唤醒与再沉降、
  *        关闭视图终止 worker、消息载荷与原版 sim.js 逐字段对齐、本地回退后端回归。
+ *        力参数另按原版 j2 段与 W2/F2/R2 逐项对照：滑块区间、默认值、换算链路、graph.json 落盘与重开复原。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  * 说明：本场景不做视觉断言；用 --no-screenshot 运行。
  */
@@ -143,6 +144,123 @@
   renderer.setForces({ linkDistance: previousDistance });
   assert(sim.linkDistance === previousDistance, '恢复 linkDistance（' + previousDistance + '）');
 
+  // F1. 力参数：滑块区间/换算/默认值逐项对齐原版 j2 段与 W2/F2/R2
+  const forceSliders = engine.forceOptions.childrenEl.querySelectorAll('input[type="range"]');
+  assert(forceSliders.length === 4, '力设置四个滑块（向心力/排斥力/连线力/连线距离）');
+  const sliderAttr = (el) => ({ min: Number(el.min), max: Number(el.max), step: Number(el.step) });
+  const centerAttr = sliderAttr(forceSliders[0]);
+  const repelAttr = sliderAttr(forceSliders[1]);
+  const linkAttr = sliderAttr(forceSliders[2]);
+  const distanceAttr = sliderAttr(forceSliders[3]);
+  assert(centerAttr.min === 0 && centerAttr.max === 1, '向心力滑块区间 0..1（原版 setLimits(0,1,"any")）');
+  assert(repelAttr.min === 0 && repelAttr.max === 20, '排斥力滑块区间 0..20（原版 setLimits(0,20,"any")）');
+  assert(linkAttr.min === 0 && linkAttr.max === 1, '连线力滑块区间 0..1（原版 setLimits(0,1,"any")）');
+  assert(distanceAttr.min === 30 && distanceAttr.max === 500 && distanceAttr.step === 1, '连线距离滑块区间 30..500 步长 1（原版 setLimits(30,500,1)）');
+  /* 原版 F2：滑块值 → 力学强度；R2：强度 → 滑块值（默认值以滑块单位存储） */
+  const f2 = (slider, min) => (Math.pow(min, 1 - slider) - min) / (1 - min);
+  const r2 = (strength, min) => 1 - Math.log(strength * (1 - min) + min) / Math.log(min);
+  assert(Math.abs(Number(forceSliders[0].value) - r2(0.1, 0.01)) < 1e-6, '向心力默认值 0.1 强度换算回滑块值（原版 W2.centerStrength）');
+  assert(Math.abs(Number(forceSliders[1].value) - 10) < 1e-6, '排斥力默认值滑块值 10（原版 W2.repelStrength）');
+  assert(Math.abs(Number(forceSliders[2].value) - r2(1, 0.01)) < 1e-6, '连线力默认值 1 强度换算回滑块值（原版 W2.linkStrength）');
+  assert(Math.abs(Number(forceSliders[3].value) - 250) < 1e-6, '连线距离默认值 250（原版 W2.linkDistance）');
+  assert(Math.abs(sim.centerStrength - 0.1) < 1e-9, '内核向心力默认 0.1');
+  assert(Math.abs(sim.linkStrength - 1) < 1e-9, '内核连线力默认 1');
+  assert(sim.linkDistance === 250, '内核连线距离默认 250');
+  assert(sim.repelStrength === -1000, '内核排斥力默认 -1000（原版 worker x=-1e3，斥力取负）');
+  // 滑块 → 强度的换算链路：斥力三次方、其余 F2
+  const repelSlider = forceSliders[1];
+  const repelBefore = Number(repelSlider.value);
+  repelSlider.value = '5';
+  repelSlider.dispatchEvent(new Event('input', { bubbles: true }));
+  await delay(220);
+  assert(sim.repelStrength === -125, '排斥力滑块 5 → 强度 125（原版 e*e*e），内核取负');
+  assert(Math.abs(engine.options.repelStrength - 5) < 1e-9, '排斥力滑块值写入引擎选项');
+  const centerSlider = forceSliders[0];
+  const centerBefore = Number(centerSlider.value);
+  centerSlider.value = '0.5';
+  centerSlider.dispatchEvent(new Event('input', { bubbles: true }));
+  await delay(220);
+  assert(Math.abs(sim.centerStrength - f2(0.5, 0.01)) < 1e-9, '向心力滑块 0.5 → 强度 F2(0.5,0.01)');
+  const linkSlider = forceSliders[2];
+  const linkBefore = Number(linkSlider.value);
+  linkSlider.value = '0.25';
+  linkSlider.dispatchEvent(new Event('input', { bubbles: true }));
+  await delay(220);
+  assert(Math.abs(sim.linkStrength - f2(0.25, 0.01)) < 1e-9, '连线力滑块 0.25 → 强度 F2(0.25,0.01)');
+  // 恢复默认
+  repelSlider.value = String(repelBefore);
+  repelSlider.dispatchEvent(new Event('input', { bubbles: true }));
+  centerSlider.value = String(centerBefore);
+  centerSlider.dispatchEvent(new Event('input', { bubbles: true }));
+  linkSlider.value = String(linkBefore);
+  linkSlider.dispatchEvent(new Event('input', { bubbles: true }));
+  await delay(260);
+  assert(Math.abs(sim.repelStrength + 1000) < 1e-6 && Math.abs(sim.centerStrength - 0.1) < 1e-6 && Math.abs(sim.linkStrength - 1) < 1e-6,
+    '滑块复位后内核力参数回到默认值');
+  // 持久化：graph.json 落盘四个力参数 + 缩放 + 面板开合
+  const distanceSlider = forceSliders[3];
+  const distanceDefault = Number(distanceSlider.value);
+  distanceSlider.value = '271';
+  distanceSlider.dispatchEvent(new Event('input', { bubbles: true }));
+  await delay(320);
+  assert(sim.linkDistance === 271, '连线距离滑块 271 立即作用于模拟');
+  const forceJson = app.settings.readJson('graph.json') || {};
+  assert(Number.isFinite(forceJson.centerStrength) && Number.isFinite(forceJson.repelStrength) &&
+    Number.isFinite(forceJson.linkStrength) && Number.isFinite(forceJson.linkDistance), 'graph.json 落盘四个力参数');
+  assert(Math.abs(forceJson.centerStrength - centerBefore) < 1e-6, 'graph.json 记录向心力滑块值');
+  assert(Math.abs(forceJson.repelStrength - repelBefore) < 1e-6, 'graph.json 记录排斥力滑块值');
+  assert(Math.abs(forceJson.linkStrength - linkBefore) < 1e-6, 'graph.json 记录连线力滑块值');
+  assert(forceJson.linkDistance === 271, 'graph.json 记录连线距离');
+  assert(Number.isFinite(forceJson.scale) && forceJson.scale > 0, 'graph.json 记录缩放');
+  assert(typeof forceJson.close === 'boolean', 'graph.json 记录面板开合状态');
+  assert(typeof forceJson['collapse-forces'] === 'boolean', 'graph.json 记录分节折叠状态');
+  /* 原版 1.14.4 实测：全局图谱落盘的 graph.json 恰为这 20 个键（无 local* 键，局部图选项随布局保存） */
+  const expectedKeys = 'centerStrength,close,collapse-color-groups,collapse-display,collapse-filter,collapse-forces,colorGroups,hideUnresolved,lineSizeMultiplier,linkDistance,linkStrength,nodeSizeMultiplier,repelStrength,scale,search,showArrow,showAttachments,showOrphans,showTags,textFadeMultiplier';
+  assert(Object.keys(forceJson).sort().join(',') === expectedKeys, 'graph.json 键集与原版 1.14.4 一致（20 项）：' + Object.keys(forceJson).sort().join(','));
+  // 重开视图：四个力参数复原（连线距离是非默认值，证明确实来自 graph.json）
+  const reopenLeaf = app.workspace.getLeaf(true);
+  await reopenLeaf.setViewState({ type: 'graph', state: {} });
+  await wait(() => reopenLeaf.view.dataEngine?.renderer.sim.linkDistance === 271, '重开视图恢复力参数');
+  const reopened = reopenLeaf.view.dataEngine;
+  assert(reopened.renderer.sim.linkDistance === 271, '重开视图恢复连线距离（来自 graph.json）');
+  assert(Math.abs(reopened.renderer.sim.centerStrength - 0.1) < 1e-6, '重开视图恢复向心力');
+  assert(Math.abs(reopened.renderer.sim.repelStrength + 1000) < 1e-6, '重开视图恢复排斥力');
+  assert(Math.abs(reopened.renderer.sim.linkStrength - 1) < 1e-6, '重开视图恢复连线力');
+  await reopenLeaf.setViewState({ type: 'empty' });
+  reopenLeaf.detach();
+  distanceSlider.value = String(distanceDefault);
+  distanceSlider.dispatchEvent(new Event('input', { bubbles: true }));
+  await delay(300);
+  assert(sim.linkDistance === distanceDefault, '连线距离复位到默认值');
+  // 局部图谱的选项随布局保存，不写 graph.json（原版 LocalGraphView.onOptionsChange → requestSaveLayout）
+  const beforeLocal = (app.settings.readJson('graph.json') || {}).linkDistance;
+  const localLeaf = app.workspace.getLeaf(true);
+  await localLeaf.setViewState({ type: 'localgraph', state: { file: 'Alpha.md' } });
+  const localEngine = localLeaf.view.engine;
+  const localDistance = localEngine.forceOptions.childrenEl.querySelectorAll('input[type="range"]')[3];
+  localDistance.value = '333';
+  localDistance.dispatchEvent(new Event('input', { bubbles: true }));
+  await delay(320);
+  assert(localEngine.renderer.sim.linkDistance === 333, '局部图谱的连线距离滑块同样作用于模拟');
+  assert((app.settings.readJson('graph.json') || {}).linkDistance === beforeLocal, '局部图谱的力参数不写 graph.json（随布局保存）');
+  await localLeaf.setViewState({ type: 'empty' });
+  localLeaf.detach();
+  // 两条后端语义一致：同一组力参数在 worker 门面与本地门面落到同样的内核字段
+  const paritySim = new (sim.constructor)({ forceLocal: true });
+  const parityForces = { centerStrength: 0.2, repelStrength: 8, linkStrength: 0.4, linkDistance: 300 };
+  renderer.setForces(parityForces);
+  paritySim.setForces(parityForces);
+  assert(Math.abs(sim.centerStrength - paritySim.centerStrength) < 1e-9, '两条后端的向心力一致');
+  assert(Math.abs(sim.repelStrength - paritySim.repelStrength) < 1e-9, '两条后端的排斥力一致（取负规则相同）');
+  assert(Math.abs(sim.linkStrength - paritySim.linkStrength) < 1e-9, '两条后端的连线力一致');
+  assert(sim.linkDistance === paritySim.linkDistance, '两条后端的连线距离一致');
+  assert(paritySim.repelStrength === -8, '斥力按原版取负（x=-B）');
+  paritySim.destroy();
+  renderer.setForces({ centerStrength: 0.1, repelStrength: 1000, linkStrength: 1, linkDistance: distanceDefault });
+  await delay(200);
+  assert(Math.abs(sim.centerStrength - 0.1) < 1e-6 && Math.abs(sim.repelStrength + 1000) < 1e-6 &&
+    Math.abs(sim.linkStrength - 1) < 1e-6 && sim.linkDistance === distanceDefault, '力参数回到原版默认值');
+
   // F2. 空图：worker 清空节点表并停摆（不空转），nodes+run 再次唤醒
   renderer.setData({ nodes: {} });
   await wait(() => sim.nodeById.size === 0, '空图');
@@ -186,6 +304,7 @@
     probe.setForceNode('n1', 5, 6, 0.3, 0.3);
     probe.setForceNode('n1', null, null, undefined, 0);
     probe.setForces({ linkDistance: 300 });
+    probe.setForces({ centerStrength: 0.2, repelStrength: 8, linkStrength: 0.4, linkDistance: 320 });
     probe.setData([{ id: 'n1', x: 999, y: 999 }, { id: 'n2', x: 10, y: 0 }], [['n1', 'n2']]);
     probe.destroy();
     assert(posted.some((m) => m.name === 'Graph Worker'), 'worker 以 name:"Graph Worker" 创建（原版同名）');
@@ -208,6 +327,10 @@
     const forcesMessage = posted.find((m) => m.forces);
     assert(!!forcesMessage && forcesMessage.alpha === 0.3 && forcesMessage.run === true && forcesMessage.forces.linkDistance === 300,
       '协议：setForces = {forces,alpha:.3,run:true}');
+    const allForces = posted.filter((m) => m.forces).pop();
+    assert(!!allForces && allForces.forces.centerStrength === 0.2 && allForces.forces.repelStrength === 8 &&
+      allForces.forces.linkStrength === 0.4 && allForces.forces.linkDistance === 320 && allForces.alpha === 0.3 && allForces.run === true,
+      '协议：四个力参数原样转发给 worker（键名与原版 setForces 一致）');
     assert(posted.some((m) => m.terminated === true) && probe.worker === null, '协议：destroy 终止 worker（terminate 调用）');
 
     // H2. SAB 版本守卫（环境能构造 SharedArrayBuffer 时直接注入结果消息验证）

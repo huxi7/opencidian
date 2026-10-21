@@ -1,11 +1,13 @@
 /**
  * [INPUT]: 依赖 ForceSim（worker/本地门面）、共享几何与颜色工具、GraphTouchController 及浏览器 Canvas。
- * [OUTPUT]: 导出 GraphRenderer；绘制节点与连线，承接鼠标/触屏缩放、平移、拖拽与捏合。
+ * [OUTPUT]: 导出 GraphRenderer、MOBILE_HIT_SCALE；绘制节点与连线，承接鼠标/触屏缩放、平移、拖拽与捏合。
  * [POS]: 图谱渲染层；拥有模拟器、画布监听与 ResizeObserver，销毁时终止模拟器（含 worker）与触摸控制器。
  *        鼠标走 mousedown/mousemove；触摸与触控笔由 GraphTouchController 接管 PointerEvent，
  *        两者共用 nodeAt/onMouseMove/onMouseUp，避免两套坐标换算。
  *        力学在 worker 运行时由 sim.onUpdate → changed() 驱动重绘；本地回退才在帧回调里 tick()。
  *        每帧把 sim.nodeById 的坐标拷进节点，钉住的节点以自身 fx/fy 为准。
+ *        命中区：hitRadius 给出节点实心圆半径（size×nodeScale）；hitScale=MOBILE_HIT_SCALE 时
+ *        放大 5 倍，对应原版仅移动端才画的 alpha=1e-4 的 500 半径透明圆（500/100）。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 import { ForceSim } from '../plugins-core/graph-simulation.js';
@@ -15,6 +17,11 @@ import { GraphTouchController } from './graph-touch.js';
 // 渲染常量与几何工具（原版 pQ/dQ/fQ/mQ/vQ）
 const FADE = 0.2; // 原版 pQ：非高亮元素的目标淡出系数
 const WRAP_WIDTH = 300; // 原版 TextStyle.wordWrapWidth
+/* 原版移动端命中区放大倍数：节点 Graphics 里除可见圆（半径 100）外，还画一个 alpha=1e-4 的
+   半径 500 透明圆，两者同一 Graphics 即命中区并集 → 500/100 = 5 倍节点半径。
+   该圆只在原版 Qy.isMobile 为真时创建（移动端 App / 桌面端 EmulateMobile）；
+   桌面端不设置 isMobile，命中区即节点实心圆本身。 */
+export const MOBILE_HIT_SCALE = 5;
 const FONT_FAMILY = 'ui-sans-serif, -apple-system, BlinkMacSystemFont, system-ui, "Segoe UI", Roboto, "Inter", "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Microsoft YaHei Light", sans-serif';
 const lerp = (a, b, ratio = 0.9) => a * ratio + b * (1 - ratio); // 原版 dQ
 const colorLerp = (a, b) => ((lerp(a >> 16 & 255, b >> 16 & 255) << 16) + (lerp(a >> 8 & 255, b >> 8 & 255) << 8) + (0 | lerp(a & 255, b & 255))); // 原版 fQ
@@ -83,6 +90,9 @@ class GraphLink {
 
 // 渲染器（原版 TQ）：canvas 2D 承担原版 PIXI 的场景与事件；pan 与缩放中心用设备像素
 export class GraphRenderer {
+  /* 原版移动端命中区放大倍数（500 半径透明圆 / 100 半径可见圆） */
+  static MOBILE_HIT_SCALE = MOBILE_HIT_SCALE;
+
   constructor(containerEl) {
     this.containerEl = containerEl;
     this.canvasEl = null;
@@ -116,6 +126,8 @@ export class GraphRenderer {
     this.idleFrames = 0;
     this.renderTimer = null;
     this.frameTime = 0;
+    /* 原版命中区倍数：桌面端恒 1（原版不设置 isMobile）；移动端由 setHitScale 切到 5。 */
+    this.hitScale = 1;
     this.sim = new ForceSim();
     /* 收到新位置 → 重绘（worker 后端由消息驱动；本地后端靠帧回调 tick） */
     this.sim.onUpdate = () => this.changed();
@@ -208,7 +220,19 @@ export class GraphRenderer {
   }
   getHighlightNode() { return this.dragNode || this.highlightNode; }
 
-  /* 原版：鼠标坐标乘 devicePixelRatio 后换算到世界坐标，命中半径 = 屏幕半径 + 2 */
+  /* 原版：鼠标坐标乘 devicePixelRatio 后换算到世界坐标，命中半径 = 节点实心圆半径 */
+  /* 原版 PIXI 的 Graphics 命中区就是实心圆本身（半径 = size×nodeScale）；
+     移动端另有 500 半径透明圆（MOBILE_HIT_SCALE 倍），桌面端没有。 */
+  hitRadius(node) {
+    return node.getSize() * this.nodeScale * this.hitScale;
+  }
+
+  /* 原版移动端规则开关：命中半径放大 5 倍（PIXI 里 alpha=1e-4 的 500 半径透明圆）。 */
+  setHitScale(scale) {
+    this.hitScale = Number.isFinite(scale) && scale > 0 ? scale : 1;
+    this.changed();
+  }
+
   nodeAt(ev) {
     const dpr = window.devicePixelRatio;
     const point = this.canvasPoint(ev);
@@ -217,7 +241,7 @@ export class GraphRenderer {
     for (let i = this.nodes.length - 1; i >= 0; i--) {
       const node = this.nodes[i];
       if (node.x === null) continue;
-      const radius = node.getSize() * this.nodeScale + 2;
+      const radius = this.hitRadius(node);
       const dx = node.x - worldX;
       const dy = node.y - worldY;
       if (dx * dx + dy * dy <= radius * radius) return node;
@@ -591,7 +615,8 @@ export class GraphRenderer {
     this.drawNodes(ctx);
     this.idleFrames++;
     this.queueRender();
-    /* 原版：鼠标已移出悬停节点的半径时取消高亮 */
+    /* 原版：鼠标已移出悬停节点的半径（size×nodeScale+2 的容差）时取消高亮。
+       命中区本身是实心圆（无 +2），这里的 +2 是原版渲染回调的取消阈值。 */
     const { mouseX, mouseY, highlightNode } = this;
     if (mouseX !== null && mouseY !== null && highlightNode) {
       const worldX = (mouseX * dpr - this.panX) / scale;

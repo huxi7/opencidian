@@ -416,3 +416,13 @@ MathJax 独立适配器子代理的41项基础/故障测试见 assets/mathjax/SO
 - 设置：`appearance` 45、`settings-ui` 69、`settings-plugins` 74；页签顺序、快捷键行内录制、核心插件空态与入口显隐、编辑器/文件/关于/外观行级。
 - 内存回归：`node --experimental-vm-modules src/renderer/core/workspace-regression.js` 19/19；VM 补 Element/Document/document 与 tab-animation mock。
 - 边界：搜索未做虚拟列表/hover 上下文按钮/历史；画布设置页与 Windows 真实右键顺序未真机验证；链接卡 iframe/失败态导出回退 URL；设置 Interface 独立页签、主题管理仍跳过。
+
+## 四路并行批：画布残影 / 搜索虚拟化 / 设置补漏 / 图谱深挖（2026-10-21 夜）
+
+- 新增场景：`canvas-dummy` 59、`canvas-settings` 83、`search-views` 69；更新：`search` 489、`graph` 142、`graph-worker` 100、`settings-ui` 185、`settings-plugins` 105、`appearance` 99、`canvas-ui` 192、`menu-family` 58、`editor-menu` 51。
+- 画布：残留虚影三条路径（卡片菜单加卡 / 连线手柄 / **边端点改接**）在纯点击后 `.is-dummy` 必须为 0；虚影一律在拖拽真正开始时才建并按原版吸附；`.is-dummy` 加 pointer-events:none 兜底；新建文本卡进编辑态、已聚焦 md 卡单击正文进编辑并写回真实文件；`.canvas` 文件卡渲染缩略图（canvas-minimap.js）而非原始 JSON；白板设定页（settingTab + canvas-options.js，写 .obsidian/canvas.json）。
+- 搜索：虚拟列表（视口窗口 + 占位块撑总高，>500 命中时 DOM 节点数有上限）、建议弹层（算子 6 项 + recent-searches 历史）、结果悬停预览、白板节点文本命中不计数、文件树/编辑器右键补原版「在文件夹中查找」「查找 …」。
+- 设置：独立界面页签、主题管理弹窗、检查更新真实比较、硬件加速断言锁、侧栏全局搜索（跨页签）、字体子页面、旧版主题真生效、补 15 个 locale 键。
+- 图谱：命中半径对齐（原版桌面 1×、移动端 5× 规则保留）、右键菜单 10 段分节表 + view.linked 子菜单、hover-link 载荷收敛、力参数控件对齐、修新建颜色组色相恒 0° 的真 bug。
+- 跨路修正：`menu-family` 与 `editor-menu` 的期望同步原版新增项（原版 app.js E2.onFileMenu / E2.onEditorMenu 确有「在文件夹中查找」「查找 …」），并把图标断言改为按名查找（原版 qg.sort 按顶级节名插分隔线，selection.* 三节之间不插线）。
+- 全量：**61 场景 / 62 次执行全绿、4843 断言**；日志 `/tmp/opensidian-full-1021-b/summary.txt`；`settings-restart`、`graph-persist-write → graph-persist-read` 链式通过；`vault-switcher --seed-vaults 3` 142、`graph-perf --nodes 1000` 4。内存回归 19/19。

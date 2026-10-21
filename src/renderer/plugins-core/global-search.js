@@ -1,8 +1,12 @@
 /**
- * [INPUT]: View 生命周期、workspace 文件打开、metadataCache/vault 正文、Menu、search-query 查询内核与 search-copy 复制弹窗。
+ * [INPUT]: View 生命周期、workspace 文件打开、metadataCache/vault 正文、Menu、search-query 查询内核、
+ *          search-copy 复制弹窗、search-results 结果列表内核与 search-suggest 输入建议层。
  * [OUTPUT]: SearchView、CopySearchResultsModal 转导出、searchFile/searchVault 兼容导出与插件 create。
  * [POS]: global-search 视图。DOM 对齐 1.14.4：search-row、search-params、search-results-info、tree-item 结果分组；
- *        查询语法/命中判定委托 search-query.js，复制弹窗委托 search-copy.js，本文件负责状态、DOM、排序、折叠与键盘。
+ *        结果集交给 search-results.js 的虚拟列表（只渲染视口内的分组，滚动条与总条目数成比例），
+ *        键盘导航按行模型跨虚拟边界移动；输入框挂 search-suggest.js 的算子建议与搜索历史；
+ *        搜索范围为 Markdown 全部文件 + 白板文本节点（原版 NL.match 口径）；
+ *        查询语法/命中判定委托 search-query.js，复制弹窗委托 search-copy.js。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 import { View } from '../core/view.js';
@@ -10,10 +14,14 @@ import { t, tt } from '../core/i18n.js';
 import { setIcon } from '../core/icons.js';
 import { Menu } from '../core/menu.js';
 import { Setting } from '../core/setting.js';
+import { TFolder } from '../core/vault.js';
 import { CopySearchResultsModal } from './search-copy.js';
-import { parseQuery, searchDocument, createSearchDocument, queryInfo } from './search-query.js';
+import { parseQuery, searchDocument, createSearchDocument, canvasNodeText, queryInfo } from './search-query.js';
+import { SearchResults } from './search-results.js';
+import { SearchSuggest } from './search-suggest.js';
 
 export { CopySearchResultsModal } from './search-copy.js';
+export { searchFile, searchVault } from './search-query-match.js';
 
 export const nameKey = 'plugins.search';
 
@@ -41,24 +49,7 @@ function setCaseIcon(el) {
 }
 
 function formatCount(count) {
-  return t('plugins.search.label-result-count', { count });
-}
-
-function setHighlighted(el, text, ranges) {
-  el.empty();
-  if (!text) return;
-  const sorted = (ranges || [])
-    .filter((range) => range && range.end > range.start)
-    .sort((a, b) => a.start - b.start || a.end - b.end);
-  let cursor = 0;
-  for (const range of sorted) {
-    const start = Math.max(cursor, Math.min(text.length, range.start));
-    const end = Math.max(start, Math.min(text.length, range.end));
-    if (start > cursor) el.appendText(text.slice(cursor, start));
-    if (end > start) el.createSpan({ cls: 'search-result-file-matched-text', text: text.slice(start, end) });
-    cursor = end;
-  }
-  if (cursor < text.length) el.appendText(text.slice(cursor));
+  return t('plugins.search.label-result-count', { count: Number(count).toLocaleString() });
 }
 
 function renderInfoItem(parent, item) {
@@ -89,13 +80,10 @@ export class SearchView extends View {
     this._collapseAll = false;
     this._extraContext = false;
     this._sortOrder = 'alphabetical';
-    this._collapsed = new Map();
     this._results = [];
     this._searchSeq = 0;
     this._searching = false;
     this._applyingState = false;
-    this._focusItems = [];
-    this._focusedIndex = -1;
     this._listeners = [];
     this._onKeyDown = this._handleKeyDown.bind(this);
   }
@@ -127,9 +115,12 @@ export class SearchView extends View {
       if (typeof state.explainSearch === 'boolean') this._explain = state.explainSearch;
       if (typeof state.collapseAll === 'boolean') {
         this._collapseAll = state.collapseAll;
-        this._collapsed.clear();
+        if (this._list) this._list.setCollapseAll(this._collapseAll);
       }
-      if (typeof state.extraContext === 'boolean') this._extraContext = state.extraContext;
+      if (typeof state.extraContext === 'boolean') {
+        this._extraContext = state.extraContext;
+        if (this._list) this._list.setExtraContext(this._extraContext);
+      }
       if (typeof state.sortOrder === 'string' && SORT_OPTIONS.some(([value]) => value === state.sortOrder)) {
         this._sortOrder = state.sortOrder;
       }
@@ -168,6 +159,17 @@ export class SearchView extends View {
     this._buildResults();
     this.contentEl.addEventListener('keydown', this._onKeyDown);
     this._listeners.push({ unregister: () => this.contentEl.removeEventListener('keydown', this._onKeyDown) });
+    // 原版 onTabHeaderClick：点搜索标签头即全选输入框内容并聚焦。
+    const tabHeaderEl = this.leaf && this.leaf._tabHeaderEl;
+    if (tabHeaderEl) {
+      const onTabHeaderClick = () => {
+        if (!this.inputEl) return;
+        this.inputEl.setSelectionRange(0, this.inputEl.value.length);
+        this.inputEl.focus({ preventScroll: true });
+      };
+      tabHeaderEl.addEventListener('click', onTabHeaderClick);
+      this._listeners.push({ unregister: () => tabHeaderEl.removeEventListener('click', onTabHeaderClick) });
+    }
     this._syncControls();
     if (this._query) await this.runSearch();
   }
@@ -177,7 +179,17 @@ export class SearchView extends View {
     for (const listener of this._listeners) listener.unregister && listener.unregister();
     this._listeners = [];
     this._results = [];
-    this._focusItems = [];
+    clearTimeout(this._historyTimer);
+    this._historyTimer = null;
+    if (this._suggest) this._suggest.destroy();
+    this._suggest = null;
+    if (this._list) this._list.dispose();
+    this._list = null;
+  }
+
+  /** 原版 onResize：视口变化后重算虚拟窗口。 */
+  onResize() {
+    if (this._list) this._list.render();
   }
 
   _buildHeader() {
@@ -205,6 +217,7 @@ export class SearchView extends View {
     this.caseButtonEl.onclick = () => {
       this._matchCase = !this._matchCase;
       this._syncControls();
+      this.app.workspace.requestSaveLayout && this.app.workspace.requestSaveLayout();
       if (this.inputEl.value !== '') this.runSearch();
     };
 
@@ -218,13 +231,15 @@ export class SearchView extends View {
     };
 
     let timer = null;
+    // 原版 k2.attach：输入框聚焦/输入时弹出算子建议与搜索历史。
+    this._suggest = new SearchSuggest(this.app, this.inputEl);
     this.inputEl.addEventListener('input', () => {
       this._query = this.inputEl.value;
       clearTimeout(timer);
       timer = setTimeout(() => this.runSearch(), 0);
     });
     this.inputEl.addEventListener('keydown', (event) => {
-      if (event.isComposing) return;
+      if (event.isComposing || event.defaultPrevented) return;
       if (event.key === 'Enter') {
         event.preventDefault();
         this.runSearch();
@@ -251,36 +266,24 @@ export class SearchView extends View {
     this.paramsEl = this.contentEl.createDiv('search-params');
     this.paramsEl.hide();
     this._showParams = false;
-    new Setting(this.paramsEl)
-      .setName(t('plugins.search.label-collapse-results'))
-      .setClass('mod-toggle')
-      .addToggle((toggle) => {
-        this.collapseToggle = toggle;
-        toggle.setValue(this._collapseAll).onChange((value) => {
-          if (this._applyingState) return;
-          this.setCollapseAll(value);
+    // 原版 search-params 只有三个开关：折叠结果 / 显示更多上下文 / 说明搜索含义。
+    const toggles = [
+      ['plugins.search.label-collapse-results', 'collapseToggle', () => this._collapseAll, (value) => this.setCollapseAll(value)],
+      ['plugins.search.label-more-context', 'extraContextToggle', () => this._extraContext, (value) => this.setExtraContext(value)],
+      ['plugins.search.label-explain-search-term', 'explainToggle', () => this._explain, (value) => this.setExplainSearch(value)],
+    ];
+    for (const [key, field, read, apply] of toggles) {
+      new Setting(this.paramsEl)
+        .setName(t(key))
+        .setClass('mod-toggle')
+        .addToggle((toggle) => {
+          toggle.setValue(read()).onChange((value) => {
+            if (this._applyingState) return;
+            apply(value);
+          });
+          this[field] = toggle;
         });
-      });
-    new Setting(this.paramsEl)
-      .setName(t('plugins.search.label-more-context'))
-      .setClass('mod-toggle')
-      .addToggle((toggle) => {
-        this.extraContextToggle = toggle;
-        toggle.setValue(this._extraContext).onChange((value) => {
-          if (this._applyingState) return;
-          this.setExtraContext(value);
-        });
-      });
-    new Setting(this.paramsEl)
-      .setName(t('plugins.search.label-explain-search-term'))
-      .setClass('mod-toggle')
-      .addToggle((toggle) => {
-        this.explainToggle = toggle;
-        toggle.setValue(this._explain).onChange((value) => {
-          if (this._applyingState) return;
-          this.setExplainSearch(value);
-        });
-      });
+    }
   }
 
   _buildResultsInfo() {
@@ -299,6 +302,8 @@ export class SearchView extends View {
         .setIcon('copy')
         .setTitle(t('plugins.search.label-copy-search-results'))
         .onClick(() => new CopySearchResultsModal(this.app, this).open()));
+      // 原版：结果菜单同时抛出 search:results-menu 事件，供外部补充菜单项。
+      this.app.workspace.trigger('search:results-menu', menu, this);
       menu.setParentElement(this.countEl).showAtMouseEvent(event);
     };
     this.sortSelect = this.resultsInfoEl.createEl('select', { cls: 'dropdown' });
@@ -306,10 +311,24 @@ export class SearchView extends View {
       this.sortSelect.createEl('option', { value, text: tt(key, fallback) });
     }
     this.sortSelect.value = this._sortOrder;
+    // 原版 bT 下拉：隐藏的测量 select 记录当前项宽度，写回 --dropdown-fitted-width。
+    this.sortMeasureEl = this.resultsInfoEl.createEl('select', { cls: 'dropdown is-measuring' });
+    this.sortMeasureEl.setAttr('aria-hidden', 'true');
+    this.sortMeasureEl.tabIndex = -1;
+    this.sortMeasureOptionEl = this.sortMeasureEl.createEl('option');
     this.sortSelect.onchange = () => {
       this.setSortOrder(this.sortSelect.value);
       this.app.workspace.requestSaveLayout && this.app.workspace.requestSaveLayout();
     };
+    this._resizeSortSelect();
+  }
+
+  _resizeSortSelect() {
+    if (!this.sortSelect || !this.sortMeasureOptionEl) return;
+    const option = this.sortSelect.options[this.sortSelect.selectedIndex];
+    if (!option) return;
+    this.sortMeasureOptionEl.setText(option.text);
+    this.sortSelect.style.setProperty('--dropdown-fitted-width', this.sortSelect.offsetWidth + 'px');
   }
 
   _buildResults() {
@@ -320,6 +339,13 @@ export class SearchView extends View {
       text: t('plugins.search.label-no-matches') || 'No matches found.',
     });
     this.emptyEl.hide();
+    this._list = new SearchResults({
+      app: this.app,
+      scrollEl: this.resultEl,
+      childrenEl: this.childrenEl,
+      onOpenFile: (file, line, ch, event) => this._openFile(file, line, ch, event),
+      onContextMenu: (event, file, el, allowDelete) => this._openResultMenu(event, file, el, allowDelete),
+    });
   }
 
   _syncControls() {
@@ -327,7 +353,10 @@ export class SearchView extends View {
     if (this.collapseToggle) this.collapseToggle.setValue(this._collapseAll);
     if (this.extraContextToggle) this.extraContextToggle.setValue(this._extraContext);
     if (this.explainToggle) this.explainToggle.setValue(this._explain);
-    if (this.sortSelect) this.sortSelect.value = this._sortOrder;
+    if (this.sortSelect) {
+      this.sortSelect.value = this._sortOrder;
+      this._resizeSortSelect();
+    }
   }
 
   _clearResults() {
@@ -338,8 +367,7 @@ export class SearchView extends View {
     if (this.searchInfoEl) this.searchInfoEl.hide();
     if (this.resultEl) this.resultEl.removeClass('is-loading');
     this._results = [];
-    this._focusItems = [];
-    this._focusedIndex = -1;
+    if (this._list) this._list.setResults([]);
     this._searching = false;
   }
 
@@ -351,18 +379,19 @@ export class SearchView extends View {
   async runSearch() {
     const query = this._query;
     const seq = ++this._searchSeq;
-    this._focusedIndex = -1;
-    this._focusItems = [];
+    if (this._list) this._list.clearFocus();
     if (!this.childrenEl) return;
     this.searchInfoEl.empty();
     if (!query.trim()) {
-      // 原版清空查询后保留结果信息行与上次计数，只清结果并展示空态。
+      // 原版：清空查询后隐藏结果信息行，保留上次计数文案，结果清空并显示空态。
       this._results = [];
       this.childrenEl.empty();
       this.emptyEl.show();
       this.searchInfoEl.hide();
+      this.resultsInfoEl.hide();
       this.resultEl.removeClass('is-loading');
       this._searching = false;
+      if (this._list) this._list.setResults([]);
       return;
     }
 
@@ -379,11 +408,13 @@ export class SearchView extends View {
       this.searchInfoEl.toggle(this._explain);
       this.emptyEl.show();
       this._setLoading(false);
+      if (this._list) this._list.setResults([]);
       return;
     }
     this._renderInfo(parsed);
     this.searchInfoEl.toggle(this._explain);
     const results = [];
+    const matchCase = parsed.forceCase === null ? this._matchCase : parsed.forceCase;
     const files = this.app.vault.getMarkdownFiles();
     let scanned = 0;
     for (const file of files) {
@@ -395,16 +426,27 @@ export class SearchView extends View {
         continue;
       }
       const doc = createSearchDocument(file, text, this.app.metadataCache.getFileCache(file));
-      const evaluation = searchDocument(doc, parsed.ast, {
-        matchCase: parsed.forceCase === null ? this._matchCase : parsed.forceCase,
-      });
+      const evaluation = searchDocument(doc, parsed.ast, { matchCase });
       if (evaluation) results.push({ file, doc, evaluation });
       scanned++;
-      if (results.length >= 500) break;
       if (scanned % 25 === 0) {
         await new Promise((resolve) => setTimeout(resolve, 0));
         if (seq !== this._searchSeq) return;
       }
+    }
+    // 原版 NL.match 的 canvas 分支：白板只匹配文本节点文字，节点命中不计入结果数。
+    for (const file of this._canvasFiles()) {
+      if (seq !== this._searchSeq) return;
+      let text = '';
+      try {
+        text = await this.app.vault.cachedRead(file);
+      } catch (error) {
+        continue;
+      }
+      const body = canvasNodeText(text);
+      const doc = createSearchDocument(file, body === null ? '' : body, null);
+      const evaluation = searchDocument(doc, parsed.ast, { matchCase, countContent: false });
+      if (evaluation) results.push({ file, doc, evaluation });
     }
     if (seq !== this._searchSeq) return;
     this._results = results;
@@ -413,6 +455,22 @@ export class SearchView extends View {
     this._applySort();
     this.renderResults();
     this.resultCountEl.setText(formatCount(this._countMatches()));
+    this._scheduleHistorySave();
+  }
+
+  /** 原版搜索范围：Markdown 全部文件 + 白板（canvas）文件。 */
+  _canvasFiles() {
+    const all = this.app.vault.getFiles ? this.app.vault.getFiles() : [];
+    return all.filter((file) => file.extension === 'canvas');
+  }
+
+  /** 原版 requestSaveSearch：搜索结束 5 秒后把当前查询写入最近搜索。 */
+  _scheduleHistorySave() {
+    clearTimeout(this._historyTimer);
+    this._historyTimer = setTimeout(() => {
+      this._historyTimer = null;
+      if (this._suggest) this._suggest.saveHistory(this._query);
+    }, 5000);
   }
 
   _renderInfo(parsed) {
@@ -436,7 +494,7 @@ export class SearchView extends View {
   }
 
   _countMatches() {
-    return this._results.reduce((sum, result) => sum + result.evaluation.score, 0);
+    return this._list ? this._list.getMatchCount() : 0;
   }
 
   _applySort() {
@@ -454,103 +512,14 @@ export class SearchView extends View {
   }
 
   renderResults() {
-    if (!this.childrenEl) return;
-    this.childrenEl.empty();
-    this._focusItems = [];
-    this._focusedIndex = -1;
+    if (!this._list) return;
     if (!this._results.length) {
+      this._list.setResults([]);
       this.emptyEl.show();
       return;
     }
     this.emptyEl.hide();
-    for (const result of this._results.slice(0, 500)) this._renderResult(result);
-  }
-
-  _renderResult(result) {
-    const { file, doc, evaluation } = result;
-    const path = file.path;
-    const collapsed = this._collapsed.has(path) ? this._collapsed.get(path) : this._collapseAll;
-    const container = this.childrenEl.createDiv('tree-item search-result');
-    container.toggleClass('is-collapsed', collapsed);
-    const titleEl = container.createDiv('tree-item-self search-result-file-title is-clickable');
-    const collapseEl = titleEl.createDiv('tree-item-icon collapse-icon');
-    setIcon(collapseEl, 'right-triangle');
-    const contentMatches = evaluation.content;
-    const propertyMatches = evaluation.properties || [];
-    const collapsible = contentMatches.length > 0 || propertyMatches.length > 0;
-    collapseEl.style.visibility = collapsible ? '' : 'hidden';
-    collapseEl.toggleClass('is-collapsed', collapsed);
-    const inner = titleEl.createDiv('tree-item-inner');
-    const pathFields = evaluation.fields.filter((field) => field.field === 'path');
-    const nameFields = evaluation.fields.filter((field) => field.field === 'filename');
-    if (pathFields.length) {
-      const offset = path.length - file.name.length;
-      const ranges = pathFields.flatMap((field) => field.ranges)
-        .concat(nameFields.flatMap((field) => field.ranges.map((range) => ({ start: range.start + offset, end: range.end + offset }))));
-      setHighlighted(inner, path, ranges);
-    } else if (nameFields.length) {
-      const ranges = nameFields.flatMap((field) => field.ranges);
-      const useFullName = ranges.some((range) => range.end > file.basename.length);
-      setHighlighted(inner, useFullName ? file.name : file.basename, ranges);
-    } else {
-      inner.setText(file.basename);
-    }
-    if (evaluation.score > 0) {
-      const flair = titleEl.createDiv('tree-item-flair-outer').createSpan('tree-item-flair');
-      flair.setText(String(evaluation.score));
-    }
-    this._focusItems.push({ el: container, kind: 'file', file, result });
-    titleEl.onclick = (event) => {
-      if (event.target && event.target.closest && event.target.closest('.collapse-icon')) return;
-      this._openFile(file, null, 0, event);
-    };
-    collapseEl.onclick = (event) => {
-      event.preventDefault();
-      event.stopPropagation();
-      const next = !(this._collapsed.has(path) ? this._collapsed.get(path) : this._collapseAll);
-      this._collapsed.set(path, next);
-      container.toggleClass('is-collapsed', next);
-      collapseEl.toggleClass('is-collapsed', next);
-    };
-
-    const matchesEl = container.createDiv('search-result-file-matches');
-    const groups = new Map();
-    for (const match of contentMatches) {
-      if (!groups.has(match.line)) groups.set(match.line, []);
-      groups.get(match.line).push(match);
-    }
-    const lines = [...groups.keys()].sort((a, b) => a - b);
-    const block = this._extraContext ? doc.blocks.find((item) => lines.length && item.startLine <= lines[0] && item.endLine >= lines[0]) : null;
-    for (const line of lines) {
-      const matches = groups.get(line);
-      let startOffset = doc.offsets[line];
-      let endOffset = doc.offsets[line] + (doc.lines[line] || '').length;
-      if (block) {
-        startOffset = Math.min(startOffset, block.start);
-        endOffset = Math.max(endOffset, block.end);
-      }
-      const text = doc.text.slice(startOffset, Math.min(endOffset, startOffset + 1200));
-      if (!text) continue;
-      const row = matchesEl.createDiv('search-result-file-match tappable');
-      const ranges = matches.map((match) => ({ start: match.start - startOffset, end: match.end - startOffset }));
-      setHighlighted(row, text, ranges);
-      const first = matches[0];
-      row._line = line;
-      row._result = result;
-      row.onclick = (event) => this._openFile(file, line, first.start - first.lineStart, event);
-      this._focusItems.push({ el: row, kind: 'match', file, result, line });
-    }
-    for (const property of propertyMatches) {
-      const prefix = property.key + ': ';
-      const text = prefix + property.value;
-      const row = matchesEl.createDiv('search-result-file-match tappable');
-      const ranges = property.ranges.map((range) => ({ start: range.start + prefix.length, end: range.end + prefix.length }));
-      setHighlighted(row, text, ranges);
-      row._line = null;
-      row._result = result;
-      row.onclick = (event) => this._openFile(file, null, 0, event);
-      this._focusItems.push({ el: row, kind: 'match', file, result, line: null });
-    }
+    this._list.setResults(this._results);
   }
 
   _openFile(file, line, ch, event) {
@@ -558,6 +527,23 @@ export class SearchView extends View {
     const options = { newLeaf };
     if (line !== null && line !== undefined) options.eState = { line, ch: ch || 0 };
     this.app.workspace.openFile(file, options);
+  }
+
+  /** 原版 onResultContextMenu：结果行右键弹出链接菜单；删除文件项只在文件标题上出现。 */
+  _openResultMenu(event, file, el, allowDelete) {
+    event.preventDefault();
+    const menu = this.app.workspace.buildLinkMenu();
+    if (!this.app.workspace.handleLinkContextMenu(menu, file.path, '', event)) return;
+    if (allowDelete) {
+      menu.addItem((item) => item
+        .setSection('danger')
+        .setTitle(t('interface.menu.delete-file') || 'Delete file')
+        .setIcon('trash-2')
+        .setWarning(true)
+        .onClick(() => this.app.fileManager.promptForDeletion(file)));
+    }
+    menu.setParentElement(el);
+    menu.showAtMouseEvent(event);
   }
 
   setSortOrder(order) {
@@ -570,15 +556,16 @@ export class SearchView extends View {
 
   setCollapseAll(value) {
     this._collapseAll = !!value;
-    for (const result of this._results) this._collapsed.set(result.file.path, this._collapseAll);
+    if (this._list) this._list.setCollapseAll(this._collapseAll);
     this._syncControls();
-    this.renderResults();
+    this.app.workspace.requestSaveLayout && this.app.workspace.requestSaveLayout();
   }
 
   setExtraContext(value) {
     this._extraContext = !!value;
+    if (this._list) this._list.setExtraContext(this._extraContext);
     this._syncControls();
-    this.renderResults();
+    this.app.workspace.requestSaveLayout && this.app.workspace.requestSaveLayout();
   }
 
   setExplainSearch(value) {
@@ -589,125 +576,100 @@ export class SearchView extends View {
   }
 
   getFiles() {
-    return this._results.map((result) => result.file);
+    return this._list ? this._list.getFiles() : [];
   }
 
+  // ------------------------------------------------------------------ 键盘
+
   _handleKeyDown(event) {
-    if (event.defaultPrevented) return;
-    const target = event.target;
-    const inInput = target === this.inputEl;
-    if (event.key === 'ArrowDown') {
-      if (!this._focusItems.length) return;
+    if (event.defaultPrevented || !this._list) return;
+    const inInput = event.target === this.inputEl;
+    const row = this._list.focusedRow;
+    if (event.key === 'ArrowDown' && !event.shiftKey) {
+      if (!this._list.focusRows.length) return;
       event.preventDefault();
-      this._moveFocus(1);
+      if (document.activeElement === this.inputEl) document.activeElement.blur();
+      this._list.moveFocus(1);
       return;
     }
-    if (event.key === 'ArrowUp') {
-      if (!this._focusItems.length) return;
+    if (event.key === 'ArrowUp' && !event.shiftKey) {
+      if (!this._list.focusRows.length) return;
       event.preventDefault();
-      this._moveFocus(-1);
+      if (document.activeElement === this.inputEl) document.activeElement.blur();
+      this._list.moveFocus(-1);
+      return;
+    }
+    if (event.key === 'ArrowUp' || event.key === 'ArrowDown') {
+      // 原版 Shift+↑/↓：在焦点命中行上展开上/下更多上下文。
+      if (!row || row.kind !== 'match') return;
+      event.preventDefault();
+      this._list.expandMatch(row, event.key === 'ArrowUp' ? -1 : 1);
       return;
     }
     if (event.key === 'Enter') {
       if (inInput) return;
-      const item = this._focusItems[this._focusedIndex];
-      if (!item) return;
+      if (!row) return;
       event.preventDefault();
-      if (item.kind === 'match') this._openFile(item.file, item.line, 0, event);
-      else this._openFile(item.file, null, 0, event);
+      this._openFile(row.result.file, row.kind === 'match' ? row.line : null, row.kind === 'match' ? row.ch : 0, event);
       return;
     }
     if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') {
       if (inInput) return;
-      const item = this._focusItems[this._focusedIndex];
-      const result = item ? item.result : null;
+      const result = row ? row.result : null;
       if (!result) {
         event.preventDefault();
         if (event.key === 'ArrowLeft') this.setCollapseAll(true);
         else this.setCollapseAll(false);
         return;
       }
-      if (event.key === 'ArrowRight' && item.kind === 'match') return;
+      if (event.key === 'ArrowRight' && row.kind === 'match') return;
       event.preventDefault();
-      const path = result.file.path;
       const next = event.key === 'ArrowLeft';
-      this._collapsed.set(path, next);
-      const container = item.el.closest('.search-result');
-      if (container) {
-        container.toggleClass('is-collapsed', next);
-        const arrow = container.querySelector(':scope > .search-result-file-title > .collapse-icon');
-        if (arrow) arrow.toggleClass('is-collapsed', next);
-        const matches = container.querySelector(':scope > .search-result-file-matches');
-        if (matches) matches.toggle(!next);
-      }
-      if (next && item.kind === 'match') {
-        const fileIndex = this._focusItems.findIndex((entry) => entry.kind === 'file' && entry.result === result);
-        if (fileIndex >= 0) this._focusedIndex = fileIndex;
-      }
-      this._applyFocus();
+      this._list.setCollapsed(result.file.path, next);
+      if (next && row.kind === 'match') this._list.focusGroup(result.file.path);
+      else this._list.setFocusedIndex(this._list.focusedIndex);
     }
   }
-
-  _moveFocus(direction) {
-    if (!this._focusItems.length) return;
-    if (this._focusedIndex < 0) this._focusedIndex = direction > 0 ? 0 : this._focusItems.length - 1;
-    else this._focusedIndex = Math.max(0, Math.min(this._focusItems.length - 1, this._focusedIndex + direction));
-    this._applyFocus();
-  }
-
-  _applyFocus() {
-    for (const item of this._focusItems) item.el.removeClass('has-focus');
-    const item = this._focusItems[this._focusedIndex];
-    if (!item) return;
-    item.el.addClass('has-focus');
-    if (item.el.scrollIntoView) item.el.scrollIntoView({ block: 'nearest' });
-  }
 }
 
 // ---------------------------------------------------------------------------
-// Compatibility search API: 老调用方只需正文匹配时复用文档内核。
+// 插件注册
 // ---------------------------------------------------------------------------
-export function searchFile(text, file, terms, matchCase) {
-  const query = terms.map((term) => {
-    const prefix = term.negated ? '-' : '';
-    if (term.type && term.type !== 'content') return prefix + term.type + ':' + term.value;
-    if (term.regex) return prefix + '/' + term.value + '/' + (term.regex.flags || '');
-    if (term.exact) return prefix + '"' + term.value + '"';
-    return prefix + term.value;
-  }).join(' ');
-  const parsed = parseQuery(query);
-  if (!parsed.ast) return null;
-  const doc = createSearchDocument(file, text, file._cache);
-  const result = searchDocument(doc, parsed.ast, { matchCase });
-  if (!result) return null;
-  return { matches: result.content.map((match) => ({ line: match.line, text: doc.lines[match.line] || '', start: match.start - match.lineStart, end: match.end - match.lineStart })), score: result.score };
+
+/** 原版 openGlobalSearch：确保左栏搜索视图存在，并带上查询词。 */
+async function openGlobalSearch(app, query) {
+  let leaf = app.workspace.getLeavesOfType('search')[0];
+  if (!leaf) leaf = await app.workspace.ensureSideLeaf('search', 'left', { reveal: true });
+  if (query !== null && query !== undefined) {
+    await leaf.setViewState({ type: 'search', state: { query } });
+  }
+  app.workspace.revealLeaf(leaf);
+  if (leaf.view && leaf.view.focus) leaf.view.focus();
+  return leaf;
 }
 
-export async function searchVault(app, query, options = {}) {
-  const parsed = parseQuery(query);
-  if (!parsed.ast) return { results: [], total: 0, count: 0 };
-  const results = [];
-  let total = 0;
-  for (const file of app.vault.getMarkdownFiles()) {
-    let text = '';
-    try { text = await app.vault.cachedRead(file); } catch (error) { continue; }
-    const doc = createSearchDocument(file, text, app.metadataCache.getFileCache(file));
-    const evaluation = searchDocument(doc, parsed.ast, {
-      matchCase: parsed.forceCase === null ? options.matchCase : parsed.forceCase,
-    });
-    if (!evaluation) continue;
-    results.push({ file, matches: evaluation.content.map((match) => ({
-      line: match.line,
-      text: doc.lines[match.line] || '',
-      start: match.start - match.lineStart,
-      end: match.end - match.lineStart,
-    })), score: evaluation.score });
-    total += evaluation.score;
+/** 原版命令与编辑器菜单取选区作查询词：含空格则整体加引号。 */
+function selectionQuery(app) {
+  const editor = app.workspace.activeEditor;
+  let text = '';
+  if (editor && editor.getSelection && editor.getRange) {
+    const range = editor.getSelection();
+    if (range && range.anchor) text = editor.getRange(range.anchor, range.head) || '';
   }
-  return { results, total, count: results.length };
+  if (!text && typeof window.getSelection === 'function') text = window.getSelection().toString();
+  text = String(text || '').trim();
+  if (!text) return null;
+  return text.includes(' ') ? '"' + text.replace(/\\/g, '\\\\').replace(/"/g, '\\"') + '"' : text;
+}
+
+/** 原版 E2.onEditorMenu：选区右键加“查找 …”，关键词截断到 25 字。 */
+function keywordLabel(text) {
+  const flat = text.replace(/\s+/g, ' ');
+  return flat.length > 25 ? flat.slice(0, 25) : flat;
 }
 
 export function create(app) {
+  const refs = [];
   return {
     onload() {
       app.viewRegistry.registerView('search', (leaf) => new SearchView(leaf));
@@ -715,15 +677,39 @@ export function create(app) {
         id: 'global-search:open',
         name: t('plugins.search.action-open-search') || 'Search in all files',
         icon: 'search',
-        callback: () => {
-          const leaf = app.workspace.getLeavesOfType('search')[0];
-          const open = (target) => { app.workspace.revealLeaf(target); target.view.focus && target.view.focus(); };
-          if (leaf) open(leaf);
-          else app.workspace.ensureSideLeaf('search', 'left', { reveal: true }).then(open);
-        },
+        callback: () => { openGlobalSearch(app, selectionQuery(app)); },
       });
+      // 原版 E2.onFileMenu：文件树里文件夹右键加“在文件夹中查找”。
+      refs.push(app.workspace.on('file-menu', (menu, file, source) => {
+        if (source !== 'file-explorer-context-menu') return;
+        if (!(file instanceof TFolder) || file.isRoot()) return;
+        menu.addItem((item) => item
+          .setSection('action')
+          .setTitle(t('plugins.search.menu-opt-search-in-folder'))
+          .setIcon('folder-search')
+          .onClick(() => { openGlobalSearch(app, 'path:"' + file.path + '/" '); }));
+      }));
+      // 原版 E2.onEditorMenu：编辑器选区右键加“查找 …”。
+      refs.push(app.workspace.on('editor-menu', (menu, editor) => {
+        const range = editor && editor.getSelection ? editor.getSelection() : null;
+        const text = range && range.anchor ? editor.getRange(range.anchor, range.head) : '';
+        if (!text || !text.trim()) return;
+        menu.addItem((item) => item
+          .setSection('selection')
+          .setTitle(t('plugins.search.menu-opt-search-for', { keyword: keywordLabel(text.trim()) }))
+          .setIcon('search')
+          .onClick(() => { openGlobalSearch(app, selectionQuery(app)); }));
+      }));
     },
-    onunload() { app.viewRegistry.unregisterView('search'); },
-    deregister(app) { app.viewRegistry.unregisterView('search'); },
+    onunload() {
+      app.viewRegistry.unregisterView('search');
+      for (const ref of refs) ref && ref.unregister && ref.unregister();
+      refs.length = 0;
+    },
+    deregister(app) {
+      app.viewRegistry.unregisterView('search');
+      for (const ref of refs) ref && ref.unregister && ref.unregister();
+      refs.length = 0;
+    },
   };
 }

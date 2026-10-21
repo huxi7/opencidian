@@ -1,20 +1,21 @@
 /**
- * [INPUT]: 依赖 ../core/i18n.js 的 tt/getLanguage/setLanguage；依赖 ../core/setting.js 的 Setting/SettingGroup/SettingTab；依赖 ../core/notices.js 的 Notice；依赖 ../core/ipc.js 的 Desktop；依赖 ../core/icons.js 的 setIcon；依赖 ./settings-tabs-dialogs.js 的 VERSION/StartupTimeModal/VimTestModal/ExcludedFilesModal/SpellcheckDictModal/trackSliderFill/isRegexFilterValue/FilePathSuggest/FolderPathSuggest
+ * [INPUT]: 依赖 ../core/i18n.js 的 tt/getLanguage/setLanguage；依赖 ../core/setting.js 的 SettingGroup/SettingTab；依赖 ../core/notices.js 的 Notice；依赖 ../core/ipc.js 的 Desktop/ipcSync；依赖 ../core/update-check.js 的 checkForUpdates；依赖 ../core/icons.js 的 setIcon；依赖 ./settings-tabs-dialogs.js 的 VERSION/StartupTimeModal/VimTestModal/AddExcludedFilterModal/SpellcheckDictModal/trackSliderFill/isRegexFilterValue/FilePathSuggest/FolderPathSuggest
  * [OUTPUT]: 导出 AboutTab、EditorTab、FileTab 三个内置页签类
- * [POS]: views/ 的内置设置页签（选项组）。逐字对齐原版 O7/nte/lte 的 display()：关于（版本/语言/高级+启动耗时弹窗）、编辑器（行为+拼写检查词典/语言+Vim 验证）、文件与链接（打开行为/新建位置/附件/链接/回收站/忽略文件/重建缓存）。文案走 tt() 兜底，配置写 app.settings.updateAppSettings（app.json）；拼写检查词典/语言经 Desktop IPC 读写主进程。弹窗与路径建议器在 settings-tabs-dialogs.js。
+ * [POS]: views/ 的内置设置页签（选项组）。逐字对齐原版 O7/nte/lte 的 display()：关于（版本/检查更新/语言/高级+启动耗时弹窗/硬件加速）、编辑器（行为+拼写检查词典/语言+Vim 验证）、文件与链接（打开行为/新建位置/附件/链接/回收站/忽略文件子页面/重建缓存）。文案走 tt() 兜底，配置写 app.settings.updateAppSettings（app.json）与 updateAppearance（appearance.json）；拼写检查词典/语言经 Desktop IPC 读写主进程。硬件加速不落库：由主进程 disable-gpu 通道持有，改动后显示“重新启动应用”。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 /* Built-in settings tabs: About / Editor / File & Links. */
 import { tt, getLanguage, setLanguage } from '../core/i18n.js';
-import { Setting, SettingGroup, SettingTab } from '../core/setting.js';
+import { SettingGroup, SettingTab } from '../core/setting.js';
 import { Notice } from '../core/notices.js';
-import { Desktop } from '../core/ipc.js';
+import { Desktop, ipcSync } from '../core/ipc.js';
+import { checkForUpdates, compareVersions } from '../core/update-check.js';
 import { setIcon } from '../core/icons.js';
 import {
   VERSION,
   StartupTimeModal,
   VimTestModal,
-  ExcludedFilesModal,
+  AddExcludedFilterModal,
   SpellcheckDictModal,
   trackSliderFill,
   isRegexFilterValue,
@@ -43,6 +44,11 @@ export class AboutTab extends SettingTab {
     this.containerEl.empty();
     const group = new SettingGroup(this.containerEl);
 
+    // 原版：版本行 = 名称「版本 x」+ 描述「安装程序版本: x」+ 更新日志链接 + “检查更新”按钮。
+    // 原版按钮点击后向主进程发 check-update 并轮询“是否检查中”；本复刻主进程无更新器，
+    // 落回渲染层版本比较（core/update-check.js），结果写进描述与“可以更新”行。
+    let updateRow = null;
+    let updateUrl = '';
     group.addSetting((s) => {
       s.setName(tt('setting.about.label-version', '版本 {{version}}', { version: VERSION }));
       s.descEl.empty();
@@ -54,10 +60,41 @@ export class AboutTab extends SettingTab {
         text: tt('setting.about.label-read-changelog', '阅读更新日志'),
         attr: { href: 'https://obsidian.md/changelog', target: '_blank', rel: 'noopener' },
       });
-      s.addButton((b) => b.setButtonText(tt('setting.about.button-check-for-updates', '检查更新')).onClick(async () => {
-        await new Promise((r) => setTimeout(r, 900));
-        new Notice(tt('setting.about.label-new-version-ready', '已是最新版本') + ' (' + VERSION + ')');
-      }));
+      s.addButton((b) => {
+        b.setButtonText(tt('setting.about.button-check-for-updates', '检查更新'));
+        b.onClick(async () => {
+          b.buttonEl.addClass('mod-loading');
+          try {
+            await this.pollMainProcessCheck();
+            const result = await this.runUpdateCheck();
+            if (result.hasUpdate) {
+              updateUrl = result.url || '';
+              if (updateRow) updateRow.settingEl.show();
+            } else if (updateRow) {
+              updateRow.settingEl.hide();
+            }
+          } finally {
+            b.buttonEl.removeClass('mod-loading');
+          }
+        });
+      });
+    });
+
+    // 原版「可以更新」行：仅在有可用更新时出现，带“下载”按钮打开下载页。
+    group.addSetting((s) => {
+      updateRow = s;
+      s.setName(tt('interface.label-update-available', '可以更新'));
+      s.descEl.empty();
+      s.descEl.appendText(tt('setting.about.label-manual-update-required', 'OpenSidian 需要进行一次较大的更新来获取最新功能和安全补丁。为此，你需要手动下载安装包并重新安装 OpenSidian。'));
+      s.descEl.createEl('br');
+      s.descEl.createEl('a', {
+        text: tt('interface.button-learn-more', '了解更多'),
+        attr: { href: 'https://help.obsidian.md/updates', target: '_blank', rel: 'noopener' },
+      });
+      s.addButton((b) => b
+        .setButtonText(tt('dialogue.button-download', '下载'))
+        .onClick(() => { if (updateUrl) Desktop.openExternal(updateUrl); }));
+      s.settingEl.hide();
     });
 
     group.addSetting((s) => s
@@ -147,6 +184,55 @@ export class AboutTab extends SettingTab {
         }));
       });
     }
+  }
+
+  /**
+   * 原版 1.14.4 的 check-update 通道返回“主进程是否正在检查更新”，渲染层每秒轮询直到结束。
+   * 本复刻主进程只提供通道不实现更新器，返回 false 时立即结束。
+   */
+  async pollMainProcessCheck() {
+    let pending = false;
+    try { pending = !!ipcSync('check-update'); } catch (e) { pending = false; }
+    for (let i = 0; i < 20 && pending; i += 1) {
+      await new Promise((r) => setTimeout(r, 500));
+      try { pending = !!ipcSync('check-update'); } catch (e) { pending = false; }
+    }
+    return pending;
+  }
+
+  /**
+   * 渲染层版本比较：复用 core/update-check.js 的抓取与解析，版本基准取本应用 VERSION。
+   * 结果：{ hasUpdate, version, url }；无更新源/检查失败时弹出提示并返回 hasUpdate=false。
+   */
+  async runUpdateCheck() {
+    // 以 VERSION 为比较基准：用一个继承 app 的轻量代理覆盖 getVersion，
+    // 复用 core/update-check.js 的抓取与解析，不重复实现更新源协议。
+    const proxy = Object.create(this.app);
+    proxy.getVersion = () => VERSION;
+    const result = await checkForUpdates(proxy, { silent: true });
+    if (result.status === 'no-feed') {
+      new Notice(tt('interface.update.no-feed', '尚未配置更新源：在设置文件中填写 updateFeed（GitHub Releases API 或静态 JSON 地址）。'), 6000);
+      return { hasUpdate: false, version: '', url: '' };
+    }
+    if (result.status === 'error') {
+      new Notice(tt('interface.update.check-failed', '无法检查更新，请检查网络或更新源地址。'), 6000);
+      return { hasUpdate: false, version: '', url: '' };
+    }
+    const latest = String(result.version || '');
+    const hasUpdate = !!latest && compareVersions(latest, VERSION) > 0;
+    if (hasUpdate) {
+      const notice = new Notice(tt('interface.update.available', '发现新版本 {{version}}（当前 {{current}}）', {
+        version: latest, current: VERSION,
+      }), 12000);
+      if (result.url && notice.addButton) {
+        notice.addButton(tt('setting.appearance.button-update', '更新'), () => {
+          try { Desktop.openExternal(result.url); } catch (e) { console.error(e); }
+        });
+      }
+    } else {
+      new Notice(tt('interface.update.latest', '已是最新版本（{{current}}）。', { current: VERSION }), 4000);
+    }
+    return { hasUpdate, version: latest, url: result.url || '' };
   }
 }
 
@@ -566,22 +652,18 @@ export class FileTab extends SettingTab {
 
     /* 高级 */
     const adv = new SettingGroup(this.containerEl).setHeading(tt('setting.about.option-advanced', '高级'));
+    // 原版 1.14.4：忽略文件是可导航子页面，行尾显示规则条数；页面内“+”打开新增表单弹窗。
     adv.addSetting((s) => {
+      s.setClass('mod-navigable');
+      s.setClass('tappable');
       s.setName(tt('setting.file.option-excluded-files', '忽略文件'));
       s.descEl.empty();
       s.descEl.appendText(tt('setting.file.option-excluded-files-desc', '符合以下条件的文件将被忽略。忽略是指文件将出现在快速切换、链接补全中队列的末尾，以及不在关系图谱和搜索结果中出现。'));
       const filters = app.settings.appSettings.userIgnoreFilters || [];
-      if (filters.length) {
-        const list = s.descEl.createEl('ul');
-        for (const value of filters) {
-          const item = list.createEl('li');
-          item.createSpan({ text: String(value) });
-          if (isRegexFilterValue(value)) item.createSpan({ cls: 'flair mod-flat', text: tt('setting.file.label-regex', '正则') });
-        }
-      }
-      s.addButton((b) => b.setButtonText(tt('setting.appearance.option-theme-button-manage', '管理')).onClick(() => {
-        new ExcludedFilesModal(app, () => this.display()).open();
-      }));
+      s.controlEl.createDiv('setting-item-value')
+        .setText(tt('setting.file.label-excluded-files-count', '{{count}} 条规则', { count: filters.length }));
+      s.controlEl.createDiv('setting-item-chevron', (el) => setIcon(el, 'lucide-chevron-right'));
+      s.settingEl.addEventListener('click', () => this.openExcludedFilesPage());
     });
     adv.addSetting((s) => {
       s.setName(tt('setting.editor.option-reindex-vault', '重建仓库缓存'));
@@ -598,6 +680,63 @@ export class FileTab extends SettingTab {
           try { await app.metadataCache.rebuildIndices(); } catch (e) { console.error(e); }
           window.location.reload();
         }));
+    });
+  }
+
+  /**
+   * 忽略文件子页面（原版 openPage）：
+   * .setting-page > .setting-page-content > .setting-group.mod-list.mod-no-icon，
+   * 标题行带“+”新增按钮；列表每条是 .setting-item + 删除按钮，正则条件带 flair mod-flat。
+   */
+  openExcludedFilesPage() {
+    const app = this.app;
+    const filters = () => app.settings.appSettings.userIgnoreFilters || [];
+    const rerender = () => {
+      this.setting.closePage();
+      this.openExcludedFilesPage();
+    };
+    this.setting.openPage({
+      title: tt('setting.file.option-excluded-files', '忽略文件'),
+      build: (contentEl) => {
+        const group = new SettingGroup(contentEl);
+        group.addClass('mod-list');
+        group.addClass('mod-no-icon');
+        // 原版：列表组带标题行（标题为空），行尾是“+”新增按钮
+        group.groupEl.prepend(group.headerEl);
+        group.addExtraButton((b) => b
+          .setIcon('lucide-plus')
+          .setTooltip(tt('setting.file.label-add-excluded-filter', '添加排除项...'))
+          .onClick(() => {
+            new AddExcludedFilterModal(app, (value) => {
+              app.settings.updateAppSettings({ userIgnoreFilters: [...filters(), value] });
+              rerender();
+            }).open();
+          }));
+        const values = filters();
+        if (!values.length) {
+          const empty = group.listEl.createDiv('setting-item mod-empty-state');
+          const info = empty.createDiv('setting-item-info');
+          info.createDiv('setting-item-name').setText(tt('setting.file.label-no-excluded-filters', '未添加排除项。'));
+          info.createDiv('setting-item-description');
+          empty.createDiv('setting-item-control');
+          return;
+        }
+        for (const value of values) {
+          group.addSetting((s) => {
+            s.setName(String(value));
+            s.settingEl.createDiv('setting-item-icon');
+            if (isRegexFilterValue(value)) s.nameEl.createSpan({ cls: 'flair mod-flat', text: 'Regex' });
+            s.addExtraButton((b) => b
+              .setIcon('lucide-x')
+              .setTooltip(tt('interface.delete-action-short-name', '删除'))
+              .onClick(() => {
+                const next = filters().filter((x) => x !== value);
+                app.settings.updateAppSettings({ userIgnoreFilters: next.length ? next : null });
+                rerender();
+              }));
+          });
+        }
+      },
     });
   }
 }

@@ -1,7 +1,7 @@
 /**
  * [INPUT]: 独立临时 vault 与 OBS_ACT eval 注入的应用实例。
  * [OUTPUT]: 返回验收断言结果；失败抛出异常，供运行器判定。
- * [POS]: settings-plugins 场景：快捷键页裸搜索框/状态筛选芯片/冲突徽标、按快捷键捕获与 Esc、冲突芯片跳筛选、空数组压制默认键、行内录制；核心插件页搜索聚焦/空态、齿轮/快捷键入口显隐与跳转、开关不重建行。
+ * [POS]: settings-plugins 场景：侧栏分组结构（选项组含独立“界面”页签 / 核心插件组）、locale 键按原版 i18n 补齐（键存在且是原版译文）、快捷键页裸搜索框/状态筛选芯片/冲突徽标、按快捷键捕获与 Esc、冲突芯片跳筛选、空数组压制默认键、行内录制；核心插件页搜索聚焦/空态、齿轮/快捷键入口显隐与跳转、开关不重建行、插件设置页签归入核心插件分组。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 (async()=>{
@@ -18,6 +18,17 @@ app.setting.open();
 const hotkeysTab=app.setting.openTabById('hotkeys');
 await wait(150);
 check(!!hotkeysTab&&app.setting.activeTab===hotkeysTab,'快捷键页打开');
+/* 侧栏结构：内置页签在“选项”分组，核心插件页签在“核心插件”分组（原版 1.14.4） */
+const optionSection=[...document.querySelectorAll('.vertical-tab-header-group-items[data-section="options"] .vertical-tab-nav-item')].map(n=>n.getAttribute('data-setting-id'));
+check(optionSection.join(',')==='about,appearance,interface,editor,file,hotkeys,plugins','选项分组含界面页签且顺序对齐原版:: '+optionSection.join(','));
+const coreSection=[...document.querySelectorAll('.vertical-tab-header-group-items[data-section="core-plugins"] .vertical-tab-nav-item')].map(n=>n.getAttribute('data-setting-id'));
+check(!coreSection.includes('interface'),'界面页签不在核心插件分组');
+const groupTitles=[...document.querySelectorAll('.vertical-tab-header-group-title')].map(el=>el.textContent.trim());
+check(groupTitles[0]==='选项','侧栏第一分组标题为选项');
+check(groupTitles[1]==='核心插件','侧栏第二分组标题为核心插件');
+const interfaceNav=document.querySelector('.vertical-tab-nav-item[data-setting-id="interface"]');
+check(!!interfaceNav,'侧栏存在界面页签');
+check(!!interfaceNav.querySelector('svg.lucide-monitor'),'界面页签带 monitor 图标');
 const root=hotkeysTab.containerEl;
 const group=root.querySelector('.setting-group.mod-hotkeys');
 check(!!group,'快捷键设置组存在');
@@ -163,6 +174,9 @@ const pluginsTab=app.setting.openTabById('plugins');
 await wait(150);
 check(!!pluginsTab&&app.setting.activeTab===pluginsTab,'核心插件页打开');
 const tabEl=pluginsTab.containerEl;
+/* 核心插件页签归入“核心插件”分组，且不污染“选项”分组 */
+const optionsNavs2=[...document.querySelectorAll('.vertical-tab-header-group-items[data-section="options"] .vertical-tab-nav-item')].map(n=>n.getAttribute('data-setting-id'));
+check(optionsNavs2.join(',')==='about,appearance,interface,editor,file,hotkeys,plugins','切换页签后选项分组结构不变');
 const pluginGroup=tabEl.querySelector('.setting-group.mod-list');
 check(!!pluginGroup,'核心插件设置组带 mod-list');
 const pluginSearchRow=pluginGroup.querySelector('.setting-group-search');
@@ -206,6 +220,50 @@ check(app.setting.activeTab&&app.setting.activeTab.id==='hotkeys','点击快捷�
 const hkInput=app.setting.activeTab.containerEl.querySelector('.setting-group-search > .search-input-container input[type=search]');
 check(!!hkInput&&hkInput.value.includes('templates'),'快捷键页搜索框填入插件 id');
 check(document.activeElement===hkInput,'快捷键页搜索框聚焦');
+
+/* 插件自己的设置页签归入“核心插件”分组（原版 1.14.4） */
+app.setting.open();await wait(150);
+app.setting.openTabById('plugins');await wait(200);
+const templatesRow=rowsOf(app.setting.activeTab.containerEl).find(el=>text(el.querySelector('.setting-item-name'))===app.plugins.getInternalPlugin('templates').manifest.name);
+check(!!templatesRow,'核心插件页仍有 templates 行');
+const templatesGear=[...templatesRow.querySelectorAll('.extra-setting-button')].find(b=>b.querySelector('svg.lucide-settings'));
+check(!!templatesGear,'templates 行有设置齿轮');
+templatesGear.click();await wait(250);
+const corePluginNavs=[...document.querySelectorAll('.vertical-tab-header-group-items[data-section="core-plugins"] .vertical-tab-nav-item')].map(n=>n.getAttribute('data-setting-id'));
+check(corePluginNavs.length>0,'核心插件分组有插件页签');
+check(!corePluginNavs.includes('plugins'),'核心插件分组不含内置的 plugins 页签');
+check(!corePluginNavs.includes('interface'),'核心插件分组不含界面页签');
+const optionsNavs3=[...document.querySelectorAll('.vertical-tab-header-group-items[data-section="options"] .vertical-tab-nav-item')].map(n=>n.getAttribute('data-setting-id'));
+check(optionsNavs3.join(',')==='about,appearance,interface,editor,file,hotkeys,plugins','插件页签注册后选项分组结构不变');
+check(!!app.setting.activeTab&&app.setting.activeTab.group==='core','插件设置页签归入 core 分组');
+
+/* locale 键：按原版 i18n 补齐的键必须存在且是原版译文（不是 tt() 兜底） */
+const localePath=require('path').resolve(process.cwd(),'src/renderer/locales');
+let zhLocale={};let enLocale={};
+try { zhLocale=JSON.parse(require('fs').readFileSync(require('path').join(localePath,'locale-zh.json'),'utf8')); } catch(e) {}
+try { enLocale=JSON.parse(require('fs').readFileSync(require('path').join(localePath,'locale-en.json'),'utf8')); } catch(e) {}
+check(Object.keys(zhLocale).length>2000&&Object.keys(enLocale).length>2000,'locale JSON 可读且键数正常');
+const expectLocale=[
+  ['setting.interface.name','界面','Interface'],
+  ['setting.interface.option-mobile','移动端','Mobile'],
+  ['setting.interface.option-advanced','高级','Advanced'],
+  ['setting.appearance.option-css-snippets-description','管理用于调整应用外观的 CSS 文件集合。',"Manage your collection of CSS files for tweaking the app's appearance."],
+  ['setting.appearance.label-enabled-snippets-count','已启用 {{count}} 个','{{count}} enabled'],
+  ['setting.appearance.label-font-count','{{count}} 种字体','{{count}} font'],
+  ['setting.appearance.label-font-count_plural','{{count}} 种字体','{{count}} fonts'],
+  ['setting.file.label-add-excluded-filter','添加排除项...','Add exclusion...'],
+  ['setting.file.label-no-excluded-filters','未添加排除项。','No exclusions added.'],
+  ['setting.file.label-excluded-files-count','{{count}} 条规则','{{count}} rule'],
+  ['setting.file.label-excluded-files-count_plural','{{count}} 条规则','{{count}} rules'],
+  ['setting.file.title-add-excluded-filter','添加排除项','Add exclusion'],
+  ['setting.file.help-excluded-filter','输入路径或正则表达式，例如 /daily-.*/','Enter a path or a regular expression, e.g. /daily-.*/'],
+  ['setting.search-settings','搜索设置...','Search settings...'],
+  ['setting.no-search-results','未找到设置。','No settings found.'],
+  ['setting.search-show-more','还有 {{count}} 个','{{count}} more'],
+];
+for (const [key,zh,en] of expectLocale) {
+  check(zhLocale[key]===zh&&enLocale[key]===en,'locale 键 '+key+' 为原版译文 :: zh='+JSON.stringify(zhLocale[key])+' en='+JSON.stringify(enLocale[key]));
+}
 
 if(app.setting&&app.setting.close)app.setting.close();
 await app.saveLayout();

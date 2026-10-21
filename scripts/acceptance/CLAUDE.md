@@ -12,22 +12,25 @@ core-views.js: 出链面板(已解析/未解析/副文本/空态/折叠/点击�
 sidebar-shell.js: 固定侧栏、底部设置与切库、旧布局恢复和窄栏验收；标签列表/固定标签/状态栏双段/拖拽幽灵/空标签。
 stacked-tabs.js: 堆叠标签页：命令开关当前标签组、头叶交替结构、滑动布局、切换/关闭/固定、layout JSON 的 stacked 键与装载保持、分组隔离与侧栏拒绝、标签列表菜单入口。
 page-preview.js: 悬停预览（21 项）：阅读模式 popover、未解析空态、Escape 关闭、编辑模式 Mod 门控；原版 .markdown-embed 结构、inline-title 文件名、400px 限高内部滚动、32px 内容 padding、内部滚动不关闭。
-settings-ui.js: 设置页 UI：拼写词典/语言行、默认编辑模式同步、路径建议、忽略文件弹窗、重建缓存按钮、启动时间弹窗。
-search.js: 全局搜索（281 项）：字段/属性查询、引号/正则/否定/OR/括号、大小写与排序、结果分组/折叠/解释、键盘导航、复制结果弹窗与空态；真 Electron + 真实输入。
+settings-ui.js: 设置页 UI（185 项）：拼写词典/语言行、默认编辑模式同步、路径建议、忽略文件规则子页面与表单弹窗、重建缓存按钮、启动时间弹窗；侧栏全局搜索框（位置/结构/占位/跨页签分组与高亮/前 3 条折叠与「还有 N 个」/跳转闪烁/空态/清空）。
+search.js: 全局搜索（489 项）：字段/属性查询、引号/正则/否定/OR/括号、大小写与排序、结果分组/折叠/解释、键盘导航、复制结果弹窗与空态；建议弹层（算子 6 项、说明文案、组头与图标、历史存取与清除、键盘与插入语义、定位与宽度）；白板节点文本命中且不计入计数；真 Electron + 真实输入。
+search-views.js: 搜索视图形态（69 项）：侧栏形态与独立标签形态的 DOM 与计算样式、输入聚焦与清空按钮、结果点击跳转（文件/行号/Mod 新标签）、计数千分位与清空后计数保留、复制弹窗、白板搜索、标签/目录上下文建议、结果悬停预览（出现/贴目标定位/移出收起/Mod 门控/悬停后按 Mod 补弹）。
+canvas-settings.js: 白板设定页（83 项）：设置窗口内白板核心插件的齿轮入口与页签；新白板位置/文件夹、默认滚轮行为、默认 Mod 行为、卡片标签可见性、对齐网格/物体、缩放阈值滑杆（min/max/step 与 round(100*1.2^z)% 显示）；落盘 .obsidian/canvas.json 并即时灌回打开的视图。
+canvas-dummy.js: 画布临时虚影与拖拽体检（59 项）：卡片菜单「添加卡片/笔记/媒体」、节点连线手柄、边端点改接三条路径在纯点击后画布内 .is-dummy 必须为 0（虚影与临时边一律在拖拽真正开始时才建）；虚影几何（目标尺寸、指针减半尺寸、按网格/物体吸附、落点同尺寸建真实节点）；真实 PointerEvent 拖拽后节点坐标确实变化且无残留；新建文本卡进编辑态可写并落盘 JSON；已聚焦 md 卡单击正文进卡片内编辑并写回真实文件；.canvas 卡渲染缩略图。
 link-suggest.js: [[链接]] 单列浮窗（168 项）：无 .cm-completionInfo、.suggestion-container 结构/382.8×78.1 几何/31.5 行高/15-19.5 标题/12-15.6 路径、标题+灰色路径两行、选中态、上下/Page/Home/End/Ctrl+P/N/Enter/Tab/Shift+Enter/点击/Esc/失焦/滚动/缩放、# 标题、^ 块、| 显示文本、空态与重复路径。
-settings-plugins.js: 快捷键页状态筛选芯片、按快捷键捕获筛选与 Esc、冲突芯片跳筛选；核心插件页齿轮/快捷键入口显隐与跳转。
+settings-plugins.js: 快捷键页状态筛选芯片、按快捷键捕获筛选与 Esc、冲突芯片跳筛选；核心插件页齿轮/快捷键入口显隐与跳转；新增 locale 键逐条比对 zh+en 原版译文。
 settings-window.js: 设置独立窗口（17 步/49 项）：标题 `设置 - 库名 - 应用版本`、900×700、多库隔离、窗口内切换「在窗口中打开设置」的注销不死锁、主窗缓存同步、浅/深截图；macOS 红绿灯按 popout 32px 落在 (10,8)。
 vault-switcher.js: 仓库切换入口（13 项）：侧栏底部库名 →「管理仓库…」→ starter 窗口，注册表与菜单文案。
 vault-switcher.starter.js: starter 第二窗口 1.14.4（129 项、浅/深）：800×650/titlebar 30、最近仓库列 280/行高 76.49、打开/新建两屏、行菜单（重命名/移动/复制 ID/访达/移除）、键盘 Enter/Esc、空名称提示与位置预览、移除只删注册表不删文件夹、空态快速开始、语言/帮助行。
 modal-ui.js: 通用模态基座（21 项）：mod-dim 遮罩与 0.85 覆盖色、大阴影、视口居中、背景点击关闭、拖选保护、ESC、重开复位、确认弹窗标题/双按钮。
-appearance.js: 外观页：主题 (Legacy)、字体管理弹窗（指示/图标/拖拽/持久化）、主题色恢复默认。
+appearance.js: 外观页：主题 (Legacy)、主题管理弹窗（徽标/截图位/使用中）、字体三行子页面（当前字体列表/建议组/手输字体/缺失字体警示/立即落盘）、旧版主题真实生效（注入 themes/<x>.css 并带 data-css-theme）、主题色恢复默认。
 audio-recorder.js: 录音机插件验收。假 navigator.mediaDevices.getUserMedia 与 window.MediaRecorder 驱动：命令门、功能区切换 is-active、webm/m4a 扩展名与同秒重名序号、"Recording <时间戳>" 命名与嵌入链接、权限与设备错误映射（未连接麦克风/访问被拒绝/授权提示）、卸载释放与丢弃未完成录音、设置页开关与 core-plugins.json 持久化、重启读回。不接触真实麦克风。
 basic-plugins.js: 搜索、文件树、切换器、命令、标签、字数。
 bookmarks.js: 分组、重命名、打开与保存。
 canvas.js: 画布输入、连线、缩放、重开，撤销/重做（键盘+按钮+落盘）与文本卡片转换为文件（校验、几何继承、边改指、撤销恢复）；图片导出（命令可用性、面板菜单文案、导出弹窗四项设置与取消不落盘、确认后按倍率落盘并遵守 4096 上限、renderCanvasImage 的 dataURL/maxSize 上限/倍率/视口范围/水印/隐私模式）；拖动对齐参考线（吸附到对齐值、出现 svg.canvas-snaps 参考线与圆点、松手清除、snapToObjects 关闭时不吸附）。
 canvas-edit.js: 画布文本卡片的内嵌 CM6 实时预览编辑器：挂载即 .cm-editor（无 textarea/预览层）、句柄写正文 → 节点数据与画布 JSON 落盘、实时预览装饰（标题/加粗）与卡片内布局（--file-margins 归零、无行宽上限）、Escape 与 Mod+Enter 退出、单击已聚焦卡片进编辑（原版 hg）、未聚焦（blocker 路径）与聚焦未编辑（正文内）两条拖拽路径、只读画布不可写且切只读立刻退出编辑、缩放断点卸载/重建编辑器、正文编辑进撤销栈、空卡片本地化占位、关闭视图释放编辑器实例与 DOM；活动编辑器（卡片聚焦即登记、editor:toggle-bold 包裹卡片选区、退出编辑回落中心笔记、笔记内 Mod+B 仍作用于笔记）。
 canvas-selection.js: 画布多选与批量操作。多选状态（单击单选只置聚焦、Shift+点击增删选、单选↔多选切换清理聚焦态、普通点击替换）、空白拖动框选（矩形挂 .canvas-selection、外扩 10px 定位、分组需完整包含、松手清除、Shift 异或）、多选包围盒（.mod-group-selection + 8 个 data-resize 手柄、并集外扩 10px）、拖动任一选中卡片整体位移并保持相对位置、Delete 删除与 Mod+Z 撤销/重做落盘、拖动即置顶、数据层按 z 升序写出节点、浮动工具条按钮与排布子菜单 13 项（真实点击驱动：对齐 6 向坐标断言、分布 2 向首尾不动、水平拉伸、网格排列）、从选中集合建组（几何外扩 20px）、拖组带动内部节点、分组恒为负 z、分组菜单提供编辑文字且无「取消分组」（原版无该命令，删组保留子节点）、Alt(mac)/Ctrl 拖动克隆整组、Mod+框选收尾弹建卡菜单并在关闭后收起矩形、只读画布隐藏非恒显按钮。
-canvas-ui.js: 画布视觉/样式层断言（171 项、浅深两套）：外壳与点阵、控件四组图标顺序与快捷键后缀、快速设置三态、分组负 z、标签 always/hover/never、md 卡正文 padding 与弹性留白、图片宽高比回写、损坏图/缺文件占位、着色卡 rgba(...,0.07)、边（双 path、箭头顶点、描边宽度、标签字号）、悬停手柄门控与连接点嵌位、只读、缩放断点、帮助弹窗 14 条、空态三行；右键/中键 5px 平移、macOS 先 contextmenu 后移动的关闭、Windows pointerup 后 contextmenu 抑制；分组背景文件/文件夹重命名、移动、删除后的 bgPath/getData/contentEl/JSON 生命周期。
+canvas-ui.js: 画布视觉/样式层断言（192 项、浅深两套）：外壳与点阵、控件四组图标顺序与快捷键后缀、快速设置三态、分组负 z、标签 always/hover/never、md 卡正文 padding 与弹性留白、图片宽高比回写、损坏图/缺文件占位、着色卡 rgba(...,0.07)、边（双 path、箭头顶点、描边宽度、标签字号）、悬停手柄门控与连接点嵌位、只读、缩放断点、帮助弹窗 14 条、空态三行；右键/中键 5px 平移、macOS 先 contextmenu 后移动的关闭、Windows pointerup 后 contextmenu 抑制；分组背景文件/文件夹重命名、移动、删除后的 bgPath/getData/contentEl/JSON 生命周期；.canvas 文件卡渲染缩略图而非原始 JSON。
 view-header.js: 视图头 1.14.4（73 项、浅/深）：左导航钮/面包屑分隔与 aria、标题左对齐（桌面 --file-header-justify:start）、mod-fade 三态、聚焦底色与 mod-active 同步、←→ 可用性、头部模式钮真实指针命中与编辑/阅读双向切换。
 dialogs.js: 弹窗复开、确认结果与选择器布局；命令面板复杂项（标题进内容列、热键同行靠右，原版 mod-complex）。
 quick-switcher.js: 快速切换 1.14.4 全锁（130 项、浅/深）：prompt 几何/圆角/阴影/边框、六条指令栏、最近 10 项 MRU、文件/别名/未解析/附件/书签行结构、创建项与 Enter/Shift+Enter/Cmd+Enter、键盘全键位与 Tab 补全、附件/仅已创建/所有类型三开关。
@@ -47,8 +50,8 @@ image-size.js: 图片尺寸语法与图片右键：`|300`（读视图与实时�
 editor-menu.js: 编辑器右键菜单（49 项）：剪切/复制/粘贴/全选、文本格式/段落/插入/复制路径子菜单、editor-menu 事件、加粗动作；分节与格式三级子菜单对齐 1.14.4。真实鼠标序列（mousedown→mouseup→click）锁定子菜单不误关父菜单；段落设置→1级标题、插入→表格均用真实点击验证；右键折叠选区后恢复；复制/剪切/粘贴走系统剪贴板。另含外部文件拖入（落盘附件、字节完整、带扩展名嵌入链接、链接可解析）及标题/清除格式命令。
 menu-family.js: 菜单家族 1.14.4 对照（57 项）：编辑器/文件树/标签页/标签栏/属性行/反链出链的项序、图标、禁用态、分节与子菜单。
 folding-disabled.js: 禁止语法回退绕过折叠开关。
-graph.js: 87 项图谱交互与销毁。含颜色组拖拽排序（顺序即优先色）、节点悬停 hover-link 预览、力参数滑块落盘与重开保留；触屏指针（pointerType=touch）拖节点/轻点打开/空白平移/双指捏合与释放。原版图谱无“先悬停再按 Mod”补弹，断言该分支不弹。
-graph-worker.js: 图谱力学 worker 化。后端三级回退（app:// 直载 → fetch+Blob → 本地）、位置发布与主线程零物理（localTicks=0）、钉住/解钉、力参数唤醒与再沉降、空图停摆与唤醒、关闭终止 worker、消息载荷与原版 sim.js 逐字段对齐（stub Worker 截获）、本地回退后端回归。
+graph.js: 142 项图谱交互与销毁。含颜色组拖拽排序（顺序即优先色）与新建组按组序×40° 递增色相、节点悬停 hover-link 预览（载荷五项、无补弹）、力参数滑杆区间与换算、右键菜单分节表与 view.linked 子菜单、面板菜单恰好 1 条图谱项、键盘表（数字键不触发缩放）、命中半径（桌面 1×，移动端 5×）、graph.json 键集 20 项逐键锁定。
+graph-worker.js: 图谱力学 worker 化（100 项）。后端三级回退（app:// 直载 → fetch+Blob → 本地）、位置发布与主线程零物理、钉住/解钉、力参数唤醒与再沉降、空图停摆与唤醒、关闭终止 worker、消息载荷与原版 sim.js 逐字段对齐（stub Worker 截获）、本地回退后端回归、crossOriginIsolated=false 时如实走 transfer。
 graph-perf.js: 生成库性能基线（100/1000/5000 节点）：打开耗时、单 tick 耗时、沉降帧率、关闭释放、关闭后可响应。
 graph-persist-read.js: 重启核对图谱偏好。
 graph-persist-write.js: 写入图谱偏好。
@@ -69,5 +72,6 @@ probe-topbar.js / probe-canvas.js / probe-reading.js / probe-ui.js: 截图诊断
 - probe-canvas：`PROBE_SCENE=board|dark|empty|states|menus`。
 - probe-reading：`--screen "light|dark[:scrollTop]"`。
 - probe-ui：`--screen settings|palette|menu|graph|search`。
+probe-canvas-drop: 画布拖入诊断探针（残留虚影体检）。模拟文件树拖入与卡片菜单纯点击两条路径，报告 .is-dummy 数量、accent 填充元素、画布内彩色框与卡片 DOM/几何；非断言锁，用于定位画布残影。
 
 [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
