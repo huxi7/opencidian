@@ -21,7 +21,7 @@
   6. CSS/布局以 `_analysis/obsidian-114/renderer/app.css`、`app.js` 为事实源，逐字移植。
   7. 提交策略：按阶段提交（用户授权 agent 自行决定时机）。
 
-## 1. 事实源（_analysis，未入库）
+## 1. 事实源（原始包不入库，静态事实入库）
 
 - `_analysis/obsidian-114/renderer/app.js` — 原版主 bundle（反混淆片段可 grep）。
 - `_analysis/obsidian-114/renderer/app.css` — 原版样式（逐字移植来源）。
@@ -691,3 +691,13 @@ node --experimental-vm-modules src/renderer/core/workspace-regression.js
 - P3 公式 E2E 34、富值/CSV E2E 30 项通过。SVG 解码补齐 app 协议媒体类型；标签点击复用搜索窗格时更新查询。证据见 _analysis/bases-114/P3-FACTS.md 与 P3-FUNCTIONS.md。
 - HTML 显示源码；Markdown 只渲染标准行内语法并明示降级；超预算表达式报错。这些不是完全 1:1 的渲染能力。
 - 提交前另用隔离暂存树独立构建和验收 P3：Node 273+11、E2E 34+30+55 通过，未依赖未提交的 P2 布局。临时源码快照已清理。
+
+### T5 四种布局与最终集成
+
+- 表格、列表、卡片、看板共用筛选/排序/limit；分组用富值相等与排序；内置和自定义汇总复用公式。视图切换写工作区状态，配置只改目标 YAML 键。
+- 标量看板跨列拖放实际 processFrontMatter 落盘，保留属性大小写、其它属性和正文；封面支持图片/链接/首项/颜色及 fit/ratio。补齐八条中英文看板文案。
+- 隐藏阅读嵌入挂起订阅，重现重读，移除释放。未知布局保留降级说明及返回已支持视图的入口，禁止配置未知能力。
+- P2 场景 125 项通过。最终有效集成 7 场景/643 E2E 断言全绿；本组实际 10 次（初轮 7 次 + 修复后 3 次），两份原始报告保留。汇总 /tmp/opensidian-wave2-final-1022/summary.json。
+- 文件/公式/日期/链接/复杂列表分组只读并说明；file.folder 移动、虚拟滚动、列拖动、单元格编辑和新组创建未实现。
+- P3 提交 fc3b269。P2 以该接口为基础单独提交。工作区收尾后保持干净，未配置 remote，未 push。
+- Wave 3 的全量、内存与打包冒烟尚未执行。不能沿用 Wave 1 的 6477 条作为 Wave 2 全量结果。

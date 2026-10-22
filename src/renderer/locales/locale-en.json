@@ -2457,5 +2457,13 @@
  "nouns.theme-with-count_plural": "{{count}} themes",
  "plugins.file-explorer.msg-error-move-failed": "Could not move “{{name}}”",
  "plugins.file-explorer.msg-error-move-file-failed": "Could not move file.",
- "setting.third-party-plugin.label-no-recent-files-found": "No recent files found. Type to search..."
+ "setting.third-party-plugin.label-no-recent-files-found": "No recent files found. Type to search...",
+ "plugins.bases.kanban.name": "Kanban",
+ "plugins.bases.kanban.action-edit-columns": "Edit groups...",
+ "plugins.bases.kanban.label-column-width": "Column width",
+ "plugins.bases.kanban.title-no-group-by": "Add columns",
+ "plugins.bases.kanban.text-no-group-by": "Choose a property to group by.",
+ "plugins.bases.kanban.action-choose-property": "Choose property",
+ "plugins.bases.kanban.title-no-columns": "No columns",
+ "plugins.bases.kanban.text-no-columns": "Select groups to show as columns."
 }

@@ -2450,5 +2450,13 @@
  "nouns.theme-with-count_plural": "{{count}} 个主题",
  "plugins.file-explorer.msg-error-move-failed": "无法移动“{{name}}”",
  "plugins.file-explorer.msg-error-move-file-failed": "无法移动文件。",
- "setting.third-party-plugin.label-no-recent-files-found": "未找到最近文件。输入以搜索…"
+ "setting.third-party-plugin.label-no-recent-files-found": "未找到最近文件。输入以搜索…",
+ "plugins.bases.kanban.name": "看板",
+ "plugins.bases.kanban.action-edit-columns": "编辑分组...",
+ "plugins.bases.kanban.label-column-width": "列宽",
+ "plugins.bases.kanban.title-no-group-by": "添加列",
+ "plugins.bases.kanban.text-no-group-by": "选择用于分组的属性。",
+ "plugins.bases.kanban.action-choose-property": "选择属性",
+ "plugins.bases.kanban.title-no-columns": "没有列",
+ "plugins.bases.kanban.text-no-columns": "选择要显示为列的分组。"
 }

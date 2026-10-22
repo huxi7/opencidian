@@ -1,6 +1,6 @@
 /**
  * [INPUT]: js-yaml 读取数据库文本；表达式模块计算筛选；bases-context 提供属性，bases-values 定义真值与排序。
- * [OUTPUT]: 导出 BaseDocument、queryBase 与属性读取函数；查询与文件上下文共用富值类型。块式 YAML 局部写回。
+ * [OUTPUT]: 导出 BaseDocument、queryBase 与属性读取函数；查询供四类视图复用。块式 YAML 局部写回。
  * [POS]: Bases 数据边界。保留未知键和视图；流式或锚点冲突时保留值重写。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
@@ -99,7 +99,7 @@ export function compileFilter(filter) {
 }
 export function queryBase(app, document, view, sourceFile = null) {
   if (!view) return { rows: [], columns: [], warnings: ['未定义视图'] };
-  if (view.type !== 'table') return { rows: [], columns: [], warnings: ['尚不支持的视图类型：' + view.type + '。原始配置已保留。'] };
+  if (!['table', 'list', 'cards', 'kanban'].includes(view.type)) return { rows: [], columns: [], warnings: ['尚不支持的视图类型：' + view.type + '。原始配置已保留。'] };
   const tests = [compileFilter(document.data.filters), compileFilter(view.filters)];
   const rows = [], warnings = new Set();
   for (const file of app.vault.getMarkdownFiles()) {

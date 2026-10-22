@@ -19,7 +19,7 @@ export function create(app) {
       app.commands.addCommand({ id: 'bases:new-file', name: t('plugins.bases.command-create-new') || 'Create new base', icon: 'lucide-layout-list', callback: () => this.createNewBase() });
       app.commands.addCommand({ id: 'bases:export-csv', name: t('plugins.bases.action-export-c-s-v'), icon: 'lucide-file-down', checkCallback: checking => {
         const view = app.workspace.activeLeaf?.view, controller = view?.getViewType?.() === 'bases' && view.controller;
-        if (!controller || !controller.enabled || controller.closed || controller.view?.type !== 'table') return false;
+        if (!controller || !controller.enabled || controller.closed || !['table', 'list', 'cards', 'kanban'].includes(controller.view?.type)) return false;
         if (!checking) exportBaseCsv(controller);
         return true;
       } });

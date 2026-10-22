@@ -51,17 +51,21 @@ slides.js: 幻灯片插件。命令 slides:start 把当前 md 交给 SlidesPrese
 audio-recorder.js: 录音机插件(id audio-recorder，默认关闭)。命令 audio-recorder:start 与 audio-recorder:stop，checkCallback 按 recording 门控；功能区按钮 lucide-mic 切换开关，录音时加 is-active。扩展名 audio/mp4 可用时用 m4a，否则 webm/opus。命名 "Recording <YYYYMMDDHHmmss>"，经 editor/attachments.js 的 saveAttachment 落盘，并向活动 Markdown 视图插入嵌入链接。权限查询降级为 Permissions API 与 getUserMedia 错误映射，原版走 macOS systemPreferences。卸载停止录音并丢弃未完成条目。
 
 bases.js: 数据库插件入口。登记扩展名、文件视图、新建与 CSV 命令。
-bases-model.js: YAML 查询边界。共用富值和宿主上下文，保留未知数据。
+bases-model.js: YAML 数据边界。四类视图共用筛选、排序和 limit，局部写回保留未知数据。
 bases-expression.js: 安全 AST 求值。算符、惰性分支与原版 Null 传播共用白名单函数。
-bases-view.js: 文件和嵌入共用表格控制器。富值 DOM 接宿主上下文；关闭释放订阅。
-bases-embed.js: Markdown 嵌入入口。隔离文件视图生命周期。
-bases-styles.js: 数据库表格样式。按文档幂等安装。
-
 bases-context.js: 行与宿主上下文。结果按行缓存，公式 AST 按文档共用。
 bases-formula-functions.js: 全局和实例函数。集中验证参数、类型与回调作用域。
 bases-values.js: 日期、时长、链接与展示值。共用格式、相等、排序与真值语义。
 bases-values-file.js: 只读文件适配。路径解析回 TFile，聚合属性与引用。
 bases-values-render.js: 富值 DOM。导航经现有入口，HTML 与部分 Markdown 明确降级。
 bases-csv.js: CSV 导出边界。转义遵循原版；保存重读查询，取消不写盘。
+bases-view.js: 文件与嵌入控制器。隐藏阅读嵌入挂起，未知布局保留返回入口。
+bases-embed.js: Markdown 嵌入入口。隔离文件视图生命周期。
+bases-layouts.js: 表格、列表、卡片、看板布局。共用富值、分组和汇总。
+bases-grouping.js: 组相等和排序。内置汇总与自定义汇总共用公式引擎。
+bases-config.js: 视图配置弹层。按操作写对应键，保存视图选择。
+bases-kanban.js: 看板拖放。标量笔记分组经 processFrontMatter 写回。
+bases-card-media.js: 卡片与看板封面。解析图片、链接、首项与颜色，统一尺寸。
+bases-styles.js: 数据库局部样式。按文档幂等安装，四类布局复用主题变量。
 
 [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md

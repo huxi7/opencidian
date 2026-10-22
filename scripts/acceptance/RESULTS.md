@@ -523,6 +523,7 @@ sh scripts/with-lock.sh "npm run build && node scripts/acceptance/run.mjs canvas
 - 行数检查：src/scripts 中 JS、MJS、CSS、SH、Markdown 均不超过 800 行；最大 795 行。L3、L2 与本结果文档已回环。
 - 本轮范围止于 Wave 1。Wave 2 的 Bases P2/P3、Wave 3 的打包冒烟尚未执行。未配置 remote，未 push。
 
+
 ## Wave 2：Bases P2/P3（2026-10-22）
 
 基线 `c532b55`，工作区干净。先跑 build + bases，**55 项通过**。
@@ -542,3 +543,33 @@ sh scripts/with-lock.sh "npm run build && node scripts/acceptance/run.mjs canvas
 - 证据：`/tmp/opensidian-wave2-formulas-unit.json`、`/tmp/opensidian-wave2-csv-unit.json`；最终 E2E 原日志路径见下方目标回归汇总。
 
 - P3 独立提交验证：从暂存树生成隔离快照，未带入 P2 布局代码；独立 build、Node 273+11、bases-formulas 34、bases-values 30、bases 55 均通过。三个 E2E 回执 CjDjPM、3Sjmw8、TrvbV7 保留在 /tmp/obs-copy-acceptance/；临时源码快照已删除。
+
+### T5 Bases P2
+
+- 改动：`bases-view.js`、`bases-styles.js`、`bases-layouts.js`、`bases-grouping.js`、`bases-config.js`、`bases-kanban.js`、`bases-card-media.js`；共享查询放开四类视图，补齐八条中英文看板文案。
+- 新增场景 `bases-views`，**125 条通过**。四种布局、分组折叠/显隐/重排、内置/自定义汇总、视图切换与配置落盘均有断言。
+- 看板 DOM 拖放实际改写标量笔记属性，覆盖大小写保留、空值删除、正文及其它属性保留、不可写分组与失败提示。封面覆盖 PNG 资源、尺寸、fit、列表首项、链接、颜色与错误占位。
+- 阅读/实时预览三种新布局和宿主生命周期均验收；隐藏阅读嵌入挂起订阅，重现重读，移除销毁。
+- 对照：`_analysis/bases-114/P2-FACTS.md`。app.js 3234271 注册四种布局；2339476 汇总；2489646 分组；3155235/3155586 拖放写回；3138776/3145023/3145082 封面。
+- 边界：文件/公式/日期/链接/复杂列表分组只读并提示原因；file.folder 移动、列拖动、虚拟滚动、单元格编辑与新组创建尚未实现。
+
+### 集成目标回归与收尾补跑
+
+```sh
+sh scripts/acceptance/full.sh --only bases,bases-views,bases-formulas,bases-values,reading-ui,editor,small-gaps --output /tmp/opensidian-wave2-targeted-1022
+```
+
+**7 场景 / 7 次执行 / 640 条 E2E 断言，全部通过**。
+bases 55、bases-views 122、bases-formulas 34、bases-values 30、reading-ui 219、editor 131、small-gaps 49。
+汇总：`/tmp/opensidian-wave2-targeted-1022/summary.json` 与 `summary.txt`，含原始 Electron 回执路径。
+273 + 11 条 Node 单测单独计数，未混入 640 条 E2E。
+首次富值场景发现标签复用搜索窗格时未更新查询，修复 setQuery 后通过；原失败 u9C3RC 日志保留。
+封面初轮发现 SVG 无 MIME 解码失败，原失败 8qClmo 保留；协议修复后真实 SVG 解码通过。
+本轮未做视觉验收，未执行 Wave 3 全量回归或打包冒烟；Wave 1 的 6477 条不能作为本轮全量结果。
+
+收尾审查修复未知布局无法返回的问题：仍只提示降级，不显示该布局配置，但保留切回已支持视图的入口。新增 3 条真实切换/不改 YAML 断言。
+修复后运行 `sh scripts/acceptance/full.sh --only bases,bases-views,bases-values --output /tmp/opensidian-wave2-final-p2-1022`，55 + 125 + 30 = **210 条通过**。
+最终有效集成覆盖 **7 场景 / 7 次覆盖 / 643 条 E2E 断言**；本组集成实际执行 10 次（初轮 7 次 + 修复后 3 次）。
+合并有效回执见 `/tmp/opensidian-wave2-final-1022/summary.json`、`summary.txt`，按最新回执替换三个重跑场景，保留两份原始报告及全部日志。
+273 + 11 条 Node 单测、P3 隔离提交的 119 条 E2E 单独记录，未混入 643 条。
+源码与验收脚本均 ≤800 行，L3/L2/结果文档已同步。本轮两任务两提交，不配置 remote，不 push。
