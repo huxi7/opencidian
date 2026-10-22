@@ -46,9 +46,9 @@ node scripts/acceptance/run.mjs core-ribbon --no-screenshot
 node scripts/acceptance/run.mjs canvas --no-screenshot
 ```
 
-- 隔离 E2E 场景 **62 个**（`scripts/acceptance/*.js`），当前全量 **4967 条断言**全绿；运行器在系统临时目录创建带标记的测试库，不会触碰你的真实笔记。
+- 正式隔离 E2E 场景 **70 个**（不含 `probe-*` 诊断），当前全量 **100 次执行 / 6666 条断言**全绿；运行器在系统临时目录创建带标记的测试库，不会触碰你的真实笔记。
 - 每个场景都是**真实交互**（真实指针/键盘/输入、真实 DOM 与计算样式断言），不是快照对比。
-- 回归日志样例：`/tmp/opensidian-full-1021-d/summary.txt`。
+- 本轮汇总：`/tmp/opensidian-wave3-full-1022/summary.txt`；内存回归 19/19，公式与 CSV Node 单测 273 + 11 条通过。
 
 ## 打包分发
 
@@ -56,10 +56,12 @@ node scripts/acceptance/run.mjs canvas --no-screenshot
 npm install
 npm run dist:dir   # 快速验证：release/mac-arm64/OpenSidian.app
 npm run dist       # 正式产物：release/*.dmg 与 *.zip
-node scripts/smoke-packaged.mjs   # 打包版冒烟（真实启动 + 建文件 + 打开文件）
+node scripts/smoke-packaged.mjs --no-screenshot  # ASAR 核对 + 隔离真实启动，34 条断言
 ```
 
 - 当前为**未签名**构建（`electron-builder.yml` 里 `identity: null`）。macOS Gatekeeper 首次打开需右键 → 打开，或 `xattr -dr com.apple.quarantine /Applications/OpenSidian.app`。
+- 当前目录包：`release/mac-arm64/OpenSidian.app`，版本 **1.14.4**，打包冒烟 **34/34**；许可证原文随 ASAR 分发。本轮没有生成或更新 DMG/ZIP。
+- 冒烟先核对身份、版本和当前构建哈希，拒绝启动陈旧包；运行后等待自身进程退出并清理辅助进程。
 - 应用图标由 `scripts/make-app-icon.py` 生成（原创几何设计），可自行替换 `build/icon.icns`。
 - 正式对外分发需 Apple 开发者证书：移除 `identity: null` 并配置签名/公证。
 

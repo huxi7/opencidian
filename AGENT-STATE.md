@@ -2,7 +2,7 @@
 
 > 本文件不属于 GEB 文档体系，是 agent 的跨上下文记忆。每次重要推进后更新。
 > 更新时机：阶段完成 / 提交前后 / 发现关键事实 / 子代理交付验收后。
-> **当前交接以 §27 Wave 2 为准；§26 保留 Wave 1 结果，早期章节仅作历史。**
+> **当前交接以 §28 Wave 3 为准；§26/§27 保留前两轮结果，早期章节仅作历史。**
 
 ---
 
@@ -701,3 +701,20 @@ node --experimental-vm-modules src/renderer/core/workspace-regression.js
 - 文件/公式/日期/链接/复杂列表分组只读并说明；file.folder 移动、虚拟滚动、列拖动、单元格编辑和新组创建未实现。
 - P3 提交 fc3b269。P2 以该接口为基础单独提交。工作区收尾后保持干净，未配置 remote，未 push。
 - Wave 3 的全量、内存与打包冒烟尚未执行。不能沿用 Wave 1 的 6477 条作为 Wave 2 全量结果。
+
+
+## 28. Wave 3：全量、内存与目录包收尾（2026-10-22）
+
+基线 HEAD 5279ba8，工作区干净，未配置 remote。
+
+- 全量：sh scripts/acceptance/full.sh --output /tmp/opensidian-wave3-full-1022。70 场景 / 100 次执行 / 6666 条断言，首轮全绿，无补跑或回执替换。原日志见 summary.json / summary.txt。
+- 内存：node --experimental-vm-modules src/renderer/core/workspace-regression.js，19/19；日志 /tmp/opensidian-wave3-memory-1022.log。
+- Node：公式 273 条（78 个说明键）、CSV 11 条通过，结果 /tmp/opensidian-wave3-formulas-1022.json 与 /tmp/opensidian-wave3-csv-1022.json；未混入 E2E 计数。
+- 目录包：npm run dist:dir -- --publish never 成功，Electron 33.4.11 / macOS arm64 / 应用 1.14.4。路径 release/mac-arm64/OpenSidian.app。
+- 首包静态清点发现缺根 LICENSE；打包清单加入现有原文，LICENSE 本身未修改。重建后 ASAR 内许可证字节一致。
+- 打包冒烟不再拼接“成功”消息：先核对 ASAR 身份、版本、许可证和当前构建哈希，再做 20 条真实运行断言。合计 34/34，通过。
+- 冒烟：sh scripts/with-lock.sh 'node scripts/smoke-packaged.mjs --no-screenshot'。结果 /tmp/opensidian-wave3-packaged-1022.json，含 ASAR SHA-256、隔离库与日志路径。
+- ASAR SHA-256：d625f8fbfa4c77f3179ac4f73699067e577b6b95c9dcc69af9f3194410b6e82c。共 5405 个条目，86742697 字节。
+- 冒烟核对隔离 userData 与真实打包模式；进程退出后清理自身进程组。全程无截图，未启动原版或唤起外部应用。
+- 本轮只产目录包，未更新旧 DMG/ZIP；未执行签名、公证、安装或发布。原有 Bases、画布等已知能力边界保留。
+- README、脚本 L2、RESULTS 与打包配置同步。Wave 1–3 计划内工作已收尾；未配置 remote，未 push。

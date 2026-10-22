@@ -573,3 +573,56 @@ bases 55、bases-views 122、bases-formulas 34、bases-values 30、reading-ui 21
 合并有效回执见 `/tmp/opensidian-wave2-final-1022/summary.json`、`summary.txt`，按最新回执替换三个重跑场景，保留两份原始报告及全部日志。
 273 + 11 条 Node 单测、P3 隔离提交的 119 条 E2E 单独记录，未混入 643 条。
 源码与验收脚本均 ≤800 行，L3/L2/结果文档已同步。本轮两任务两提交，不配置 remote，不 push。
+
+
+## Wave 3：全量、内存与打包冒烟（2026-10-22）
+
+基线 HEAD **5279ba8**，工作区干净，未配置 remote。
+本轮不启动原版、不做视觉验收，不唤起浏览器、访达或原生保存框。
+
+### 全量回归
+
+```sh
+sh scripts/acceptance/full.sh --output /tmp/opensidian-wave3-full-1022
+```
+
+**70 个正式场景 / 100 次执行 / 6666 条断言，全部通过。**
+首轮全绿，无重跑或回执替换。所有执行都有 --no-screenshot，包含重启读回、链式场景、主题变体与图谱三档规模。
+汇总：`/tmp/opensidian-wave3-full-1022/summary.json`、`summary.txt`；逐次日志及真实 checks 保留。
+
+### 内存与 Node 单测
+
+```sh
+node --experimental-vm-modules src/renderer/core/workspace-regression.js
+node scripts/bases-formulas.test.mjs
+node scripts/bases-csv.test.mjs
+```
+
+- 工作区内存回归 **19/19**；日志 `/tmp/opensidian-wave3-memory-1022.log`。
+- 公式 **273 条**，覆盖原版 **78 个说明键**；结果 `/tmp/opensidian-wave3-formulas-1022.json`。
+- CSV **11 条**；结果 `/tmp/opensidian-wave3-csv-1022.json`。
+- 三组不混入 6666 条 E2E；Node VM 与包类型提示属于已知工具提示，未作为通过依据。
+
+### 目录包与真实冒烟
+
+```sh
+sh scripts/with-lock.sh 'npm run dist:dir -- --publish never'
+sh scripts/with-lock.sh 'node scripts/smoke-packaged.mjs --no-screenshot'
+```
+
+- 构建成功：应用 **1.14.4**，Electron **33.4.11**，macOS **arm64**。
+- 产物：`release/mac-arm64/OpenSidian.app`；Info.plist 的 CFBundleShortVersionString 也为 1.14.4。
+- 初次目录包漏根 LICENSE。`electron-builder.yml` 补入原文后重建；LICENSE 内容未修改。首包日志 `/tmp/opensidian-wave3-dist-1022.log`，最终日志 `/tmp/opensidian-wave3-dist-final-1022.log`。
+- 新冒烟器替换旧版无条件 passed:true 回执：**14 条启动前核对 + 20 条真实运行 = 34/34**。
+- 启动前核对身份、版本、许可证与当前主进程、入口、bundle 哈希，拒绝启动陈旧或错误产物。
+- 真实运行验证隔离库/userData、打包模式、版本、编辑器内容、Bases 新建/查询、公式、列表、CSV 写盘与 SVG 解码；CSV 保存路径注入临时库，不弹原生对话框。
+- 采用严格 {pass,count,checks} 与错误日志判定；等待自己创建的进程退出，超时只清理自身进程组，不触碰用户应用。
+- 回执 `/tmp/opensidian-wave3-packaged-1022.json`；原始运行日志路径包含在回执中，screenshot 为 null。
+- ASAR：5405 个条目，86742697 字节；SHA-256 `d625f8fbfa4c77f3179ac4f73699067e577b6b95c9dcc69af9f3194410b6e82c`。
+
+### 交付边界
+
+源码与验收脚本均 ≤800 行，L1/L2/L3 已回环。本轮不改变应用功能、品牌或许可证原文。
+只构建本机目录包，未更新旧 DMG/ZIP；未签名、公证、安装或发布。
+原有 Bases 编辑/虚拟滚动、画布尺寸与隐私模式等已知边界没有被本轮验收抹去。
+Wave 1–3 计划内工作已收尾。未配置 remote，未 push。

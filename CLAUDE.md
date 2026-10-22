@@ -18,6 +18,7 @@ dist/ - esbuild 输出 (renderer.js, starter.js, graph-sim-worker.js)
 AGENT-STATE.md - 项目事实、阶段记录与当前交接安排
 README.md - 项目介绍、构建运行方式与兼容性说明
 package.json - 依赖与脚本 (build/watch/start/dev)
+electron-builder.yml - 目录包与分发配置；ASAR 包含运行文件和许可证原文
 scripts/build.mjs - 打包入口: src/renderer/main.js → dist/renderer.js
 scripts/dev.mjs - 开发模式 (watch + electron 热重启)
 src/renderer/index.html - 主窗口 HTML，链接 styles/*.css 与 dist/renderer.js；画布和变量样式按序导入分片

@@ -1,3 +1,7 @@
+# [INPUT]: package.json、dist/、src/、assets/ 与许可证原文。
+# [OUTPUT]: release/ 下的目录包与分发产物。
+# [POS]: 打包边界配置；ASAR 包含运行文件和许可证。
+# [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
 appId: app.opensidian
 productName: OpenSidian
 copyright: Copyright (c) 2026 OpenSidian contributors
@@ -6,12 +10,14 @@ directories:
   output: release
   buildResources: build
 
-# 渲染层由 esbuild 打进 dist/，主进程只用 Node 内置模块：不带 node_modules
+# 渲染层由 esbuild 打进 dist/；生产依赖由 electron-builder 收集。
+# 仓库许可证原文随 ASAR 分发。
 files:
   - dist/**
   - src/**
   - assets/**
   - package.json
+  - LICENSE
   - "!**/*.map"
 
 asar: true

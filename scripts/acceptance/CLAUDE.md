@@ -5,6 +5,7 @@
 运行器只允许带标记的临时库。日志错误使运行失败。
 正式场景返回 {pass,count,checks}，count 等于 checks.length。
 全量入口固定 --no-screenshot，排除 probe-* 诊断脚本。
+Wave 3：70 个正式场景，100 次执行，6666 条断言全绿。
 
 成员清单
 RESULTS.md: 本轮结果、证据目录与复跑方式。
@@ -19,7 +20,7 @@ search.js: 全局搜索（489 项）：字段/属性查询、引号/正则/否�
 search-views.js: 搜索视图形态（69 项）：侧栏形态与独立标签形态的 DOM 与计算样式、输入聚焦与清空按钮、结果点击跳转（文件/行号/Mod 新标签）、计数千分位与清空后计数保留、复制弹窗、白板搜索、标签/目录上下文建议、结果悬停预览（出现/贴目标定位/移出收起/Mod 门控/悬停后按 Mod 补弹）。
 canvas-settings.js: 白板设定页（83 项）：设置窗口内白板核心插件的齿轮入口与页签；新白板位置/文件夹、默认滚轮行为、默认 Mod 行为、卡片标签可见性、对齐网格/物体、缩放阈值滑杆（min/max/step 与 round(100*1.2^z)% 显示）；落盘 .obsidian/canvas.json 并即时灌回打开的视图。
 canvas-embed.js: 笔记内嵌白板（81 项）：阅读视图与实时预览里 ![[Board.canvas]] 走原版画布嵌入（cte：.canvas-embed 容器 + inline-embed 形态的图标与文件名标题 + 缩略图 SVG），缩略图结构（圆角矩形数、贝塞尔路径、viewBox 外扩 5%）、限高 --embed-canvas-max-height 400px、点击打开白板、Mod+点击新标签、缺失白板落 .file-embed.mod-empty「未创建，点击以创建。」、空白板与坏 JSON 只留标题行、**右键不弹菜单**（原版渲染器只对链接/标签/图片派发右键）、计算样式锁。
-canvas-dummy.js: 画布临时虚影与拖拽体检（59 项）：卡片菜单「添加卡片/笔记/媒体」、节点连线手柄、边端点改接三条路径在纯点击后画布内 .is-dummy 必须为 0（虚影与临时边一律在拖拽真正开始时才建）；虚影几何（目标尺寸、指针减半尺寸、按网格/物体吸附、落点同尺寸建真实节点）；真实 PointerEvent 拖拽后节点坐标确实变化且无残留；新建文本卡进编辑态可写并落盘 JSON；已聚焦 md 卡单击正文进卡片内编辑并写回真实文件；.canvas 卡渲染缩略图。
+canvas-dummy.js: 画布临时虚影与拖拽体检（75 项）：卡片菜单「添加卡片/笔记/媒体」、节点连线手柄、边端点改接三条路径在纯点击后画布内 .is-dummy 必须为 0（虚影与临时边一律在拖拽真正开始时才建）；虚影几何（目标尺寸、指针减半尺寸、按网格/物体吸附、落点同尺寸建真实节点）；真实 PointerEvent 拖拽后节点坐标确实变化且无残留；新建文本卡进编辑态可写并落盘 JSON；已聚焦 md 卡单击正文进卡片内编辑并写回真实文件；.canvas 卡渲染缩略图。
 link-suggest.js: [[链接]] 单列浮窗（168 项）：无 .cm-completionInfo、.suggestion-container 结构/382.8×78.1 几何/31.5 行高/15-19.5 标题/12-15.6 路径、标题+灰色路径两行、选中态、上下/Page/Home/End/Ctrl+P/N/Enter/Tab/Shift+Enter/点击/Esc/失焦/滚动/缩放、# 标题、^ 块、| 显示文本、空态与重复路径。
 settings-plugins.js: 快捷键页状态筛选芯片、按快捷键捕获筛选与 Esc、冲突芯片跳筛选；核心插件页齿轮/快捷键入口显隐与跳转；新增 locale 键逐条比对 zh+en 原版译文。
 settings-window.js: 设置独立窗口（50 项真实断言）：标题 `设置 - 库名 - 应用版本`、900×700、多库隔离、窗口内切换「在窗口中打开设置」的注销不死锁、主窗缓存同步、浅/深截图；macOS 红绿灯按 popout 32px 落在 (10,8)。
@@ -44,14 +45,14 @@ editor.js: 模式、折叠、高亮、滚动与 LP 记号（列表圆点、有�
 file-explorer-multi.js: 文件树多选：Alt 切换/Shift 范围/空白清空、↑↓ 焦点、Delete 删除（逐项确认）、多选拖动载荷 items（type=files）、多选右键菜单（新建文件夹含选中项/移动/删除）。
 drag-drop.js: 文件树与标签拖拽（79 项、浅/深）：真实落盘的文件→文件夹/文件夹→文件夹/多选移动、同父 no-op、非法自嵌套拒绝、750ms 悬停展开、根容器移回仓库根；标签同组重排（模型+DOM+活动叶）、跨组搬叶子不重建、固定标签禁拖、workspace-drop-overlay 10px 落点（::before 内缩 3px/50% accent）、body.is-grabbing、ghost 清理、标签 200ms 开合补间、center/边缘 workspace-drop-overlay 几何与分割落点。
 editor-block-button.js: 块 widget（代码/数学/Mermaid）的 edit-block-button：默认隐藏、悬停显形、点击把光标放回源码。
-sidebar-chrome.js: 侧栏折叠/展开：折叠侧分隔条不穿入红绿灯区、toggle 迁移归属与 140ms FLIP 动画、幽灵清理；73 项计算样式锁——ribbon 收起底色（background-primary）、::before 解析色=titlebar-background、焦点联动变量链、mod-top 链、44px 内边距、标签 fillet 几何、展开还原；顶栏「+」「⌄」几何（外层 24×39、内层 span.clickable-icon 24×24、末标签盒距 8/字形距 12）与文件列表头（.nav-header 8px、五按钮图标顺序、gap 2px）。
+sidebar-chrome.js: 侧栏折叠/展开：折叠侧分隔条不穿入红绿灯区、toggle 迁移归属与 140ms FLIP 动画、幽灵清理；82 项计算样式锁——ribbon 收起底色（background-primary）、::before 解析色=titlebar-background、焦点联动变量链、mod-top 链、44px 内边距、标签 fillet 几何、展开还原；顶栏「+」「⌄」几何（外层 24×39、内层 span.clickable-icon 24×24、末标签盒距 8/字形距 12）与文件列表头（.nav-header 8px、五按钮图标顺序、gap 2px）。
 editor-layout.js: 行宽布局（26 项）：sizer/contentContainer 结构、700px 居中、行内标题与正文同左缘、H1 段前 16px/行高 1.2、设置联动、阅读视图居中、折叠全关后开行号 gutter 正常挂载且绝对定位不占正文宽。
 editor-paste.js: 剪贴板图片粘贴（截图 File / HTML data URL）落盘与嵌入、文本粘贴不误伤、文件树根目录外部文件拖入。
 reading-menus.js: 阅读视图右键菜单：内部链接（新标签页/新标签组/重命名）、外链（复制链接/浏览器打开）、图片复制、笔记/音视频/PDF 嵌块菜单、未解析链接创建文件。
-reading-ui.js: 阅读视图正文排版计算样式锁（212 项，期望值注 app.css 行号）：H1–H6 阶梯与间距、段落、列表（.list-bullet 圆点/嵌套缩进/任务 checkbox mask 与完成态）、引用、14 类 callout 色彩映射、行内/块代码与 pre 规格、表格（对齐/padding/行高/交替底色）、hr、脚注、三种链接（外链角标/未解析衰减）、标签、嵌入对象（音视频/PDF/笔记嵌块/附件/progress）；失败回执带 debug 栈。
+reading-ui.js: 阅读视图正文排版计算样式锁（219 项，期望值注 app.css 行号）：H1–H6 阶梯与间距、段落、列表（.list-bullet 圆点/嵌套缩进/任务 checkbox mask 与完成态）、引用、14 类 callout 色彩映射、行内/块代码与 pre 规格、表格（对齐/padding/行高/交替底色）、hr、脚注、三种链接（外链角标/未解析衰减）、标签、嵌入对象（音视频/PDF/笔记嵌块/附件/progress）；失败回执带 debug 栈。
 image-size.js: 图片尺寸语法与图片右键：`|300`（读视图与实时预览的 img width、高度按原始比例）、`|300x200`、无尺寸保持原始宽度、`![alt|300](url)` 生效而 `![300](url)` 不生效、未解析与非图片嵌入不受影响；图片菜单的"重置大小"改写源文本并保留撤销（undo/redo）与自动保存链路，无尺寸图片不出现该项。
-editor-menu.js: 编辑器右键菜单（49 项）：剪切/复制/粘贴/全选、文本格式/段落/插入/复制路径子菜单、editor-menu 事件、加粗动作；分节与格式三级子菜单对齐 1.14.4。真实鼠标序列（mousedown→mouseup→click）锁定子菜单不误关父菜单；段落设置→1级标题、插入→表格均用真实点击验证；右键折叠选区后恢复；复制/剪切/粘贴走系统剪贴板。另含外部文件拖入（落盘附件、字节完整、带扩展名嵌入链接、链接可解析）及标题/清除格式命令。
-menu-family.js: 菜单家族 1.14.4 对照（57 项）：编辑器/文件树/标签页/标签栏/属性行/反链出链的项序、图标、禁用态、分节与子菜单。
+editor-menu.js: 编辑器右键菜单（51 项）：剪切/复制/粘贴/全选、文本格式/段落/插入/复制路径子菜单、editor-menu 事件、加粗动作；分节与格式三级子菜单对齐 1.14.4。真实鼠标序列（mousedown→mouseup→click）锁定子菜单不误关父菜单；段落设置→1级标题、插入→表格均用真实点击验证；右键折叠选区后恢复；复制/剪切/粘贴走系统剪贴板。另含外部文件拖入（落盘附件、字节完整、带扩展名嵌入链接、链接可解析）及标题/清除格式命令。
+menu-family.js: 菜单家族 1.14.4 对照（58 项）：编辑器/文件树/标签页/标签栏/属性行/反链出链的项序、图标、禁用态、分节与子菜单。
 folding-disabled.js: 禁止语法回退绕过折叠开关。
 layout-split.js: 分屏/工作区布局几何（78 项）：初始、左右分屏、上下分屏、保存-加载布局、关闭叶子后，root/中心列/叶子/内容容器全部落在视口内且不互相越界；两块叶子不重叠、加载前后几何一致。
 layout-modals.js: 弹窗与新建视图的全屏几何（31 项）：设置弹窗遮罩铺满视口 + 两栏高度正常、布局管理弹窗、加载布局 SuggestModal、新建标签页只有一个 view-content（无占位残留）、新建画布铺满视图内容。
