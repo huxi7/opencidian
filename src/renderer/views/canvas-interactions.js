@@ -772,7 +772,11 @@ export class CanvasInteractions extends CanvasViewport {
           if (node.isGroup || node === dummy) continue;
           others.push(bboxOf(node));
         }
-        const snap = canvas.getSnapping([next], others, true, true);
+        // getSnapping 的契约是 bbox（minX/minY/maxX/maxY）；传 rect 会产生 NaN 吸附点。
+        const nextBox = {
+          minX: next.x, minY: next.y, maxX: next.x + next.width, maxY: next.y + next.height,
+        };
+        const snap = canvas.getSnapping([nextBox], others, true, true);
         next.x += snap.x;
         next.y += snap.y;
       }

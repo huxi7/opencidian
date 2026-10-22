@@ -451,3 +451,9 @@ MathJax 独立适配器子代理的41项基础/故障测试见 assets/mathjax/SO
 - **拖线端点出现 100×100 紫色方框**：原版的临时节点（`Pee`）只做几何占位，**从不 attach/render**；我们的 `createDummyNode()` 无条件 `attach()+render()`，把 `.canvas-node.is-dummy` 的 accent 边框 + 20% 填充画了出来。现改为 `createDummyNode({ attach: false })`，拖线端点与卡片连线手柄两条路径都不再挂 DOM。
 - **点击卡片后画布卡住、节点动不了**：`handleDragWithPan` 在 pointerdown 就 `setDragging(true)`，但纯点击（位移 < 5px）时拖拽工厂不会创建，`cleanup` 不执行 → `isDragging` 永久为真。滚轮缩放、悬停手柄（连线点/缩放手柄）、双击建卡全被 `if (this.isDragging) return` 吞掉。`startDrag` 增加 idle 收尾：未越过阈值也复位拖动状态。
 - canvas-dummy 59 → **71** 项：新增「拖动中无可见虚影」「连线成功吸附后建边 / 拖动态复位 / 节点仍可拖动」「纯点击后状态复位并仍可拖动」。
+
+## 白板底部建卡按钮卡死（2026-10-22）
+
+- **点击/拖出「添加卡片」后整窗卡死**：`dragTempNode` 把 **rect**（x/y/width/height）直接传给 `getSnapping`，而该函数的契约是 **bbox**（minX/minY/maxX/maxY）→ `boxSnapPoints` 解构出 undefined → 吸附点全为 NaN → `findSnapMatches` 内层 `NaN === NaN` 恒为 false、`index` 不前进 → 主线程死循环。空画布时没有吸附目标所以旧用例没暴露（`snapToObjects=false` 的拖出用例也不经过该分支）。
+- **修法**：`place()` 传 bbox；`findSnapMatches` 过滤非有限坐标并在分组为空时强制前进（双保险）。
+- canvas-dummy 71 → **75**：新增 `snapToObjects=true + 板上已有卡片` 的拖出用例（虚影坐标有限、落卡成功、无残留）。

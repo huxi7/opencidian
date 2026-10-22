@@ -163,6 +163,26 @@
   await wait(150);
   view.options.snapToGrid = false;
 
+  /* ========== C2. snapToObjects 开启 + 板上已有卡片：拖出不得卡死（NaN 吸附死循环） ========== */
+  view.options.snapToObjects = true;
+  const objBefore = view.nodes.size;
+  screenPointer(btn, 'pointerdown', startAt);
+  const objDom = view.domFromPos({ x: 60, y: 40 });
+  screenPointer(window, 'pointermove', { x: objDom.x + rect.cx, y: objDom.y + rect.cy });
+  await wait(150);
+  const objTemp = document.querySelector('.canvas-node.is-dummy');
+  ok(!!objTemp, '物体吸附拖出中出现虚影');
+  const objStyle = String(objTemp && objTemp.style.transform);
+  ok(!objStyle.includes('NaN') && /translate\([^)]*\)/.test(objStyle), '物体吸附虚影坐标有限:: ' + objStyle);
+  screenPointer(window, 'pointerup', { x: objDom.x + rect.cx, y: objDom.y + rect.cy });
+  await wait(300);
+  ok(dummies() === 0, '物体吸附拖出结束无残留虚影');
+  ok(view.nodes.size === objBefore + 1, '物体吸附拖出仍建卡');
+  const objDropped = Array.from(view.nodes.values()).find((n) => n.text === '');
+  if (objDropped) view.removeNode(objDropped);
+  await wait(150);
+  view.options.snapToObjects = false;
+
   /* ================= D. 连线手柄与边端点：纯点击不留虚影/悬空边 ================= */
   const n1 = nodeOf('n1');
   const n2 = nodeOf('n2');

@@ -357,17 +357,22 @@ export function uniqueSnapPoints(boxes) {
  * 返回该位移下的全部点对（src 是移动前的点，dest 是对齐目标点）。
  */
 export function findSnapMatches(src, dest, dist, axis) {
-  if (!src.length || !dest.length) return null;
   const valueOf = (p) => (axis === 'x' ? p.x : p.y);
-  const sortedSrc = src.slice().sort((a, b) => valueOf(a) - valueOf(b));
-  const sortedDest = dest.slice().sort((a, b) => valueOf(a) - valueOf(b));
+  // 防御：非有限坐标（rect 误当 bbox、损坏节点）会让 NaN === NaN 恒为 false，
+  // 内层 while 永不前进 → 主线程死循环。先过滤，再保证每轮至少前进一格。
+  const finite = (p) => p && Number.isFinite(valueOf(p));
+  const sortedSrc = src.filter(finite).sort((a, b) => valueOf(a) - valueOf(b));
+  const sortedDest = dest.filter(finite).sort((a, b) => valueOf(a) - valueOf(b));
+  if (!sortedSrc.length || !sortedDest.length) return null;
   let delta = dist;
   let matches = [];
   let index = 0;
   while (index < sortedSrc.length) {
     const value = valueOf(sortedSrc[index]);
+    if (!Number.isFinite(value)) { index++; continue; }
     const srcGroup = [];
     while (index < sortedSrc.length && valueOf(sortedSrc[index]) === value) srcGroup.push(sortedSrc[index++]);
+    if (!srcGroup.length) { index++; continue; }
     const { point: nearest, at } = nearestByAxis(sortedDest, value, valueOf);
     const candidate = valueOf(nearest) - value;
     if (candidate === delta) {
