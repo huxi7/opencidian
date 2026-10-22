@@ -158,7 +158,7 @@ rightClick(propRow);
 await until(()=>!!document.querySelector('body > .menu'),'属性行菜单',3000);
 const propMenu=menus()[menus().length-1];
 const propTitles=menuTitles(propMenu);
-check(JSON.stringify(propTitles)===JSON.stringify(['移除']),'属性行菜单仅移除（原版 metadata-editor danger 段）：'+propTitles.join('/'));
+check(JSON.stringify(propTitles)===JSON.stringify(['属性类型','剪切','复制','粘贴','移除']),'属性行类型、剪贴板与移除菜单对齐原版：'+propTitles.join('/'));
 const removeItem=itemByName(propMenu,'移除');
 check(removeItem.classList.contains('is-warning')&&iconClass(removeItem).includes('lucide-trash-2'),'移除项为 is-warning + lucide-trash-2');
 await closeMenu();

@@ -16,7 +16,7 @@ backlink.js: 反链分节、上下文与筛选。导出文档底部反链设置�
 outgoing-link.js: 出链面板视图(type outgoing-link)。逐条列出当前文件的已解析与未解析出链；图标按标题/块/文件/未解析切换，已解析出链的副文本显示目标文件夹，未解析出链带 is-unresolved 与“尚未创建”提示。仅 Links 分节（原版还有 Unlinked mentions，本实现未覆盖）；不自动创建窗格，由命令 outgoing-links:open / outgoing-links:open-for-current 打开；关闭释放订阅与计时器，禁用撤销视图与命令。
 outline.js: 按标题层级建立大纲。跳级归最近父标题，同名标题按行号跳转，关闭释放资源。
 tag-pane.js: 标签面板视图(type tag)。标签树/排序/嵌套开关。
-properties.js: 属性插件(id properties，原版 properties)。all-properties 汇总全部属性键与出现文件数，四种排序(名称正/倒、频次高/低，默认频次高到低)，点击属性打开全局搜索 ["键"](Mod 点击切换 token)；file-properties 只读复用 markdown/properties.js 的行渲染并跟随活动文件；命令 properties:open / properties:open-local 与状态栏属性计数(点击打开 file-properties)。不自动创建窗格；禁用撤销视图、命令与状态栏条目。
+properties.js: 属性插件。全部属性忽略大小写聚合，提供类型菜单和四种排序；文件属性侧栏共用文档编辑器与库级类型。命令和状态栏对称启停。
 global-search.js: 全局搜索视图(type search)。DOM 与 1.14.4 对齐（search-row/search-params/search-results-info/tree-item 分组），负责状态、排序、折叠、解释与键盘导航；结果列表的虚拟化与分组模型委托 search-results.js，查询与命中委托 search-query.js，复制结果弹窗委托 search-copy.js，输入框建议弹层委托 search-suggest.js，自身不再实现匹配。file-menu/editor-menu 事件按原版补「在文件夹中查找」（非根文件夹，action 段，lucide-folder-search，查询 path:"<目录>/"）与「查找 …」（选区，selection 段）。
 search-query.js: 查询门面。只转出 parseQuery/queryInfo（search-query-parse.js）与 createSearchDocument/searchDocument（search-query-match.js），保持旧导入路径可用。
 search-query-parse.js: 无 DOM 查询解析层。parseQuery 解析 file/path/tag/content、line/section/block/task/task-todo/task-done、match-case/ignore-case、属性 [key]/[key:value]、引号、OR、括号、否定、正则与大小写；queryInfo 供解释视图。

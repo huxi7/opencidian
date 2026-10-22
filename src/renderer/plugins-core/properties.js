@@ -1,8 +1,8 @@
 /**
- * [INPUT]: View 生命周期、workspace 当前文件与 statusBar、metadataCache 的 frontmatter、markdown/properties.js 的只读渲染、命令与菜单。
+ * [INPUT]: View 生命周期、workspace 当前文件与 statusBar、metadataCache 的 frontmatter、markdown/properties.js 的可编辑渲染与 properties-types 类型服务、命令与菜单。
  * [OUTPUT]: 导出 AllPropertiesView、FilePropertiesView 与插件 create(app)（命令 properties:open / properties:open-local）。
  * [POS]: plugins-core/ 的属性插件（原版 id properties）。all-properties 汇总仓库内全部属性键并可按四种顺序排序；
- *        file-properties 只读显示当前文件属性；状态栏条目显示属性数并打开 file-properties。
+ *        file-properties 编辑当前文件属性，类型持久化共用 properties-types；状态栏条目显示属性数并打开 file-properties。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 /* Core plugin: properties — the "All properties" and "File properties" panes. */
@@ -12,6 +12,8 @@ import { setIcon } from '../core/icons.js';
 import { Menu } from '../core/menu.js';
 import { IS_MAC } from '../core/keymap.js';
 import { buildMetadataContainer } from '../markdown/properties.js';
+import { getPropertyTypes } from '../markdown/properties-types.js';
+import { showPropertyTypeMenu } from '../markdown/properties-menu.js';
 
 export const nameKey = 'plugins.properties';
 
@@ -29,20 +31,6 @@ const SORT_LABELS = {
 
 function isModEvent(ev) {
   return IS_MAC ? !!ev.metaKey : !!ev.ctrlKey;
-}
-
-/** 属性键的显示图标：对齐 markdown/properties.js 的类型判定，供只读列表使用。 */
-function propertyIcon(key, value) {
-  if (key === 'tags') return 'tag';
-  if (Array.isArray(value)) return 'list';
-  if (typeof value === 'boolean') return 'check-square';
-  if (typeof value === 'number') return 'hash';
-  if (value instanceof Date) return 'calendar';
-  if (typeof value === 'string') {
-    if (/^\d{4}-\d{2}-\d{2}$/.test(value)) return 'calendar';
-    if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(value)) return 'clock';
-  }
-  return 'text';
 }
 
 export class AllPropertiesView extends View {
@@ -75,6 +63,7 @@ export class AllPropertiesView extends View {
     this._refs = [
       this.app.metadataCache.on('changed', () => this._queueRender()),
       this.app.metadataCache.on('resolved', () => this._queueRender()),
+      this.app.workspace.on('properties-type-change', () => this._queueRender()),
       this.app.vault.on('create', () => this._queueRender()),
       this.app.vault.on('delete', () => this._queueRender()),
       this.app.vault.on('rename', () => this._queueRender()),
@@ -137,16 +126,17 @@ export class AllPropertiesView extends View {
       const frontmatter = cache && cache.frontmatter;
       if (!frontmatter) continue;
       for (const key of Object.keys(frontmatter)) {
-        const entry = stats.get(key) || { count: 0, value: frontmatter[key] };
+        const normalized = key.toLowerCase();
+        const entry = stats.get(normalized) || { name: key, count: 0, value: frontmatter[key] };
         entry.count += 1;
-        stats.set(key, entry);
+        stats.set(normalized, entry);
       }
     }
     return stats;
   }
 
   _sorted(stats) {
-    const entries = [...stats.entries()].map(([name, info]) => ({ name, count: info.count, value: info.value }));
+    const entries = [...stats.entries()].map(([, info]) => ({ name: info.name, count: info.count, value: info.value }));
     const byName = (a, b) => a.name.localeCompare(b.name);
     switch (this._sortOrder) {
       case 'alphabetical': return entries.sort(byName);
@@ -169,10 +159,11 @@ export class AllPropertiesView extends View {
       const item = list.createDiv('tree-item');
       const row = item.createDiv('tree-item-self is-clickable property-item');
       const iconEl = row.createSpan('tree-item-icon');
-      setIcon(iconEl, propertyIcon(entry.name, entry.value));
+      setIcon(iconEl, getPropertyTypes(this.app).getTypeInfo(entry.name, entry.value).expected.icon);
       row.createDiv({ cls: 'tree-item-inner' }).createDiv({ cls: 'tree-item-inner-text', text: entry.name });
       row.createDiv('tree-item-flair-outer').createSpan({ cls: 'tree-item-flair', text: String(entry.count) });
       row.onclick = (ev) => this._openSearchForProperty(entry.name, ev);
+      row.oncontextmenu = ev => showPropertyTypeMenu(this.app, { key: entry.name, value: entry.value }, row, ev);
     }
   }
 
@@ -244,6 +235,7 @@ export class FilePropertiesView extends View {
         if (file && active && file.path === active.path) this._queueRender();
       }),
       this.app.metadataCache.on('resolved', () => this._queueRender()),
+      this.app.workspace.on('properties-type-change', () => this._queueRender()),
     ];
   }
 
@@ -268,15 +260,12 @@ export class FilePropertiesView extends View {
     container.empty();
     const file = this._file();
     this._renderedPath = file ? file.path : null;
-    const cache = file ? this.app.metadataCache.getFileCache(file) : null;
-    const frontmatter = cache && cache.frontmatter;
-    const hasProperties = !!(frontmatter && Object.keys(frontmatter).length);
-    if (!file || file.extension !== 'md' || !hasProperties) {
+    if (!file || file.extension !== 'md') {
       container.createDiv({ cls: 'pane-empty', text: t('plugins.properties.label-no-properties') || 'No properties found.' });
       return;
     }
-    // 只读复用 markdown/properties.js 的行渲染；标题由 CSS 隐藏（对齐原版 file-properties）。
-    const el = buildMetadataContainer(this.app, file, { editable: false });
+    // 侧栏与文档共用编辑器和 processFrontMatter；无 frontmatter 时也允许添加首个属性。
+    const el = buildMetadataContainer(this.app, file, { editable: true });
     if (el) container.appendChild(el);
     else container.createDiv({ cls: 'pane-empty', text: t('plugins.properties.label-no-properties') || 'No properties found.' });
   }
@@ -292,6 +281,7 @@ class PropertiesPlugin {
 
   onload() {
     const app = this.app;
+    getPropertyTypes(app);
     app.viewRegistry.registerView(ALL_PROPERTIES_VIEW_TYPE, (leaf) => new AllPropertiesView(leaf));
     app.viewRegistry.registerView(FILE_PROPERTIES_VIEW_TYPE, (leaf) => new FilePropertiesView(leaf));
     this._commandIds = [];

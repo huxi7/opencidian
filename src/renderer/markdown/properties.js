@@ -1,8 +1,8 @@
 /**
- * [INPUT]: 依赖 ../core/i18n.js 的 t；依赖 ../core/icons.js 的 setIcon；依赖 ../core/suggest.js 的 AbstractInputSuggest；依赖 ../core/modals.js 的 PromptModal；依赖 ../core/menu.js 的 Menu
+ * [INPUT]: i18n、图标、PromptModal、properties-types 库级类型与 properties-menu 属性操作。
  * [OUTPUT]: 导出 renderProperties(app, container, file, options)、buildMetadataContainer(app, file, options)
  * [POS]: markdown/ 的属性面板渲染器。live-preview.js 的 PropertiesWidget 与 markdown-view.js 阅读模式共同调用。DOM 逐字对齐原版：error-container → heading → metadata-content(properties + add-button)。写回经 fileManager.processFrontMatter。
- *        每行挂原版 showPropertyMenu（attachPropertyRowMenu），标签/多值行与标量行共用同一菜单。
+ *        阅读、实时预览与侧栏共用类型和写回路径；保留不兼容值并显示类型警告，修改只写用户编辑的键。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 /*
@@ -16,9 +16,9 @@
  */
 import { t } from '../core/i18n.js';
 import { setIcon } from '../core/icons.js';
-import { AbstractInputSuggest } from '../core/suggest.js';
 import { PromptModal } from '../core/modals.js';
-import { Menu } from '../core/menu.js';
+import { getPropertyTypes } from './properties-types.js';
+import { attachPropertyRowMenu, showPropertyTypeMenu } from './properties-menu.js';
 
 export function renderProperties(app, container, file, options = {}) {
   container.empty();
@@ -69,10 +69,11 @@ export function buildMetadataContainer(app, file, options = {}) {
   }
   errorEl.toggle(false);
 
+  const types = getPropertyTypes(app);
   const props = [];
   if (fm && Object.keys(fm).length > 0) {
     for (const [key, value] of Object.entries(fm)) {
-      props.push({ key, value, type: inferType(key, value) });
+      props.push({ key, value });
     }
   }
   const editable = options.editable !== false;
@@ -80,207 +81,192 @@ export function buildMetadataContainer(app, file, options = {}) {
   if (!hasFm && !editable) return null;
   if (!hasFm && options.showAddButton === false) return null;
 
-  for (const prop of props) {
-    renderPropertyRow(app, propertiesEl, file, prop, options);
-  }
+  metadataEl.refreshPropertyTypes = () => {
+    propertiesEl.empty();
+    for (const prop of props) {
+      const info = types.getTypeInfo(prop.key, prop.value);
+      renderPropertyRow(app, propertiesEl, file, { ...prop, type: info.inferred.type, typeInfo: info }, options);
+    }
+  };
+  metadataEl.refreshPropertyTypes();
+  types.registerPanel(metadataEl);
   if (!editable) addBtn.toggle(false);
   metadataEl.setAttr('data-property-count', String(props.length));
   return metadataEl;
 }
 
-function inferType(key, value) {
-  if (['tags', 'aliases', 'cssclasses'].includes(key)) return key === 'tags' ? 'tags' : 'multitext';
-  if (Array.isArray(value)) return 'multitext';
-  if (typeof value === 'boolean') return 'checkbox';
-  if (typeof value === 'number') return 'number';
-  if (value instanceof Date) return 'date';
-  if (typeof value === 'string') {
-    if (/^\d{4}-\d{2}-\d{2}$/.test(value)) return 'date';
-    if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(value)) return 'datetime';
-    if (/^\[\[.*\]\]$/.test(value.trim())) return 'text';
-    return 'text';
-  }
-  return 'text';
-}
-
-function displayValue(value) {
+function displayValue(value, type) {
   if (value === null || value === undefined) return '';
   if (Array.isArray(value)) return value.join(', ');
   if (typeof value === 'boolean') return value ? 'true' : 'false';
-  if (value instanceof Date) return value.toISOString().slice(0, 10);
+  if (value instanceof Date) return value.toISOString().slice(0, type === 'datetime' ? 16 : 10);
   return String(value);
 }
 
 function renderPropertyRow(app, container, file, prop, options) {
+  const editable = options.editable !== false;
   const row = container.createDiv('metadata-property');
   row.setAttr('data-property-key', prop.key);
   row.setAttr('data-property-type', prop.type);
-  if (options.editable !== false && !prop.readonly) attachPropertyRowMenu(app, file, prop, row);
+  if (editable) attachPropertyRowMenu(app, file, prop, row);
   const keyEl = row.createDiv('metadata-property-key');
-  keyEl.createSpan({ cls: 'metadata-property-icon' });
-  setIcon(keyEl.querySelector('.metadata-property-icon'), typeIcon(prop.type));
-  const keyText = keyEl.createSpan({ cls: 'metadata-property-key-input' });
-  keyText.setText(displayKey(prop.key));
-
+  const icon = keyEl.createSpan({ cls: 'metadata-property-icon', attr: { tabindex: editable ? '0' : '-1' } });
+  setIcon(icon, prop.typeInfo.expected.icon);
+  if (editable) {
+    icon.setAttr('aria-label', t('properties.option-property-type'));
+    icon.onclick = event => showPropertyTypeMenu(app, prop, icon, event, file);
+    icon.onkeydown = event => { if (event.key === 'Enter' || event.key === ' ') icon.onclick(event); };
+  }
+  const keyInput = keyEl.createEl('input', { cls: 'metadata-property-key-input', type: 'text' });
+  keyInput.value = prop.key;
+  keyInput.readOnly = !editable;
+  keyInput.setAttr('aria-label', prop.key);
+  if (editable) bindKeyInput(app, file, prop, keyInput);
+  if (prop.typeInfo.expected !== prop.typeInfo.inferred) {
+    const warning = keyEl.createSpan('metadata-property-warning-icon');
+    setIcon(warning, 'lucide-alert-triangle');
+    warning.setAttr('aria-label', t('properties.label-type-mismatch-warning', { type: prop.typeInfo.expected.name() }));
+  }
   const valueEl = row.createDiv('metadata-property-value');
-  const valueDisplay = valueEl.createDiv('metadata-property-value-display');
-  valueDisplay.setText(displayValue(prop.value));
-
+  valueEl.setAttr('data-property-type', prop.type);
   if (prop.type === 'checkbox') {
-    const cb = valueEl.createDiv('checkbox-container');
-    cb.toggleClass('is-enabled', !!prop.value);
-    cb.onclick = async () => {
-      const next = !cb.hasClass('is-enabled');
-      cb.toggleClass('is-enabled', next);
-      await app.fileManager.processFrontMatter(file, (fm2) => { fm2[prop.key] = next; });
+    const cb = valueEl.createEl('input', { type: 'checkbox', cls: 'metadata-input-checkbox' });
+    cb.checked = !!prop.value;
+    cb.disabled = !editable;
+    cb.setAttr('data-indeterminate', String(prop.value == null));
+    cb.setAttr('aria-label', prop.key);
+    if (editable) cb.onchange = async () => {
+      cb.setAttr('data-indeterminate', 'false');
+      await app.fileManager.processFrontMatter(file, fm => { fm[prop.key] = cb.checked; });
     };
-    valueDisplay.detach();
-    valueEl.prepend(cb);
     return;
   }
-
-  if (prop.type === 'tags' || prop.type === 'multitext') {
-    valueEl.empty();
-    const values = Array.isArray(prop.value) ? prop.value : String(prop.value || '').split(/[,\s]+/).filter(Boolean);
-    const pills = valueEl.createDiv('multi-select-container');
-    for (const v of values) {
-      const pill = pills.createDiv('multi-select-pill');
-      const pillText = pill.createSpan({ cls: 'multi-select-pill-content' });
-      pillText.setText(String(v));
-      if (options.editable !== false) {
-        const remove = pill.createDiv('multi-select-pill-remove-button');
-        setIcon(remove, 'x');
-        remove.onclick = async (ev) => {
-          ev.stopPropagation();
-          await app.fileManager.processFrontMatter(file, (fm2) => {
-            const arr = normalizeArray(fm2[prop.key]);
-            fm2[prop.key] = arr.filter((x) => String(x) !== String(v));
-          });
-        };
-      }
-    }
-    if (options.editable !== false) {
-      const input = pills.createEl('input', { type: 'text', cls: 'multi-select-input' });
-      input.placeholder = '';
-      input.onkeydown = async (ev) => {
-        if (ev.key === 'Enter' && input.value.trim()) {
-          ev.preventDefault();
-          await app.fileManager.processFrontMatter(file, (fm2) => {
-            const arr = normalizeArray(fm2[prop.key]);
-            arr.push(input.value.trim());
-            fm2[prop.key] = arr;
-          });
-        }
-      };
-      input.onblur = async () => {
-        if (input.value.trim()) {
-          await app.fileManager.processFrontMatter(file, (fm2) => {
-            const arr = normalizeArray(fm2[prop.key]);
-            arr.push(input.value.trim());
-            fm2[prop.key] = arr;
-          });
-        }
-      };
-    }
+  if (['tags', 'aliases', 'multitext'].includes(prop.type)) {
+    renderList(app, file, prop, valueEl, editable);
     return;
   }
-
-  if (options.editable !== false && !prop.readonly) {
-    valueDisplay.setAttr('tabindex', '0');
-    valueDisplay.onclick = () => editPropertyValue(app, file, prop, valueDisplay);
-    row.setAttr('tabindex', '0');
+  if (prop.type === 'unknown') {
+    valueEl.createDiv({ cls: 'metadata-property-value-display', text: JSON.stringify(prop.value) });
+    return;
   }
-}
-
-/**
- * 原版 metadata-editor showPropertyMenu：任意类型的属性行都挂右键菜单。
- * 分节表 title/action/action.changeType/selection/clipboard/danger；本项目无属性类型管理器，
- * 属性类型子菜单与剪贴板三项（桌面端走 webContents cut/copy/paste）未实现，故意缺失。
- */
-function attachPropertyRowMenu(app, file, prop, row) {
-  row.addEventListener('contextmenu', (ev) => {
-    ev.preventDefault();
-    const menu = new Menu(app);
-    menu.addSections(['title', 'action', 'action.changeType', 'selection', 'clipboard', '', 'danger']);
-    menu.setSectionSubmenu('action.changeType', { title: t('plugins.properties.option-property-type') || 'Property type', icon: 'lucide-info' });
-    menu.addItem((i) => i.setSection('danger')
-      .setTitle(t('interface.menu.remove') || 'Remove')
-      .setWarning(true)
-      .setIcon('lucide-trash-2')
-      .onClick(async () => {
-        await app.fileManager.processFrontMatter(file, (fm2) => { delete fm2[prop.key]; });
-      }));
-    menu.setParentElement(row).showAtMouseEvent(ev);
-  });
-}
-
-function normalizeArray(v) {
-  if (Array.isArray(v)) return [...v];
-  if (v === undefined || v === null || v === '') return [];
-  return String(v).split(/[,\s]+/).filter(Boolean);
-}
-
-function typeIcon(type) {
-  switch (type) {
-    case 'tags': return 'tag';
-    case 'checkbox': return 'check-square';
-    case 'number': return 'hash';
-    case 'date': return 'calendar';
-    case 'datetime': return 'clock';
-    case 'multitext': return 'list';
-    default: return 'text';
-  }
-}
-
-function displayKey(key) {
-  return key.charAt(0).toUpperCase() + key.slice(1);
-}
-
-function editPropertyValue(app, file, prop, valueEl) {
-  if (valueEl.querySelector('input')) return;
-  const input = createEl('input', { type: 'text', cls: 'metadata-input' });
-  input.value = displayValue(prop.value);
-  valueEl.setText('');
-  valueEl.appendChild(input);
-  input.focus();
-  input.select();
+  const text = prop.type === 'text';
+  const input = text
+    ? valueEl.createDiv({ cls: 'metadata-input-longtext', attr: { contenteditable: editable ? 'true' : 'false', role: 'textbox', tabindex: editable ? '0' : '-1' } })
+    : valueEl.createEl('input', { cls: 'metadata-input metadata-input-text' + (prop.type === 'number' ? ' metadata-input-number' : ' mod-' + prop.type), type: prop.type === 'number' ? 'number' : prop.type === 'datetime' ? 'datetime-local' : 'date' });
+  const getValue = () => text ? input.textContent : input.value;
+  const setValue = value => { if (text) input.textContent = value; else input.value = value; };
+  setValue(displayValue(prop.value, prop.type));
+  input.setAttr('placeholder', t('properties.label-no-value'));
+  input.readOnly = !editable;
+  if (prop.type === 'number') { input.step = 'any'; input.inputMode = 'decimal'; }
+  if (!editable) return;
+  let last = getValue();
   const commit = async () => {
-    const raw = input.value;
-    let value = raw;
-    if (prop.type === 'number' && raw !== '' && !isNaN(Number(raw))) value = Number(raw);
-    await app.fileManager.processFrontMatter(file, (fm2) => { fm2[prop.key] = value; });
+    if (getValue() === last) return;
+    const raw = getValue();
+    let value = raw === '' && (prop.type === 'date' || prop.type === 'datetime') ? null : raw;
+    if (prop.type === 'number') {
+      if (!input.validity.valid || (raw !== '' && !Number.isFinite(Number(raw)))) { input.setAttr('aria-invalid', 'true'); return; }
+      value = raw === '' ? null : Number(raw);
+    }
+    if ((prop.type === 'date' || prop.type === 'datetime') && (!input.validity.valid || (raw && !getPropertyTypes(app).getWidget(prop.type).validate(raw)))) {
+      input.setAttr('aria-invalid', 'true'); return;
+    }
+    input.removeAttribute('aria-invalid');
+    last = raw;
+    try { await app.fileManager.processFrontMatter(file, fm => { fm[prop.key] = value; }); }
+    catch (error) { last = displayValue(prop.value, prop.type); throw error; }
   };
-  input.onkeydown = (ev) => {
-    if (ev.key === 'Enter') { ev.preventDefault(); commit(); }
-    else if (ev.key === 'Escape') { ev.preventDefault(); valueEl.setText(displayValue(prop.value)); }
+  input.commitMetadata = commit;
+  input.onblur = commit;
+  input.onkeydown = event => {
+    if (event.isComposing) return;
+    if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); commit(); }
+    if (event.key === 'Escape') { event.preventDefault(); setValue(last); input.blur(); }
   };
-  input.onblur = () => commit();
-
-  if (prop.type === 'text' || prop.key === 'tags' || prop.key === 'aliases') {
-    attachFileSuggest(app, input);
+  if (text) {
+    input.onpaste = event => {
+      const plain = event.clipboardData?.getData('text/plain');
+      if (plain !== undefined) { event.preventDefault(); input.ownerDocument.execCommand('insertText', false, plain); }
+    };
   }
 }
 
-function attachFileSuggest(app, input) {
-  const suggest = new AbstractInputSuggest(app, input);
-  suggest.getSuggestions = (query) => {
-    const q = query.toLowerCase();
-    return app.vault.getMarkdownFiles()
-      .map((f) => f.basename)
-      .filter((b) => b.toLowerCase().includes(q))
-      .slice(0, 30);
+function bindKeyInput(app, file, prop, input) {
+  let last = prop.key;
+  const commit = async () => {
+    const next = input.value.trim();
+    if (next === last) return;
+    if (!next) { input.setAttr('aria-invalid', 'true'); input.title = t('properties.msg-empty-property-name'); return; }
+    let changed = false;
+    const cancelled = {};
+    try { await app.fileManager.processFrontMatter(file, fm => {
+      const duplicate = Object.keys(fm).some(key => key !== last && key.toLowerCase() === next.toLowerCase());
+      if (duplicate || !Object.hasOwn(fm, last)) throw cancelled;
+      const entries = Object.entries(fm).map(([key, value]) => [key === last ? next : key, value]);
+      for (const key of Object.keys(fm)) delete fm[key];
+      Object.assign(fm, Object.fromEntries(entries));
+      changed = true;
+    }); } catch (error) { if (error !== cancelled) throw error; }
+    if (changed) { last = next; input.removeAttribute('aria-invalid'); }
+    else { input.setAttr('aria-invalid', 'true'); input.title = t('properties.msg-duplicate-property-name'); }
   };
-  suggest.selectSuggestion = () => {};
+  input.commitMetadata = commit;
+  input.onblur = commit;
+  input.onkeydown = event => {
+    if (event.key === 'Enter') { event.preventDefault(); commit(); }
+    if (event.key === 'Escape') { event.preventDefault(); input.value = last; input.blur(); }
+  };
+}
+
+function renderList(app, file, prop, valueEl, editable) {
+  const values = Array.isArray(prop.value) ? prop.value : prop.value == null || prop.value === '' ? [] : [prop.value];
+  const pills = valueEl.createDiv('multi-select-container');
+  for (const value of values) {
+    const pill = pills.createDiv('multi-select-pill');
+    pill.createSpan({ cls: 'multi-select-pill-content', text: String(value) });
+    if (editable) {
+      const remove = pill.createDiv('multi-select-pill-remove-button');
+      setIcon(remove, 'lucide-x');
+      remove.onclick = async event => {
+        event.stopPropagation();
+        await app.fileManager.processFrontMatter(file, fm => {
+          const current = Array.isArray(fm[prop.key]) ? fm[prop.key] : fm[prop.key] == null ? [] : [fm[prop.key]];
+          fm[prop.key] = current.filter(item => String(item) !== String(value));
+        });
+      };
+    }
+  }
+  if (!editable) return;
+  const input = pills.createEl('input', { type: 'text', cls: 'multi-select-input' });
+  const commit = async () => {
+    const raw = input.value.trim();
+    if (!raw) return;
+    if (prop.type === 'tags' && /\s/.test(raw)) { input.setAttr('aria-invalid', 'true'); input.title = t('properties.msg-invalid-tag'); return; }
+    input.value = '';
+    await app.fileManager.processFrontMatter(file, fm => {
+      const current = Array.isArray(fm[prop.key]) ? [...fm[prop.key]] : fm[prop.key] == null || fm[prop.key] === '' ? [] : [fm[prop.key]];
+      if (!current.some(value => String(value) === raw)) current.push(raw);
+      fm[prop.key] = current;
+    });
+  };
+  input.commitMetadata = commit;
+  input.onblur = commit;
+  input.onkeydown = event => {
+    if (event.key === 'Enter') { event.preventDefault(); commit(); }
+    if (event.key === 'Escape') { event.preventDefault(); input.value = ''; input.blur(); }
+  };
 }
 
 async function promptNewProperty(app, file, container, options) {
   new PromptModal(app, {
-    title: 'Property name',
+    title: t('properties.label-add-property-button'),
     placeholder: 'key',
     onSubmit: async (key) => {
+      key = key.trim();
       if (!key) return;
       await app.fileManager.processFrontMatter(file, (fm) => {
-        if (!(key in fm)) fm[key] = '';
+        if (!Object.keys(fm).some(name => name.toLowerCase() === key.toLowerCase())) fm[key] = '';
       });
     },
   }).open();

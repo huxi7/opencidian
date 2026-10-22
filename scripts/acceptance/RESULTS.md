@@ -637,3 +637,10 @@ Wave 1–3 计划内工作已收尾。未配置 remote，未 push。
 - 重启：bases-entry --vault /private/tmp/obs-copy-acceptance/obs-copy-bases-entry-R2McOR --phase restart --no-screenshot，6 条通过。日志 /tmp/opensidian-bases-entry-restart.log。
 - 首次入口场景因菜单延后登记外部点击监听，测试在同一事件轮次关闭菜单失败。补齐真实事件轮次后重跑；未改业务通过条件，原失败 1NrQmy 保留。
 - 本提交只修入口；界面、编辑、属性、窗口与性能任务继续并行。未启动原版、未截图、未修改真实库、未 push。
+
+## P2 属性编辑闭环（2026-10-22）
+
+新增 properties-types/properties-menu，文档与 file-properties 共用编辑器。types.json 忽略大小写并保留未知键；文本、数字、复选框、日期、日期时间与列表真实写盘。补齐类型菜单、显式转换确认、选区剪贴板、首个属性添加与改名。对象值只读展示，切换类型不批量改写其它笔记。
+原版对照见 _analysis/properties-114/FACTS.md：UR/QR、showPropertyMenu 1859054、转换确认 1885097 及各类型控件。源码 L3、markdown/plugins-core/acceptance L2 已同步。
+with-lock 内 build + properties-editing --no-screenshot 后，扩展最终场景 54 条通过；重启 verify 11 条、reading-ui 219 条通过。分段回执见 /tmp/opensidian-properties-complete.log、/tmp/opensidian-properties-verify-final.log；54 条原始日志 XVzQKd，阅读样式 U1QFPL。正式 full.mjs 纳入 verify 链。
+menu-family 的属性菜单断言更新为类型/剪切/复制/粘贴/移除，core-views 更新无属性文件首项添加入口；旧只读期望不再适用。未启动原版、未截图、未 push。

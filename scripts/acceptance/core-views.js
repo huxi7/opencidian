@@ -175,7 +175,7 @@
     // ------------------------------------------------------------ 状态栏计数
     await workspace.openFile(b);
     await wait(180);
-    check(fileRows().length === 0 && !!fileView._container.querySelector('.pane-empty'), '切到无属性文件后视图清空');
+    check(fileRows().length === 0 && !!fileView._container.querySelector('.metadata-add-button'), '无属性文件仍可添加首个属性');
     const statusItem = propsStatusItem();
     check(!!statusItem, '状态栏存在属性计数条目');
     check(statusItem.style.display === 'none', '无属性时状态栏条目隐藏');
