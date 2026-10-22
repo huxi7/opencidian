@@ -35,7 +35,7 @@ rightClick(treeTitle(file.path));
 await until(()=>!!document.querySelector('body > .menu'),'文件右键菜单',3000);
 let fileMenu=menus()[menus().length-1];
 let fileTitles=menuTitles(fileMenu);
-check(JSON.stringify(fileTitles)===JSON.stringify(['在新标签页中打开','在新标签组中打开','创建副本','将文件移动到…','复制路径','使用默认应用打开','在访达中显示','重命名','删除']),'文件树文件菜单项序与原版一致：'+fileTitles.join('/'));
+check(JSON.stringify(fileTitles)===JSON.stringify(['在新标签页中打开','在新标签组中打开','在新窗口中打开','创建副本','将文件移动到…','复制路径','使用默认应用打开','在访达中显示','重命名','删除']),'文件树文件菜单项序与原版一致：'+fileTitles.join('/'));
 check(visibleSeps(fileMenu)===4,'文件菜单四处分隔线（open/action/info.copy/system/danger），实际 '+visibleSeps(fileMenu));
 // 动效/悬停：菜单无开合动画；项间距 8px；悬停底色只给可选项
 const fileMenuStyle=getComputedStyle(fileMenu);

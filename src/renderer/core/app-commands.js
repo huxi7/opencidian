@@ -2,7 +2,7 @@
  * [INPUT]: 命令注册、Workspace、WorkspaceTabs、设置宿主与桌面 IPC。
  * [OUTPUT]: 注册导航、设置、窗口及文档标签命令（含 workspace:toggle-stacked-tabs）。
  * [POS]: 用户命令层。关闭与固定标签命令只作用于中心文档；堆叠命令作用于当前中心标签组。
- * 文档弹出窗口尚未实现，因此不注册移动到新窗口命令。
+ * 文档独立窗口命令由 document-window 注册，转移等待新窗口就绪。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 /*
@@ -15,8 +15,10 @@ import { Notice } from './notices.js';
 import { Modal } from './modals.js';
 import { checkForUpdates } from './update-check.js';
 import { WorkspaceTabs } from './workspace-model.js';
+import { registerDocumentWindowCommands } from './document-window.js';
 
 export function registerAppCommands(app) {
+  registerDocumentWindowCommands(app);
   const add = (spec) => app.commands.addCommand(spec);
   const ws = () => app.workspace;
 

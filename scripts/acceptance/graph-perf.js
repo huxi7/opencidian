@@ -1,7 +1,7 @@
 /*
  * [INPUT]: OBS_ACT eval 注入；由 run.mjs 生成的 obs-copy-graph-perf-* 临时库；OBS_GRAPH_PERF_NODES 为节点数。
- * [OUTPUT]: 返回 {pass, role, nodes, edges, openMs, tickMs, fps, disposed}；同时写 <vault>/.obs-copy-graph-perf.json。
- * [POS]: 图谱性能基线场景：测打开耗时、力学单 tick 耗时、沉降期帧率与关闭后的资源释放。先记录结果，再决定优化。
+ * [OUTPUT]: 返回真实 checks、打开耗时、Worker 发布与帧率、释放状态，并写临时库报告。
+ * [POS]: 图谱性能门槛。Worker 后端不把空 tick 当物理耗时；释放状态逐项断言。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 (async () => {
@@ -15,6 +15,7 @@
     throw new Error('graph-perf 只在生成的临时库运行，且需要 OBS_GRAPH_PERF_NODES');
   }
   const checks = [];
+  const check = (value, label) => { if (!value) throw Error(label); checks.push(label); };
   const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
   const wait = async (label, predicate, timeout = 240000) => {
     const end = Date.now() + timeout;
@@ -35,14 +36,21 @@
   const renderer = view.renderer;
   const sim = renderer.sim;
   const edges = renderer.links.length;
+  check(renderer.nodes.length === expected, '精确节点数=' + expected);
+  check(edges === expected * 2, '精确边数=' + edges);
+  check(openMs < (expected > 1000 ? 15000 : 5000), '打开耗时符合预算：' + Math.round(openMs) + 'ms');
   // 力学单 tick 成本：自适应采样（首 tick 已慢时不再叠加样本）
   const timeTicks = (k) => {
     const start = performance.now();
     for (let i = 0; i < k; i += 1) sim.tick();
     return (performance.now() - start) / k;
   };
-  const firstTick = timeTicks(1);
-  const tickMs = firstTick < 100 ? timeTicks(4) : firstTick;
+  const firstTick = sim.backend === 'local' ? timeTicks(1) : null;
+  const tickMs = firstTick === null ? null : firstTick < 100 ? timeTicks(4) : firstTick;
+  if (tickMs !== null) check(tickMs < 250, '本地物理 tick <250ms：' + tickMs.toFixed(2));
+  let publications = 0;
+  const onUpdate = sim.onUpdate;
+  sim.onUpdate = (...args) => { publications++; onUpdate?.(...args); };
   // 沉降期帧率：统计 1.5 秒内主线程实际完成的 rAF 帧数（渲染器同窗口持续 tick）
   let frames = 0;
   await new Promise((resolve) => {
@@ -51,6 +59,12 @@
     requestAnimationFrame(step);
   });
   const fps = frames / 1.5;
+  check(fps >= (expected > 1000 ? 5 : 20), '沉降期帧率符合预算：' + fps.toFixed(1));
+  if (sim.backend === 'worker') {
+    check(publications > 0, 'Worker 在测量窗口发布真实物理位置：' + publications);
+    check(sim.localTicks === 0, 'Worker 模式主线程不重复计算物理');
+  }
+  sim.onUpdate = onUpdate;
   // 关闭并核对释放
   await leaf.setViewState({ type: 'empty' });
   await delay(250);
@@ -60,6 +74,8 @@
     timerCleared: renderer.renderTimer === null,
     domCleared: !document.querySelector('.graph-view-container canvas'),
   };
+  for (const [key, value] of Object.entries(disposed)) check(value, '关闭释放：' + key);
+  check(sim.destroyed === true && sim.worker === null, '关闭终止物理 Worker');
   // 关闭后应用仍可响应：打开一个 md 并读到内容
   const sample = app.vault.getMarkdownFiles()[0];
   const leaf2 = app.workspace.getLeaf(true);
@@ -71,7 +87,8 @@
     nodes: expected,
     edges,
     openMs: Math.round(openMs),
-    tickMs: Number(tickMs.toFixed(2)),
+    tickMs: tickMs === null ? null : Number(tickMs.toFixed(2)),
+    backend: sim.backend, publications,
     fps: Number(fps.toFixed(1)),
     disposed,
     count: checks.length,

@@ -1,5 +1,6 @@
 /**
  * [INPUT]: Electron 的 ipcRenderer；主进程 main.js 注册的同名通道
+ * 文档窗口使用异步就绪回执；属性写回使用跨窗口比较写入通道。
  * [OUTPUT]: ipcSync/ipcSend/ipcInvoke/ipcOn 与 Desktop 门面（含窗口原生半透明、拼写检查词典/语言通道、设置独立窗口的开关/信息/探针/截图通道）
  * [POS]: core/ 的渲染进程 IPC 叶子层。只做通道转发，不持有业务状态；窗口标题、拼写检查等全部经此抵达主进程。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
@@ -26,6 +27,9 @@ export function ipcOn(channel, handler) {
 }
 
 export const Desktop = {
+  compareAndSwapFile: request => ipcInvoke('vault-write-cas', request),
+  openDocumentWindow: state => ipcInvoke('document-window-open', state),
+  documentWindowReady: () => ipcSend('document-window-ready'),
   isDev: () => ipcSync('is-dev'),
   version: () => ipcSync('version'),
   fileUrl: () => ipcSync('file-url'),

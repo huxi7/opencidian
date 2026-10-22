@@ -11,6 +11,10 @@ Wave 3：70 个正式场景，100 次执行，6666 条断言全绿。
 RESULTS.md: 本轮结果、证据目录与复跑方式。
 bases-entry.js: 数据库可见入口。功能区、空标签键盘、文件夹及根菜单创建真实文件，插件启停对称，重启读回。
 properties-editing.js: 属性类型、侧栏编辑、剪贴板、首项与改名。54 条，verify 阶段重启读回 11 条。
+frontmatter-write.js: 多窗口真实属性写回。CAS 冲突、坏 YAML 原文、失败恢复与 CRLF 正文保留。
+document-window.js: 文档窗口加载、保存、双向同步、主布局隔离和关闭保存，含 Markdown/Bases/Canvas。
+native-menus.js: 真实系统菜单树、分节与动作回传。E2E 不弹出系统菜单。
+lifecycle-memory.js: 真实 V8 GC 后堆、DOM、事件与 Worker。30 轮开关设定增长预算。
 run.mjs: 创建独立库、启动 Electron 与严格日志判定；同名 .starter.js 驱动第二窗口，--seed-vaults 预置库，--vault/--phase 支持链式复跑，--no-screenshot 跳过截图。
 core-ribbon.js: 插件入口启停、普通/Mod 点击、键盘、设置开关与重启同步。
 core-views.js: 出链面板(已解析/未解析/副文本/空态/折叠/点击打开)与属性插件(全部属性计数与四种排序、点击开搜索、文件属性跟随、状态栏计数、关闭释放、禁停恢复、设置页开关)。
@@ -60,7 +64,7 @@ layout-split.js: 分屏/工作区布局几何（78 项）：初始、左右分�
 layout-modals.js: 弹窗与新建视图的全屏几何（31 项）：设置弹窗遮罩铺满视口 + 两栏高度正常、布局管理弹窗、加载布局 SuggestModal、新建标签页只有一个 view-content（无占位残留）、新建画布铺满视图内容。
 graph.js: 142 项图谱交互与销毁。含颜色组拖拽排序（顺序即优先色）与新建组按组序×40° 递增色相、节点悬停 hover-link 预览（载荷五项、无补弹）、力参数滑杆区间与换算、右键菜单分节表与 view.linked 子菜单、面板菜单恰好 1 条图谱项、键盘表（数字键不触发缩放）、命中半径（桌面 1×，移动端 5×）、graph.json 键集 20 项逐键锁定。
 graph-worker.js: 图谱力学 worker 化（96 项真实断言；环境信息另存 notes）。后端三级回退（app:// 直载 → fetch+Blob → 本地）、位置发布与主线程零物理、钉住/解钉、力参数唤醒与再沉降、空图停摆与唤醒、关闭终止 worker、消息载荷与原版 sim.js 逐字段对齐（stub Worker 截获）、本地回退后端回归、crossOriginIsolated=false 时如实走 transfer。
-graph-perf.js: 生成库性能基线（100/1000/5000 节点）：打开耗时、单 tick 耗时、沉降帧率、关闭释放、关闭后可响应。
+graph-perf.js: 图谱性能门槛（100/1000/5000 节点）。断言打开预算、帧率、Worker 发布、真实释放与关闭后响应。
 graph-persist-read.js: 重启核对图谱偏好。
 graph-persist-write.js: 写入图谱偏好。
 math.js: 离线 CHTML、字体、错误隔离与两种视图。

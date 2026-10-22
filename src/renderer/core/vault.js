@@ -1,5 +1,6 @@
 /**
  * [INPUT]: 依赖 ./events.js 的 Events；Node 内置 fs/path/chokidar/os
+ * 文件时间按原版 Ul 使用取整的 birthtimeMs/mtimeMs，ctime 不随属性编辑漂移。
  * [OUTPUT]: 导出 Vault、TFile、TFolder、TAbstractFile、FileSystemAdapter、isHiddenPath
  * [POS]: core/ 的文件模型与磁盘适配层，全应用唯一文件真相源。首次扫描与文件监听均拒绝点开头路径段（原版 nu() 语义）——.obsidian 配置经适配器直读，不暴露给插件。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
@@ -80,7 +81,7 @@ export class FileSystemAdapter {
   existsSync(p) { return fs.existsSync(this.toAbs(p)); }
   async stat(p) {
     const s = await fs.promises.stat(this.toAbs(p));
-    return { type: s.isDirectory() ? 'folder' : 'file', ctime: s.ctimeMs, mtime: s.mtimeMs, size: s.size };
+    return { type: s.isDirectory() ? 'folder' : 'file', ctime: Math.round(s.birthtimeMs), mtime: Math.round(s.mtimeMs), size: s.size };
   }
   async list(p) {
     const dir = this.toAbs(p);

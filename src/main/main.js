@@ -1,6 +1,6 @@
 /**
- * [INPUT]: 依赖 electron 的 app/BrowserWindow/ipcMain/protocol/shell/dialog/session；Node 内置 fs/path；窗口材质委托 window-effects，画布截图委托 canvas-capture
- * [OUTPUT]: 主进程全部 IPC handler（vault 注册表、文件读写、窗口控制、回收站、拼写检查词典/语言）、app:// 协议、devScreenshotHook（OBS_* 环境变量门控的调试钩子）、设置独立窗口、app-menu 与 app-protocol 的装配
+ * [INPUT]: 依赖 electron 的 app/BrowserWindow/ipcMain/protocol/shell/dialog/session；Node 内置 fs/path；窗口材质、截图、文档窗口、原生菜单和原子写回由独立模块提供
+ * [OUTPUT]: 主进程全部 IPC handler（vault 注册表、文件读写、窗口控制、回收站、拼写检查词典/语言）、app:// 协议、devScreenshotHook（OBS_* 环境变量门控的调试钩子）、设置与文档独立窗口、原生菜单、跨窗口 CAS 与协议的装配
  * [POS]: 应用主进程入口。vault 注册表存于 userData/opensidian.json（启动时从旧产品名 "Obsidian Copy" 的 userData 迁移一次）；拼写检查自加词存 userData/spellcheck-words.json，语言选择存 opensidian.json 的 spellcheckLanguages。渲染进程经 renderer/core/ipc.js 调用此处 handler。原生菜单保留设置入口。dev-hooks 只在指定测试库窗口执行。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
@@ -19,6 +19,9 @@ const fs = require('fs');
 const crypto = require('crypto');
 const { devScreenshotHook } = require('./dev-hooks');
 const { setupSettingsWindows } = require('./settings-window');
+const { setupDocumentWindows } = require('./document-window');
+const { registerNativeMenuIpc } = require('./native-menu');
+const { registerVaultWriteIpc } = require('./vault-write');
 const { registerWindowEffectsIpc } = require('./window-effects');
 const { registerCanvasCaptureIpc } = require('./canvas-capture');
 const { installAppMenu } = require('./app-menu');
@@ -167,6 +170,7 @@ const windows = {};      // vaultId -> BrowserWindow
 let starterWindow = null;
 let quitting = false;
 let settingsWindows = null;   // 设置独立窗口管理器（setupSettingsWindows）
+let documentWindows = null;
 const customContextWindows = new Set();
 
 function getVaultConfig(id) {
@@ -251,6 +255,7 @@ function secCtxWin(win) {
 }
 
 function showNativeContextMenu(win, wc, params) {
+  if (E2E) return;
   const { editFlags, misspelledWord, dictionarySuggestions } = params;
   const selection = params.selectionText.trim();
   const hasSelection = selection.length > 0;
@@ -353,6 +358,7 @@ function openVaultWindow(id, focus = true) {
   });
   win.on('closed', () => {
     delete windows[id];
+    documentWindows?.closeFor(id);
     if (settingsWindows) settingsWindows.closeFor(id);
     const entry = VAULTS[id];
     if (entry) { delete entry.open; }
@@ -362,7 +368,7 @@ function openVaultWindow(id, focus = true) {
     saveConfig();
   });
 
-  win.loadURL(indexUrl).then(show, show);
+  win.loadURL(indexUrl).then(() => { show(); documentWindows?.restoreFor(id, win); }, show);
   const entry = VAULTS[id];
   if (entry) { entry.open = true; entry.ts = Date.now(); saveConfig(); }
   if (!process.env.OBS_VAULT_PATH || path.resolve(VAULTS[id].path) === path.resolve(process.env.OBS_VAULT_PATH)) {
@@ -459,6 +465,8 @@ function setupIpc() {
   ipcMain.on('frame', (e, v) => { if (typeof v === 'string') { config.frame = v; } e.returnValue = config.frame; });
 
   ipcMain.on('vault', (e) => {
+    const documentInfo = documentWindows?.infoFor(e.sender);
+    if (documentInfo) { e.returnValue = documentInfo; return; }
     for (const id in windows) {
       if (windows[id].webContents === e.sender) { e.returnValue = { id, path: path.resolve(VAULTS[id].path) }; return; }
     }
@@ -744,6 +752,10 @@ if (!gotLock) {
       isChinese: () => String(app.getLocale()).toLowerCase().startsWith('zh'),
     });
     setupIpc();
+    registerVaultWriteIpc({ ipcMain, vaultPathForSender: sender => VAULTS[BrowserWindow.fromWebContents(sender)?.vaultId || settingsWindows.vaultIdFor(sender)]?.path });
+    registerNativeMenuIpc({ ipcMain, isE2E: E2E });
+    documentWindows = setupDocumentWindows({ BrowserWindow, ipcMain, defaultWindowOptions, prepareWindow: secCtxWin,
+      indexUrl, vaultPathForId: id => VAULTS[id]?.path, isE2E: E2E, isQuitting: () => quitting });
     registerWindowEffectsIpc({ ipcMain, BrowserWindow });
     registerCanvasCaptureIpc({ ipcMain, BrowserWindow });
     installAppMenu(openVaultStarter);

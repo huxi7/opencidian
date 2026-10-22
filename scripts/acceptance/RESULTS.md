@@ -644,3 +644,20 @@ Wave 1–3 计划内工作已收尾。未配置 remote，未 push。
 原版对照见 _analysis/properties-114/FACTS.md：UR/QR、showPropertyMenu 1859054、转换确认 1885097 及各类型控件。源码 L3、markdown/plugins-core/acceptance L2 已同步。
 with-lock 内 build + properties-editing --no-screenshot 后，扩展最终场景 54 条通过；重启 verify 11 条、reading-ui 219 条通过。分段回执见 /tmp/opensidian-properties-complete.log、/tmp/opensidian-properties-verify-final.log；54 条原始日志 XVzQKd，阅读样式 U1QFPL。正式 full.mjs 纳入 verify 链。
 menu-family 的属性菜单断言更新为类型/剪切/复制/粘贴/移除，core-views 更新无属性文件首项添加入口；旧只读期望不再适用。未启动原版、未截图、未 push。
+
+## P0/P2 桌面窗口、菜单与数据边界（2026-10-22）
+
+新增 main/document-window、native-menu、vault-write；renderer/core 对应协调器与 frontmatter-write。文档可复制或移至独立窗口，保存后转移，关闭先保存；同库文件双向同步。独立窗口恢复位置、尺寸、缩放和全部标签，不覆盖主 workspace.json。macOS 缺省系统菜单，开关可切回主题菜单；分节、子菜单、未勾选复选项和缩放坐标均对齐静态契约。原版对照见 small-gaps-114/DESKTOP-FACTS.md。
+属性写回按文件串行，通过主进程 CAS 重试并原子替换；坏 YAML 拒写，不再退为空对象。ctime 改为原版取整 birthtimeMs。Electron 33 macOS 的 copyFile 不保留创建时间，使用 cp -p 保留元数据后替换，不经过 shell。新增并发、坏 YAML、正文/CRLF/BOM、失败恢复与创建时间回归。文件树延后聚焦绑定原视图，避免快速打开数据库后调用已换掉的标题方法。
+
+- /tmp/opensidian-cas-preserve-final.log：with-lock 内 build + frontmatter-write/notes/properties-editing，20 + 72 + 54 条通过。
+- /tmp/opensidian-document-window-layout.log 与 layout-restore.log：真实窗口 21 条、重启 6 条通过，包含 Markdown/Bases/Canvas、最后输入保存与全部标签恢复。
+- /tmp/opensidian-native-menu-final.log：build + native-menus/settings-window/menu-family，17 + 50 + 58 条通过。
+- /tmp/opensidian-desktop-final-check.log：sidebar-chrome 82 条通过；新增数据库顺序纳入断言。
+- 所有场景都带 --no-screenshot。上述为分段回归，不能表述成一次连续全量。
+- 失败保留：RWFh4X 的就绪前探针，native-menu 首轮事件对象不可克隆与延后标题聚焦竞态，f8EN9b/aqUwxv 的创建时间漂移；分别修复并重跑，未放宽检查。
+
+## 真实堆与图谱性能门槛（2026-10-22）
+
+workspace-regression 的 19 项是内存 DOM 逻辑单测，不是堆泄漏测量。新增 lifecycle-memory 在真实 Electron 中强制 GC：30 轮数据库/嵌入/图谱开关和插件启停，10 条通过，创建 34 个 Worker 后存活 0；Vault 15→15、Metadata 9→9、Workspace 37→37、DOM 660→660，堆变化 -397128 字节。日志 /tmp/opensidian-bases-editing-final-lifecycle.log，回执 Q7FFdY。
+graph-perf 不再把 Worker 空 tick 当物理耗时；断言节点/边、打开预算、帧率、位置发布和每项释放。1000/5000 节点各 14 条通过，打开 25/73ms、帧率 120.7/120；回执 SgvSSu/Cj14T2，日志 /tmp/opensidian-lifecycle-check.log。预算由场景固定，结果只代表本机环境。

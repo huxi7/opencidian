@@ -4,7 +4,7 @@
  * [OUTPUT]: 导出 attachFileMenuHandler(workspace) 与 fillFileMenu/fillFilesMenu。
  * [POS]: core/ 的文件菜单补全层。逐条对应原版 workspace 的 app 级监听：
  *        file-menu → info.copy 子菜单（Obsidian URL/基于库的相对路径/绝对路径）+ system（默认应用打开/在访达中显示）+ action（移动到…）；
- *        files-menu → action（将 N 个文件移动到…）。popout 新窗口项原版由 canPopoutWindow 门控，本项目暂无窗口能力，故意缺失。
+ *        files-menu 补批量移动；文档窗口经 Desktop 独立加载同库文件。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 import { t, tt } from './i18n.js';
@@ -43,6 +43,9 @@ export function fillFileMenu(workspace, menu, file, source) {
   const app = workspace.app;
   menu.setSectionSubmenu('info.copy', { title: t('interface.menu.copy-path'), icon: 'lucide-clipboard' });
   if (!(file instanceof TFolder)) {
+    const state = app.workspace._getViewStateForFile(file);
+    if (state.type !== 'empty') menu.addItem(item => item.setSection('open').setTitle(t('interface.menu.open-in-new-window')).setIcon('lucide-picture-in-picture-2')
+      .onClick(() => Desktop.openDocumentWindow(state)));
     menu.addItem((i) => i.setSection('info.copy').setTitle(t('interface.menu.copy-obsidian-url'))
       .setIcon('lucide-link').onClick(() => copyObsidianUrl(app, file)));
     menu.addItem((i) => i.setSection('system').setTitle(t('plugins.open-with-default-app.action-open-file'))

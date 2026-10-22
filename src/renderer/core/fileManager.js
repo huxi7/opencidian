@@ -1,5 +1,6 @@
 /**
  * [INPUT]: 依赖 ./vault.js 的 TFile/TFolder/normalizePath/parentPathOf；依赖 ./i18n.js 的 t/tt；依赖 ./vault-utils.js 的 getUniquePath；依赖 ./notices.js 的 Notice；依赖 ./modals.js 的 Modal/confirmDialog；依赖 ./attachments-downloader.js 的 downloadAttachmentsForNote
+ * 属性写回委托 frontmatter-write：坏 YAML 拒写，同库窗口使用 CAS 合并。
  * [OUTPUT]: 导出 FileManager 类（新建/重命名/删除/移动/附件路径解析/内部链接更新/processFrontMatter/downloadAttachmentsForNote）
  * [POS]: core/ 的文件操作中枢，被 file-explorer、编辑器与命令层调用。重命名流程：先统计受影响链接数（links/files）→ 改磁盘名 → 按 alwaysUpdateLinks 静默更新或弹窗（总是更新/仅此一次/不做更新）→ 最后修 metadataCache；顺序不可颠倒。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
@@ -11,6 +12,7 @@ import { getUniquePath } from './vault-utils.js';
 import { Notice } from './notices.js';
 import { Modal, confirmDialog } from './modals.js';
 import { downloadAttachmentsForNote as downloadNoteAttachments } from './attachments-downloader.js';
+import { processFrontMatter } from './frontmatter-write.js';
 
 export class FileManager {
   constructor(app) {
@@ -353,30 +355,7 @@ export class FileManager {
   }
 
   async processFrontMatter(file, fn) {
-    const text = await this.app.vault.read(file);
-    const yamlMod = require('js-yaml');
-    const lines = text.split('\n');
-    let frontmatter = {};
-    let bodyStart = 0;
-    if (lines[0] !== undefined && lines[0].trim() === '---') {
-      for (let i = 1; i < lines.length; i++) {
-        if (lines[i].trim() === '---') {
-          try { frontmatter = yamlMod.load(lines.slice(1, i).join('\n')) || {}; } catch (e) { frontmatter = {}; }
-          bodyStart = i + 1;
-          break;
-        }
-      }
-    }
-    await fn(frontmatter);
-    const fmText = yamlMod.dump(frontmatter, { lineWidth: -1, noRefs: true }).trimEnd();
-    const body = lines.slice(bodyStart).join('\n');
-    let out;
-    if (Object.keys(frontmatter).length === 0) {
-      out = body;
-    } else {
-      out = '---\n' + fmText + '\n---\n' + body;
-    }
-    await this.app.vault.modify(file, out);
+    return processFrontMatter(this.app, file, fn);
   }
 
   async promptForDeletion(file) {

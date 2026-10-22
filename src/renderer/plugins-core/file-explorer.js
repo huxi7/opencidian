@@ -9,6 +9,7 @@
  *        拖动生命周期与落点全部委派 file-explorer-drag.js：幽灵、body.is-grabbing、选择集源态、750ms 展开、根落点。
  *        右键菜单按 1.14 onFileContextMenu 的分节与项集构建（open/action-primary/action/info.copy/system/danger），
  *        复制路径子菜单与 system/action 系统项由 file-menu 事件交给 core/file-menu.js 补齐。
+ * 延后标题聚焦绑定原视图身份，切换到数据库后不得调用旧标题方法。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 /* Core plugin: file-explorer — navigation pane with the vault tree. */
@@ -378,7 +379,8 @@ export class FileExplorerView extends View {
   async _afterCreate(file, openInNew = false) {
     if (file instanceof TFolder) return;
     const leaf = await this.app.workspace.openFile(file, openInNew ? { newLeaf: 'tab' } : {});
-    if (leaf && leaf.view && leaf.view.focusInlineTitle) setTimeout(() => leaf.view.focusInlineTitle(), 30);
+    const view = leaf?.view;
+    if (view?.focusInlineTitle) setTimeout(() => { if (leaf.view === view) view.focusInlineTitle(); }, 30);
   }
 
   _showFolderMenu(ev, folder) {
@@ -430,7 +432,8 @@ export class FileExplorerView extends View {
     const file = await this.app.fileManager.createNewMarkdownFile(folder, name + '.md', '');
     const options = newLeaf === 'tab' ? { newLeaf: 'tab' } : (newLeaf ? { newLeaf: 'split' } : {});
     const leaf = await this.app.workspace.openFile(file, options);
-    if (leaf && leaf.view && leaf.view.focusInlineTitle) setTimeout(() => leaf.view.focusInlineTitle(), 30);
+    const view = leaf?.view;
+    if (view?.focusInlineTitle) setTimeout(() => { if (leaf.view === view) view.focusInlineTitle(); }, 30);
     return file;
   }
 

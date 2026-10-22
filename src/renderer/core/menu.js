@@ -1,6 +1,7 @@
 /**
- * [INPUT]: 依赖 core/icons.js 的 setIcon；使用 dom.js 安装的元素助手。
+ * [INPUT]: 图标、DOM 助手与 native-menu 的系统菜单桥。
  * [OUTPUT]: 导出 Menu（addItem/addSeparator/addSections/setSectionSubmenu/setParentElement/showAtMouseEvent/showAtPosition/close）与 MenuItem（title/icon/checked/section/submenu/callback）。
+ * macOS 默认使用原生菜单；显式关闭后保留主题 DOM 菜单。
  * [POS]: core/ 的通用菜单层。菜单挂 document.body，外部 mousedown/contextmenu 关闭，键盘上下/Enter/Esc 导航。
  *        分节排序镜像原版 qg.sort：sections 定序、相邻节之间插分隔线、setSectionSubmenu 收编子节。
  *        setParentElement 让触发元素在菜单打开期间带 has-active-menu（原版语义），供画布快速设置按钮防重复打开。
@@ -8,6 +9,7 @@
  */
 /* Menu — context menus & dropdown menus with keyboard navigation. */
 import { setIcon } from './icons.js';
+import { usesNativeMenu, showNativeMenu, closeNativeMenu } from './native-menu.js';
 
 export class MenuItem {
   constructor(menu) {
@@ -26,7 +28,7 @@ export class MenuItem {
   setTitle(title) { this.title = title; this.update(); return this; }
   setIcon(icon) { this.icon = icon; this.update(); return this; }
   setIsLabel(isLabel) { this.isLabel = isLabel; this.update(); return this; }
-  setChecked(checked) { this.checked = checked; this.update(); return this; }
+  setChecked(checked) { this.checked = checked; this._checkable = true; this.update(); return this; }
   setDisabled(disabled) { this.disabled = disabled; this.update(); return this; }
   setSection(section) { this.section = section; return this; }
   removeIcon() { this.icon = ''; this.update(); return this; }
@@ -86,6 +88,7 @@ export class Menu {
 
   showAtPosition(pos) {
     this.close();
+    if (usesNativeMenu(this)) return showNativeMenu(this, pos);
     // 原版 qg：.menu > .menu-grabber + .menu-scroll + .suggestion-bg（滚动在 menu-scroll 上）
     const dom = createDiv('menu');
     dom.createDiv('menu-grabber');
@@ -336,6 +339,7 @@ export class Menu {
   }
 
   close() {
+    closeNativeMenu(this);
     this._closeSubmenu();
     if (this.dom) {
       this.dom.detach();

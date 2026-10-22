@@ -27,7 +27,7 @@
   await app.commands.findCommand('canvas:new-file').callback();
   await wait(200);
   const canvas = app.workspace.activeLeaf.view;
-  ok(!app.commands.findCommand('workspace:move-to-new-window'), '未实现的文档新窗口命令不注册');
+  ok(app.commands.findCommand('workspace:move-to-new-window')?.checkCallback(true) === true, '真实文档窗口命令在画布可用');
   const node = canvas.createTextNode({ pos: { x: 100, y: 100 }, size: { width: 1800, height: 220 },
     text: '# Browser rendered heading\n\n**Strong text** and `inline code`', focus: false, save: false });
   await wait(200);

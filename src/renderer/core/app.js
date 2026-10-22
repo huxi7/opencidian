@@ -1,6 +1,7 @@
 /**
  * [INPUT]: Vault、Settings、MetadataCache、Workspace、命令、插件与桌面 IPC。
  * [OUTPUT]: 导出 App，装配启动、外观、事件与布局保存。
+ * 文档独立窗口只加载来源视图，跳过主布局读写与启动打开行为。
  * [POS]: 应用组合根。新建和修改进入元数据解析，启动修复固定侧栏入口。isSettingsWindow（1.14.4 设置独立窗口）只跳过看门狗/后台索引/布局加载，其余状态照常装配。
  *        新库默认只展开左栏（右栏反链/大纲收起）；body 补 obsidian-app 与 show-inline-title，不再挂 body.is-folding。
  *        _applyCustomCss 注入库根 obsidian.css 并监听热更新；原生半透明经 Desktop 下发。当前主题：现代主题 themes/<name>/theme.css，旧版主题（themes/ 下的裸 .css）读 themes/<name>.css（对齐原版 customCss.getThemePath）。
@@ -19,7 +20,7 @@ import { ViewRegistry } from './view.js';
 import { CommandManager } from './commands.js';
 import { Keymap, HotkeyManager } from './keymap.js';
 import { Settings } from './settings.js';
-import { Desktop, ipcOn, ipcSync } from './ipc.js';
+import { Desktop, ipcOn, ipcSync, ipcSend } from './ipc.js';
 import { applyVaultCss, watchVaultCss } from './custom-css.js';
 import { checkForUpdates } from './update-check.js';
 import { detectLanguage, setLanguage, t, getNouns } from './i18n.js';
@@ -66,6 +67,9 @@ export class App extends Events {
     }
     this.vaultId = info.id;
     this.vaultPath = info.path;
+    this.isDocumentWindow = info.documentWindow === true;
+    this.documentState = info.documentState;
+    this.documentLayout = info.documentLayout;
     globalThis.__fileToken = Desktop.fileUrl().replace(/^app:\/\//, '').replace(/\/$/, '');
 
     // settings first (needed by views)
@@ -132,6 +136,25 @@ export class App extends Events {
 
     // load workspace layout（设置窗口不加载布局/视图，工作区 DOM 仅作 API 占位）
     if (this.isSettingsWindow) this.workspace._sidebarReady = true;
+    else if (this.isDocumentWindow) {
+      this.workspace._sidebarReady = true;
+      document.body.addClass('is-document-window');
+      let leaf;
+      if (this.documentLayout) {
+        const active = await this.workspace.loadLayout(this.documentLayout);
+        await this.workspace.postLayoutLoad(typeof active === 'string' ? active : null);
+        leaf = this.workspace.activeLeaf;
+      } else {
+        leaf = this.workspace.getLeaf(true);
+        await leaf.setViewState(this.documentState);
+      }
+      if (leaf.view?.getViewType() !== this.documentState.type) throw new Error('文档窗口无法加载此视图');
+      this.workspace.setActiveLeaf(leaf, { focus: true });
+      this.workspace.updateTitle();
+      this.workspace.on('file-open', () => this.workspace.updateTitle());
+      const update = () => this.saveLayout();
+      this.workspace.on('file-open', update); this.workspace.on('layout-change', update);
+    }
     else await this._loadWorkspace();
 
     // theme
@@ -161,6 +184,7 @@ export class App extends Events {
 
     // 启动打开行为（openBehavior：上次文件/新笔记/日记/指定文件）
     await this._runOpeningBehavior();
+    if (this.isDocumentWindow) Desktop.documentWindowReady();
 
     // notifications for vault ready
     this.vault.on('create', (file) => this.trigger('create-remote?', file));
@@ -281,7 +305,7 @@ export class App extends Events {
 
   /** 启动打开行为：对齐原版 runOpeningBehavior（openBehavior 存 app.json）。 */
   async _runOpeningBehavior() {
-    if (this.isSettingsWindow) return;   // 设置窗口不打开任何文件
+    if (this.isSettingsWindow || this.isDocumentWindow) return;
     const behavior = this.settings.appSettings.openBehavior || '';
     if (window.OBS_ACT && window.OBS_ACT.action) return;
     try {
@@ -393,6 +417,11 @@ export class App extends Events {
   }
 
   async saveLayout() {
+    if (this.isDocumentWindow) {
+      const view = this.workspace.activeLeaf?.view;
+      if (view) ipcSend('document-window-state', { type: view.getViewType(), state: view.getState(), layout: this.workspace.getLayout() });
+      return;
+    }
     const fs = require('fs');
     const workspacePath = nodePath.join(this.vaultPath, '.obsidian', 'workspace.json');
     try {

@@ -187,11 +187,11 @@ if(firstRow){
   check(Math.abs(rowRect.top-(treeRect.top+4))<1,'根级行顶缘 = 容器 padding 4px（无根标题占位）');
 }
 const visibleRibbon=[...document.querySelectorAll('.side-dock-ribbon-action')].filter((el)=>el.getBoundingClientRect().width>0);
-check(visibleRibbon.length>=6,'功能区至少六个可见动作（快速切换/图谱/白板/日记/模板/命令）');
+check(visibleRibbon.length>=7,'功能区至少七个可见动作（快速切换/图谱/白板/数据库/日记/模板/命令）');
 const ribbonLabels=visibleRibbon.map((el)=>el.getAttribute('aria-label'));
 check(ribbonLabels[0]==='打开快速切换'&&ribbonLabels[1]==='查看关系图谱'&&ribbonLabels[2]==='新建白板'
-  &&ribbonLabels[3]==='打开/创建今天的日记'&&ribbonLabels[4]==='插入模板'&&ribbonLabels[5]==='打开命令面板',
-  '功能区顺序 quick-switch/graph/canvas/daily/templates/command :: '+ribbonLabels.join('|'));
+  &&ribbonLabels[3]==='新建数据库'&&ribbonLabels[4]==='打开/创建今天的日记'&&ribbonLabels[5]==='插入模板'&&ribbonLabels[6]==='打开命令面板',
+  '功能区顺序 quick-switch/graph/canvas/bases/daily/templates/command :: '+ribbonLabels.join('|'));
 if(visibleRibbon.length>1){
   const y0=visibleRibbon[0].getBoundingClientRect().y;
   const y1=visibleRibbon[1].getBoundingClientRect().y;

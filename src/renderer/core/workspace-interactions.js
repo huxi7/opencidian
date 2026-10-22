@@ -10,6 +10,7 @@
 import { t } from './i18n.js';
 import { Menu } from './menu.js';
 import { setIcon } from './icons.js';
+import { canOpenLeafInWindow, openLeafInWindow } from './document-window.js';
 
 export function _onNewTab(workspace, tabs) {
   if (workspace._sideOf(tabs) !== 'center') return null;
@@ -24,12 +25,15 @@ export function _onNewTab(workspace, tabs) {
  * 分节表 title/close/pane/open/action/find/info/info.copy/view/view.linked/system/danger；
  * close 组来自 View.onTabMenu（关闭 / 关闭其他 / 关闭右侧 / 全部关闭），pane 组来自 ItemView.onTabMenu（锁定）；
  * 视图自带项经 view.onTabMenu / view.onPaneMenu(menu, 'tab-header') 追加，随后触发 leaf-menu 供插件扩展。
- * popout 新窗口项（moveToNewWindow）由原版 canPopoutWindow 门控，本项目暂无窗口能力，故意缺失。
+ * 文档窗口项等待同库新窗口就绪后转移来源叶子。
  */
 export function _showTabContextMenu(workspace, ev, leaf) {
   if (!workspace.canCloseLeaf(leaf)) return;
   const menu = new Menu(workspace.app);
   menu.addSections(['title', 'close', 'pane', 'open', 'action', 'find', 'info', 'info.copy', 'view', 'view.linked', 'system', '', 'danger']);
+  if (canOpenLeafInWindow(workspace.app, leaf)) menu.addItem(item => item.setSection('open')
+    .setTitle(t('interface.menu.move-to-new-window')).setIcon('lucide-picture-in-picture')
+    .onClick(() => openLeafInWindow(workspace.app, leaf, true)));
   menu.setSectionSubmenu('info.copy', { title: t('interface.menu.copy-path'), icon: 'lucide-clipboard' });
   menu.setSectionSubmenu('view.linked', { title: t('interface.menu.open-linked-view'), icon: 'lucide-link' });
   const tabs = leaf.parent;

@@ -2,7 +2,7 @@
  * [INPUT]: 依赖 ../plugins-core/*.js 的全部核心插件模块（含 Bases）
  * [OUTPUT]: 导出 corePluginModules（id → 模块对象的汇总表）
  * [POS]: core/ 的核心插件注册表。PluginManager.loadInternalPlugins 经 loadCoreModules 消费它；模块 id 必须与 .obsidian/core-plugins.json 的键一致。
- *        对象顺序即加载顺序，也决定功能区按钮顺序（switcher→graph→canvas→daily→templates→command-palette）；改动前核对 1.14.4 功能区。
+ *        对象顺序即加载顺序，也决定功能区按钮顺序（switcher→graph→canvas→bases→daily→templates→command-palette）；改动前核对 1.14.4 功能区。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 /* Core plugin registry — every internal plugin module keyed by its plugin id.
