@@ -1,7 +1,7 @@
 /**
  * [INPUT]: 独立临时 vault 与 OBS_ACT eval 注入的应用实例；OBS_SIDEBAR_VIEW = "<theme>[:<scrollTop>]"。
  * [OUTPUT]: 全要素笔记在阅读视图下的计算样式与几何（console.log PROBE-READING + 返回 JSON + 截图）。
- * [POS]: scripts/acceptance 的截图诊断场景（非断言锁；UI 巡检与前后对比取证，可复用）。断言基线来自 _analysis/obsidian-asar/app.css。
+ * [POS]: scripts/acceptance 的截图诊断场景（非断言锁；UI 巡检与前后对比取证，可复用）。断言基线来自 _analysis/obsidian-114/renderer/app.css。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 (async()=>{

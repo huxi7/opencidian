@@ -1,7 +1,7 @@
 /**
  * [INPUT]: 依赖 ../core/view.js 的 View；依赖 ../core/i18n.js 的 t；依赖 ../core/icons.js 的 setIcon；依赖 ../core/menu.js 的 Menu；依赖 ../core/notices.js 的 Notice
  * [OUTPUT]: 导出 BookmarksView 类
- * [POS]: 空分组保持可见，活动项按文件路径匹配。views/ 的书签面板视图。由 plugins-core/bookmarks.js 注册为 'bookmarks' 视图类型并注入插件实例（setPlugin）。DOM 对齐原版：tree-item-self.bookmark 行 + tree-item-icon + tree-item-inner-text，分组可折叠，行尾 more-horizontal 菜单（重命名/删除/复制路径），点击文件打开、搜索执行搜索。
+ * [POS]: 空分组保持可见，活动项按文件路径匹配。views/ 的书签面板视图。由 plugins-core/bookmarks.js 注册为 'bookmarks' 视图类型并注入插件实例（setPlugin）。DOM 对齐原版：tree-item-self.bookmark 行 + tree-item-icon + tree-item-inner-text，分组可折叠（right-triangle），条目图标用 lucide-* 全名（folder 必须绕开别名表），视图头四钮（bookmark-plus/folder-plus/chevrons-down-up/search），行尾无“…”按钮（重命名/删除/复制路径只走右键菜单），点击文件打开、搜索钮展开 SearchComponent 过滤标题与路径。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 /* Bookmarks view — tree of bookmarks grouped by item type. */
@@ -10,19 +10,21 @@ import { t } from '../core/i18n.js';
 import { setIcon } from '../core/icons.js';
 import { Menu } from '../core/menu.js';
 import { Notice } from '../core/notices.js';
+import { SearchComponent } from '../core/setting.js';
 
 function itemIcon(item) {
+  // 显式 lucide- 前缀：绕过别名表（'folder' 会被别名解析成 folder-open，原版是闭口 folder）。
   if (item.type === 'file') {
-    if (item.path.endsWith('.canvas')) return 'layout-dashboard';
-    if (item.subpath && item.subpath.startsWith('#^')) return 'toy-brick';
-    if (item.subpath && item.subpath.startsWith('#')) return 'heading';
-    return 'file';
+    if (item.path.endsWith('.canvas')) return 'lucide-layout-dashboard';
+    if (item.subpath && item.subpath.startsWith('#^')) return 'lucide-toy-brick';
+    if (item.subpath && item.subpath.startsWith('#')) return 'lucide-heading';
+    return 'lucide-file';
   }
-  if (item.type === 'folder') return 'folder';
-  if (item.type === 'search') return 'search';
-  if (item.type === 'graph') return 'git-fork';
-  if (item.type === 'url') return 'globe-2';
-  return 'bookmark';
+  if (item.type === 'folder') return 'lucide-folder';
+  if (item.type === 'search') return 'lucide-search';
+  if (item.type === 'graph') return 'lucide-git-fork';
+  if (item.type === 'url') return 'lucide-globe-2';
+  return 'lucide-bookmark';
 }
 
 export class BookmarksView extends View {
@@ -34,6 +36,11 @@ export class BookmarksView extends View {
     this._refs = [];
     this._collapsed = new Set();
     this._queueTimer = null;
+    this._searchTimer = null;
+    this._searchQuery = '';
+    this._isSearching = false;
+    this._search = null;
+    this._searchBtn = null;
   }
   getViewType() { return 'bookmarks'; }
   getDisplayText() { return t('plugins.bookmarks.name') || 'Bookmarks'; }
@@ -71,15 +78,65 @@ export class BookmarksView extends View {
     const plugin = this._plugin;
     if (!plugin) return;
     this.contentEl.empty();
-    this._buttons = this.contentEl.createDiv('nav-buttons-container');
-    this._addNavButton('bookmark-plus', t('plugins.bookmarks.action-new-bookmark') || 'Bookmark current tab', () => {
+    // 原版 QL：.nav-header 固定在上方（按钮行 + 搜索框），树在下方滚动。
+    this._header = this.contentEl.createDiv('nav-header');
+    this._buttons = this._header.createDiv('nav-buttons-container');
+    this._addNavButton('lucide-bookmark-plus', t('plugins.bookmarks.action-new-bookmark') || 'Bookmark current tab', () => {
       plugin.bookmarkCurrentView();
     });
-    this._addNavButton('folder-plus', t('plugins.bookmarks.action-new-group') || 'New group', () => this._createGroup(null));
-    const collapseBtn = this._addNavButton('chevrons-down-up', t('plugins.bookmarks.action-collapse-all') || 'Collapse all', (ev) => this._toggleCollapseAll(ev.currentTarget));
+    this._addNavButton('lucide-folder-plus', t('plugins.bookmarks.action-new-group') || 'New group', () => this._createGroup(null));
+    const collapseBtn = this._addNavButton('lucide-chevrons-down-up', t('plugins.bookmarks.action-collapse-all') || 'Collapse all', (ev) => this._toggleCollapseAll(ev.currentTarget));
     this._collapseAllBtn = collapseBtn;
+    // 原版视图头第四个动作：搜索书签（lucide-search + 收起式输入框）。
+    this._searchBtn = this._addNavButton('lucide-search', t('plugins.bookmarks.action-search', 'Search bookmarks') || 'Search bookmarks', () => this._toggleSearch());
+    this._buildSearch();
     this._treeEl = this.contentEl.createDiv('bookmarks-tree');
+    this._renderTree();
+  }
 
+  /** 搜索框：原版 addSearchButton → SearchComponent 挂在 nav-header，按钮切换显隐。 */
+  _buildSearch() {
+    this._search = new SearchComponent(this._header);
+    this._search
+      .setPlaceholder(t('plugins.bookmarks.placeholder-search', 'Search bookmarks...') || 'Search bookmarks...')
+      .onChange((value) => {
+        clearTimeout(this._searchTimer);
+        this._searchTimer = setTimeout(() => {
+          const query = String(value || '').trim().toLowerCase();
+          if (query === this._searchQuery) return;
+          this._searchQuery = query;
+          this._renderTree();
+        }, 150);
+      });
+    this._search.inputEl.addEventListener('keydown', (ev) => {
+      if (ev.isComposing) return;
+      if (ev.key === 'Escape') { ev.preventDefault(); this._toggleSearch(false); }
+    });
+    this._search.containerEl.toggle(this._isSearching);
+    if (this._isSearching) this._search.setValue(this._searchQuery);
+  }
+
+  _toggleSearch(force) {
+    if (!this._search || !this._searchBtn) return;
+    const show = force === undefined ? !this._isSearching : !!force;
+    this._isSearching = show;
+    this._search.containerEl.toggle(show);
+    this._searchBtn.toggleClass('is-active', show);
+    if (show) {
+      this._search.inputEl.focus();
+      this._search.inputEl.select();
+    } else if (this._searchQuery) {
+      this._searchQuery = '';
+      this._search.setValue('');
+      this._renderTree();
+    }
+  }
+
+  /** 只重建树：搜索输入时不重建头部，避免输入框失焦。 */
+  _renderTree() {
+    const plugin = this._plugin;
+    if (!this._treeEl || !plugin) return;
+    this._treeEl.empty();
     if (!plugin.hasValidData) {
       const errorEl = this._treeEl.createDiv('pane-empty mod-error');
       errorEl.createDiv({ text: t('plugins.bookmarks.label-invalid-data') || 'Failed to load bookmarks.' });
@@ -96,6 +153,23 @@ export class BookmarksView extends View {
     this._updateActive();
   }
 
+  /** 搜索命中：标题/路径/查询串任一处包含查询词；分组按后代是否命中保留。 */
+  _itemMatches(item) {
+    const query = this._searchQuery;
+    if (!query) return true;
+    const plugin = this._plugin;
+    const haystack = [
+      plugin ? plugin.getItemTitle(item) : '',
+      item.path || '',
+      item.subpath || '',
+      item.query || '',
+      item.url || '',
+    ].join(' ').toLowerCase();
+    if (haystack.includes(query)) return true;
+    if (item.type === 'group') return (item.items || []).some((child) => this._itemMatches(child));
+    return false;
+  }
+
   _addNavButton(icon, label, callback) {
     const btn = this._buttons.createDiv('nav-action-button clickable-icon');
     btn.setAttr('aria-label', label);
@@ -106,6 +180,7 @@ export class BookmarksView extends View {
 
   /** 渲染一条书签，返回该行是否可见（文件不存在时隐藏，对齐原版）。 */
   _renderItem(container, item, parentItem) {
+    if (!this._itemMatches(item)) return false;
     const plugin = this._plugin;
     const isGroup = item.type === 'group';
     const itemEl = container.createDiv('tree-item');
@@ -117,7 +192,7 @@ export class BookmarksView extends View {
     if (isGroup) {
       const iconEl = self.createDiv('tree-item-icon collapse-icon');
       setIcon(iconEl, 'right-triangle');
-      const collapsed = this._collapsed.has(item.ctime);
+      const collapsed = !this._searchQuery && this._collapsed.has(item.ctime);
       iconEl.toggleClass('is-collapsed', collapsed);
       itemEl.toggleClass('is-collapsed', collapsed);
     } else {
@@ -129,11 +204,7 @@ export class BookmarksView extends View {
     const titleEl = inner.createSpan('tree-item-inner-text');
     titleEl.setText(plugin.getItemTitle(item) || '');
 
-    const menuBtn = self.createDiv('clickable-icon bookmark-item-menu');
-    setIcon(menuBtn, 'more-horizontal');
-    menuBtn.setAttr('aria-label', t('interface.menu.more-options') || 'More options');
-    menuBtn.onclick = (ev) => { ev.stopPropagation(); this._showItemMenu(ev, item, parentItem); };
-
+    // 原版条目没有行尾“…”按钮：重命名/删除/复制路径走右键菜单。
     self.oncontextmenu = (ev) => { ev.preventDefault(); this._showItemMenu(ev, item, parentItem); };
     self.onclick = (ev) => {
       if (isGroup) this._toggleGroup(item, itemEl, self);
@@ -183,12 +254,12 @@ export class BookmarksView extends View {
     else for (const item of plugin.items) this._collectGroups(item, (g) => this._collapsed.add(g.ctime));
     if (btn) {
       btn.empty();
-      setIcon(btn, allCollapsed ? 'chevrons-down-up' : 'chevrons-up-down');
+      setIcon(btn, allCollapsed ? 'lucide-chevrons-down-up' : 'lucide-chevrons-up-down');
       btn.setAttr('aria-label', allCollapsed
         ? (t('plugins.bookmarks.action-collapse-all') || 'Collapse all')
         : (t('file-explorer.action-expand-all') || 'Expand all'));
     }
-    this._render();
+    this._renderTree();
   }
 
   _collectGroups(item, cb) {

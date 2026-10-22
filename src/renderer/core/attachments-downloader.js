@@ -218,7 +218,7 @@ class DownloadAttachmentItem {
       this.el.setTooltipGenerator(() => (this.name ? this.name + '\n' + tooltip : tooltip));
     }
     this.el.createEl('img', { attr: { src: url } });
-    // 原版 1.12.4 只在 tooltip 显示文件名；本实现补一个可见标签。
+    // 原版 1.14.4 只在 tooltip 显示文件名；本实现补一个可见标签。
     this.nameEl = this.el.createDiv({ cls: 'download-attachment-name', text: tooltip });
   }
 

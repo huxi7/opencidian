@@ -54,8 +54,6 @@ export class AboutTab extends SettingTab {
       s.descEl.empty();
       s.descEl.appendText(tt('setting.about.label-install-version', '安装程序版本: {{version}}', { version: VERSION }));
       s.descEl.createEl('br');
-      s.descEl.appendText(tt('opensidian.about.replica-note', 'OpenSidian — 基于 Obsidian 1.14.4 的独立开源复刻。'));
-      s.descEl.createEl('br');
       s.descEl.createEl('a', {
         text: tt('setting.about.label-read-changelog', '阅读更新日志'),
         attr: { href: 'https://obsidian.md/changelog', target: '_blank', rel: 'noopener' },
@@ -129,7 +127,7 @@ export class AboutTab extends SettingTab {
       });
       s.addDropdown((d) => {
         d.addOption('en', 'English');
-        d.addOption('zh', '中文');
+        d.addOption('zh', '简体中文');
         d.setValue(current);
         d.onChange((v) => {
           pending = v;

@@ -26,6 +26,20 @@ check(!coreSection.includes('interface'),'界面页签不在核心插件分组')
 const groupTitles=[...document.querySelectorAll('.vertical-tab-header-group-title')].map(el=>el.textContent.trim());
 check(groupTitles[0]==='选项','侧栏第一分组标题为选项');
 check(groupTitles[1]==='核心插件','侧栏第二分组标题为核心插件');
+/* 原版行为：打开设置时，全部「已启用且导出 settingTab」的核心插件已登记在左栏，
+   不需要先点某个插件的齿轮。 */
+const eagerCore=[...document.querySelectorAll('.vertical-tab-header-group-items[data-section="core-plugins"] .vertical-tab-nav-item')].map(n=>n.getAttribute('data-setting-id')).sort();
+const expectedCore=Object.entries(app.plugins.internalPlugins)
+  .filter(([,e])=>e.enabled&&e.manifest.module&&typeof e.manifest.module.settingTab==='function')
+  .map(([id])=>id).sort();
+check(expectedCore.length>0,'存在导出 settingTab 的已启用核心插件');
+check(eagerCore.join(',')===expectedCore.join(','),'未点齿轮时核心插件设置页已全部出现在侧栏:: '+eagerCore.join(',')+' != '+expectedCore.join(','));
+check(document.querySelector('.vertical-tab-header-group-title').textContent.trim()==='选项','核心插件分组标题可见性正常');
+const coreGroupTitleEl=[...document.querySelectorAll('.vertical-tab-header-group-title')].find(el=>el.textContent.trim()==='核心插件');
+check(coreGroupTitleEl&&getComputedStyle(coreGroupTitleEl).display!=='none','核心插件分组标题可见');
+const eagerCanvasNav=document.querySelector('.vertical-tab-header-group-items[data-section="core-plugins"] .vertical-tab-nav-item[data-setting-id="canvas"]');
+check(!!eagerCanvasNav,'canvas 设置页签在侧栏（默认启用）');
+check(!!(eagerCanvasNav&&eagerCanvasNav.querySelector('.vertical-tab-nav-item-icon svg')),'核心插件页签带图标');
 const interfaceNav=document.querySelector('.vertical-tab-nav-item[data-setting-id="interface"]');
 check(!!interfaceNav,'侧栏存在界面页签');
 check(!!interfaceNav.querySelector('svg.lucide-monitor'),'界面页签带 monitor 图标');

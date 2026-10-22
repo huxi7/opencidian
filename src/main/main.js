@@ -6,7 +6,7 @@
  */
 /*
  * OpenSidian — Electron main process.
- * Replicates the observable behavior of Obsidian 1.12.4's main process:
+ * Replicates the observable behavior of Obsidian 1.14.4's main process:
  *  - frameless window with hidden titlebar & traffic-light position
  *  - app:// protocol serving the renderer bundle and arbitrary vault files
  *  - vault registry stored in userData (opensidian.json)
@@ -300,7 +300,7 @@ function buildAppMenu(FocusedWindowGetter) {
         {
           label: 'About OpenSidian',
           click: async (mi, win) => {
-            const detail = `Version ${app.getVersion()} — independent open-source replication of Obsidian 1.12.4\nElectron ${process.versions.electron} · Node ${process.versions.node}`;
+            const detail = `Version ${app.getVersion()} — independent open-source replication of Obsidian 1.14.4\nElectron ${process.versions.electron} · Node ${process.versions.node}`;
             await dialog.showMessageBox(win instanceof BrowserWindow ? win : undefined, {
               message: 'OpenSidian', detail,
             });
@@ -623,7 +623,7 @@ function setupIpc() {
   ipcMain.on('desktop-dir', (e) => { e.returnValue = app.getPath('desktop'); });
   ipcMain.on('documents-dir', (e) => { e.returnValue = app.getPath('documents'); });
   ipcMain.on('resources', (e) => { e.returnValue = path.join(APP_ROOT, 'assets'); });
-  ipcMain.on('version', (e) => { e.returnValue = '1.12.4'; });
+  ipcMain.on('version', (e) => { e.returnValue = '1.14.4'; });
   ipcMain.on('file-url', (e) => { e.returnValue = FILE_ORIGIN; });
   ipcMain.on('relaunch', (e) => { e.returnValue = ''; quitting = true; app.relaunch(); app.quit(); });
   ipcMain.on('update', (e) => { e.returnValue = false; });
@@ -918,7 +918,7 @@ if (!gotLock) {
       isE2E: E2E,
       vaultPathForId: (id) => (id && VAULTS[id] ? VAULTS[id].path : null),
       getVaultWindow: (id) => (id ? windows[id] : null),
-      getVersion: () => '1.12.4',
+      getVersion: () => '1.14.4',
       getFrame: () => config.frame || 'hidden',
       isChinese: () => String(app.getLocale()).toLowerCase().startsWith('zh'),
     });

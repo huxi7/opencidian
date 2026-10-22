@@ -1,5 +1,5 @@
 {
- "opensidian.about.replica-note": "OpenSidian — 基于 Obsidian 1.12.4 的独立开源复刻。",
+ "opensidian.about.replica-note": "OpenSidian — 基于 Obsidian 1.14.4 的独立开源复刻。",
  "setting.options": "选项",
  "setting.plugin": "插件",
  "setting.builtin-plugins": "核心插件",
@@ -1359,6 +1359,8 @@
  "plugins.command-palette.label-no-commands": "未找到命令",
  "plugins.command-palette.prompt-type-command": "输入命令…",
  "plugins.command-palette.label-pinned-commands": "置顶命令",
+ "plugins.command-palette.action-add-command": "添加命令…",
+ "plugins.command-palette.prompt-add-command": "选择命令…",
  "plugins.markdown-format-importer.name": "Markdown 格式转换器",
  "plugins.markdown-format-importer.desc": "将其他应用中的 Markdown 格式转换为 Obsidian 支持的格式。",
  "plugins.markdown-format-importer.action-open": "打开 Markdown 格式转换器",

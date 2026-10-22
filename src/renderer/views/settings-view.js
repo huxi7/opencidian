@@ -1,7 +1,7 @@
 /**
  * [INPUT]: 依赖 ../core/modals.js 的 Modal；依赖 ../core/ipc.js 的 Desktop；依赖 ../core/icons.js 的 setIcon；依赖 ../core/i18n.js 的 tt；依赖 ../core/suggest.js 的 renderHighlightedText；依赖 ./settings-tabs.js 的 AboutTab/EditorTab/FileTab；依赖 ./settings-tabs-appearance.js 的 AppearanceTab/InterfaceTab；依赖 ./settings-tabs-plugins.js 的 HotkeysTab/CorePluginsTab
  * [OUTPUT]: 导出 SettingTab（页签基类）、SettingsHost（设置模态宿主）、installSettingsHost(app)
- * [POS]: views/ 的设置模态宿主，逐字对齐原版 fte 类 DOM：modal.mod-settings.mod-sidebar-layout > .modal-content.vertical-tabs-container > .vertical-tab-header + .vertical-tab-content-container。app.setting 即本类实例；内置页签注册顺序为 关于 → 外观 → 界面 → 编辑器 → 文件与链接 → 快捷键 → 核心插件，第三方插件页不注册。1.14.4 popout：shouldUsePopout 读 vault 配置 settingsPopoutWindow，开启时主进程开独立窗口，窗口内 modalEl 直接挂 body（is-popout-modal）。子页面机制 openPage/closePage 对齐原版 openPage/closePage：.setting-page.vertical-tab-content > .setting-page-titlebar（返回钮 + 标题）+ .setting-page-content，栈顶页面标题写入弹窗标题。侧栏顶部是全局搜索（.setting-search-container + .setting-search-results），跨页签三路匹配设置项名、描述与别名（原版 loe.search：name/desc/aliases 取最高分），命中项高亮并可跳转到对应设置行。别名由 setSettingAliases 挂在设置行的 data-aliases 上（原版定义树的 aliases 字段），搜索索引从 DOM 采集它。匹配器与原版一致：查询按空格切词，每个词都必须是文本的子串（createSettingMatcher），故只有名称命中才高亮，描述或别名命中的行显示不带高亮的名称。
+ * [POS]: views/ 的设置模态宿主。核心插件页签在设置窗口打开时按「已启用 + 导出 settingTab」全量登记进侧栏「核心插件」分组（原版 1.14.4 行为：未点齿轮也可见）；插件启停时 registerCorePluginTabs/removePluginTabs 增删条目。DOM 逐字对齐原版 fte 类：modal.mod-settings.mod-sidebar-layout > .modal-content.vertical-tabs-container > .vertical-tab-header + .vertical-tab-content-container。app.setting 即本类实例；内置页签注册顺序为 关于 → 外观 → 界面 → 编辑器 → 文件与链接 → 快捷键 → 核心插件，第三方插件页不注册。1.14.4 popout：shouldUsePopout 读 vault 配置 settingsPopoutWindow，开启时主进程开独立窗口，窗口内 modalEl 直接挂 body（is-popout-modal）。子页面机制 openPage/closePage 对齐原版 openPage/closePage：.setting-page.vertical-tab-content > .setting-page-titlebar（返回钮 + 标题）+ .setting-page-content，栈顶页面标题写入弹窗标题。侧栏顶部是全局搜索（.setting-search-container + .setting-search-results），跨页签三路匹配设置项名、描述与别名（原版 loe.search：name/desc/aliases 取最高分），命中项高亮并可跳转到对应设置行。别名由 setSettingAliases 挂在设置行的 data-aliases 上（原版定义树的 aliases 字段），搜索索引从 DOM 采集它。匹配器与原版一致：查询按空格切词，每个词都必须是文本的子串（createSettingMatcher），故只有名称命中才高亮，描述或别名命中的行显示不带高亮的名称。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 /* Settings host — modal shell + tab management, DOM 1:1 with the original. */
@@ -17,6 +17,34 @@ import { AppearanceTab, InterfaceTab } from './settings-tabs-appearance.js';
 import { HotkeysTab, CorePluginsTab } from './settings-tabs-plugins.js';
 
 export { SettingTab };
+
+/** 核心插件设置页在左栏的图标：与各插件功能区入口保持同一图标。 */
+const CORE_PLUGIN_ICONS = {
+  'file-explorer': 'lucide-folder-closed',
+  'global-search': 'lucide-search',
+  'switcher': 'lucide-file-search',
+  graph: 'lucide-git-fork',
+  backlink: 'lucide-arrow-left-to-line',
+  'outgoing-link': 'lucide-arrow-right-to-line',
+  'tag-pane': 'lucide-tags',
+  properties: 'lucide-list',
+  'page-preview': 'lucide-eye',
+  'daily-notes': 'lucide-calendar',
+  templates: 'lucide-files',
+  'note-composer': 'lucide-combine',
+  'command-palette': 'lucide-terminal',
+  'editor-status': 'lucide-edit-3',
+  bookmarks: 'lucide-bookmark',
+  outline: 'lucide-list-tree',
+  'word-count': 'lucide-type',
+  'file-recovery': 'lucide-history',
+  'random-note': 'lucide-dices',
+  'zk-prefixer': 'lucide-sheets-in-box',
+  workspaces: 'lucide-layout',
+  slides: 'lucide-presentation',
+  'audio-recorder': 'lucide-mic',
+  canvas: 'lucide-layout-dashboard',
+};
 
 /** 别名载体：设置行的 data-aliases（JSON 字符串数组），对应原版定义树的 aliases 字段。 */
 function readSettingAliases(el) {
@@ -137,6 +165,40 @@ export class SettingsHost extends Modal {
     this.addSettingTab(new FileTab(app, this));
     this.addSettingTab(new HotkeysTab(app, this));
     this.addSettingTab(new CorePluginsTab(app, this));
+    // 原版 1.14.4：核心插件在 onload 里注册设置页签，设置窗口一打开左栏就有
+    // “核心插件”分组与全部已启用插件的条目，不需要先点齿轮。
+    this.registerCorePluginTabs();
+  }
+
+  /** 已启用且导出 settingTab 的核心插件：全部登记为侧栏页签（幂等）。 */
+  registerCorePluginTabs() {
+    const entries = (this.app.plugins && this.app.plugins.internalPlugins) || {};
+    for (const [id, entry] of Object.entries(entries)) {
+      if (!entry || !entry.enabled) continue;
+      this.ensureCorePluginTab(id, entry);
+    }
+    this.updatePluginSection();
+  }
+
+  /** 取得（必要时创建）某个核心插件的设置页签，并挂进侧栏“核心插件”分组。 */
+  ensureCorePluginTab(pluginId, entry) {
+    if (!entry) entry = this.app.plugins && this.app.plugins.getInternalPlugin(pluginId);
+    const module = entry && entry.manifest && entry.manifest.module;
+    if (!module || typeof module.settingTab !== 'function') return null;
+    const existing = this.pluginTabs.find((x) => x.pluginId === pluginId);
+    if (existing) return existing;
+    const tab = new SettingTab(this.app, this);
+    tab.id = pluginId;
+    tab.name = entry.manifest.name;
+    tab.icon = CORE_PLUGIN_ICONS[pluginId] || 'lucide-settings';
+    tab.group = 'core';
+    tab.pluginId = pluginId;
+    tab.display = () => {
+      tab.containerEl.empty();
+      module.settingTab(this.app, tab.containerEl);
+    };
+    this.addSettingTab(tab);
+    return tab;
   }
 
   updateModalTitle(tab) {
@@ -433,6 +495,7 @@ export class SettingsHost extends Modal {
   /** 主进程已裁决回退应用内模态：绕过本地配置缓存（设置窗口写的配置尚未同步到本渲染器）。 */
   openInApp() {
     if (this.app.isSettingsWindow) document.body.addClass('is-popout-modal');
+    this.registerCorePluginTabs();
     const result = super.open();
     // popout 的 --traffic-lights-offset 变为 32px；必须在类生效后重算，否则沿用主窗 (14,12)
     if (this.app.isSettingsWindow) syncTrafficLightPosition();
@@ -570,22 +633,8 @@ export class SettingsHost extends Modal {
   openPluginOptions(pluginId) {
     const entry = this.app.plugins && this.app.plugins.getInternalPlugin(pluginId);
     if (!entry || !entry.manifest.module.settingTab) return;
-    let tab = this.pluginTabs.find((x) => x.pluginId === pluginId);
-    if (!tab) {
-      const module = entry.manifest.module;
-      tab = new SettingTab(this.app, this);
-      tab.id = pluginId;
-      tab.name = entry.manifest.name;
-      tab.icon = 'settings';
-      tab.group = 'core';
-      tab.pluginId = pluginId;
-      tab.display = () => {
-        tab.containerEl.empty();
-        module.settingTab(this.app, tab.containerEl);
-      };
-      this.addSettingTab(tab);
-    }
-    this.openTab(tab);
+    const tab = this.ensureCorePluginTab(pluginId, entry);
+    if (tab) this.openTab(tab);
   }
 
   onOpen() {

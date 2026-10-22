@@ -95,7 +95,7 @@
   display: none;
 }
 
-/* --- visible file name label (not in the original 1.12.4 DOM) --- */
+/* --- visible file name label (not in the original 1.14.4 DOM) --- */
 .attachments-gallery .download-attachment-item .download-attachment-name {
   position: absolute;
   bottom: 0;

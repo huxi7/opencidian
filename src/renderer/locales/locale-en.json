@@ -1,5 +1,5 @@
 {
- "opensidian.about.replica-note": "OpenSidian is an independent open-source replication of Obsidian 1.12.4.",
+ "opensidian.about.replica-note": "OpenSidian is an independent open-source replication of Obsidian 1.14.4.",
  "setting.options": "Options",
  "setting.plugin": "Plugin",
  "setting.builtin-plugins": "Core plugins",
@@ -1360,6 +1360,8 @@
  "plugins.command-palette.label-no-commands": "No commands found.",
  "plugins.command-palette.prompt-type-command": "Select a command to add...",
  "plugins.command-palette.label-pinned-commands": "Pinned commands",
+ "plugins.command-palette.action-add-command": "Add a command...",
+ "plugins.command-palette.prompt-add-command": "Select a command...",
  "plugins.markdown-format-importer.name": "Format converter",
  "plugins.markdown-format-importer.desc": "Convert Markdown from other apps to Obsidian format.",
  "plugins.markdown-format-importer.action-open": "Open format converter",

@@ -439,6 +439,8 @@ export class CorePluginsTab extends SettingTab {
         setting.addToggle((tog) => tog.setValue(!!entry.enabled).onChange(async (v) => {
           if (v) await app.plugins.enableInternalPlugin(id);
           else await app.plugins.disableInternalPlugin(id);
+          // 原版：插件启停会增删左栏「核心插件」分组里的设置条目。
+          if (this.setting && typeof this.setting.registerCorePluginTabs === 'function') this.setting.registerCorePluginTabs();
           refreshVisibility();
         }));
         refreshVisibility();

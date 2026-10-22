@@ -3,6 +3,7 @@
  * [OUTPUT]: 导出工作区挂载、DOM 渲染、标签同步、尺寸与 ribbon 函数；视图头构造/填充委托 view-header.js（_fillViewHeader 转发）。
  * [POS]: 侧栏只创建固定工具图标，库信息栏独立于标签树；由 Workspace 委托渲染，首参 workspace 提供树状态与交互入口。
  * 视图 _rootEl 只迁移不重建；节点类型统一由 workspace-model 导入；分割方向 vertical 横排、horizontal 纵排。
+ * _refreshLeafContent 只保留当前视图的 .view-content：叶子先渲染时留下的占位内容必须移除，否则两个 view-content 各占一半高度，上半屏成为死区。
  * 标签组叶子挂 .workspace-tab-container（原版 tabsContainerEl）；堆叠头叶排布与滑动由模型落位。
  * 非堆叠态 _syncTabsHeaders 按 children 顺序重排标签头 DOM，保证模型顺序即视觉顺序。
  * view-header 由 view-header.js 落三块（left 导航钮 / title-container 面包屑+标题 mod-fade / actions）；活动叶与活动标签组带 mod-active（焦点规则挂它）。
@@ -317,8 +318,15 @@ export function _refreshLeafContent(workspace, leaf) {
   if (!leaf.contentEl) return;
   const type = leaf.view ? leaf.view.getViewType() : 'empty';
   leaf.contentEl.setAttr('data-type', type);
-  if (leaf.view && leaf.view._rootEl && leaf.view._rootEl.parentElement !== leaf.contentEl) {
-    leaf.contentEl.appendChild(leaf.view._rootEl);
+  const rootEl = leaf.view && leaf.view._rootEl;
+  // 叶子可能先由 _renderLeaf 建过占位 .view-content（视图尚未挂载），
+  // 也可能刚切换过视图。只允许当前视图内容留在叶子里，否则两个 view-content
+  // 会把叶子各占一半——上半屏成为点不动的死区。
+  for (const child of [...leaf.contentEl.children]) {
+    if (child !== rootEl && child.classList && child.classList.contains('view-content')) child.remove();
+  }
+  if (rootEl && rootEl.parentElement !== leaf.contentEl) {
+    leaf.contentEl.appendChild(rootEl);
   }
   workspace._fillViewHeader(leaf);
   leaf.updateTabHeader();

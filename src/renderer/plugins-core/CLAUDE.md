@@ -10,7 +10,7 @@ file-explorer.js: 文件树视图(type file-explorer)。根级文件挂匿名容
 file-explorer-selection.js: 文件树选择层。原版 a2 的 selectedDoms/focusedItem/activeDom 三元组按 path 保存（每次重绘重建 DOM），Alt 切换选择、Shift 按可见顺序范围选择、点击已打开项只聚焦；键盘等价 initializeKeyboardNav（↑/↓/Shift/Mod、←/→、Enter=mac 重命名、Mod+Enter/Space 打开、F2、Delete 与 mac Mod+Backspace），Home/End 原版未注册故不实现。
 file-explorer-multi.js: 文件树批量操作层。原版 x8.dragFiles 的多选拖动载荷（text/plain JSON type=files 增加 items，保留单项 path 供编辑器插入链接）、dragTitleFor 的单项幽灵标题（md 短名/其它全名/文件夹名）、onFileContextMenu 多选分支（新建文件夹含选中项 / 移动 N 项到… / 删除）、onDeleteSelectedFiles 顺序删除、f$ 移动、v$ 顶层项去重。
 file-explorer-toolbar.js: 文件浏览器头部按钮行。按原版 QL.addNavButton 建 .nav-header>.nav-buttons-container 与五个 clickable-icon.nav-action-button（新建笔记 lucide-edit / 新建文件夹 / 排序 / 自动显示 / 折叠-展开）；排序菜单三组各两项、组后分隔线并挂按钮（has-active-menu 守卫）；视觉由 syncExplorerToolbar 依视图状态渲染，本模块不持状态。
-command-palette.js: 命令面板与 terminal 功能区入口。启停对称注册和撤销。
+command-palette.js: 命令面板与 terminal 功能区入口。启停对称注册和撤销。导出 settingTab（原版核心插件设置页“置顶命令”）：SettingGroup 标题行 + 加号打开命令选择器，置顶列表存 .obsidian/command-palette.json；面板无查询时置顶命令排在最近使用之前。
 switcher.js: 快速切换器（1.14.4 1:1）与 file-search 功能区入口。最近 10 项 MRU、文件/别名/未解析链接/书签四类建议、忽略降权、20 项上限、创建项、六条指令栏、单实例模态；设置页三项开关写 .obsidian/switcher.json。复用 switcher:open，禁用时对称移除按钮和命令。
 backlink.js: 反链分节、上下文与筛选。折叠跨重绘保留；关闭释放全部事件与计时器。状态栏反链计数按 resolvedLinks 汇总，点击展开右栏。
 outgoing-link.js: 出链面板视图(type outgoing-link)。逐条列出当前文件的已解析与未解析出链；图标按标题/块/文件/未解析切换，已解析出链的副文本显示目标文件夹，未解析出链带 is-unresolved 与“尚未创建”提示。仅 Links 分节（原版还有 Unlinked mentions，本实现未覆盖）；不自动创建窗格，由命令 outgoing-links:open / outgoing-links:open-for-current 打开；关闭释放订阅与计时器，禁用撤销视图与命令。

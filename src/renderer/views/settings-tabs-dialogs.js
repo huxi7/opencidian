@@ -17,7 +17,15 @@ import { setIcon } from '../core/icons.js';
 const fs = require('fs');
 const nodePath = require('path');
 
-export const VERSION = '1.0.0';
+// 版本单一事实源：主进程 version 通道（1.14.4）。渲染层不再写死版本号。
+export const VERSION = (() => {
+  try {
+    const value = Desktop.version();
+    return typeof value === 'string' && value ? value : '1.14.4';
+  } catch (e) {
+    return '1.14.4';
+  }
+})();
 
 /**
  * 原版 wne 的桌面分支：Device 行（桌面隐藏）、Operating system、OpenSidian + Installer，

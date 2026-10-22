@@ -1,7 +1,7 @@
 /**
  * [INPUT]: 独立临时 vault 与 OBS_ACT eval 注入的应用实例。
  * [OUTPUT]: 阅读视图正文排版的计算样式断言；失败抛出异常，供运行器判定。
- * [POS]: reading-ui 场景。期望值取自 _analysis/obsidian-asar/app.css 阅读视图段（注释标注行号）；
+ * [POS]: reading-ui 场景。期望值取自 _analysis/obsidian-114/renderer/app.css 阅读视图段（注释标注行号）；
  *        颜色与尺寸类期望与页面上的 CSS 变量/实测 ch 比对，浅色与深色主题共用同一套断言。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */

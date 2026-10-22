@@ -436,3 +436,12 @@ MathJax 独立适配器子代理的41项基础/故障测试见 assets/mathjax/SO
 - **修真 bug**：画布文件卡进编辑态后异步读原文会覆盖用户已输入内容（数据丢失竞态）→ 加 dirty 标志，不再覆盖。
 - **E2E 不再唤起系统浏览器/访达**：验收点「在默认浏览器打开/帮助/下载更新」曾真的拉起用户默认浏览器；现主进程在 E2E 下拦截 `open-external`/`open-url`/`help`/`show-item-in-folder`/`open-path`/`print-to-pdf(open)`。
 - 本轮最终全量：**62 场景 / 62 次执行全绿、4967 断言**；日志 `/tmp/opensidian-full-1021-d/summary.txt`；链式 `settings-restart` 与 `graph-persist-write → graph-persist-read` 通过；`vault-switcher --seed-vaults 3` 142、`graph-perf --nodes 1000` 4。
+
+## 核心插件设置进侧栏 / 半屏死区 / 书签图标 / 版本号（2026-10-22）
+
+- **核心插件设置直接进侧栏**（用户实机反馈）：原版 1.14.4 的设置在打开时就把「已启用且导出 settingTab」的核心插件登记到左栏「核心插件」分组，不需要先点齿轮。实现 `SettingsHost.registerCorePluginTabs()` + `ensureCorePluginTab()`（构造时与每次 `openInApp()` 幂等登记），插件启停时 `registerCorePluginTabs`/`removePluginTabs` 增删；新增命令面板设置页（置顶命令，数据 `.obsidian/command-palette.json`，面板内置顶优先于最近使用）。settings-plugins 105 → **111**。
+- **半屏死区（真 bug）**：`_renderLeaf` 在叶子还没有视图时先塞了一个占位 `.view-content`；随后的 `setViewState` 又追加真实视图内容，旧占位永不移除 → 一个叶子里两个 `.view-content` 各占一半高度，上半屏成为点不动的死区。新建标签页后打开画布可稳定复现（canvas 347px / 叶子 734px）。修法：`_refreshLeafContent` 只保留当前视图的 `.view-content`。新增 `layout-split`（**78** 项几何断言）与 `layout-modals`（**31** 项：设置弹窗、布局管理弹窗、加载布局 SuggestModal、新建标签页、新建画布全屏几何）。
+- **书签图标对齐原版**：`folder` 走别名表会变成 `folder-open`，原版写死 `lucide-folder`；改为显式 `lucide-*` 前缀并逐类型锁定（file/heading/toy-brick/layout-dashboard/folder/search/git-fork）。同时删掉原版没有的行尾「…」按钮（重命名/删除/复制路径只走右键），补上原版视图头第四个「搜索」钮（SearchComponent + 标题/路径过滤）。bookmarks 0 → **28** 项。
+- **旧版本残留清理**：About 页与主进程 `version` 通道还写着 **1.12.4**，安装程序版本写死 **1.0.0**；现统一为 1.14.4，渲染层 `VERSION` 改从主进程 IPC 读取（单一事实源）。同时把 `_analysis/obsidian-asar` 旧取证引用改为 `_analysis/obsidian-114/renderer`。
+- **Bases 仍未实现**：`plugins.bases.*` 只有 149 条文案，没有插件模块；核心插件清单里点不到「数据库」。
+- 本轮最终全量：**64 场景 / 5110 断言全绿**；日志 `/tmp/opensidian-full-1022-a/summary.txt`；链式 `settings-restart` 与 `graph-persist-write → graph-persist-read` 通过；`vault-switcher --seed-vaults 3` 142、`graph-perf --nodes 1000` 4。版本号收口后补跑 `settings-ui` 220 / `settings-plugins` 111 / `bookmarks` 28 / `layout-modals` 31 全绿。

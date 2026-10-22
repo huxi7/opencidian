@@ -51,6 +51,8 @@ image-size.js: 图片尺寸语法与图片右键：`|300`（读视图与实时�
 editor-menu.js: 编辑器右键菜单（49 项）：剪切/复制/粘贴/全选、文本格式/段落/插入/复制路径子菜单、editor-menu 事件、加粗动作；分节与格式三级子菜单对齐 1.14.4。真实鼠标序列（mousedown→mouseup→click）锁定子菜单不误关父菜单；段落设置→1级标题、插入→表格均用真实点击验证；右键折叠选区后恢复；复制/剪切/粘贴走系统剪贴板。另含外部文件拖入（落盘附件、字节完整、带扩展名嵌入链接、链接可解析）及标题/清除格式命令。
 menu-family.js: 菜单家族 1.14.4 对照（57 项）：编辑器/文件树/标签页/标签栏/属性行/反链出链的项序、图标、禁用态、分节与子菜单。
 folding-disabled.js: 禁止语法回退绕过折叠开关。
+layout-split.js: 分屏/工作区布局几何（78 项）：初始、左右分屏、上下分屏、保存-加载布局、关闭叶子后，root/中心列/叶子/内容容器全部落在视口内且不互相越界；两块叶子不重叠、加载前后几何一致。
+layout-modals.js: 弹窗与新建视图的全屏几何（31 项）：设置弹窗遮罩铺满视口 + 两栏高度正常、布局管理弹窗、加载布局 SuggestModal、新建标签页只有一个 view-content（无占位残留）、新建画布铺满视图内容。
 graph.js: 142 项图谱交互与销毁。含颜色组拖拽排序（顺序即优先色）与新建组按组序×40° 递增色相、节点悬停 hover-link 预览（载荷五项、无补弹）、力参数滑杆区间与换算、右键菜单分节表与 view.linked 子菜单、面板菜单恰好 1 条图谱项、键盘表（数字键不触发缩放）、命中半径（桌面 1×，移动端 5×）、graph.json 键集 20 项逐键锁定。
 graph-worker.js: 图谱力学 worker 化（100 项）。后端三级回退（app:// 直载 → fetch+Blob → 本地）、位置发布与主线程零物理、钉住/解钉、力参数唤醒与再沉降、空图停摆与唤醒、关闭终止 worker、消息载荷与原版 sim.js 逐字段对齐（stub Worker 截获）、本地回退后端回归、crossOriginIsolated=false 时如实走 transfer。
 graph-perf.js: 生成库性能基线（100/1000/5000 节点）：打开耗时、单 tick 耗时、沉降帧率、关闭释放、关闭后可响应。
@@ -68,11 +70,13 @@ table-widget.js: 实时预览表格部件：加行/加列按钮、行列拖拽�
 theme-tokens.js: 主题设计变量逐条对齐（374 项消费令牌、785 项断言、浅/深各一遍、期望值带 app.css 行号）：断言语义解析值（颜色 sRGB/oklch/color(srgb …)、h1-h6 px、calc 折叠）、令牌消费实证（safe-area → padding）、派生色（accent 系）、原版缺口一致性（深色 --shadow-edges 失效）；1.14.4 全量基线（浅 base-25/30/35、深 base-00/10/20/25/30、--radius-xl 24、--tab-curve 10、--search-icon-size 16）与 --icon-m 16px / stroke 2px 已锁；附色块对照面板渲染。
 vault-hidden.js: 文件监听排除隐藏路径。
 zoom-lock.js: 触摸板缩放锁。默认捏合/Ctrl+滚轮不改字号且默认行为被吞（preventDefault）、开关开启后 ±1 与 10/30 上下限、非 ctrl 滚轮无感、webFrame zoomFactor 与 visualViewport.scale 恒 1（整页视觉缩放不存在）。
-probe-topbar.js / probe-canvas.js / probe-reading.js / probe-ui.js: 截图诊断探针（非断言锁，用于 UI 巡检与前后对比取证，结果 PNG 路径见场景 JSON）：
+probe-topbar.js / probe-canvas.js / probe-reading.js / probe-ui.js / probe-canvas-geometry.js / probe-settings-shot.js: 截图诊断探针（非断言锁，用于 UI 巡检与前后对比取证，结果 PNG 路径见场景 JSON）：
 - probe-topbar：`--screen "collapsed+focused+dark"` 等九态令牌（OBS_SIDEBAR_VIEW）；`aligned` 顶栏几何与 `empty` 空态令牌。
 - probe-canvas：`PROBE_SCENE=board|dark|empty|states|menus`。
 - probe-reading：`--screen "light|dark[:scrollTop]"`。
 - probe-ui：`--screen settings|palette|menu|graph|search`。
+- probe-canvas-geometry：新建标签页→新建画布后打印祖先链 rect/计算样式，定位 view-content 占位残留。
+- probe-settings-shot：`--screen <tabId>` 打开指定设置页并打印侧栏分组/条目与关于页版本行。
 probe-canvas-drop: 画布拖入诊断探针（残留虚影体检）。模拟文件树拖入与卡片菜单纯点击两条路径，报告 .is-dummy 数量、accent 填充元素、画布内彩色框与卡片 DOM/几何；非断言锁，用于定位画布残影。
 
 [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md

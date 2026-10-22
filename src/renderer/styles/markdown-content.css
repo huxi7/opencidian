@@ -1,7 +1,7 @@
 /**
  * [INPUT]: 依赖 tokens.css 变量与 reading.js 阅读 DOM。
  * [OUTPUT]: 正文流式排版：容器与行宽、标题、段落与内联、链接、标签、分隔线、引用、callout、脚注、列表、任务、代码、数学、表格。
- * [POS]: markdown.css 的第一个子模块（正文样式），每条规则标注 _analysis/obsidian-asar/app.css 行号。嵌入对象（图片/音视频/PDF/笔记嵌块/附件）与 progress 由父文件 markdown.css 承载，本文件只留指针。
+ * [POS]: markdown.css 的第一个子模块（正文样式），每条规则标注 _analysis/obsidian-114/renderer/app.css 行号。嵌入对象（图片/音视频/PDF/笔记嵌块/附件）与 progress 由父文件 markdown.css 承载，本文件只留指针。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 /* ------------------------------------------------------------ 阅读容器 */

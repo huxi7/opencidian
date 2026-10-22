@@ -1,18 +1,45 @@
 /**
  * [INPUT]: SuggestModal 提供模糊建议；i18n 与 keymap 提供文案和快捷键显示。
  *          宿主提供命令列表、命令分派与功能区。
- * [OUTPUT]: 导出 nameKey、create(app)，注册命令面板命令与功能区入口。
- * [POS]: 命令面板按可用性筛选并保留最近使用顺序。
+ * [OUTPUT]: 导出 nameKey、create(app) 与 settingTab(app, containerEl)，注册命令面板命令、功能区入口与“置顶命令”设置页。
+ * [POS]: 命令面板按可用性筛选并按「置顶 → 最近使用 → 其余」排序；置顶列表持久化在 .obsidian/command-palette.json。
  *        功能区复用打开命令；重复加载不新增入口，卸载删除入口与命令。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 /* Core plugin: command-palette — fuzzy command runner (Mod+P). */
 import { SuggestModal, fuzzyMatch, renderHighlightedText } from '../core/suggest.js';
+import { Setting, SettingGroup } from '../core/setting.js';
 import { t } from '../core/i18n.js';
 import { setIcon } from '../core/icons.js';
 import { hotkeyToString } from '../core/keymap.js';
 
 export const nameKey = 'plugins.command-palette';
+
+/** 置顶命令持久化：.obsidian/command-palette.json（与原版核心插件数据文件同一位置）。 */
+const DATA_FILE = 'command-palette.json';
+const DEFAULT_OPTIONS = { pinned: [] };
+
+function loadOptions(app) {
+  const data = app.settings.loadPluginData(DATA_FILE, DEFAULT_OPTIONS);
+  return { pinned: Array.isArray(data.pinned) ? data.pinned.filter((id) => typeof id === 'string') : [] };
+}
+function saveOptions(app, options) {
+  app.settings.savePluginData(DATA_FILE, options);
+}
+
+/** 可用命令（与原版一致：checkCallback(true) 通过的才列）。 */
+function availableCommands(app) {
+  return app.commands.listCommands().filter((cmd) => {
+    try {
+      if (cmd.checkCallback) return !!cmd.checkCallback(true);
+      if (cmd.editorCheckCallback) {
+        const view = app.workspace.activeLeaf && app.workspace.activeLeaf.view;
+        return !!(view && view.editor);
+      }
+      return true;
+    } catch (e) { return false; }
+  });
+}
 
 class CommandPaletteModal extends SuggestModal {
   constructor(app) {
@@ -32,25 +59,17 @@ class CommandPaletteModal extends SuggestModal {
     ];
   }
   getSuggestions(query) {
-    const commands = this.app.commands.listCommands();
-    // check availability
-    const available = commands.filter((cmd) => {
-      try {
-        if (cmd.checkCallback) return !!cmd.checkCallback(true);
-        if (cmd.editorCheckCallback) {
-          const view = this.app.workspace.activeLeaf && this.app.workspace.activeLeaf.view;
-          return !!(view && view.editor);
-        }
-        return true;
-      } catch (e) { return false; }
-    });
+    const available = availableCommands(this.app);
     if (!query) {
-      // recently used first
-      const recent = this.app._recentCommands || [];
+      // 原版顺序：置顶命令 → 最近使用 → 其余
+      const pinnedIds = loadOptions(this.app).pinned;
+      const pinned = pinnedIds.map((id) => available.find((c) => c.id === id)).filter(Boolean);
+      const pinnedSet = new Set(pinned.map((c) => c.id));
+      const recent = (this.app._recentCommands || []).filter((id) => !pinnedSet.has(id));
       const recentSet = new Set(recent);
       const recents = recent.map((id) => available.find((c) => c.id === id)).filter(Boolean);
-      const others = available.filter((c) => !recentSet.has(c.id));
-      return [...recents, ...others];
+      const others = available.filter((c) => !recentSet.has(c.id) && !pinnedSet.has(c.id));
+      return [...pinned, ...recents, ...others];
     }
     const out = [];
     for (const cmd of available) {
@@ -83,6 +102,89 @@ class CommandPaletteModal extends SuggestModal {
       this.app.commands.executeCommandById(cmd.id);
     }
   }
+}
+
+/** 添加置顶命令的选择器（设置页 + 号入口）。 */
+class PinCommandModal extends SuggestModal {
+  constructor(app, onChoose) {
+    super(app);
+    this.onChoose = onChoose;
+    this.limit = 50;
+    this.emptyStateText = t('plugins.command-palette.label-no-commands') || 'No commands found.';
+  }
+  getPlaceholder() {
+    return t('plugins.command-palette.prompt-add-command') || 'Select a command...';
+  }
+  getSuggestions(query) {
+    const commands = availableCommands(this.app);
+    if (!query) return commands.slice(0, 200);
+    const out = [];
+    for (const cmd of commands) {
+      const m = fuzzyMatch(query, cmd.name + ' ' + (cmd.id.split(':')[0] || ''));
+      if (m) out.push({ cmd, score: m.score });
+    }
+    out.sort((a, b) => b.score - a.score);
+    return out.slice(0, 200).map((o) => o.cmd);
+  }
+  renderSuggestion(cmd, el) {
+    el.setText(cmd.name || cmd.id);
+  }
+  onChooseSuggestion(cmd) {
+    if (cmd && this.onChoose) this.onChoose(cmd.id);
+  }
+}
+
+/**
+ * 原版核心插件设置页：置顶命令。
+ * 结构：SettingGroup 标题「置顶命令」+ 标题行右侧加号 + 命令行（行尾移除钮）/ 空态行。
+ */
+export function settingTab(app, containerEl) {
+  const options = loadOptions(app);
+  const group = new SettingGroup(containerEl);
+  group.setHeading(t('plugins.command-palette.label-pinned-commands') || 'Pinned commands');
+  const nameOf = (id) => {
+    const cmd = app.commands.commands[id];
+    return cmd ? cmd.name : id;
+  };
+  group.addExtraButton((button) => {
+    button
+      .setIcon('lucide-plus')
+      .setTooltip(t('plugins.command-palette.action-add-command') || 'Add a command...')
+      .onClick(() => {
+        new PinCommandModal(app, (id) => {
+          if (!options.pinned.includes(id)) {
+            options.pinned.push(id);
+            saveOptions(app, options);
+            renderRows();
+          }
+        }).open();
+      });
+  });
+  const renderRows = () => {
+    group.listEl.empty();
+    if (!options.pinned.length) {
+      const empty = new Setting(group.listEl);
+      empty.setName(t('plugins.command-palette.label-no-commands') || 'No commands found.');
+      empty.setClass('mod-empty-state');
+      return;
+    }
+    for (const id of options.pinned) {
+      const setting = new Setting(group.listEl);
+      setting.setName(nameOf(id));
+      setting.addExtraButton((button) => {
+        button
+          .setIcon('lucide-x')
+          .setTooltip(t('interface.menu.remove') || 'Remove')
+          .onClick(() => {
+            options.pinned = options.pinned.filter((x) => x !== id);
+            saveOptions(app, options);
+            renderRows();
+          });
+      });
+    }
+  };
+  renderRows();
+  return group;
 }
 
 export function create(app) {
