@@ -22,6 +22,7 @@ const { setupSettingsWindows } = require('./settings-window');
 const { setupDocumentWindows } = require('./document-window');
 const { registerNativeMenuIpc } = require('./native-menu');
 const { registerVaultWriteIpc } = require('./vault-write');
+const { guardWindowClose } = require('./window-close');
 const { registerWindowEffectsIpc } = require('./window-effects');
 const { registerCanvasCaptureIpc } = require('./canvas-capture');
 const { installAppMenu } = require('./app-menu');
@@ -336,6 +337,7 @@ function openVaultWindow(id, focus = true) {
   for (const evt of ['maximize', 'unmaximize', 'enter-full-screen', 'leave-full-screen', 'restore']) win.on(evt, pushWindowState);
 
   secCtxWin(win);
+  guardWindowClose(win, { isQuitting: () => quitting, cancelQuit: () => { quitting = false; documentWindows?.resetQuitSnapshot(); }, isE2E: E2E, canFlush: () => win.loaded === true });
   win.webContents.on('did-finish-load', () => { win.loaded = true; });
   if (IS_DEV) {
     // Forward renderer console to stdout so dev runs can be diagnosed from the log.
@@ -353,9 +355,6 @@ function openVaultWindow(id, focus = true) {
     win.webContents.on('unresponsive', () => { console.error('[renderer] unresponsive'); });
   }
 
-  win.on('close', () => {
-    setTimeout(() => { if (!win.isDestroyed()) win.destroy(); }, 3000);
-  });
   win.on('closed', () => {
     delete windows[id];
     documentWindows?.closeFor(id);
@@ -755,7 +754,7 @@ if (!gotLock) {
     registerVaultWriteIpc({ ipcMain, vaultPathForSender: sender => VAULTS[BrowserWindow.fromWebContents(sender)?.vaultId || settingsWindows.vaultIdFor(sender)]?.path });
     registerNativeMenuIpc({ ipcMain, isE2E: E2E });
     documentWindows = setupDocumentWindows({ BrowserWindow, ipcMain, defaultWindowOptions, prepareWindow: secCtxWin,
-      indexUrl, vaultPathForId: id => VAULTS[id]?.path, isE2E: E2E, isQuitting: () => quitting });
+      indexUrl, vaultPathForId: id => VAULTS[id]?.path, isE2E: E2E, isQuitting: () => quitting, cancelQuit: () => { quitting = false; documentWindows?.resetQuitSnapshot(); } });
     registerWindowEffectsIpc({ ipcMain, BrowserWindow });
     registerCanvasCaptureIpc({ ipcMain, BrowserWindow });
     installAppMenu(openVaultStarter);

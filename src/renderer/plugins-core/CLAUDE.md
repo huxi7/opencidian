@@ -46,7 +46,7 @@ graph-utils.js: 无状态颜色、插值、矩形与键盘常量。
 file-recovery.js: 文件恢复插件(原版默认启用)。快照范围为 md/canvas/base；间隔单位分钟(默认 5，0 表示每次变更即存)，旧 intervalSeconds 配置读取时按 60 秒=1 分钟迁移。快照落盘 .obsidian/.file-recovery/ 按天原子替换 JSON({路径:[{ts,data}]})；命令 file-recovery:open 打开快照弹窗(文件搜索+时间/大小列表+预览+恢复+复制+显示差异)；settingTab(间隔分钟/保留天数/查看/清空)。
 random-note.js: 漫游笔记插件。命令 random-note + ribbon(dice-glyph) 随机打开一篇 md；Mod 点击新标签页。
 zk-prefixer.js: 时间戳笔记插件(id zk-prefixer，文案键 plugins.unique-note-creator)。命令 zk-prefixer + ribbon(sheets-in-box)；getUniquePath 冲突按 分/时/日/周/月/年 递增；数据 .obsidian/zk-prefixer.json；settingTab(文件夹/模板/格式样例)。
-workspaces.js: 工作区插件。命令 workspaces:load/save/save-and-load/open-modal + ribbon(lucide-layout)；数据 .obsidian/workspaces.json({workspaces,active}，布局含 mtime)；保存前等待编辑落盘，加载先关闭旧视图，再用 loadLayout+postLayoutLoad；管理弹窗(存/载/删)与 SuggestModal 选择器。
+workspaces.js: 命名布局保存与恢复。尊重保存失败，统一由 Workspace 关闭旧视图，不重复清理。
 slides.js: 幻灯片插件。命令 slides:start 把当前 md 交给 SlidesPresentation(views/slides-presentation.js) 全窗口演示；不注册视图类型；包装层暴露 getPresentation()。原版 file-menu 菜单项因本项目无 file-menu 来源而省略。
 audio-recorder.js: 录音机插件(id audio-recorder，默认关闭)。命令 audio-recorder:start 与 audio-recorder:stop，checkCallback 按 recording 门控；功能区按钮 lucide-mic 切换开关，录音时加 is-active。扩展名 audio/mp4 可用时用 m4a，否则 webm/opus。命名 "Recording <YYYYMMDDHHmmss>"，经 editor/attachments.js 的 saveAttachment 落盘，并向活动 Markdown 视图插入嵌入链接。权限查询降级为 Permissions API 与 getUserMedia 错误映射，原版走 macOS systemPreferences。卸载停止录音并丢弃未完成条目。
 

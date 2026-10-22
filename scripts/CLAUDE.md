@@ -16,4 +16,7 @@ smoke-packaged.mjs: 打包产物冒烟。先核对 ASAR 身份、版本、许可
 bases-formulas.test.mjs: Node 公式单测。固定 UTC、时钟与随机源，对照原始 78 个函数说明。
 bases-csv.test.mjs: Node CSV 单测。检查转义、富值、取消与写盘失败边界，不启动 Electron。
 
+window-save.test.mjs: 视图保存单测。32 条覆盖 CAS、迟到保存、dirty 与关闭失败。
+vault-watch.test.mjs: 真实 Chokidar 22 条。扫描空档、身份、增删改与反复启停。
+dev-hooks.test.mjs: 双窗口协调 11 条。迟到、失败、超时和回执校验，不启动 Electron。
 [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md

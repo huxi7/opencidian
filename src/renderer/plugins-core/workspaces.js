@@ -1,7 +1,7 @@
 /**
  * [INPUT]: 依赖 ../core/i18n.js 的 tt；依赖 ../core/notices.js 的 Notice；依赖 ../core/modals.js 的 Modal；依赖 ../core/suggest.js 的 SuggestModal；依赖 ../core/icons.js 的 setIcon；moment
  * [OUTPUT]: 导出 nameKey、DATA_FILE、create(app)（命令 workspaces:load/save/save-and-load/open-modal + ribbon 管理工作区）
- * [POS]: plugins-core/ 的工作区插件。保存与加载共用串行队列。保存先等待叶子落盘，再独立复制命名布局。加载关闭旧视图并释放监听器，再用 loadLayout/postLayoutLoad 重建；激活后同步文件事件与启动布局。
+ * [POS]: plugins-core/ 的工作区插件。保存与加载共用串行队列。保存先等待叶子落盘，再独立复制命名布局。加载由 loadLayout 统一验证旧视图保存并关闭，再用 postLayoutLoad 重建；激活后同步文件事件与启动布局。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 /* Core plugin: workspaces — save and load workspace layouts. */
@@ -42,7 +42,7 @@ class Workspaces {
       const leaves = [];
       this.app.workspace.iterateAllLeaves((leaf) => leaves.push(leaf));
       for (const leaf of leaves) {
-        if (leaf.view && typeof leaf.view.save === 'function') await leaf.view.save();
+        if (leaf.view && typeof leaf.view.save === 'function' && await leaf.view.save() === false) throw new Error('文档尚未保存，已取消工作区操作');
       }
       // 布局含 lastOpenFiles 等可变引用，命名快照必须与活动布局隔离。
       const layout = JSON.parse(JSON.stringify(this.app.workspace.getLayout()));
@@ -72,21 +72,6 @@ class Workspaces {
     const layout = JSON.parse(JSON.stringify(this.workspaces[name]));
     if (!layout.main || !layout.left || !layout.right) throw new Error('Invalid workspace layout');
     const workspace = this.app.workspace;
-    const leaves = [];
-    workspace.iterateAllLeaves((leaf) => leaves.push(leaf));
-    // loadLayout 是启动恢复入口，不会替调用方关闭已存在的视图。
-    for (const leaf of leaves) {
-      if (leaf.view) {
-        if (typeof leaf.view.save === 'function') await leaf.view.save();
-        await leaf.view.onClose();
-        for (const dispose of leaf.view._children || []) if (typeof dispose === 'function') dispose();
-        leaf.view._children = [];
-        if (leaf.view._rootEl) leaf.view._rootEl.detach();
-      }
-      if (leaf._resizeObserver) leaf._resizeObserver.disconnect();
-    }
-    workspace.activeLeaf = null;
-    workspace._lastActiveLeaves = [];
     const active = await workspace.loadLayout(layout);
     if (active === false) throw new Error('Failed to load workspace layout');
     await workspace.postLayoutLoad(typeof active === 'string' ? active : null);

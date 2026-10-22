@@ -1,11 +1,34 @@
 /**
  * [INPUT]: Electron app、BrowserWindow 与可配置前缀的 OBS_* 环境变量（主窗 OBS_、启动器 OBS_STARTER_）；Node fs。
- * [OUTPUT]: 导出 devScreenshotHook，执行隔离验收动作、DOM探针和浅/深截图。
- * [POS]: 主进程调试入口；无对应前缀配置时不安装钩子。第二窗口用 prefix/logTag/quit 隔离。
+ * [OUTPUT]: 导出 devScreenshotHook，执行隔离验收动作、DOM探针和浅/深截图；主窗等待启动器完成再退出。
+ * [POS]: 主进程调试入口；无对应前缀配置时不安装钩子。第二窗口用 prefix/logTag/quit 隔离，完成或失败通过主进程 Promise 结算。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 const { app } = require('electron');
 const fs = require('fs');
+
+// 两个窗口共享主进程状态。主窗退出不能早于伴随动作与截图完成。
+const companion = process.env.OBS_STARTER_ACT ? (() => {
+  let settle; const done = new Promise(resolve => { settle = resolve; });
+  return { done, settle, settled: false };
+})() : null;
+function finishCompanion(result) {
+  if (!companion || companion.settled) return;
+  companion.settled = true; companion.settle(result);
+}
+async function waitForCompanion() {
+  if (!companion) return;
+  const configured = Number(process.env.OBS_STARTER_ACT_TIMEOUT || 60000);
+  const timeout = Number.isFinite(configured) && configured > 0 ? configured : 60000;
+  let timer;
+  try {
+    const result = await Promise.race([companion.done, new Promise(resolve => {
+      timer = setTimeout(() => resolve({ ok: false, error: '等待启动器验收回执超时：' + timeout + 'ms' }), timeout);
+    })]);
+    if (!result?.ok) throw Error(result?.error || '启动器验收失败');
+  } finally { clearTimeout(timer); }
+}
+
 
 /**
  * 通用窗口验收钩子。prefix 让第二窗口（starter）使用独立的 OBS_STARTER_* 变量，
@@ -22,6 +45,12 @@ function devScreenshotHook(win, id, options) {
   if (!out && !outLight && !dump && !openFile && !act) return;
   const delay = Number(env('SCREENSHOT_DELAY') || 3000);
   const log = (message) => console.log(`[${logTag}] ${message}`);
+  const isCompanion = prefix === 'OBS_STARTER_';
+  let actionError = null;
+  if (isCompanion) win.webContents.on('console-message', (...args) => {
+    const details = args[1]; const message = details && typeof details === 'object' ? details.message : args[2];
+    if (String(message).startsWith('[starter-checkpoint]')) log(message);
+  });
   let started = false;
   const start = () => {
     if (started) return;
@@ -40,19 +69,28 @@ function devScreenshotHook(win, id, options) {
       }
       if (act) {
         try {
+          if (prefix === 'OBS_') await win.webContents.executeJavaScript(`(async () => {
+            const deadline = Date.now() + 60000;
+            while (!window.app?.workspace?._sidebarReady || !window.app?.commands?.findCommand('app:open-settings')) {
+              if (Date.now() > deadline) throw Error('等待应用装配完成超时');
+              await new Promise(resolve => setTimeout(resolve, 50));
+            }
+          })()`);
           let payload;
           try { payload = JSON.parse(act); } catch (e) { payload = { action: 'exec', command: act }; }
           if (payload.action === 'eval' && payload.js) {
+            if (isCompanion) log('act started');
             const result = await win.webContents.executeJavaScript(String(payload.js));
             console.log(`[${logTag}] eval:`, JSON.stringify(result));
+            if (isCompanion && !(result?.pass === true && Array.isArray(result.checks) && Number.isInteger(result.count) && result.count > 0 && result.count === result.checks.length)) actionError = '启动器没有返回有效的通过回执';
           } else {
             await win.webContents.executeJavaScript(
               `(function(){ var o=${JSON.stringify(payload)}; if (typeof window.OBS_ACT === 'function') { window.OBS_ACT(o); } else { window.OBS_ACT = o; } })()`
             );
             console.log(`[${logTag}] act:`, JSON.stringify(payload));
           }
-          await new Promise((r) => setTimeout(r, 1500));
-        } catch (e) { console.error(`[${logTag}] act failed`, e); }
+          if (out || outLight || dump) await new Promise((r) => setTimeout(r, 1500));
+        } catch (e) { actionError = e.message || String(e); console.error(`[${logTag}] act failed`, e); }
       }
       if (dump) {
         try {
@@ -128,7 +166,7 @@ function devScreenshotHook(win, id, options) {
         log('screenshot written: ' + file);
       };
       if (out) {
-        try { await capture(out); } catch (e) { console.error(`[${logTag}] screenshot failed`, e); }
+        try { await capture(out); } catch (e) { actionError = e.message || String(e); console.error(`[${logTag}] screenshot failed`, e); }
       }
       if (outLight) {
         try {
@@ -137,14 +175,20 @@ function devScreenshotHook(win, id, options) {
           );
           await new Promise((r) => setTimeout(r, 150));
           await capture(outLight);
-        } catch (e) { console.error(`[${logTag}] light screenshot failed`, e); }
+        } catch (e) { actionError = e.message || String(e); console.error(`[${logTag}] light screenshot failed`, e); }
       }
-      if (quit && env('SCREENSHOT_EXIT')) app.quit();
+      if (isCompanion) finishCompanion({ ok: !actionError, error: actionError });
+      if (quit && env('SCREENSHOT_EXIT')) {
+        try { await waitForCompanion(); } catch (error) { console.error(`[${logTag}] act failed`, error); }
+        app.quit();
+      }
     }, delay);
   };
   win.webContents.on('render-process-gone', (event, details) => {
+    if (isCompanion) finishCompanion({ ok: false, error: '启动器验收渲染进程退出：' + details.reason });
     console.error(`[${logTag}] renderer gone`, details);
   });
+  if (isCompanion) win.once('closed', () => finishCompanion({ ok: false, error: '启动器验收窗口在回执前关闭' }));
   win.webContents.once('did-finish-load', start);
   // loadURL() 已可能在钩子装配前完成（小页面/缓存命中）；此时立即启动。
   if (!win.webContents.isLoading()) start();

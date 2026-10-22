@@ -1,9 +1,10 @@
 /*
  * [INPUT]: OBS_ACT eval 注入；已启用 graph，且 vault 是新建的 graph-vault-* 临时目录。
- * [OUTPUT]: 返回 {role, passed, checks, screenshots}；断言失败会抛错。
+ * [OUTPUT]: 返回 {pass,count,checks,role,fixture,screen}；保留截图终态说明。
  * [POS]: 图谱集成验收；创建独立 fixture，通过 DOM 事件验证交互。
  *        覆盖筛选/局部图/画布交互之外，另验收颜色组拖拽排序、鼠标与触屏 PointerEvent 拖拽/平移/捏合、
  *        悬停预览（hover-link、按住 Mod；图谱不支持先悬停后补 Mod）与力参数落盘。
+ *        关闭动作完成后才切叶子；预览夹具经 setForceNode 等待真实跨线程坐标同步。
  *        本批追加：节点命中区（桌面 1 倍 / 移动端 5 倍）、右键菜单分节表与子菜单、面板菜单项集、
  *        键盘（方向键/加减号/Shift/焦点与活动叶子门控）、颜色组语义（查询式、无右键、默认色相）。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
@@ -501,7 +502,7 @@
   window.dispatchEvent(keyEvent('keydown', 40));
   assert(renderer.keyboardActions.down !== true, '非活动叶子时方向键被忽略（原版 activeLeaf 检查）');
   await otherLeaf.setViewState({ type: 'empty' });
-  otherLeaf.detach();
+  await otherLeaf.detach();
   app.workspace.revealLeaf(globalLeaf);
   await delay(120);
   // F. 面板菜单（原版 onPaneMenu）：通用叶子菜单之外只加「复制截图」
@@ -582,18 +583,33 @@
   await delay(300);
   assert(closedEngine.destroyed && closedEngine.queue === null && closedEngine.progression === 0, '关闭图谱取消查询与动画');
   assert(closedView.renderer.destroyed && !closedView.renderer.renderTimer && !closedView.renderer.canvasEl.isConnected, '关闭图谱停止渲染并移除画布');
-  disposable.detach();
-  // 关闭视图时预览一并收起：句柄挂在该视图的引擎上（独立视图，不跑生长动画，避免节点移动干扰悬停）
+  await disposable.detach();
+  // 关闭预览夹具：必须显示真实画布，并向模拟线程发送钉住坐标。
+  // 仅改渲染节点/镜像字段无法证明 Worker 已收到布置，也未排除随机重叠命中。
   const hoverLeaf = app.workspace.getLeaf(true);
   await hoverLeaf.setViewState({ type: 'graph', state: {} });
+  app.workspace.revealLeaf(hoverLeaf);
   const hoverRenderer = hoverLeaf.view.renderer;
+  await wait(() => {
+    const rect = hoverRenderer.canvasEl.getBoundingClientRect();
+    return app.workspace.activeLeaf === hoverLeaf && rect.width > 0 && rect.height > 0 && hoverRenderer.width > 0 && hoverRenderer.height > 0;
+  }, '独立预览叶子活动且画布完成布局');
   await wait(() => !!hoverRenderer.nodeLookup['A.md'], '预览用例图谱节点');
-  const hoverNode = hoverRenderer.nodeLookup['A.md'];
+  hoverRenderer.cancelInteraction(); hoverRenderer.zoomTo(1); hoverRenderer.setScale(1); hoverRenderer.resetPan();
+  const hoverNode = hoverRenderer.nodeLookup['A.md'], hoverPositions = new Map();
+  for (const [index, node] of hoverRenderer.nodes.entries()) {
+    // 非零坐标也避免把“钉住 0”与未钉住的真值判断混在本预览夹具中。
+    const position = node === hoverNode ? { x: 40, y: 30 } : { x: 600 + index * 160, y: 500 + index * 120 };
+    hoverPositions.set(node.id, position);
+    hoverRenderer.sim.setForceNode(node.id, position.x, position.y, 0.3, 0);
+  }
+  hoverRenderer.changed();
+  await wait(() => hoverRenderer.nodes.every(node => {
+    const position = hoverPositions.get(node.id), simulated = hoverRenderer.sim.nodeById.get(node.id);
+    return position && simulated?.fx === position.x && simulated?.fy === position.y && simulated.x === position.x && simulated.y === position.y && node.x === position.x && node.y === position.y;
+  }), '独立预览夹具的模拟与渲染坐标同步');
+  assert(app.workspace.activeLeaf === hoverLeaf && hoverRenderer.canvasEl.getBoundingClientRect().width > 0, '独立悬停夹具使用活动可见画布');
   const pinClosedHover = () => {
-    hoverRenderer.resetPan();
-    hoverRenderer.sim.alpha = 0; hoverRenderer.sim.alphaTarget = 0;
-    hoverNode.x = 0; hoverNode.y = 0;
-    Object.assign(hoverRenderer.sim.nodeById.get('A.md'), { x: 0, y: 0, vx: 0, vy: 0 });
     mouse(hoverRenderer.canvasEl, 'mousemove', { ...pointIn(hoverRenderer, hoverNode), metaKey: true });
     return hoverRenderer.highlightNode === hoverNode;
   };
@@ -614,13 +630,13 @@
   await hoverLeaf.setViewState({ type: 'empty' });
   await delay(80);
   assert(!findPopover(), '关闭图谱视图收起悬停预览');
-  hoverLeaf.detach();
+  await hoverLeaf.detach();
   engine.setOptions({ showTags: true, showAttachments: true, hideUnresolved: false, showOrphans: true, close: false, 'collapse-filter': false });
   await search('');
   const screen = process.env.OBS_GRAPH_SCREEN || 'local';
   const keep = screen === 'local' ? [globalLeaf, localLeaf] : [globalLeaf];
   const close = []; app.workspace.iterateAllLeaves(leaf=>{if(app.workspace._sideOf(leaf)==='center'&&!keep.includes(leaf))close.push(leaf);});
-  for(const leaf of close)leaf.detach();
+  for(const leaf of close)await leaf.detach();
   app.workspace.revealLeaf(globalLeaf);
   if(screen === 'local') { app.workspace.revealLeaf(localLeaf); engine.setOptions({close:true});localEngine.setOptions({close:true}); }
   else engine.setOptions({close:false});

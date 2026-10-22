@@ -1,7 +1,7 @@
 /**
  * [INPUT]: Node 的 test/assert/fs/path/url/vm；读取工作区源码，模拟 DOM、扩展名注册表、视图与 IPC。
  * [OUTPUT]: 提供可独立运行的工作区逻辑回归，不进入 renderer 依赖图。
- * [POS]: 固定公开接口、叶子操作、布局恢复与链接路径转换的行为。
+ * [POS]: 固定公开接口、叶子操作、隔离布局预检和链接路径转换的行为。
  * 只读源码，不启动 Electron，不读写仓库配置或真实笔记。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
@@ -197,7 +197,7 @@ async function harness(settings = {}) {
       getIcon() { return 'file'; },
       async load() { lifecycle.push(['load', type]); },
       async setState(state) { this.state = { ...state }; lifecycle.push(['state', type, this.state]); },
-      async onClose() { lifecycle.push(['close', type]); },
+      onClose() { lifecycle.push(['close', type]); },
       async save() { lifecycle.push(['save', type]); },
       onResize() { lifecycle.push(['resize', type]); },
       onLayoutReady() { lifecycle.push(['ready', type]); },
@@ -417,7 +417,7 @@ test('链接新标签关闭自动聚焦时保留图谱活动叶子', async () =>
 });
 
 // ---------------------------------------------------------------------------
-// 布局往返：关闭责任属于命名工作区调用方，恢复入口不重复关闭。
+// 布局往返：恢复入口统一保存并关闭旧视图，拒绝失败后重建。
 // ---------------------------------------------------------------------------
 test('嵌套分栏与侧栏布局序列化/恢复往返一致', async () => {
   const { workspace: ws, leaf, file, errors } = await harness();
@@ -436,7 +436,7 @@ test('嵌套分栏与侧栏布局序列化/恢复往返一致', async () => {
   const next = await harness();
   next.lifecycle.length = 0;
   const activeId = await next.workspace.loadLayout(layout);
-  assert.equal(next.lifecycle.filter(([event]) => event === 'close').length, 0);
+  assert.equal(next.lifecycle.filter(([event]) => event === 'close').length, 1);
   await next.workspace.postLayoutLoad(activeId);
   assert.deepEqual(plain(next.workspace.getLayout()), layout);
   assert.equal(next.workspace.getActiveFile().path, 'B.md');
@@ -449,21 +449,12 @@ test('嵌套分栏与侧栏布局序列化/恢复往返一致', async () => {
   assert.deepEqual(next.errors, []);
 });
 
-test('调用方先 save/close 后恢复，不增加关闭次数', async () => {
-  const { workspace: ws, leaf, lifecycle } = await harness();
-  const layout = plain(ws.getLayout());
-  await leaf.view.save();
-  await leaf.view.onClose();
-  for (const dispose of leaf.view._children) dispose();
-  leaf.view._children = [];
-  leaf.view._rootEl.detach();
-  leaf._resizeObserver.disconnect();
-  ws.activeLeaf = null;
-  ws._lastActiveLeaves = [];
-  const closeCount = lifecycle.filter(([event]) => event === 'close').length;
-  const active = await ws.loadLayout(layout);
-  await ws.postLayoutLoad(active);
-  assert.equal(lifecycle.filter(([event]) => event === 'close').length, closeCount);
+test('布局恢复统一保存和关闭旧视图一次', async () => {
+  const { workspace: ws, lifecycle } = await harness();
+  const layout = plain(ws.getLayout()); lifecycle.length = 0;
+  const active = await ws.loadLayout(layout); await ws.postLayoutLoad(active);
+  assert.equal(lifecycle.filter(([event]) => event === 'save').length, 1);
+  assert.equal(lifecycle.filter(([event]) => event === 'close').length, 1);
 });
 
 test('恢复保留 tab 索引边界与活动叶子兜底', async () => {
@@ -554,4 +545,83 @@ test('侧栏有焦点时新文档仍在中心，底部库栏经过重绘保持�
   ws.showSidebar('left');
   assert.equal(ws.vaultProfileEl, profile);
   assert.equal(profile.parentElement, ws.leftSplit.containerEl);
+});
+
+
+test('同步关闭明确拒绝时保留标签与所有资源', async () => {
+  const { workspace: ws, leaf, lifecycle } = await harness(); const view = leaf.view, parent = leaf.parent;
+  view.onClose = () => false; lifecycle.length = 0;
+  assert.equal(leaf.detach(), false); assert.equal(leaf.parent, parent); assert.equal(leaf.view, view);
+  assert.ok(ws._leafMap.has(leaf.id)); assert.equal(leaf._closed, false);
+  assert.equal(lifecycle.filter(([event]) => event === 'dispose').length, 0);
+});
+
+test('异步关闭等待成功后撤DOM且重复关闭共用结果', async () => {
+  const { workspace: ws, leaf } = await harness(); let done;
+  leaf.view.onClose = () => new Promise(resolve => { done = resolve; });
+  const pending = leaf.detach(); assert.equal(leaf.detach(), pending); assert.ok(leaf.parent && ws._leafMap.has(leaf.id));
+  done(true); assert.equal(await pending, true); assert.equal(leaf.parent, null); assert.equal(ws._leafMap.has(leaf.id), false);
+});
+
+test('异步关闭失败和异常均保留未保存叶子', async () => {
+  const { workspace: ws, leaf } = await harness(); const parent = leaf.parent;
+  leaf.view.onClose = async () => false; assert.equal(await leaf.detach(), false); assert.equal(leaf.parent, parent);
+  leaf.view.onClose = async () => { throw Error('save failure'); }; assert.equal(await leaf.detach(), false);
+  assert.equal(leaf.parent, parent); assert.ok(ws._leafMap.has(leaf.id));
+});
+
+test('同类型setState失败不推进文件状态或发布file-open', async () => {
+  const { workspace: ws, leaf, file } = await harness(); await ws.openFile(file('A.md'));
+  const before = leaf.viewState, recent = [...ws.lastOpenFiles]; let opened = 0;
+  ws.on('file-open', () => opened++); leaf.view.setState = async () => false;
+  await ws.openFile(file('B.md')); assert.equal(leaf.viewState, before); assert.deepEqual([...ws.lastOpenFiles], recent); assert.equal(opened, 0);
+});
+
+test('异类型onClose失败不创建新视图或释放旧根', async () => {
+  const { leaf, lifecycle } = await harness(); const view = leaf.view, root = view._rootEl;
+  view.onClose = async () => false; lifecycle.length = 0;
+  assert.equal(await leaf.setViewState({ type: 'markdown', state: { file: 'A.md' } }), false);
+  assert.equal(leaf.view, view); assert.equal(view._rootEl, root); assert.equal(lifecycle.length, 0);
+});
+
+test('布局批量保存失败不关闭任何视图或清空树索引', async () => {
+  const { workspace: ws, leaf, lifecycle, file } = await harness(); const extra = await ws.openFile(file('A.md'), { newLeaf: true });
+  const before = plain(ws.getLayout()), count = ws._leafMap.size;
+  extra.view.save = async () => false; lifecycle.length = 0;
+  assert.equal(await ws.loadLayout(before), false); assert.deepEqual(plain(ws.getLayout()), before); assert.equal(ws._leafMap.size, count);
+  assert.equal(lifecycle.filter(([event]) => event === 'close').length, 0); assert.ok(leaf.parent && extra.parent);
+});
+
+test('批量关闭后段拒绝时重建已关闭的干净视图', async () => {
+  const { workspace: ws, leaf, file } = await harness(); const extra = await ws.openFile(file('A.md'), { newLeaf: true });
+  const before = plain(ws.getLayout()), old = leaf.view; extra.view.onClose = async () => false;
+  assert.equal(await ws.loadLayout(before), false); assert.deepEqual(plain(ws.getLayout()), before);
+  assert.notEqual(leaf.view, old); assert.equal(leaf.view.getViewType(), 'empty'); assert.equal(extra.view.getState().file, 'A.md');
+});
+
+
+test('空对象和损坏子节点布局不保存关闭或污染当前索引', async () => {
+  const { workspace: ws, leaf, lifecycle, file } = await harness(); await ws.openFile(file('A.md'));
+  const view = leaf.view, root = view._rootEl, original = plain(ws.getLayout()), map = ws._leafMap;
+  for (const malformed of [{}, { ...original, main: { ...original.main, children: { wrong: true } } }, { ...original, lastOpenFiles: 'not an array' }]) {
+    lifecycle.length = 0; assert.equal(await ws.loadLayout(malformed), false);
+    assert.equal(ws._leafMap, map); assert.deepEqual(plain(ws.getLayout()), original); assert.equal(leaf.view, view); assert.equal(view._rootEl, root);
+    assert.equal(lifecycle.filter(([event]) => event === 'save' || event === 'close').length, 0);
+  }
+});
+
+test('布局节点ID重复时在关闭旧视图前拒绝', async () => {
+  const { workspace: ws, leaf, lifecycle } = await harness(); const layout = plain(ws.getLayout()), map = ws._leafMap;
+  layout.left.id = layout.main.id; lifecycle.length = 0;
+  assert.equal(await ws.loadLayout(layout), false); assert.equal(ws._leafMap, map); assert.ok(leaf.parent);
+  assert.equal(lifecycle.filter(([event]) => event === 'close').length, 0);
+});
+
+test('隔离反序列化期间仍能访问原树，成功后保留堆叠与活动叶子', async () => {
+  const { workspace: ws, leaf, file } = await harness(); await ws.openFile(file('A.md')); leaf.parent.setStacked(true);
+  const layout = plain(ws.getLayout()), map = ws._leafMap, pending = ws.loadLayout(layout);
+  assert.equal(ws._leafMap, map); assert.equal(ws._leafMap.get(leaf.id), leaf);
+  const active = await pending; await ws.postLayoutLoad(active);
+  assert.equal(ws.activeLeaf.id, layout.active); assert.ok(ws.activeLeaf.parent.isStacked);
+  assert.notEqual(ws._leafMap, map); assert.notEqual(ws._leafMap.get(leaf.id), leaf); assert.equal(ws.activeLeaf.workspace, ws);
 });

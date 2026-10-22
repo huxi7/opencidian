@@ -1,5 +1,6 @@
 /**
  * [INPUT]: 依赖 ./i18n.js 的 t；依赖 ./plugins-registry.js 的 corePluginModules。
+ * 插件拒绝卸载时保留命令、设置页和启用状态。
  * [OUTPUT]: 导出 PluginManager(app.plugins)。
  * [POS]: core/ 的内部插件宿主。核心插件模块经 plugins-registry.js 汇总，PluginManager 启停它们并把开关写入 core-plugins.json；不扫描 .obsidian/plugins，也不加载任何第三方代码。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
@@ -61,11 +62,11 @@ export class PluginManager {
     if (!entry || !entry.enabled) return true;
     try {
       const instance = entry.instance;
-      if (this.app.setting) this.app.setting.removePluginTabs(id);
       if (instance) {
+        if (instance.onunload && await instance.onunload() === false) return false;
         if (instance.deregisterCommands) instance.deregisterCommands();
-        if (instance.onunload) await instance.onunload();
       }
+      if (this.app.setting) this.app.setting.removePluginTabs(id);
       if (entry.manifest.module.deregister) entry.manifest.module.deregister(this.app);
       entry.instance = null;
       entry.enabled = false;

@@ -6,11 +6,11 @@
  *          依赖 ./canvas-controls.js 的 buildCardMenu/buildControls（建卡菜单与控件组的 DOM 构建）；依赖 ./canvas-arrange.js 的 buildCanvasMenu（选择浮动工具条与多选包围盒）；依赖 ./canvas-export.js 的 renderCanvasImage/exportCanvasImage；
  *          依赖 ./canvas-clipboard.js 的 handleCanvasCopy/handleCanvasCut/handleCanvasPaste；依赖 ./canvas-drop.js 的 installCanvasDrop；
  *          依赖 ./canvas-options.js 的 loadCanvasOptions/saveCanvasOptions（.obsidian/canvas.json，与白板设定页共用同一份选项）
- *          节点创建委托 canvas-node-factory.js。
+ *          节点创建委托 canvas-node-factory.js；保存委托 core/window-save.js。
  * [OUTPUT]: 导出 CanvasView 类（含 renderCanvasImage 渲染入口、generateHDImage 导出入口与 promptImageSavePath 保存对话框入口）
  * [POS]: views/ 画布类链的末端：View → CanvasViewport（视口）→ CanvasInteractions（交互）→ CanvasView（装配与调度）。持有 .canvas-wrapper DOM、节点/边集合、选择集合、JSON Canvas 读写。
  *        ResizeObserver 在挂载后更新视口。节点与边几何分层；数据防抖 500ms 写回，关闭时 flush。
- *        vault modify 的外部修改重载磁盘内容并保留视口；自身写入用 _writing 标记排除，避免覆盖在途编辑。
+ *        vault modify 的外部修改重载磁盘内容并保留视口；干净副本同步磁盘；脏副本保留编辑，CAS 冲突拒绝覆盖。
  *        撤销/重做历史（上限 100）与写盘共用一个 requestSave；控件组含快速设置（对齐网格/对齐物体/只读）、缩放、撤销/重做与帮助弹窗。
  *        指针移动/离开经 onPointermove/onPointerleave 交给交互层命中测试（决定哪张卡片显手柄）；空画布占位第三行的修饰键按平台显示（macOS 为 ⌘）。
  *        promptLinkUrl 是链接卡片「更换网址」入口：复用 LinkSuggestModal 并预填当前 URL。
@@ -35,6 +35,7 @@ import { setIcon } from '../core/icons.js';
 import { IS_MAC } from '../core/keymap.js';
 import { Notice } from '../core/notices.js';
 import { Desktop } from '../core/ipc.js';
+import { saveWindowView, hasUnsavedWindowView, reportWindowSaveError } from '../core/window-save.js';
 import { debounce } from '../core/events.js';
 import {
   genId, boxesIntersect, containsBox, expandBBox, nearestSide, distanceToBox, rectOf, MultiMap,
@@ -104,7 +105,7 @@ export class CanvasView extends CanvasInteractions {
     this.pointerFrame = 0;
     this.interactionTarget = null;
     this._saveTimer = null;
-    this._savedText = null;
+    this._savedText = null; this._closed = false;
     this._writing = false;
     this._modifyRef = null;
     this.history = new CanvasHistory(100);
@@ -131,7 +132,7 @@ export class CanvasView extends CanvasInteractions {
   async setState(state) {
     state = state || {};
     if (state.file && (!this.file || this.file.path !== state.file)) {
-      await this.loadFile(state.file);
+      if (await this.loadFile(state.file) === false) return false;
     }
     if (state.viewState) {
       const vs = state.viewState;
@@ -167,6 +168,9 @@ export class CanvasView extends CanvasInteractions {
   }
 
   async onClose() {
+    if (this._closed) return true;
+    if (await this.save() === false) return false;
+    if (this._closed) return true; this._closed = true;
     window.removeEventListener('keydown', this.onGlobalKeydown);
     window.removeEventListener('keyup', this.onGlobalKeyup);
     if (this._modifyRef) { this._modifyRef.unregister(); this._modifyRef = null; }
@@ -174,7 +178,6 @@ export class CanvasView extends CanvasInteractions {
     if (this._deleteRef) { this._deleteRef.unregister(); this._deleteRef = null; }
     if (this._saveTimer) { clearTimeout(this._saveTimer); this._saveTimer = null; }
     this.data = this.getData();
-    await this.save();
     this._resizeObserver?.disconnect();
     this.setInteractionTarget(null);
     this.clear();
@@ -588,7 +591,7 @@ export class CanvasView extends CanvasInteractions {
   /* ---------------------------------------------------------------- 存取 */
 
   requestSave(saveHistory = true) {
-    this.data = this.getData();
+    this.data = this.getData(); this._dirty = hasUnsavedWindowView(this);
     if (saveHistory) this.requestPushHistory(this.data);
     if (this._saveTimer) clearTimeout(this._saveTimer);
     this._saveTimer = window.setTimeout(() => { this._saveTimer = null; this.save(); }, SAVE_DELAY);
@@ -631,21 +634,7 @@ export class CanvasView extends CanvasInteractions {
     if (this.redoBtnEl) this.redoBtnEl.toggleClass('is-disabled', !this.history.canRedo());
   }
 
-  async save() {
-    if (!this.file) return;
-    const text = JSON.stringify(this.data && this.data.nodes ? this.data : this.getData(), null, '\t');
-    if (text === this._savedText) return;
-    try {
-      this._writing = true;
-      await this.app.vault.modify(this.file, text);
-      this._savedText = text;
-    } catch (e) {
-      console.error('canvas save failed', e);
-      new Notice(t('plugins.canvas.name') || 'Canvas');
-    } finally {
-      this._writing = false;
-    }
-  }
+  save() { return saveWindowView(this); }
 
   loadOptions() {
     return loadCanvasOptions(this.app);
@@ -665,25 +654,28 @@ export class CanvasView extends CanvasInteractions {
   }
 
   async loadFile(path) {
+    const sequence = this._loadSequence = (this._loadSequence || 0) + 1;
     if (this.file) {
       clearTimeout(this._saveTimer);
       this._saveTimer = null;
       this.data = this.getData();
-      await this.save();
+      if (await this.save() === false) return false;
     }
+    if (sequence !== this._loadSequence || this._closed) return false;
     await this._applyFileFromDisk(path);
   }
 
   /** 外部修改：磁盘内容与已保存内容一致时视为自身写入的 watcher 回声，跳过重载。 */
   onExternalModify(file) {
-    if (!file || !this.file || this._writing || file.path !== this.file.path || file.extension !== 'canvas') return;
+    if (!file || !this.file || this._closed || this._writing || file.path !== this.file.path || file.extension !== 'canvas') return;
     const path = this.file.path;
     const fileRef = this.file;
     this.app.vault.cachedRead(fileRef).then((text) => {
-      if (!this.file || this.file.path !== path) return;
+      if (!this.file || this.file.path !== path || this._closed) return;
       if (text === this._savedText) return;
+      if (hasUnsavedWindowView(this)) { reportWindowSaveError(this, '文件已被另一个窗口修改，未保存的编辑已保留。', true); return; }
       if (this._saveTimer) { clearTimeout(this._saveTimer); this._saveTimer = null; }
-      return this._applyFileFromDisk(path, { keepViewport: true });
+      return this._applyFileFromDisk(path, { keepViewport: true, text });
     }).catch((e) => console.error('canvas external reload failed', e));
   }
 
@@ -698,7 +690,9 @@ export class CanvasView extends CanvasInteractions {
     }
     this.file = file;
     let text = '';
-    try { text = await this.app.vault.cachedRead(file); } catch (e) { console.error(e); }
+    try { text = opts?.text ?? await this.app.vault.cachedRead(file); } catch (e) { console.error(e); }
+    if (this.file !== file || this._closed) return false;
+    if (keepViewport && hasUnsavedWindowView(this)) return reportWindowSaveError(this, '文件已被另一个窗口修改，未保存的编辑已保留。', true);
     let data = null;
     if (text && text.trim()) {
       try { data = JSON.parse(text); } catch (e) { new Notice(t('plugins.canvas.msg-export-failed-empty-canvas') || 'Invalid canvas file'); }
@@ -713,7 +707,8 @@ export class CanvasView extends CanvasInteractions {
     }
     if (data) this.setData(data);
     else { this.createPlaceholder(); this.requestFrame(); }
-    this._savedText = JSON.stringify(this.getData(), null, '\t');
+    this._savedText = text; this._savedDataText = JSON.stringify(this.getData(), null, '\t');
+    this._dirty = false; this._saveError = null; this._saveConflict = false;
     if (!keepViewport) this.zoomToFitQueued = true;
     this.onResize();
     if (this.wrapperEl) this.wrapperEl.focus({ preventScroll: true });

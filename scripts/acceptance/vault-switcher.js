@@ -40,7 +40,6 @@
   check(!document.querySelector('.menu'), '点击后菜单关闭');
   check(!!fs.existsSync(path.join('src', 'renderer', 'starter.html')), 'starter.html 存在');
 
-  // 第二窗口的断言与浅/深截图在 800-1100ms 后开始；留足执行时间再让主钩子收尾。
-  await pause(6500);
+  // 主进程验收钩子等待 OBS_STARTER_ACT 的完成回执，不以固定延时猜测。
   return { pass: true, count: checks.length, checks, vault: app.vaultPath };
 })()

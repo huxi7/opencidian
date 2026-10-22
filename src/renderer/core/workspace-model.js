@@ -3,7 +3,7 @@
  * 视图由 workspace.app.viewRegistry 创建。
  * [OUTPUT]: 导出 WorkspaceItem、WorkspaceSplit、WorkspaceTabs、WorkspaceLeaf、
  * installStackedSerialization。
- * [POS]: 定义分割树节点与叶子视图生命周期。节点通过 workspace 调用宿主。
+ * [POS]: 定义分割树节点与叶子视图生命周期。节点通过 workspace 调用宿主；setState/onClose 明确失败时保留旧视图。
  * 视图持有稳定 _rootEl；树重排只迁移根元素。
  * 标签组持有堆叠状态（原版 VD.isStacked）：状态变更只落类与刷新显示，DOM 由 workspace-renderer 建。
  * 模型不导入 Workspace，确保构造器身份唯一。
@@ -289,7 +289,7 @@ export class WorkspaceLeaf extends WorkspaceItem {
     const prev = this.view;
     const sameType = prev && prev.getViewType() === state.type;
     if (sameType && prev.setState) {
-      await prev.setState(state.state || {}, state);
+      if (await prev.setState(state.state || {}, state) === false) return false;
       this.viewState = state;
       this.updateTabHeader();
       this.workspace._refreshLeafContent(this);
@@ -297,7 +297,7 @@ export class WorkspaceLeaf extends WorkspaceItem {
       return;
     }
     if (prev) {
-      try { await prev.onClose(); } catch (e) { console.error(e); }
+      try { if (await prev.onClose() === false) return false; } catch { return false; }
       prev._children && prev._children.forEach && prev._children.forEach((cb) => cb && cb());
       if (prev._rootEl) { prev._rootEl.detach(); prev._rootEl = null; }
     }
@@ -347,7 +347,7 @@ export class WorkspaceLeaf extends WorkspaceItem {
     this._tabHeaderEl.setAttr('data-type', this.view.getViewType());
   }
 
-  detach() { this.workspace.detachLeaf(this); }
+  detach() { return this.workspace.detachLeaf(this); }
 
   getEphemeralState() { return this.view ? this.view.getEphemeralState() : {}; }
   setEphemeralState(state) { this.view && this.view.setEphemeralState(state); }

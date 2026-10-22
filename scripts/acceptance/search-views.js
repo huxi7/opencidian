@@ -1,9 +1,10 @@
 /**
  * [INPUT]: 独立临时 vault 与 OBS_ACT eval 注入的应用实例；global-search 插件、workspace 事件与 DOM。
- * [OUTPUT]: 返回验收断言结果；失败抛出异常，供运行器判定。
+ * [OUTPUT]: 返回 {pass,count,checks,reportPath}；失败抛出异常。
  * [POS]: search-views 场景。覆盖 search.js 之外的搜索视图交互面：命中行“显示更多上下文”按钮、
  *        结果行右键链接菜单、复制结果弹窗、白板文本节点搜索、结果行悬停页面预览（Mod 门控与移出收起）、
  *        文件树/编辑器菜单接入的搜索入口、搜索视图在独立标签打开的形态。
+ *        悬停夹具逐手势取得当前稳定结果行，并等待实际预览状态，不复用脱离 DOM 的标题。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 (async () => {
@@ -183,25 +184,50 @@
 
     // ------------------------------------------------------------- 悬停预览
     await app.plugins.enableInternalPlugin('page-preview');
-    await view.setQuery('file:Alpha');
-    const hoverTitle = view.childrenEl.querySelector('.search-result-file-title');
+    await view.setQuery('file:Alpha'); workspace.revealLeaf(leaf);
+    const hoverTitle = () => [...view.childrenEl.querySelectorAll('.search-result-file-title')]
+      .find(title => title.textContent.includes('Alpha Note'));
     const popover = () => document.querySelector('body > .popover.hover-popover');
-    hoverTitle.dispatchEvent(new MouseEvent('mouseover', { bubbles: true, metaKey: true }));
-    await wait(700);
-    check(!!popover(), '按住 Mod 悬停结果行弹出页面预览');
-    check(popover() && popover().textContent.includes('Alpha Note'), '预览内容为命中文件');
-    hoverTitle.dispatchEvent(new PointerEvent('pointerout', { bubbles: true }));
-    await wait(500);
-    check(!popover(), '移出结果行后预览收起');
-    hoverTitle.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }));
-    await wait(700);
-    check(!popover(), '未按 Mod 悬停不弹预览（Mod 门控保留）');
+    const previewReady = () => popover()?.textContent.includes('Alpha Note');
+    const stableTitle = async () => {
+      let previous = null, sequence = -1, stableAt = performance.now();
+      const deadline = performance.now() + 4000;
+      while (performance.now() < deadline) {
+        const current = hoverTitle(), rect = current?.getBoundingClientRect();
+        if (!current?.isConnected || !rect?.width || !rect.height || view._searching || current !== previous || sequence !== view._searchSeq) {
+          previous = current; sequence = view._searchSeq; stableAt = performance.now();
+        } else if (performance.now() - stableAt >= 200) return current;
+        await wait(25);
+      }
+      throw Error('当前悬停结果行未稳定');
+    };
+    const over = (title, metaKey) => {
+      if (!title?.isConnected || title !== hoverTitle()) throw Error('拒绝在过期搜索结果上悬停');
+      const rect = title.getBoundingClientRect();
+      title.dispatchEvent(new MouseEvent('mouseover', { bubbles: true, clientX: rect.left + Math.min(20, rect.width / 2), clientY: rect.top + rect.height / 2, metaKey }));
+    };
+    over(await stableTitle(), true);
+    await until(() => !!popover(), '按住 Mod 悬停结果行弹出页面预览');
+    await until(previewReady, '预览内容为命中文件');
+    (await stableTitle()).dispatchEvent(new PointerEvent('pointerout', { bubbles: true, relatedTarget: document.body }));
+    await until(() => !popover(), '移出结果行后预览收起');
+    let gatedTitle = await stableTitle(); over(gatedTitle, false);
+    // 保留原有 700ms 负例窗口；观察真实 DOM 重绘，重新进入替换后的当前行。
+    let openedWithoutMod = false;
+    const hoverWatch = new MutationObserver(() => {
+      if (popover()) openedWithoutMod = true;
+      const current = hoverTitle();
+      if (current?.isConnected && current !== gatedTitle && !view._searching) { gatedTitle = current; over(gatedTitle, false); }
+    });
+    hoverWatch.observe(document.body, { childList: true, subtree: true });
+    try { await wait(700); } finally { hoverWatch.disconnect(); }
+    check(!openedWithoutMod && !popover(), '未按 Mod 悬停不弹预览（Mod 门控保留）');
+    // 按键前重新取活动行，发送真实非 Mod 悬停；不依赖旧行的临时监听仍在有效期内。
+    const keyTarget = await stableTitle(); over(keyTarget, false);
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Meta', metaKey: true, bubbles: true }));
-    await wait(700);
-    check(!!popover(), '悬停后按下 Mod 补弹预览');
+    await until(previewReady, '悬停后按下 Mod 补弹预览');
     document.dispatchEvent(new KeyboardEvent('keyup', { key: 'Meta', metaKey: false, bubbles: true }));
-    await wait(300);
-    check(!popover(), '松开 Mod 后预览收起');
+    await until(() => !popover(), '松开 Mod 后预览收起');
 
     // ------------------------------------------------------------- 文件树/编辑器菜单接入
     const fakeMenu = () => {

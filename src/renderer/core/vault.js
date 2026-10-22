@@ -1,8 +1,8 @@
 /**
- * [INPUT]: 依赖 ./events.js 的 Events；Node 内置 fs/path/chokidar/os
+ * [INPUT]: 依赖 ./events.js 的 Events；Node 内置 fs/path/chokidar/os；监听首次扫描与运行事件队列
  * 文件时间按原版 Ul 使用取整的 birthtimeMs/mtimeMs，ctime 不随属性编辑漂移。
- * [OUTPUT]: 导出 Vault、TFile、TFolder、TAbstractFile、FileSystemAdapter、isHiddenPath
- * [POS]: core/ 的文件模型与磁盘适配层，全应用唯一文件真相源。首次扫描与文件监听均拒绝点开头路径段（原版 nu() 语义）——.obsidian 配置经适配器直读，不暴露给插件。
+ * [OUTPUT]: 导出 Vault、TFile、TFolder、TAbstractFile、FileSystemAdapter、isHiddenPath；watch 返回就绪 Promise，stopWatch 返回关闭 Promise
+ * [POS]: core/ 的文件模型与磁盘适配层，全应用唯一文件真相源。监听 ready 前补齐扫描空档，事件按代次串行。首次扫描与文件监听均拒绝点开头路径段（原版 nu() 语义）——.obsidian 配置经适配器直读，不暴露给插件。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 /* Vault + file system adapter. Mirrors Obsidian's Vault/TFile/TFolder model. */
@@ -333,62 +333,93 @@ export class Vault extends Events {
     }
   }
 
-  // Watch the vault for external changes
+  // 首次事件与扫描模型对账；ready 只有在初始队列完成后才返回。
   watch() {
-    if (this.watcher) return;
-    const base = this.adapter.getBasePath();
-    this.watcher = chokidar.watch(base, {
-      ignoreInitial: true,
+    if (this.watcher) return this._watchReady;
+    this._watchCancel?.();
+    const generation = this._watchGeneration = (this._watchGeneration || 0) + 1;
+    const watcher = this.watcher = chokidar.watch(this.adapter.getBasePath(), {
+      ignoreInitial: false,
       awaitWriteFinish: { stabilityThreshold: 250, pollInterval: 50 },
-      ignored: (p) => {
-        const name = nodePath.basename(p);
-        return isHiddenPath(this.adapter.toRel(p)) || name === 'node_modules';
-      },
+      ignored: p => isHiddenPath(this.adapter.toRel(p)) || nodePath.basename(p) === 'node_modules',
     });
-    const handle = async (event, abs) => {
-      const rel = this.adapter.toRel(abs);
-      if (rel.startsWith('..') || isHiddenPath(rel)) return;
-      const existing = this.all.get(rel);
-      if (event === 'unlink' || event === 'unlinkDir') {
-        if (existing) { this.removeFromMaps(existing); this.trigger('delete', existing); }
-        return;
-      }
-      if (event === 'addDir') {
+    const current = () => this.watcher === watcher && this._watchGeneration === generation;
+    const visible = rel => rel && rel !== '/' && !rel.startsWith('../') && rel !== '..' && !isHiddenPath(rel);
+    const remove = rel => { const file = this.all.get(rel); if (file) { this.removeFromMaps(file); this.trigger('delete', file); } };
+    const update = async (event, rel) => {
+      if (!current() || !visible(rel)) return null;
+      if (event === 'unlink' || event === 'unlinkDir') { remove(rel); return null; }
+      let stat;
+      try { stat = await this.adapter.stat(rel); }
+      catch (error) { if (error.code === 'ENOENT' || error.code === 'ENOTDIR') { if (current()) remove(rel); return null; } throw error; }
+      if (!current()) return null;
+      let existing = this.all.get(rel);
+      const folder = stat.type === 'folder';
+      if (existing && folder !== (existing instanceof TFolder)) { remove(rel); existing = null; }
+      if (!existing) {
+        // 初始事件通常父目录在先；运行期缺父目录时先补齐真实父目录。
+        const parentPath = parentPathOf(rel);
+        if (parentPath !== '/' && !this.getFolderByPath(parentPath)) await update('addDir', parentPath);
+        if (!current()) return null;
+        existing = this.all.get(rel);
         if (!existing) {
-          const folder = new TFolder(this, rel);
-          this.all.set(rel, folder);
-          const parent = this.getFolderByPath(parentPathOf(rel));
-          if (parent) { parent.children.push(folder); this.sortFolder(parent); }
-          this.trigger('create', folder);
+          existing = folder ? new TFolder(this, rel) : new TFile(this, rel);
+          if (!folder) existing.stat = { ctime: stat.ctime, mtime: stat.mtime, size: stat.size };
+          this.all.set(rel, existing); if (!folder) this.fileMap.set(rel, existing);
+          const parent = this.getFolderByPath(parentPath);
+          if (parent && !parent.children.includes(existing)) { parent.children.push(existing); this.sortFolder(parent); }
+          this.trigger('create', existing); return existing;
         }
-        return;
       }
-      if (event === 'add') {
-        if (!existing) {
-          const file = new TFile(this, rel);
-          try { const st = await this.adapter.stat(rel); file.stat = { ctime: st.ctime, mtime: st.mtime, size: st.size }; } catch (e) {}
-          this.all.set(rel, file);
-          this.fileMap.set(rel, file);
-          const parent = this.getFolderByPath(parentPathOf(rel));
-          if (parent) { parent.children.push(file); this.sortFolder(parent); }
-          this.trigger('create', file);
-        }
-        return;
+      if (existing instanceof TFile) {
+        const changed = stat.mtime !== existing.stat.mtime || stat.size !== existing.stat.size || stat.ctime !== existing.stat.ctime;
+        existing.stat = { ctime: stat.ctime, mtime: stat.mtime, size: stat.size };
+        if (event === 'change' || changed) this.trigger('modify', existing);
       }
-      if (event === 'change') {
-        if (existing instanceof TFile) {
-          try { const st = await this.adapter.stat(rel); existing.stat = { ctime: st.ctime, mtime: st.mtime, size: st.size }; } catch (e) {}
-          this.trigger('modify', existing);
-        }
-        return;
-      }
+      return existing;
     };
-    this.watcher.on('all', (event, abs) => { handle(event, abs).catch((e) => console.error(e)); });
+    let queue = Promise.resolve(), settled = false;
+    let resolveReady, rejectReady;
+    const ready = this._watchReady = new Promise((resolve, reject) => { resolveReady = resolve; rejectReady = reject; });
+    // 保留返回给调用方的拒绝，同时避免旧调用方未等待时产生未捕获 Promise。
+    ready.catch(() => {});
+    this._watchCancel = () => { if (!settled) { settled = true; resolveReady(false); } };
+    const fail = error => {
+      if (!current()) return;
+      if (!settled) { settled = true; rejectReady(error); }
+      else this.trigger('watch-error', error);
+    };
+    const enqueue = action => { queue = queue.then(() => current() ? action() : null).catch(fail); return queue; };
+    watcher.on('all', (event, absolute) => enqueue(() => update(event, this.adapter.toRel(absolute))));
+    watcher.on('error', fail);
+    watcher.once('ready', () => enqueue(async () => {
+      const seen = new Set(['/']);
+      const scan = async folder => {
+        if (!current()) return;
+        let listing;
+        try { listing = await this.adapter.list(folder); }
+        catch (error) { if (error.code === 'ENOENT' || error.code === 'ENOTDIR') return; throw error; }
+        for (const path of listing.folders) {
+          if (!visible(path) || nodePath.basename(path) === 'node_modules') continue;
+          if (await update('addDir', path)) { seen.add(path); await scan(path); }
+        }
+        for (const path of listing.files) if (visible(path) && await update('add', path)) seen.add(path);
+      };
+      await scan('/');
+      if (!current()) return;
+      for (const path of [...this.all.keys()]) if (visible(path) && !path.split('/').includes('node_modules') && !seen.has(path)) remove(path);
+      if (!settled) { settled = true; resolveReady(true); }
+    }));
+    return ready;
   }
 
   stopWatch() {
-    if (this.watcher) { this.watcher.close(); this.watcher = null; }
+    const watcher = this.watcher;
+    this._watchGeneration = (this._watchGeneration || 0) + 1;
+    this.watcher = null; this._watchCancel?.(); this._watchCancel = null; this._watchReady = null;
+    return watcher ? Promise.resolve(watcher.close()) : Promise.resolve();
   }
+
 }
 
 export function normalizePath(path) {

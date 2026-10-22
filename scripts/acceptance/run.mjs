@@ -1,7 +1,7 @@
 /**
  * [INPUT]: Node 文件与进程 API、Electron、场景名称、--seed-vaults 与同名 .starter.js。
  * [OUTPUT]: 独立临时库、规范 {pass,count,checks} 回执与可选浅深截图、日志与退出码；--no-screenshot 跳过截图。
- * [POS]: 桌面验收运行器。.starter.js 不作为独立场景，由同名主场景触发；不自行构建。
+ * [POS]: 桌面验收运行器。实时落日志，异常快速失败；回执后仍须真实退出，关闭拒绝不得报绿。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 import fs from 'node:fs';
@@ -121,45 +121,60 @@ const stopOwnedChild = signal => {
   } catch (error) { if (error.code !== 'ESRCH') throw error; }
 };
 let forceTimer;
+let exitTimer, stopping = false;
+const failurePattern = /\[dev(?:-starter)?\] act failed|\[dev(?:-starter)?\] screenshot failed|\[error\]|\[unhandledrejection\]|uncaught|TypeError:|ReferenceError:|setState failed|View failed to load/i;
+const stopWithFailure = reason => {
+  if (stopping) return;
+  stopping = true; log += '\n[acceptance] ' + reason + '\n';
+  stopOwnedChild('SIGTERM'); forceTimer = setTimeout(() => stopOwnedChild('SIGKILL'), 3000);
+};
 const timeout = setTimeout(() => {
   timedOut = true;
-  log += '\n[acceptance] Electron timeout after ' + timeoutMs + 'ms\n';
-  stopOwnedChild('SIGTERM');
-  forceTimer = setTimeout(() => stopOwnedChild('SIGKILL'), 3000);
+  stopWithFailure('Electron timeout after ' + timeoutMs + 'ms');
 }, timeoutMs);
 const interrupted = () => { stopOwnedChild('SIGKILL'); process.exit(130); };
 process.once('SIGINT', interrupted);
 process.once('SIGTERM', interrupted);
-for (const stream of [child.stdout, child.stderr]) stream.on('data', chunk => { log += chunk.toString(); });
+for (const stream of [child.stdout, child.stderr]) stream.on('data', chunk => {
+  const value = chunk.toString(); log += value; fs.appendFileSync(logfile, value);
+  if (failurePattern.test(log)) { stopWithFailure('运行日志包含异常'); return; }
+  const primaryDone = /^\[dev\] eval: .*\n/m.test(log);
+  const starterDone = !starterSource || /^\[dev-starter\] eval: .*\n/m.test(log);
+  if (!exitTimer && primaryDone && starterDone) exitTimer = setTimeout(() => {
+    timedOut = true; stopWithFailure('收到回执后 15 秒仍未退出，关闭守卫或资源未释放');
+  }, 15000);
+});
 const code = await new Promise((resolve, reject) => {
   child.on('error', reject);
   child.on('close', resolve);
 });
 clearTimeout(timeout);
 clearTimeout(forceTimer);
-if (timedOut) stopOwnedChild('SIGKILL');
+clearTimeout(exitTimer);
+if (timedOut || stopping) stopOwnedChild('SIGKILL');
 process.removeListener('SIGINT', interrupted);
 process.removeListener('SIGTERM', interrupted);
 fs.writeFileSync(logfile, log);
 const lines = log.split('\n');
 const receipt = lines.find(line => line.startsWith('[dev] eval: '));
 const starterReceipt = lines.find(line => line.startsWith('[dev-starter] eval: '));
-const failure = /\[dev(?:-starter)?\] act failed|\[dev(?:-starter)?\] screenshot failed|\[error\]|\[unhandledrejection\]|uncaught|TypeError:|ReferenceError:|setState failed|View failed to load/i.test(log);
+const failure = failurePattern.test(log);
 let result;
 try { result = JSON.parse(receipt?.slice('[dev] eval: '.length)); } catch { result = null; }
 let starterResult;
 try { starterResult = JSON.parse(starterReceipt?.slice('[dev-starter] eval: '.length)); } catch { starterResult = null; }
 const valid = value => value?.pass === true && Array.isArray(value.checks) &&
-  Number.isInteger(value.count) && value.count === value.checks.length;
-const starterOk = !starterSource || (starterReceipt && valid(starterResult) &&
+  Number.isInteger(value.count) && value.count > 0 && value.count === value.checks.length;
+const starterOk = !starterSource || !!(starterReceipt && valid(starterResult) &&
   (!starterScreenshot || fs.existsSync(starterScreenshot)) &&
   (!starterLightScreenshot || fs.existsSync(starterLightScreenshot)));
-const passed = !timedOut && code === 0 && !failure && (!screenshot || fs.existsSync(screenshot)) && starterOk && valid(result);
+const passed = !!(!timedOut && code === 0 && !failure && (!screenshot || fs.existsSync(screenshot)) && starterOk && valid(result));
 const checks = [...(Array.isArray(result?.checks) ? result.checks : []),
   ...(Array.isArray(starterResult?.checks) ? starterResult.checks : [])];
 console.log(JSON.stringify({
   pass: passed, count: checks.length, checks,
   logfile, screenshot, starterScreenshot, starterLightScreenshot,
   starterCount: starterResult?.count || 0, vault,
+  ...(!passed ? { failureReason: timedOut ? '进程退出超时' : failure ? '运行日志包含异常' : !starterOk ? '伴随窗口缺少有效回执' : !valid(result) ? '主窗口缺少有效回执' : '进程或产物检查失败' } : {}),
 }));
 if (!passed) { console.error(log.slice(-6000)); process.exitCode = 1; }

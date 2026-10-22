@@ -1,5 +1,6 @@
 /**
  * [INPUT]: Vault、Settings、MetadataCache、Workspace、命令、插件与桌面 IPC。
+ * 关闭前等待视图保存，失败保留输入；设置窗口不写主布局。
  * [OUTPUT]: 导出 App，装配启动、外观、事件与布局保存。
  * 文档独立窗口只加载来源视图，跳过主布局读写与启动打开行为。
  * [POS]: 应用组合根。新建和修改进入元数据解析，启动修复固定侧栏入口。isSettingsWindow（1.14.4 设置独立窗口）只跳过看门狗/后台索引/布局加载，其余状态照常装配。
@@ -25,6 +26,7 @@ import { applyVaultCss, watchVaultCss } from './custom-css.js';
 import { checkForUpdates } from './update-check.js';
 import { detectLanguage, setLanguage, t, getNouns } from './i18n.js';
 import { Notice } from './notices.js';
+import { flushWindowViews } from './window-save.js';
 import { PluginManager } from './plugins.js';
 
 const nodePath = require('path');
@@ -81,7 +83,7 @@ export class App extends Events {
     this.vault = new Vault(new FileSystemAdapter(this.vaultPath));
     globalThis.__electronTrash = async (p) => Desktop.trash(p);
     await this.vault.initialize();
-    if (!this.isSettingsWindow) this.vault.watch();
+    if (!this.isSettingsWindow) await this.vault.watch();
 
     this.metadataCache = new MetadataCache(this);
     this.fileManager = new FileManager(this);
@@ -120,6 +122,7 @@ export class App extends Events {
       const waiters = this._contextParamWaiters;
       if (waiters && waiters.length) waiters.splice(0).forEach((fn) => fn(params));
     });
+    ipcOn('window-save-failed', (_event, message) => new Notice(message || '文档尚未保存，窗口保持打开'));
 
     // OBS_ACT handling (obsidian:// actions)
     if (window.OBS_ACT) {
@@ -417,6 +420,7 @@ export class App extends Events {
   }
 
   async saveLayout() {
+    if (this.isSettingsWindow) return;
     if (this.isDocumentWindow) {
       const view = this.workspace.activeLeaf?.view;
       if (view) ipcSend('document-window-state', { type: view.getViewType(), state: view.getState(), layout: this.workspace.getLayout() });
@@ -431,6 +435,12 @@ export class App extends Events {
     } catch (e) {
       console.error('Failed to save layout', e);
     }
+  }
+  async flushForClose() {
+    if (!this.workspace || this.isSettingsWindow) return { ok: true };
+    const result = await flushWindowViews(this);
+    if (result.ok) await this.saveLayout();
+    return result;
   }
 }
 

@@ -1,7 +1,7 @@
 /**
  * [INPUT]: starter 第二窗口、预置仓库注册表（A/B/C 未打开）、原版 DOM 类名与计算样式。
  * [OUTPUT]: DOM/几何/菜单/打开/新建/空态/移除归档等断言；浅/深截图由 OBS_STARTER_* 钩子完成。
- * [POS]: vault-switcher 场景的第二窗口脚本。主窗只负责触发 starter。
+ * [POS]: vault-switcher 场景的第二窗口脚本。主窗只负责触发 starter；主进程在本脚本回执完成后才退出。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 (async () => {
@@ -9,6 +9,7 @@
   const path = require('path');
   const ipc = require('electron').ipcRenderer;
   const checks = [];
+  const stage = label => console.log('[starter-checkpoint] ' + label);
   const failures = [];
   const check = (value, label) => { if (value) checks.push(label); else failures.push(label); };
   const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
@@ -53,6 +54,7 @@
   };
 
   try {
+    stage('started');
     window.addEventListener('error', (event) => {
       failures.push('window error: ' + (event.error && event.error.message || event.message));
     });
@@ -161,6 +163,7 @@
       languageRow.querySelector('.setting-item-control').getBoundingClientRect().width,
       '语言下拉占满剩余宽度');
 
+    stage('menus');
     // ----------------------------------------------------------------- menu
     const rowA = rows.find(row => text(row.querySelector('.recent-vaults-list-item-name')) === 'vault-switcher-seeded-A');
     check(!!rowA, '找到 A 行');
@@ -193,6 +196,7 @@
     check(nameA.getAttribute('contenteditable') === null, 'Esc 退出行内编辑');
     check(text(nameA) === 'vault-switcher-seeded-A', 'Esc 恢复原名');
 
+    stage('open-folder');
     // ------------------------------------------------------------ open folder
     patch({
       'dialog-open': (options) => {
@@ -210,6 +214,7 @@
     check(closeCalls.some(call => call[0] === 'window-close'), '成功打开后关闭 starter');
     restore();
 
+    stage('create');
     // ---------------------------------------------------------------- create
     const createRowButton = byText('button', '创建', openScreen);
     createRowButton.click();
@@ -257,6 +262,7 @@
     check(openScreen.getBoundingClientRect().left < createScreen.getBoundingClientRect().left,
       '返回打开页');
 
+    stage('quick-start');
     // ------------------------------------------------------- empty + quick start
     const defaultVault = path.join(parent, 'Default Vault');
     patch({
@@ -288,6 +294,7 @@
     restore();
     window.__starterTest.renderVaults();
 
+    stage('row-click');
     // -------------------------------------------------------------- row click
     patch({
       'vault-open': (target, create) => {
@@ -301,6 +308,7 @@
     check(closeCalls.some(call => call[0] === 'window-close'), '点击行成功打开后关闭 starter');
     restore();
 
+    stage('remove');
     // ------------------------------------------------------------- remove (C)
     const rowC = $$('.recent-vaults-list-item')
       .find(row => text(row.querySelector('.recent-vaults-list-item-name')) === 'vault-switcher-seeded-C');
@@ -317,6 +325,7 @@
     check(!Object.values(ipc.sendSync('vault-list') || {}).some(entry => entry.path === seededC),
       'C 已从注册表移除');
 
+    stage('final');
     // ------------------------------------------------------------- final state
     window.__starterTest.showScreen('open');
     await pause(200);
@@ -328,7 +337,7 @@
     check(document.body.classList.contains('theme-dark'), '截图前恢复深色主题');
   } catch (error) {
     failures.push('exception: ' + (error && error.message ? error.message : String(error)));
-  }
+  } finally { restore(); }
 
   return {
     pass: failures.length === 0,

@@ -11,7 +11,7 @@ i18n.js: setLanguage/detectLanguage(systemLocale)/t(带 {{var}} 与 _plural 处�
 icons.js: resolveIcon/createIcon/setIcon/getIconData/iconExists/getIconIds/addIcon/removeIcon。解析链逐字复刻原版 Zm()：lucide- 前缀 → 运行时图标 → 36 个自有图标(assets/icons-obsidian.json) → 152 条别名映射(assets/icon-aliases.json) → 1874 个 Lucide 图标(assets/icons.json)。
 ipc.js: IPC 与 Desktop 门面。文档窗口等待异步就绪，属性写回经跨窗口 CAS；半透明下发原生偏好。
 tooltip.js: 全局 tooltip 单例(叶子，仅用 DOM 助手)。导入即安装 body 级 pointerover/pointerout 委托(只认鼠标)与 pointerdown/滚动/blur/Escape 收起；文案取 aria-label(其次被暂存的 title)，data-tooltip-delay 默认 1000ms，data-tooltip-position 默认 bottom(放不下翻 mod-top)，data-tooltip-classes 追加类；补 Element.prototype.setTooltip/setTooltipGenerator。
-vault.js: Vault/TFile/TFolder/FileSystemAdapter/normalizePath/parentPathOf/isHiddenPath。时间使用取整 birthtimeMs/mtimeMs。文件 IO 走 Node fs；watch 用 chokidar。首次扫描与文件监听均拒绝点开头路径段。
+vault.js: 磁盘树与可等待监听。初次扫描后对账补空档，按代次串行事件；stopWatch 等待关闭并失效旧回调。时间使用取整 birthtimeMs/mtimeMs。文件 IO 走 Node fs；watch 用 chokidar。首次扫描与文件监听均拒绝点开头路径段。
 vault-utils.js: getUniquePath 等路径纯函数。
 metadata.js: MetadataCache。内存态：headings/links/embeds/tags/frontmatter；getFirstLinkpathDest 解析短链。
 fileManager.js: 文件创建/重命名/删除/移动与链接更新。属性写回委托 frontmatter-write，拒绝坏 YAML。generateMarkdownLink 仅对 .md 省略扩展名，附件（png 等）保留（shortest/markdown 两种格式同规则）。附件路径四语义(attachmentFolderPath: '/' 根 | './' 当前文件夹 | './sub' 子文件夹 | 'name' 指定文件夹)；删除走 promptDelete + trashOption(system|local|none)。重命名链接更新对齐原版：alwaysUpdateLinks 为假时弹窗（总是更新/仅此一次/不做更新），计数与文本替换必须在 metadataCache.onFileRename 之前完成。downloadAttachmentsForNote 是薄封装，正文在 attachments-downloader.js。
@@ -33,13 +33,14 @@ tab-animation.js: 标签开合动画层。animateTabIn 测量自然宽后从 0 �
 workspace.js: 布局装配、导航与序列化入口。文件分派委托 workspace-file-view。新文档进入中心，侧栏工具禁止用户关闭。恢复布局后按插件状态补齐入口。 moveLeafToTabs/createTabsBySplit 委托 workspace-tab-move.js，序列化委托 workspace-serialize.js。 侧栏收展：140ms 宽度补间（原版 DD=140ms+swing）、类切换替代重建 DOM（保住 toggle 以做 FLIP）、类切换后立即迁移开关并淡出边界分隔条。 活动编辑器（原版 activeEditor）：getActiveEditor 取登记项（画布卡片宿主，形状 { editor, file, containerEl }）否则回落活动叶子的编辑器视图；setActiveEditor 不登记 markdown 视图、unsetActiveEditor(无参或同项) 清空；切换活动叶子即清空登记。
 workspace-sidebar.js: 固定工具映射与关闭判定。恢复旧布局遗漏的入口，插件禁用才撤销对应工具。
 workspace-profile.js: 稳定的库名、帮助与设置入口。每次展开读取库注册表，菜单调用真实打开库 IPC。
-workspace-model.js: 分割、标签组与叶子模型。视图切换依次关闭旧视图、装载新视图。标签组持有堆叠状态(原版 VD.isStacked)：setStacked 落 mod-stacked 类；标签列表菜单、头叶排布与滑动布局(updateTabDisplay/updateSlidingTabs/scrollIntoView)同层放置。installStackedSerialization 在挂载时给 layout JSON 补 stacked 键(JSON 组装在 workspace.js)。
-window-chrome.js: macOS 红绿灯位置同步。按原版 updateStatus（app.js 1553478）从 --traffic-lights-offset-x/y 与 zoomFactor 计算：floor(offset*zoom/2-8)（x +2）；主窗 40px → (14,12)，设置 popout 32px → (10,8)。类变化（is-popout-modal）或缩放后必须重算。\nworkspace-sidebar-chrome.js: 侧栏折叠态外观唯一出口（mod-top 落位、开关迁移、分隔条宽度/透明度、功能区 is-collapsed 底色）；不持有模型状态，只读写 DOM 与 toggle 缓存。
+workspace-model.js: 分割树与叶子生命周期。尊重 setState/onClose 失败，根元素稳定，构造器身份唯一。
+window-chrome.js: macOS 红绿灯位置同步。按原版 updateStatus（app.js 1553478）从 --traffic-lights-offset-x/y 与 zoomFactor 计算：floor(offset*zoom/2-8)（x +2）；主窗 40px → (14,12)，设置 popout 32px → (10,8)。类变化（is-popout-modal）或缩放后必须重算。
+workspace-sidebar-chrome.js: 侧栏折叠态外观唯一出口（mod-top 落位、开关迁移、分隔条宽度/透明度、功能区 is-collapsed 底色）；不持有模型状态，只读写 DOM 与 toggle 缓存。
 workspace-renderer.js: 分别渲染文档标签和固定工具图标。稳定挂载底栏及左右开关，功能区支持鼠标与键盘。 叶子宿主是 .workspace-tab-container；标签头落位与堆叠排布由标签组的 updateTabDisplay 决定；非堆叠态 _syncTabsHeaders 调 tabs.syncHeaderOrder() 按 children 顺序重排标签头 DOM，模型顺序即视觉顺序；标签增删经 tab-animation.js 做 200ms 宽度/透明度补间（原版 updateTabDisplay），首次渲染跳过；view-header 委托 view-header.js。 标签栏「+」「⌄」按 1.14.4 结构：外层 div 定位、内层 span.clickable-icon 承按钮盒。 左右侧栏带 mod-primary/secondary；根级纵向手柄负右外边距覆盖 1px；折叠只挂 is-collapsed 类。侧栏 chrome 委托 workspace-sidebar-chrome.js。 侧栏开关迁移用原版 y() 的 FLIP（幽灵+偏移动画，140ms swing）。installWindowState 同步 is-maximized/is-fullscreen/--zoom-factor，并经 window-chrome 重算红绿灯；resize/focus/fullscreenchange 触发。
 view-header.js: 视图头构造与填充（原版 View 构造器，1.14.4 app.js:1236469）。三块：left 导航钮（←→，checkCallback 门控；空视图同样渲染）、title-container（父路径面包屑 span+“/”分隔，点击在文件树揭示、右键文件夹菜单；标题居中 + mod-fade 三态）、actions。fillViewHeader 同时同步导航禁用态与 actions 重绘。
 workspace-interactions.js: 仅中心文档可关闭、新建、拆分或拖拽。侧栏图标不接入文档菜单。 标签落点按原版 getTabInsertLocation 求 index；落点用 workspace-drop-overlay 10px 竖条（::before 内缩 3px、50% accent）、body.is-grabbing、ghost 清理；跨组/分割移动委托 workspace.moveLeafToTabs；覆盖层边缘 max(尺寸/3,40)、center 为 10px 标签插入条。
-workspace-regression.js: 19 组内存回归。覆盖导航、分栏、恢复、固定入口与库栏身份；扩展名注册表覆盖 base 启停。VM 上下文提供 Element/Document/document 替身以装载 dom.js，标签动画与侧栏 chrome 用无动画 mock，拖拽落点测试补 .workspace-tabs 宿主语义。
-plugins.js: PluginManager(内部插件宿主)。核心插件模块经 plugins-registry.js 汇总，启停写 core-plugins.json；插件设置页经 manifest.module.settingTab(app, containerEl) 由设置宿主打开。不扫描 .obsidian/plugins、不加载任何第三方代码（社区插件宿主、shim、安全模式与信任模态已整体移除）。
+workspace-regression.js: 29 组内存 DOM 逻辑回归，含保存/切换/关闭拒绝与损坏布局预检。覆盖导航、分栏、恢复、固定入口与库栏身份；扩展名注册表覆盖 base 启停。VM 上下文提供 Element/Document/document 替身以装载 dom.js，标签动画与侧栏 chrome 用无动画 mock，拖拽落点测试补 .workspace-tabs 宿主语义。
+plugins.js: 核心插件宿主。启停写配置；卸载拒绝时保留命令、设置页及真实开关状态，不加载第三方。
 plugins-registry.js: corePluginModules 汇总表(id → 模块)。新增核心插件必须登记在此；已含数据库(bases)、出链(outgoing-link)、属性(properties)与录音机(audio-recorder)。对象顺序即功能区按钮顺序；1.14.4 顺序 switcher→graph→canvas→bases→daily→templates→command-palette。
 app-commands.js: 导航、设置与文档命令。文档弹出与移动委托 document-window；新窗口就绪后移除来源。关闭、固定标签操作只作用于中心文档。堆叠命令 workspace:toggle-stacked-tabs 作用于当前中心标签组，侧栏组拒绝执行。
 app.js: App 装配。文档窗口只加载来源视图，跳过主布局持久化及启动打开行为。监听库根 CSS；外观偏好驱动原生半透明。新建与修改均进入元数据解析。initialize 顺序：bootTime → language(须最先，界面模块构造前) → 非 macOS 加 body.styled-scrollbars → vault 身份 → settings → vault+watch → metadata/fileManager/hotkeyManager/plugins → workspace.mount → 插件加载 → _loadWorkspace → _applyTheme → settings 'change' 监听 → Ctrl+滚轮/捏合字号监听（仅外观「快速调整字体大小」开启时改字号，默认关；ctrl+wheel 恒 preventDefault，配合主进程 setVisualZoomLevelLimits(1,1) 锁死整页视觉缩放）→ _runOpeningBehavior。_applyTheme 应用 theme/accent/字体/--indent-size/根字号并调 _applyCustomCss(注入主题与启用的 snippets：现代主题 themes/<x>/theme.css，回退旧版主题 themes/<x>.css，与原版 getThemePath 同规则；style 元素带 data-css-theme)。ipcOn('context-menu') 保存主进程菜单参数并唤醒 _contextParamWaiters（编辑器右键菜单取拼写建议/剪贴板状态）。OBS_ACT 调试钩子支持 open/open-settings/exec(命令)。设置窗口以 app.isSettingsWindow(URL #settings-window) 分流：只跳过看门狗/后台索引/布局加载，其余照常装配。新库默认右栏收起；body 补 obsidian-app/show-inline-title。
@@ -54,5 +55,8 @@ file-view-actions.js: 文件视图共用默认应用动作。非文件视图隐�
 document-window.js: 文档转移协调器。先保存并等待新窗口就绪，失败保留原标签；支持打开副本与移动。
 native-menu.js: 菜单动作树适配系统菜单。保留分节与子菜单，关闭解除触发状态；macOS 缺省启用。
 frontmatter-write.js: 属性写回事务。坏 YAML 拒写，按文件串行，跨窗口冲突重读重算，保留正文与换行。
+window-save.js: 文档保存协议。Markdown/Canvas 使用 CAS；窗口关闭检查 Markdown/Canvas/Bases，失败保留输入。
 
+window-save-conflict.js: 保存冲突恢复。读盘后复核文件与草稿；确认载入磁盘，副本成功后才解除原草稿。
+workspace-close.js: 叶子关闭事务。布局先隔离校验和反序列化；同步视图同步关闭，异步等待，失败保留原树。
 [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md

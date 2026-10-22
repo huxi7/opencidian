@@ -3,7 +3,7 @@
 
 场景由 OBS_ACT 在真实 Electron 渲染进程执行。
 运行器只允许带标记的临时库。日志错误使运行失败。
-正式场景返回 {pass,count,checks}，count 等于 checks.length。
+正式场景返回 {pass,count,checks}，count 为正且等于 checks.length。
 全量入口固定 --no-screenshot，排除 probe-* 诊断脚本。
 Wave 3：70 个正式场景，100 次执行，6666 条断言全绿。
 
@@ -15,7 +15,7 @@ frontmatter-write.js: 多窗口真实属性写回。CAS 冲突、坏 YAML 原文
 document-window.js: 文档窗口加载、保存、双向同步、主布局隔离和关闭保存，含 Markdown/Bases/Canvas。
 native-menus.js: 真实系统菜单树、分节与动作回传。E2E 不弹出系统菜单。
 lifecycle-memory.js: 真实 V8 GC 后堆、DOM、事件与 Worker。30 轮开关设定增长预算。
-run.mjs: 创建独立库、启动 Electron 与严格日志判定；同名 .starter.js 驱动第二窗口，--seed-vaults 预置库，--vault/--phase 支持链式复跑，--no-screenshot 跳过截图。
+run.mjs: 创建独立库与实时日志，异常快速失败；回执后必须真实退出，双窗缺回执明确失败；同名 .starter.js 驱动第二窗口，--seed-vaults 预置库，--vault/--phase 支持链式复跑，--no-screenshot 跳过截图。
 core-ribbon.js: 插件入口启停、普通/Mod 点击、键盘、设置开关与重启同步。
 core-views.js: 出链面板(已解析/未解析/副文本/空态/折叠/点击打开)与属性插件(全部属性计数与四种排序、点击开搜索、文件属性跟随、状态栏计数、关闭释放、禁停恢复、设置页开关)。
 sidebar-shell.js: 固定侧栏、底部设置与切库、旧布局恢复和窄栏验收；标签列表/固定标签/状态栏双段/拖拽幽灵/空标签。
@@ -98,4 +98,5 @@ bases-views.js: Bases P2。四种布局、配置、分组汇总、看板写回�
 bases-formulas.js: 真实元数据的 P3 公式和文件属性，覆盖阅读/实时预览的宿主 this。
 bases-values.js: 富值 DOM、受控导航、SVG 资源与 CSV 命令写盘，不弹原生保存框。
 
+window-save-race.js: 真实双窗竞争、恢复在途新输入、最后输入和损坏布局拒绝丢稿，35 条。
 [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md

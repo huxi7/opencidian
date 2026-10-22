@@ -1,5 +1,6 @@
 /**
  * [INPUT]: 依赖 ../core/i18n.js 的 tt；依赖 ../core/setting.js 的 Setting/SettingGroup/SettingTab；依赖 ../core/keymap.js 的 hotkeyToString/eventToHotkey/hotkeysEqual；依赖 ../core/default-hotkeys.js 的 DEFAULT_HOTKEYS；依赖 ../core/icons.js 的 setIcon；依赖 ../core/commands.js 的命令注册表
+ * 核心插件拒绝停用时，开关回显真实启用状态。
  * [OUTPUT]: 导出 HotkeysTab、CorePluginsTab
  * [POS]: views/ 的插件相关设置页签。快捷键页对齐原版 f3：.setting-group-search 裸搜索框 + setting-group-search-control 状态芯片（冲突 chip 带计数）、按快捷键捕获筛选（window keydown 捕获替代原版 keymap scope，本仓库 Keymap 注册不了通配 handler）、搜索框右缘 mod-active-hotkey-filter 组合键芯片、has-conflict 冲突芯片、行内录制态 setting-hotkey.mod-active、setting-command-hotkeys 行结构，暴露 setQuery/setHotkeyFilter 供插件跳转。核心插件页对齐 dte：.setting-group.mod-list 裸搜索 + 自动聚焦，搜索按词全匹配，行内齿轮/快捷键入口按启用与注册状态显隐，开关不重建行。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
@@ -439,6 +440,7 @@ export class CorePluginsTab extends SettingTab {
         setting.addToggle((tog) => tog.setValue(!!entry.enabled).onChange(async (v) => {
           if (v) await app.plugins.enableInternalPlugin(id);
           else await app.plugins.disableInternalPlugin(id);
+          tog.setValue(!!entry.enabled);
           // 原版：插件启停会增删左栏「核心插件」分组里的设置条目。
           if (this.setting && typeof this.setting.registerCorePluginTabs === 'function') this.setting.registerCorePluginTabs();
           refreshVisibility();

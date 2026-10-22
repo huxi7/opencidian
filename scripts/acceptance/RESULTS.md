@@ -661,3 +661,15 @@ menu-family 的属性菜单断言更新为类型/剪切/复制/粘贴/移除，c
 
 workspace-regression 的 19 项是内存 DOM 逻辑单测，不是堆泄漏测量。新增 lifecycle-memory 在真实 Electron 中强制 GC：30 轮数据库/嵌入/图谱开关和插件启停，10 条通过，创建 34 个 Worker 后存活 0；Vault 15→15、Metadata 9→9、Workspace 37→37、DOM 660→660，堆变化 -397128 字节。日志 /tmp/opensidian-bases-editing-final-lifecycle.log，回执 Q7FFdY。
 graph-perf 不再把 Worker 空 tick 当物理耗时；断言节点/边、打开预算、帧率、位置发布和每项释放。1000/5000 节点各 14 条通过，打开 25/73ms、帧率 120.7/120；回执 SgvSSu/Cj14T2，日志 /tmp/opensidian-lifecycle-check.log。预算由场景固定，结果只代表本机环境。
+
+## 保存、关闭与监听竞态收口（2026-10-22）
+
+Markdown/Canvas 保存委托 core/window-save，按真实加载原文做 CAS；失败保留 dirty 和输入。同内容冲突可采纳基线。window-save-conflict 提供常驻真按钮：载入磁盘先确认，另存副本成功后才解除原草稿。Workspace/命名布局尊重 save/setState/onClose false，异步关闭完成前保留 DOM。主窗与文档窗共用 main/window-close，退出等待 Markdown/Canvas/Bases 保存；设置窗不覆盖主布局。
+Node 保存 27、Workspace VM 26 通过；build + window-save-race31/editor-race20/canvas-dummy75/layout-split78/layout-modals31，共235条通过，/tmp/opensidian-window-save-final.log。最新保存单测 /tmp/opensidian-final-window-save.json，逻辑VM /tmp/opensidian-final-workspace.log。
+首次全量发现 sDrUjj：扫描完成至 Chokidar 初次 crawl 间可漏文件。Vault.watch 现返回就绪 Promise，串行处理初次事件并对账新增/修改/删除；stopWatch 立即失效旧代次并等关闭。真实 Chokidar Node22首轮与重复通过；双窗21+重启6+图谱14+Bases性能98=139通过，/tmp/opensidian-vault-watch-target-summary.json。
+运行器实时落日志、异常快速失败，回执后仍须进程正常退出；count必须为正，缺伴随回执始终输出pass:false。dev-hooks等待应用装配及伴随动作/截图Promise，移除主脚本6500ms猜测。协调Node11、主13+starter129+focus6通过，见/tmp/opensidian-dev-hooks-handoff.md；提前关闭7rOdMj原失败保留。
+图谱和搜索预览仅修夹具：真实显示并固定专用节点；每手势取得当前稳定搜索行，保留700ms无Mod观察及补弹/关闭断言。生产图谱/搜索/预览未改。filter两新库143+143，搜索两新库69+69通过；JQ3xUm/8b3481、bkPa2w/0aFd6N。原048/093失败保留，不能据旧日志断定具体触发因素。
+L3/L2同步；源码与脚本均≤800行。上述为开发分段回归，不混入最终完整覆盖组。
+
+最终只读审查补修两处丢稿边界：冲突恢复读盘后复核文件、草稿和请求序号；布局在隔离树完成校验与反序列化后才关闭原树。Node32、VM29、真实双窗35条通过；首轮 gj6Z7q。最后布局专项与完整覆盖的最新回执见末节。
+最终布局专项：full.sh --only document-window,layout-split,layout-modals --output /tmp/opensidian-layout-final-1023，3场景4次136条全通过；保存一致性重跑35条 x2fpUA，/tmp/opensidian-save-review-final-e2e.log。Node /tmp/opensidian-save-review-node.json，VM /tmp/opensidian-save-review-vm.log。

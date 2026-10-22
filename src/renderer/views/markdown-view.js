@@ -1,7 +1,7 @@
 /**
- * [INPUT]: 依赖 ../core/view.js 的 View 基类；依赖 ../core/i18n.js 的 t；依赖 ../core/icons.js 的 setIcon；依赖 ../core/keymap.js 的 IS_MAC；依赖 ../editor/editor.js 的 Editor 与 livePreviewExtension；依赖 ../markdown/reading.js 的 renderMarkdown/attachMarkdownInteractions；依赖 ../markdown/properties.js 的 renderProperties；依赖 BacklinkView 的文件绑定结果与 file-view-actions 的共用文件动作
+ * [INPUT]: 依赖 window-save 的 CAS 保存与冲突保留；依赖 ../core/view.js 的 View 基类；依赖 ../core/i18n.js 的 t；依赖 ../core/icons.js 的 setIcon；依赖 ../core/keymap.js 的 IS_MAC；依赖 ../editor/editor.js 的 Editor 与 livePreviewExtension；依赖 ../markdown/reading.js 的 renderMarkdown/attachMarkdownInteractions；依赖 ../markdown/properties.js 的 renderProperties；依赖 BacklinkView 的文件绑定结果与 file-view-actions 的共用文件动作
  * [OUTPUT]: 导出 MarkdownView 类（三模式：source/live/preview），registerView 注册 'markdown'
- * [POS]: views/ 的 Markdown 生命周期入口。行内标题挂在编辑器 .cm-sizer 内；行宽 class 挂视图元素。换文件前保存正文；首次加载与布局恢复均同步模式 DOM；设置事件热重配编辑器。阅读正文交给 markdown/ 渲染；底部反链复用 BacklinkView 并绑定当前文件。重命名/换文件后由 _updateTitles 回填视图头标题与面包屑。视图头模式钮按原版 1.14.4：图标表示「点它会切到哪个视图」（编辑视图 lucide-book-open / 阅读视图 lucide-edit-3），aria-label 三行（状态句 + 动作句 + ⌘+单击在新标签页打开），模式切换后随 _applyMode 立即换图标与文案。
+ * [POS]: views/ 的 Markdown 生命周期入口。行内标题挂在编辑器 .cm-sizer 内；行宽 class 挂视图元素。换文件与关闭前等待 CAS 保存；冲突保留编辑并拒绝切换；首次加载与布局恢复均同步模式 DOM；设置事件热重配编辑器。阅读正文交给 markdown/ 渲染；底部反链复用 BacklinkView 并绑定当前文件。重命名/换文件后由 _updateTitles 回填视图头标题与面包屑。视图头模式钮按原版 1.14.4：图标表示「点它会切到哪个视图」（编辑视图 lucide-book-open / 阅读视图 lucide-edit-3），aria-label 三行（状态句 + 动作句 + ⌘+单击在新标签页打开），模式切换后随 _applyMode 立即换图标与文案。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 /*
@@ -10,6 +10,7 @@
  * .markdown-reading-view > .markdown-preview-view.markdown-rendered.
  */
 import { View } from '../core/view.js';
+import { saveWindowView, hasUnsavedWindowView, reportWindowSaveError } from '../core/window-save.js';
 import { t } from '../core/i18n.js';
 import { setIcon } from '../core/icons.js';
 import { Menu } from '../core/menu.js';
@@ -31,7 +32,7 @@ const SAVE_DELAY = 150;
 export class MarkdownView extends View {
   constructor(leaf) {
     super(leaf);
-    this.file = null;
+    this.file = null; this._closed = false;
     this.mode = 'live';         // 'source' | 'live' | 'preview'
     this._lastEditMode = 'live';
     this.editor = null;
@@ -71,12 +72,12 @@ export class MarkdownView extends View {
 
   async setState(state, result) {
     state = state || {};
+    if (state.file && (!this.file || this.file.path !== state.file)) {
+      if (await this._loadFile(state.file, state) === false) return false;
+    }
     if (typeof state.backlinks === 'boolean') this.showBacklinks = state.backlinks;
     if (state.mode === 'preview') this.mode = 'preview';
     else if (state.mode === 'source' || state.mode === 'live') { this.mode = state.mode; this._lastEditMode = state.mode; }
-    if (state.file && (!this.file || this.file.path !== state.file)) {
-      await this._loadFile(state.file, state);
-    }
     this._applyMode();
     if (state.scroll !== undefined && this.editor) {
       this.editor.applyScrollInfo({ top: state.scroll });
@@ -177,10 +178,12 @@ export class MarkdownView extends View {
   }
 
   async onClose() {
+    if (this._closed) return true;
+    if (await this.save() === false) return false;
+    if (this._closed) return true; this._closed = true;
     for (const ref of this._refs || []) ref.unregister();
     this._refs = [];
     if (this._saveTimer) { clearTimeout(this._saveTimer); this._saveTimer = null; }
-    await this.save();
     this.backlinks?.onClose();
     this.backlinks = null;
     if (this.editor) this.editor.destroy();
@@ -194,11 +197,13 @@ export class MarkdownView extends View {
   // File loading & saving
   // -------------------------------------------------------------------------
   async _loadFile(path, state) {
+    const sequence = this._loadSequence = (this._loadSequence || 0) + 1;
     if (this.file && !this._fileDeleted) {
       clearTimeout(this._saveTimer);
       this._saveTimer = null;
-      await this.save();
+      if (await this.save() === false) return false;
     }
+    if (sequence !== this._loadSequence || this._closed) return false;
     const file = this.app.vault.getFileByPath(path) || this.app.vault.getAbstractFileByPath(path);
     if (!file || !file.path || file.extension !== 'md') {
       this.file = null;
@@ -213,7 +218,8 @@ export class MarkdownView extends View {
     }
     let text = '';
     try { text = await this.app.vault.cachedRead(file); } catch (e) { console.error(e); }
-    this._loadedText = text;
+    if (sequence !== this._loadSequence || this.file !== file || this._closed) return false;
+    this._loadedText = text; this._dirty = false; this._saveError = null; this._saveConflict = false;
     this._suppressChange = true;
     this.editor.sourcePath = file.path;
     this.editor.setValue(text);
@@ -236,6 +242,7 @@ export class MarkdownView extends View {
   _onEditorChange() {
     if (this._suppressChange) return;
     if (!this.file) return;
+    this._dirty = hasUnsavedWindowView(this);
     if (this._saveTimer) clearTimeout(this._saveTimer);
     this._saveTimer = setTimeout(() => { this._saveTimer = null; this.save(); }, SAVE_DELAY);
     this._renderedText = null;
@@ -246,32 +253,21 @@ export class MarkdownView extends View {
     this.app.workspace.trigger('editor-change', this.editor ? this.editor.getValue() : '', this);
   }
 
-  async save() {
-    if (!this.file || this._fileDeleted || !this.editor) return;
-    const file = this.file;   // 写盘期间可能切文件：只更新仍在编辑的那份的 _loadedText
-    const text = this.editor.getValue();
-    if (text === this._loadedText) return;
-    try {
-      await this.app.vault.modify(file, text);
-      if (this.file === file) this._loadedText = text;
-    } catch (e) {
-      console.error('Failed to save', e);
-      new Notice('Failed to save file: ' + (e.message || e));
-    }
-  }
+  save() { return saveWindowView(this); }
 
   async _onExternalModify() {
-    if (!this.file || !this.editor) return;
+    if (!this.file || !this.editor || this._writing || this._closed) return;
     const path = this.file.path;   // 发起读取时的文件
     let text = '';
     try { text = await this.app.vault.cachedRead(this.file); } catch (e) { return; }
     // 读取期间切了文件 → 丢弃迟到内容，绝不打进另一个文件（跨文件内容损坏防线）
-    if (!this.file || this.file.path !== path) return;
+    if (!this.file || this.file.path !== path || this._closed) return;
     // 与我们最后一次写盘/加载的内容一致 → 自家写入的迟到通知，绝不回滚正在编辑的文档
     if (text === this._loadedText) return;
-    if (text === this.editor.getValue()) { this._loadedText = text; return; }
+    if (text === this.editor.getValue()) { this._loadedText = text; this._dirty = false; this._saveError = null; this._saveConflict = false; return; }
+    if (hasUnsavedWindowView(this)) { clearTimeout(this._saveTimer); this._saveTimer = null; reportWindowSaveError(this, '文件已被另一个窗口修改，未保存的编辑已保留。', true); return; }
     // file changed on disk
-    this._loadedText = text;
+    this._loadedText = text; this._dirty = false; this._saveError = null; this._saveConflict = false;
     const scroll = this.editor.getScrollInfo();
     const cursor = this.editor.getCursor();
     this._suppressChange = true;

@@ -1,11 +1,11 @@
 /**
  * [INPUT]: 依赖 Events、metadata/vault、视图注册表与桌面 IPC。
- * 依赖 workspace-file-view 的文件分派、workspace-model 的节点；委托 workspace-renderer 与 workspace-interactions。
+ * 依赖 workspace-file-view 的文件分派、workspace-model 的节点；委托 workspace-renderer、workspace-interactions 与 workspace-close。
  * [OUTPUT]: 导出 Workspace、WorkspaceItem、WorkspaceSplit、WorkspaceTabs、
  * WorkspaceLeaf 与 parseSubpath。保留既有方法签名和调用入口。
  * [POS]: 装配分割树与导航。侧栏工具固定，文档新标签始终进入中心。侧栏沿用最近中心文件，链接路径由 vault 转为文件。
  * moveLeafToTabs 是标签跨组/同组重排的唯一入口：搬既有叶子与 DOM，不重开视图；createTabsBySplit 只建空目标组。
- * loadLayout 只替换布局；旧视图保存与关闭仍由调用方负责。
+ * loadLayout 先隔离验证布局，再确认保存、关闭与替换；失败保留原工作区。
  * 活动编辑器（原版 workspace.activeEditor）：getActiveEditor 取登记项（画布卡片宿主），否则回落活动叶子的编辑器视图；
  * setActiveEditor/unsetActiveEditor 是登记与清空入口，切换活动叶子即清空登记。命令层经此拿到当前应作用的内嵌编辑器。
  * 菜单事件：构造时 attachFileMenuHandler 把 core/file-menu.js 接到 file-menu/files-menu；
@@ -13,6 +13,7 @@
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 import { Events } from './events.js';
+import { detachLeafGuarded, closeWorkspaceViews, prepareWorkspaceLayout } from './workspace-close.js';
 import { viewStateForFile } from './workspace-file-view.js';
 import { t } from './i18n.js';
 import { Notice } from './notices.js';
@@ -193,31 +194,7 @@ export class Workspace extends Events {
     return this._sidebarUpdate;
   }
 
-  detachLeaf(leaf) {
-    const tabs = leaf.parent;
-    if (!tabs) return;
-    if (leaf.view) {
-      try { leaf.view.onClose(); } catch (e) { console.error(e); }
-    }
-    if (leaf._tabHeaderEl) leaf._tabHeaderEl.detach();
-    if (leaf._leafEl) leaf._leafEl.detach();
-    if (leaf._resizeObserver) leaf._resizeObserver.disconnect();
-    tabs.removeLeaf(leaf);
-    this._leafMap.delete(leaf.id);
-    if (leaf === this.activeLeaf) {
-      this.activeLeaf = null;
-      const next = tabs.activeLeaf;
-      if (next) this.setActiveLeaf(next, { focus: false });
-      else this.trigger('active-leaf-change', null);
-    }
-    if (tabs.children.length === 0) {
-      this._removeTabsNode(tabs);
-    } else {
-      this._syncTabsHeaders(tabs);
-      this._syncTabsVisibility(tabs);
-    }
-    this.trigger('layout-change');
-  }
+  detachLeaf(leaf) { return detachLeafGuarded(this, leaf); }
 
   _removeTabsNode(tabs) {
     const parent = tabs.parent;
@@ -357,7 +334,7 @@ export class Workspace extends Events {
     if (!options.newLeaf || this.app.settings.appSettings.focusNewTab === true) {
       this.setActiveLeaf(leaf, { focus: true });
     }
-    await leaf.setViewState(state);
+    if (await leaf.setViewState(state) === false) return leaf;
     this._addLastOpenFile(file.path);
     if (options.eState) leaf.view.setEphemeralState && leaf.view.setEphemeralState(options.eState);
     this.trigger('file-open', file);
@@ -618,25 +595,20 @@ export class Workspace extends Events {
   }
 
   async loadLayout(data) {
-    this._leafMap.clear();
     if (!data) return false;
-    try {
-      const center = await this.deserializeNode(data.main);
-      if (center) { this.centerSplit = this._replaceInRoot(this.centerSplit, center); center.side = 'center'; }
-      const left = await this.deserializeNode(data.left);
-      if (left) { this.leftSplit = this._replaceInRoot(this.leftSplit, left); left.side = 'left'; }
-      const right = await this.deserializeNode(data.right);
-      if (right) { this.rightSplit = this._replaceInRoot(this.rightSplit, right); right.side = 'right'; }
-      this.lastOpenFiles = data.lastOpenFiles || [];
-      this.leftSplit.collapsed = !!data.leftCollapsed;
-      this.rightSplit.collapsed = !!data.rightCollapsed;
-      if (data.leftWidth) this.leftSplit.size = data.leftWidth;
-      if (data.rightWidth) this.rightSplit.size = data.rightWidth;
-      return data.active || null;
-    } catch (e) {
-      console.error('Failed to load layout', e);
-      return false;
-    }
+    let staged;
+    try { staged = await prepareWorkspaceLayout(this, data, Workspace.prototype.deserializeNode); }
+    catch (error) { new Notice('无法载入布局：' + error.message); return false; }
+    if (await closeWorkspaceViews(this) === false) return false;
+    this._leafMap = staged.leafMap; this.activeLeaf = null; this._lastActiveLeaves = [];
+    this.centerSplit = this._replaceInRoot(this.centerSplit, staged.main); this.centerSplit.side = 'center';
+    this.leftSplit = this._replaceInRoot(this.leftSplit, staged.left); this.leftSplit.side = 'left';
+    this.rightSplit = this._replaceInRoot(this.rightSplit, staged.right); this.rightSplit.side = 'right';
+    this.lastOpenFiles = data.lastOpenFiles || [];
+    this.leftSplit.collapsed = !!data.leftCollapsed; this.rightSplit.collapsed = !!data.rightCollapsed;
+    if (data.leftWidth) this.leftSplit.size = data.leftWidth;
+    if (data.rightWidth) this.rightSplit.size = data.rightWidth;
+    return data.active || null;
   }
 
   _replaceInRoot(oldNode, newNode) {

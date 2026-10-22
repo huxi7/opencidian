@@ -7,11 +7,13 @@
 const fs = require('fs');
 const path = require('path');
 const { app, screen } = require('electron');
+const { guardWindowClose } = require('./window-close');
 
 function setupDocumentWindows(ctx) {
   const { BrowserWindow, ipcMain, defaultWindowOptions, prepareWindow, indexUrl, vaultPathForId, isE2E } = ctx;
   const entries = new Map();
   const persistTimers = new Map();
+  let quitSnapshotTaken = false;
   const layoutFile = id => path.join(vaultPathForId(id), '.obsidian', 'workspace-popouts.json');
   function persist(id) {
     if (!vaultPathForId(id)) return;
@@ -67,18 +69,7 @@ function setupDocumentWindows(ctx) {
     if (isE2E) { win.setIgnoreMouseEvents(true, { forward: true }); win.setOpacity(0); }
     win.on('closed', () => { fail(entry, '文档窗口已关闭'); entries.delete(win.id); if (!entry.parentClosing && !ctx.isQuitting()) schedulePersist(vaultId); });
     win.on('resize', () => schedulePersist(vaultId)); win.on('move', () => schedulePersist(vaultId));
-    win.on('close', event => {
-      if (entry.allowClose || !entry.ready || ctx.isQuitting() || win.webContents.isDestroyed()) return;
-      event.preventDefault();
-      if (entry.closing) return;
-      entry.closing = true;
-      win.webContents.executeJavaScript(`Promise.all(app.workspace.getLeavesOfType('markdown').concat(app.workspace.getLeavesOfType('canvas')).map(async leaf => {
-        const view = leaf.view; await view.save?.();
-        if (view.editor && view.file && await app.vault.read(view.file) !== view.editor.getValue()) throw Error('文档尚未保存');
-      }))`)
-        .then(() => { entry.allowClose = true; win.close(); })
-        .catch(() => { entry.closing = false; });
-    });
+    guardWindowClose(win, { ...ctx, canFlush: () => entry.ready === true });
     win.webContents.on('render-process-gone', () => fail(entry, '文档窗口加载失败'));
     const ready = new Promise(resolve => {
       entry.resolve = resolve;
@@ -95,6 +86,8 @@ function setupDocumentWindows(ctx) {
     for (const item of saved.slice(0, 20)) await open(parent, { ...item.state, layout: item.layout, bounds: item.bounds, zoom: item.zoom });
   }
   app.on('before-quit', () => {
+    if (quitSnapshotTaken) return;
+    quitSnapshotTaken = true;
     for (const timer of persistTimers.values()) clearTimeout(timer); persistTimers.clear();
     for (const id of new Set([...entries.values()].map(entry => entry.vaultId))) persist(id);
   });
@@ -129,8 +122,21 @@ function setupDocumentWindows(ctx) {
     if (!isE2E) return null;
     const parent = BrowserWindow.fromWebContents(event.sender), entry = entries.get(payload.windowId);
     if (!entry || !entry.ready || entry.vaultId !== parent?.vaultId || entry.win.isDestroyed()) return null;
+    let saveResult;
     if (['edit', 'edit-pending'].includes(payload.action) && typeof payload.text === 'string') {
-      await entry.win.webContents.executeJavaScript(`(async () => { const view = app.workspace.activeLeaf.view; view.editor.setValue(${JSON.stringify(payload.text)}); ${payload.action === 'edit' ? 'await view.save();' : ''} return true; })()`);
+      await entry.win.webContents.executeJavaScript(`(async () => { const view = app.workspace.activeLeaf.view; view.editor.setValue(${JSON.stringify(payload.text)}); ${payload.hold ? 'clearTimeout(view._saveTimer); view._saveTimer=null;' : ''} ${payload.action === 'edit' ? 'await view.save();' : ''} return true; })()`);
+    }
+    if (payload.action === 'canvas-edit-pending' && typeof payload.text === 'string') {
+      await entry.win.webContents.executeJavaScript(`(() => { const view=app.workspace.activeLeaf.view; const node=[...view.nodes.values()].find(node=>typeof node.setText==='function'); node.setText(${JSON.stringify(payload.text)}); ${payload.hold ? 'clearTimeout(view._saveTimer); view._saveTimer=null;' : ''} })()`);
+    }
+    if (payload.action === 'save') saveResult = await entry.win.webContents.executeJavaScript('app.workspace.activeLeaf.view.save()');
+    if (payload.action === 'discard-local') {
+      await entry.win.webContents.executeJavaScript(`(async () => {
+        const view=app.workspace.activeLeaf.view; clearTimeout(view._saveTimer); view._saveTimer=null;
+        if (view.editor) { const text=await app.vault.read(view.file); view._suppressChange=true; view.editor.setValue(text); view._suppressChange=false; view._loadedText=text; }
+        else await view._applyFileFromDisk(view.file.path);
+        view._dirty=false; view._saveError=null; view._saveConflict=false;
+      })()`);
     }
     if (payload.action === 'property' && typeof payload.key === 'string' && !['__proto__', 'constructor', 'prototype'].includes(payload.key)) {
       await entry.win.webContents.executeJavaScript(`app.fileManager.processFrontMatter(app.workspace.getActiveFile(), async fm => {
@@ -148,6 +154,10 @@ function setupDocumentWindows(ctx) {
     return entry.win.webContents.executeJavaScript(`(() => ({
       file: app.workspace.getActiveFile()?.path, type: app.workspace.activeLeaf?.view.getViewType(),
       state: app.workspace.activeLeaf?.view.getState(), canvasNodes: app.workspace.activeLeaf?.view.nodes?.size,
+      dirty: !!app.workspace.activeLeaf?.view._dirty, saveError: app.workspace.activeLeaf?.view._saveError,
+      saveConflict: !!app.workspace.activeLeaf?.view._saveConflict, saveResult: ${JSON.stringify(saveResult)},
+      loadedText: app.workspace.activeLeaf?.view._loadedText, savedText: app.workspace.activeLeaf?.view._savedText,
+      canvasData: app.workspace.activeLeaf?.view.getViewType()==='canvas' ? app.workspace.activeLeaf.view.getData() : null,
       text: app.workspace.activeLeaf?.view.editor?.getValue(), vault: app.vaultPath,
       isolatedLayout: app.isDocumentWindow === true,
       title: document.title, leafCount: app.workspace.getLeavesOfType('markdown').length,
@@ -156,6 +166,6 @@ function setupDocumentWindows(ctx) {
     }))()`);
   });
   ipcMain.on('document-window-opacity', event => { event.returnValue = BrowserWindow.fromWebContents(event.sender)?.getOpacity(); });
-  return { infoFor, closeFor, restoreFor };
+  return { infoFor, closeFor, restoreFor, resetQuitSnapshot: () => { quitSnapshotTaken = false; } };
 }
 module.exports = { setupDocumentWindows };
