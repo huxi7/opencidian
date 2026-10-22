@@ -35,3 +35,12 @@ BaseDocument 保留完整 YAML 数据树。没有操作时不写文件。
 分组/汇总配置保留，当前显示明确平铺降级提示。
 完整公式函数、日期类型及 CSV 留 P3。
 P1 的公式与筛选只执行白名单，禁止 eval/Function。
+
+## 可见入口补齐（2026-10-22）
+
+- app.js 3231062 附近：e9.init 注册功能区，使用 lucide-layout-list 与 commandCreateNew。
+- 1434044 附近：空标签在笔记后、白板前添加 bases:new-file，门控为插件已启用。
+- 3240190：文件树文件夹菜单贡献 action-primary 新建数据库；根文件夹同样适用，Mod 在新标签打开。
+- 此前只注册命令和扩展名，漏了三处可见入口。现入口共用 createNewBase，停用时对称撤销。
+
+[PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md

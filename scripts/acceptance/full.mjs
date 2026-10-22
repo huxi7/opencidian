@@ -1,7 +1,7 @@
 /**
  * [INPUT]: 正式场景文件、链式阶段、--skip-build、--only 与 --output。
  * [OUTPUT]: 每次执行的真实断言、日志路径与全量汇总；失败退出 1。
- * [POS]: full.sh 的锁内执行器。排除 probe-* 诊断与 starter 伴随脚本。
+ * [POS]: full.sh 的锁内执行器。排除诊断与 starter 伴随脚本；Bases 入口包含重启读回。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 import fs from 'node:fs';
@@ -51,7 +51,7 @@ for (const name of names) {
   const options = name === 'vault-switcher' ? ['--seed-vaults', '3'] : name === 'graph-perf' ? ['--nodes', '1000'] : [];
   const run = execute(name, options);
   if (!run.pass) continue;
-  const phases = name === 'notes' ? ['reload', 'daily-notes', 'templates', 'note-composer', 'zk-prefixer', 'template-picker', 'extract-heading', 'result'] : name === 'recovery' ? ['restart', 'history', 'layout', 'slides', 'slides-check'] : ['audio-recorder', 'core-ribbon', 'sidebar-shell'].includes(name) ? ['restart'] : [];
+  const phases = name === 'notes' ? ['reload', 'daily-notes', 'templates', 'note-composer', 'zk-prefixer', 'template-picker', 'extract-heading', 'result'] : name === 'recovery' ? ['restart', 'history', 'layout', 'slides', 'slides-check'] : ['audio-recorder', 'bases-entry', 'core-ribbon', 'sidebar-shell'].includes(name) ? ['restart'] : [];
   for (const phase of phases) execute(name, ['--vault', run.vault, '--phase', phase]);
   if (name === 'sidebar-shell') { execute(name, ['--phase', 'switch']); execute(name, ['--screen', 'narrow']); }
   if (['quick-switcher', 'drag-drop', 'settings-window'].includes(name)) execute(name, ['--screen', 'dark']);

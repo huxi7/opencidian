@@ -626,3 +626,14 @@ sh scripts/with-lock.sh 'node scripts/smoke-packaged.mjs --no-screenshot'
 只构建本机目录包，未更新旧 DMG/ZIP；未签名、公证、安装或发布。
 原有 Bases 编辑/虚拟滚动、画布尺寸与隐私模式等已知边界没有被本轮验收抹去。
 Wave 1–3 计划内工作已收尾。未配置 remote，未 push。
+
+## 数据库可见入口修复（2026-10-22）
+
+原版静态 app.js 1434044、3231062 附近和 3240190 证明空标签、功能区与文件夹菜单均有入口。此前实现漏接三处；不能以命令面板可执行替代可见入口。
+修复 bases.js 与 empty-view.js：真实图标、普通/Mod 点击、键盘激活、目标文件夹创建；插件停用撤销全部入口，重启恢复。menu-family 更新原版菜单项序，full.mjs 纳入 Bases 重启阶段。L3/L2/README 同步。
+
+- 基线：with-lock 内 build + canvas-dummy --no-screenshot，75 条通过。日志 /tmp/opensidian-bases-entry-baseline.log。
+- 目标：with-lock 内 build + bases-entry/core-ribbon/menu-family/sidebar-shell，全部 --no-screenshot，23 + 47 + 58 + 61 = 189 条通过。日志 /tmp/opensidian-bases-entry-check2.log。
+- 重启：bases-entry --vault /private/tmp/obs-copy-acceptance/obs-copy-bases-entry-R2McOR --phase restart --no-screenshot，6 条通过。日志 /tmp/opensidian-bases-entry-restart.log。
+- 首次入口场景因菜单延后登记外部点击监听，测试在同一事件轮次关闭菜单失败。补齐真实事件轮次后重跑；未改业务通过条件，原失败 1NrQmy 保留。
+- 本提交只修入口；界面、编辑、属性、窗口与性能任务继续并行。未启动原版、未截图、未修改真实库、未 push。

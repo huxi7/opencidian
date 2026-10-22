@@ -82,7 +82,7 @@ rightClick(folderTitle());
 await until(()=>!!document.querySelector('body > .menu'),'文件夹右键菜单',3000);
 let folderMenu=menus()[menus().length-1];
 let folderTitles=menuTitles(folderMenu);
-check(JSON.stringify(folderTitles)===JSON.stringify(['新建笔记','新建文件夹','创建副本','将文件夹移动到…','在文件夹中查找','复制路径','在访达中显示','重命名','删除']),'文件树文件夹菜单项序与原版一致：'+folderTitles.join('/'));
+check(JSON.stringify(folderTitles)===JSON.stringify(['新建笔记','新建文件夹','新建数据库','创建副本','将文件夹移动到…','在文件夹中查找','复制路径','在访达中显示','重命名','删除']),'文件树文件夹菜单项序与原版一致：'+folderTitles.join('/'));
 check(iconClass(itemByName(folderMenu,'新建笔记')).includes('lucide-edit'),'新建笔记图标 lucide-edit');
 check(iconClass(itemByName(folderMenu,'新建文件夹')).includes('lucide-folder-open'),'新建文件夹图标 lucide-folder-open');
 check(iconClass(itemByName(folderMenu,'在文件夹中查找')).includes('folder-search'),'在文件夹中查找图标 lucide-folder-search（原版 E2.onFileMenu）');
@@ -96,7 +96,7 @@ rightClick(navContainer,20,400);
 await until(()=>!!document.querySelector('body > .menu'),'根区域右键菜单',3000);
 const rootMenu=menus()[menus().length-1];
 const rootTitles=menuTitles(rootMenu);
-check(JSON.stringify(rootTitles)===JSON.stringify(['新建笔记','新建文件夹']),'空白区菜单仅新建项（原版根节点无重命名/删除）：'+rootTitles.join('/'));
+check(JSON.stringify(rootTitles)===JSON.stringify(['新建笔记','新建文件夹','新建数据库']),'空白区菜单仅新建项（原版根节点无重命名/删除）：'+rootTitles.join('/'));
 await closeMenu();
 
 // ---------------------------------------------------------------- 标签页

@@ -50,7 +50,7 @@ workspaces.js: 工作区插件。命令 workspaces:load/save/save-and-load/open-
 slides.js: 幻灯片插件。命令 slides:start 把当前 md 交给 SlidesPresentation(views/slides-presentation.js) 全窗口演示；不注册视图类型；包装层暴露 getPresentation()。原版 file-menu 菜单项因本项目无 file-menu 来源而省略。
 audio-recorder.js: 录音机插件(id audio-recorder，默认关闭)。命令 audio-recorder:start 与 audio-recorder:stop，checkCallback 按 recording 门控；功能区按钮 lucide-mic 切换开关，录音时加 is-active。扩展名 audio/mp4 可用时用 m4a，否则 webm/opus。命名 "Recording <YYYYMMDDHHmmss>"，经 editor/attachments.js 的 saveAttachment 落盘，并向活动 Markdown 视图插入嵌入链接。权限查询降级为 Permissions API 与 getUserMedia 错误映射，原版走 macOS systemPreferences。卸载停止录音并丢弃未完成条目。
 
-bases.js: 数据库插件入口。登记扩展名、文件视图、新建与 CSV 命令。
+bases.js: 数据库插件入口。登记扩展名、文件视图、功能区、文件夹菜单及新建与 CSV 命令。停用时对称撤销。
 bases-model.js: YAML 数据边界。四类视图共用筛选、排序和 limit，局部写回保留未知数据。
 bases-expression.js: 安全 AST 求值。算符、惰性分支与原版 Null 传播共用白名单函数。
 bases-context.js: 行与宿主上下文。结果按行缓存，公式 AST 按文档共用。
