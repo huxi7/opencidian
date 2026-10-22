@@ -25,5 +25,5 @@ check(view.editor.getValue().includes('**hello**'),'未聚焦状态下编辑命�
 // 窗口状态类不应被误标为聚焦
 check(!document.body.classList.contains('is-focused'),'未聚焦时 body 不带 is-focused');
 check(document.hasFocus()===false,'全流程结束后仍未夺取焦点');
-return {pass:true,checks};
+return {pass:true,count:checks.length,checks};
 })()

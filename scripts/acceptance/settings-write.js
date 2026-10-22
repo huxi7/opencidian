@@ -10,5 +10,6 @@ app.settings.updateAppearance({baseFontSize:17,accentColor:'#9672e4'});
 app.settings.setHotkey('app:open-settings',[{modifiers:['Mod','Shift'],key:','}]);
 await app.plugins.disableInternalPlugin('word-count');
 app.setting.open();app.setting.openTabById('editor');
-return {pass:app.settings.readJson('app.json').tabSize===2,files:['app.json','appearance.json','hotkeys.json','core-plugins.json']};
+const checks=[];if(app.settings.readJson('app.json').tabSize!==2)throw Error('app.json tabSize write');checks.push('app.json tabSize write');
+return {pass:true,count:checks.length,checks,files:['app.json','appearance.json','hotkeys.json','core-plugins.json']};
 })()

@@ -30,7 +30,7 @@
     check(sideLeaves().length === 6, '重启后六个固定工具入口完整');
     check(visible(settingButton()), '重启后设置齿轮可见');
     check(!document.querySelector('.mod-sidedock .workspace-tab-header-inner-close-button'), '重启后没有关闭按钮');
-    return { pass: true, checks };
+    return { pass: true, count: checks.length, checks };
   }
   const file = await app.vault.create('欢迎.md', '# 欢迎\n\n左侧选择文件、搜索或书签。\n\n设置与仓库切换固定在左下角。\n');
   await app.workspace.openFile(file);
@@ -162,5 +162,5 @@
   workspace.setActiveLeaf(workspace._firstLeafInCenter());
   if (screen === 'settings') settingButton().click();
   if (screen === 'menu') profile().querySelector('.workspace-drawer-vault-switcher').click();
-  return { pass: true, checks, profile: profile().getBoundingClientRect().toJSON(), vault: app.vaultPath };
+  return { pass: true, count: checks.length, checks, profile: profile().getBoundingClientRect().toJSON(), vault: app.vaultPath };
 })()

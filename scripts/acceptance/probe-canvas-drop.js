@@ -137,5 +137,5 @@
   report.minimap = !!document.querySelector('svg.canvas-minimap');
 
   console.log('PROBE-CANVAS-DROP ' + JSON.stringify(report, null, 1));
-  return { pass: true, checks, scene: 'canvas-drop' };
+  return { pass: true, count: checks.length, checks, scene: 'canvas-drop' };
 })()

@@ -44,5 +44,5 @@ check(document.body.style.zoom===''||document.body.style.zoom==='1','body zoom �
 // 6) 复位
 app.settings.updateAppearance({baseFontSizeAction:false});
 app.settings.updateAppearance({baseFontSize:base0});
-return {pass:true,checks};
+return {pass:true,count:checks.length,checks};
 })()

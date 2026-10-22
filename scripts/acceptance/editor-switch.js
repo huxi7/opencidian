@@ -15,5 +15,5 @@
   await app.vault.delete(b,true);
   await app.workspace.openFile(a);
   if(!view.editor.cm.dom.isConnected||view.file.path!==a.path)throw Error('deleted view failed to recover');
-  return {pass:true,checks:['switch flushes pending edit','deleted view reused']};
+  return {pass:true,count:2,checks:['switch flushes pending edit','deleted view reused']};
 })()

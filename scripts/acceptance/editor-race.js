@@ -102,5 +102,5 @@ check(viewC.editor.getValue().includes('DDD'),'D 内容保持完整');
 const dText=await app.vault.read(D);
 check(dText.includes('DDD')&&!dText.includes('C-DIRTY'),'D 磁盘内容未被污染');
 
-return {pass:true,checks};
+return {pass:true,count:checks.length,checks};
 })()

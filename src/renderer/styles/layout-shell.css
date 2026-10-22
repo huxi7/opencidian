@@ -1,0 +1,164 @@
+/*
+ * [INPUT]: 标题栏、功能区与工作区分割 DOM；全局设计变量。
+ * [OUTPUT]: 窗口外壳、功能区与根分割规则。
+ * [POS]: layout.css 的前置规则，保持与标签规则的层叠顺序。
+ * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
+ */
+/* ==========================================================================
+   layout.css — app shell: ribbon, workspace splits, tabs, leaves, status bar
+   Split semantics follow the original DOM:
+     .workspace-split.mod-vertical   -> children side by side (row)
+     .workspace-split.mod-horizontal -> children stacked (column)
+   ========================================================================== */
+
+body.workspace {
+  display: flex;
+  flex-direction: row;
+  align-items: stretch;
+  background-color: var(--background-secondary);
+  --frame-left-space: calc(80px - var(--ribbon-width));
+  --frame-right-space: 0px;
+}
+
+/* ---------------------------------------------------------------- titlebar */
+.titlebar {
+  -webkit-app-region: drag;
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  display: flex;
+  background-color: var(--titlebar-background);
+  border-bottom: var(--titlebar-border-width) solid var(--titlebar-border-color);
+  z-index: var(--layer-sidedock);
+}
+.titlebar-inner {
+  color: var(--titlebar-text-color);
+  font-weight: var(--titlebar-text-weight);
+  width: 100%;
+  display: flex;
+  position: relative;
+}
+.is-focused .titlebar-inner { color: var(--titlebar-text-color-focused); }
+/* 原版 5626-5645：titlebar 文本绝对定位居中，镜像 document.title */
+.titlebar-text {
+  opacity: 0.85;
+  position: absolute;
+  width: 100%;
+  height: 100%;
+  top: 0;
+  inset-inline-start: 0;
+  flex-grow: 1;
+  gap: 0.15em;
+  font-size: var(--font-ui-small);
+  text-align: center;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 0 125px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.is-hidden-frameless.mod-windows .titlebar-text,
+.is-hidden-frameless.mod-linux .titlebar-text { display: none; }
+.titlebar-button-container { display: flex; }
+.titlebar-button { -webkit-app-region: no-drag; padding: var(--size-2-2) var(--size-2-3); display: inline-flex; align-items: center; }
+.titlebar-button:hover { background-color: var(--background-modifier-hover); }
+
+/* frameless macOS: traffic lights overlay the header row, no visible titlebar */
+body.is-frameless.is-hidden-frameless.mod-macos .titlebar { display: none; }
+body.is-frameless.is-hidden-frameless:not(.mod-macos) .titlebar { height: var(--header-height); background: transparent; border: none; pointer-events: none; }
+body.is-frameless.is-hidden-frameless:not(.mod-macos) .titlebar-button-container { pointer-events: auto; }
+
+/* ------------------------------------------------------------------ ribbon */
+.workspace-ribbon {
+  width: var(--ribbon-width);
+  flex: 0 0 var(--ribbon-width);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background-color: var(--ribbon-background);
+  z-index: var(--layer-sidedock);
+  color: var(--text-muted);
+  padding: var(--ribbon-padding);
+  gap: var(--size-4-1);
+  border-right: var(--divider-width) solid var(--divider-color);
+}
+.workspace-ribbon.mod-left { margin-top: var(--header-height); }
+/* 原版 4402：左上角 44x40 用顶栏底色填满（焦点态随 --titlebar-background 联动）。
+   收起侧栏只换 ribbon 底色（workspace-sidebar.css 的 is-collapsed），不是隐藏。 */
+.workspace-ribbon.mod-left::before {
+  -webkit-app-region: drag;
+  position: absolute;
+  left: 0;
+  top: 0;
+  background-color: var(--titlebar-background);
+  content: " ";
+  border-bottom: var(--tab-outline-width) solid var(--tab-outline-color);
+  height: var(--header-height);
+  width: var(--ribbon-width);
+  box-sizing: border-box;
+}
+/* 原版 4438 的隐藏语义：只有 is-hidden 隐藏；is-collapsed 只换底色。 */
+.workspace-ribbon.is-hidden { display: none; }
+.side-dock-actions,
+.side-dock-settings {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--size-2-3);
+}
+.side-dock-settings { margin-top: auto; }
+.side-dock-ribbon-action { padding: var(--size-4-2); }
+.side-dock-settings .side-dock-ribbon-action { margin: 0 auto; }
+
+/* ---------------------------------------------------- workspace root split */
+.workspace-split {
+  display: flex;
+  background-color: var(--tab-container-background);
+  position: relative;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+}
+.workspace-split.mod-horizontal { flex-direction: column; }
+.workspace-split.mod-vertical { flex-direction: row; }
+.workspace-split > * { flex: 1 1 0; min-width: 0; min-height: 0; }
+.workspace-split.mod-left-split > *, .workspace-split.mod-right-split > * { flex: 1 1 auto; }
+
+.workspace-split.mod-root { background-color: var(--background-primary); }
+body.workspace > .workspace-root { flex: 1 1 0; min-width: 0; }
+.workspace-split.mod-root .view-content { background-color: var(--background-primary); }
+
+.workspace-split.mod-left-split,
+.workspace-split.mod-right-split {
+  background-color: var(--background-secondary);
+  overflow: hidden;
+}
+
+/* resize handles: thin dividers that grow on hover, like the original */
+.workspace-leaf-resize-handle {
+  position: relative;
+  flex: 0 0 auto;
+  background-color: transparent;
+  z-index: var(--layer-cover);
+  transition: background-color 200ms ease-in-out, border-color 200ms ease-in-out, opacity 200ms ease-in-out;
+  -webkit-app-region: no-drag;
+}
+.workspace-leaf-resize-handle.mod-vertical { width: var(--divider-width); cursor: col-resize; }
+.workspace-leaf-resize-handle.mod-horizontal { height: var(--divider-width); cursor: row-resize; }
+.workspace-leaf-resize-handle::after {
+  content: "";
+  position: absolute;
+  background-color: transparent;
+  transition: background-color var(--anim-duration-moderate);
+}
+.workspace-leaf-resize-handle.mod-vertical::after { inset: 0 -3px; }
+.workspace-leaf-resize-handle.mod-horizontal::after { inset: -3px 0; }
+.workspace-leaf-resize-handle:hover,
+body.is-resizing .workspace-leaf-resize-handle { background-color: var(--divider-color-hover); }
+.workspace-leaf-resize-handle:hover.mod-vertical { width: var(--divider-width-hover); }
+.workspace-leaf-resize-handle:hover.mod-horizontal { height: var(--divider-width-hover); }
+body.is-resizing { cursor: var(--cursor, pointer); }
+body.is-resizing * { user-select: none !important; }

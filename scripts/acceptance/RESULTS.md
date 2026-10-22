@@ -482,3 +482,24 @@ sh scripts/with-lock.sh "npm run build && node scripts/acceptance/run.mjs canvas
 - 对照：`_analysis/bases-114/FACTS.md`。原版 e9 插件、d$/r$ 筛选、g$ 视图配置与 s$/l$ 默认列/排序。
 - 缺口：仅 table 与安全表达式子集。其它视图、分组、汇总、完整公式、日期类型和 CSV 留 Wave 2。块式 YAML 按键局部写回；顶层流式或锚点冲突时保留值重写，排版与注释不保证全部保持。
 - 主代理内存回归：新扩展名分派更新 VM 注册表替身，base 启停映射纳入既有用例，**19/19 通过**。
+
+### T4 工程卫生
+
+- 主进程拆出 `app-menu.js`、`app-protocol.js`；画布拆出 `canvas-drag.js`、`canvas-node-factory.js`。原入口保持不变。
+- 扫描另发现两个既有超限样式文件，按原层叠顺序拆出 `layout-shell.css`、`components-overlays.css`。
+- 正式场景统一 `{pass,count,checks}`；运行器严格检查数量一致，超时只清理自身 Electron 进程组。
+- `notes-settings` 从零计数改为真实控件输入、内存选项、JSON 写回与重开读回，每页 **9 项**。
+- 新增 `full.sh` 与 `full.mjs`，自持锁、默认 build、链式读回与逐次日志/汇总。复跑：`sh scripts/acceptance/full.sh --output /tmp/opensidian-wave1-full-1022`。
+- 断言数量以最终全量汇总为准；不同 phase、主题和图谱规模分别计一次执行，不把次数冒充独立场景。
+
+
+#### 最终全量与计数审计
+
+- **67 个正式场景 / 97 次有效覆盖 / 6477 条真实断言，全部通过**。实际执行 **104 次**，包含首轮 97 次与计数修正补跑 7 次。
+- 首轮为 96/97，通过条件未被放宽。theme-tokens 的 785 条检查均通过，但回执遗漏 748 条明细，严格运行器拒绝该回执；补齐后独立重跑通过。
+- 另修正 dialogs 8→43、modal-ui 6→21、page-preview 21→22、settings-window 浅深各 18→50 的步骤/断言混计；graph-worker 100→96，四条环境信息改放 notes。每条计数都对应实际检查，不把步骤或环境说明计入。
+- 最终证据：`/tmp/opensidian-wave1-full-1022/summary-final.json`、`summary-final.txt`。该报告保留原报告引用，以七份补跑有效回执替换旧口径；原始 `summary.json`、97 份日志和唯一失败日志均未覆盖。
+- 补跑命令：`sh scripts/acceptance/full.sh --skip-build --only dialogs,modal-ui,page-preview,graph-worker,settings-window --output /tmp/opensidian-wave1-count-audit-1022`；另用 `--only theme-tokens --output /tmp/opensidian-wave1-theme-count-1022`。下次默认全量直接使用正确计数。
+- 最终内存回归：`node --experimental-vm-modules src/renderer/core/workspace-regression.js`，**19/19 通过**。日志 `/tmp/opensidian-wave1-memory-1022.log`。这 19 组未混入 E2E 的 6477 条。
+- 行数检查：src/scripts 中 JS、MJS、CSS、SH、Markdown 均不超过 800 行；最大 795 行。L3、L2 与本结果文档已回环。
+- 本轮范围止于 Wave 1。Wave 2 的 Bases P2/P3、Wave 3 的打包冒烟尚未执行。未配置 remote，未 push。

@@ -60,5 +60,5 @@ tree.dispatchEvent(new DragEvent('drop',{bubbles:true,cancelable:true,dataTransf
 await until(()=>!!app.vault.getAbstractFileByPath('external-drop.bin'),'外部文件拖入库根',4000);
 const dropped=await app.vault.readBinary(app.vault.getAbstractFileByPath('external-drop.bin'));
 check(dropped.byteLength===fbytes.byteLength,'拖入文件字节完整');
-return {pass:true,checks};
+return {pass:true,count:checks.length,checks};
 })()

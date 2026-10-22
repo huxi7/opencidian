@@ -168,5 +168,5 @@
   await pause(80);
   check(reloaded.isStacked && reloaded.containerEl.hasClass('mod-stacked'), '菜单项把当前标签组切到堆叠态');
   check(!document.querySelector('.menu'), '点选菜单项后菜单关闭');
-  return { pass: true, checks, vault: app.vaultPath };
+  return { pass: true, count: checks.length, checks, vault: app.vaultPath };
 })()

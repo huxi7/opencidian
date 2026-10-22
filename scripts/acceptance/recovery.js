@@ -1,6 +1,6 @@
 /**
  * [INPUT]: 独立临时 vault 与 OBS_ACT eval 注入的应用实例。
- * [OUTPUT]: 返回验收断言结果；失败抛出异常，供运行器判定。
+ * [OUTPUT]: 返回 {pass,count,checks} 断言回执；失败抛出异常。
  * [POS]: recovery 场景。仅由 run.mjs 在带标记的临时库执行。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
@@ -315,7 +315,7 @@
       check('close button visibly positioned', visible(pres.slidesEl.querySelector('.slides-close-btn')));
     } else throw new Error('Unknown OBS_RECOVERY_PHASE: ' + phase);
   }
-  const report = { ok: true, role: 'recovery', phase, count: checks.length, checks, fixture: root };
+  const report = { pass: true, ok: true, role: 'recovery', phase, count: checks.length, checks, fixture: root };
   fs.writeFileSync(path.join(root, '.obs-copy-recovery-' + phase + '.json'), JSON.stringify(report, null, 2));
   return report;
 })();

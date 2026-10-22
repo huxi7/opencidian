@@ -198,5 +198,5 @@ await openSub(/插入|Insert/);
 realClick(menuItem(/表格|Table/));
 await wait(150);
 check(view.editor.getValue().includes('| Column 1 |'),'插入→表格生效：'+JSON.stringify(view.editor.getValue()));
-return {pass:true,checks};
+return {pass:true,count:checks.length,checks};
 })()

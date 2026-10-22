@@ -35,4 +35,7 @@ canvas-edges.css: 原版连接线与标签规则、拖动对齐参考线（.canv
 bookmarks.css: 书签树滚动、操作图标与视图头部收藏状态。
 slides.css: 全窗口演示覆盖层。.slides-container/.slides-close-btn/.collapse-indicator/.controls 段移植自原版 app.css slides 段；deck/section/progress 为翻页渲染新增；容器 position:fixed 覆盖全窗口(对齐原版)，背景走 --background-primary（原版硬编码 #191919 由 reveal 主题覆盖，此处取应用主题色）。
 
+layout-shell.css: 窗口外壳、功能区与根分割规则。由 layout.css 前置导入。
+components-overlays.css: 菜单和弹窗规则。由 components.css 前置导入。
+
 [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md

@@ -6,8 +6,8 @@
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 (async()=>{
-try {
 const checks=[];
+try {
 const check=(ok,msg)=>{if(!ok)throw Error('✗ '+msg);checks.push(msg);};
 const wait=ms=>new Promise(r=>setTimeout(r,ms));
 const until=async(fn,msg,timeout=6000)=>{const t0=Date.now();while(Date.now()-t0<timeout){if(fn())return;await wait(50);}throw Error('✗ timeout: '+msg);};
@@ -303,6 +303,6 @@ near(cs('.metadata-container + .markdown-content > :first-child, .metadata-conta
 check(cs('.markdown-reading-view','backgroundColor')===rgb(cssVar('--background-primary')),'阅读视图底色 = --background-primary');
 check(cs('.callout','mixBlendMode')===cssVar('--highlight-mix-blend-mode'),'callout 混合模式 = --highlight-mix-blend-mode');
 check(cs('.markdown-content p','fontSize')===cssVar('--font-text-size'),'正文字号 = --font-text-size');
-return {pass:true,checks,theme,count:checks.length};
-} catch (e) { return {pass:false,debug:String((e&&e.stack)||e)}; }
+return {pass:true,count:checks.length,checks,theme};
+} catch (e) { return {pass:false,count:checks.length,checks,debug:String((e&&e.stack)||e)}; }
 })()

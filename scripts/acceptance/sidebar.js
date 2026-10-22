@@ -1,6 +1,6 @@
 /**
  * [INPUT]: 独立临时 vault 与 OBS_ACT eval 注入的应用实例。
- * [OUTPUT]: 返回验收断言结果；失败抛出异常，供运行器判定。
+ * [OUTPUT]: 返回 {pass,count,checks} 断言回执；失败抛出异常。
  * [POS]: sidebar 场景。仅由 run.mjs 在带标记的临时库执行。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
@@ -224,6 +224,7 @@
     workspace.revealLeaf(result.screenshotView === 'backlink' ? finalBacklink : finalOutline);
     await wait(220);
     result.ok = true;
+    result.pass = true;
     result.count = checks.length;
     result.note = note.path;
     result.visibleType = workspace.activeLeaf.view.getViewType();

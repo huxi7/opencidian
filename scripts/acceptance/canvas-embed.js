@@ -217,5 +217,5 @@
 
 
     return { pass: true, checks, count: checks.length };
-  } catch (e) { return { pass: false, debug: String((e && e.stack) || e) }; }
+  } catch (e) { return { pass: false, count: 0, checks: [], debug: String((e && e.stack) || e) }; }
 })()

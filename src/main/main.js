@@ -1,7 +1,7 @@
 /**
  * [INPUT]: 依赖 electron 的 app/BrowserWindow/ipcMain/protocol/shell/dialog/session；Node 内置 fs/path
- * [OUTPUT]: 主进程全部 IPC handler（vault 注册表、文件读写、窗口控制、回收站、拼写检查词典/语言）、app:// 协议、devScreenshotHook（OBS_* 环境变量门控的调试钩子）、设置独立窗口管理器（settings-window.js）的装配
- * [POS]: 应用主进程入口。vault 注册表存于 userData/opensidian.json（启动时从旧产品名 "Obsidian Copy" 的 userData 迁移一次）；拼写检查自加词存 userData/spellcheck-words.json，语言选择存 opensidian.json 的 spellcheckLanguages。渲染进程经 preload/ipc.js 调用此处 handler。原生菜单保留设置入口。dev-hooks 只在指定测试库窗口执行。
+ * [OUTPUT]: 主进程全部 IPC handler（vault 注册表、文件读写、窗口控制、回收站、拼写检查词典/语言）、app:// 协议、devScreenshotHook（OBS_* 环境变量门控的调试钩子）、设置独立窗口、app-menu 与 app-protocol 的装配
+ * [POS]: 应用主进程入口。vault 注册表存于 userData/opensidian.json（启动时从旧产品名 "Obsidian Copy" 的 userData 迁移一次）；拼写检查自加词存 userData/spellcheck-words.json，语言选择存 opensidian.json 的 spellcheckLanguages。渲染进程经 renderer/core/ipc.js 调用此处 handler。原生菜单保留设置入口。dev-hooks 只在指定测试库窗口执行。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 /*
@@ -19,6 +19,8 @@ const fs = require('fs');
 const crypto = require('crypto');
 const { devScreenshotHook } = require('./dev-hooks');
 const { setupSettingsWindows } = require('./settings-window');
+const { installAppMenu } = require('./app-menu');
+const { registerAppProtocol } = require('./app-protocol');
 const { app, BrowserWindow, protocol, ipcMain, Menu, shell, dialog, session, nativeTheme } = require('electron');
 
 const APP_ROOT = path.join(__dirname, '..', '..');
@@ -275,192 +277,9 @@ function showNativeContextMenu(win, wc, params) {
 // ---------------------------------------------------------------------------
 // Menus
 // ---------------------------------------------------------------------------
-function executeCommandJS(id) {
-  return `(function(){ try { if (window.app && app.commands) return app.commands.executeCommandById(${JSON.stringify(id)}); } catch(e) { console.error(e); } })()`;
-}
-
-const rootMenuTemplate = [];
-
-function buildAppMenu(FocusedWindowGetter) {
-  const isAppWindow = (w) => w instanceof BrowserWindow;
-  function cmd(id) {
-    return {
-      click: (menuItem, win) => {
-        const target = isAppWindow(win) ? win : BrowserWindow.getFocusedWindow();
-        if (!target) return;
-        if (menuItem.triggeredByAccelerator === false) return;
-        target.webContents.executeJavaScript(executeCommandJS(id));
-      },
-    };
-  }
-  const template = [
-    ...(IS_MAC ? [{
-      label: 'OpenSidian',
-      submenu: [
-        {
-          label: 'About OpenSidian',
-          click: async (mi, win) => {
-            const detail = `Version ${app.getVersion()} — independent open-source replication of Obsidian 1.14.4\nElectron ${process.versions.electron} · Node ${process.versions.node}`;
-            await dialog.showMessageBox(win instanceof BrowserWindow ? win : undefined, {
-              message: 'OpenSidian', detail,
-            });
-          },
-        },
-        { type: 'separator' },
-        { label: 'Settings…', accelerator: 'CommandOrControl+,', click: (item, win) => {
-          const target = win instanceof BrowserWindow ? win : BrowserWindow.getFocusedWindow();
-          if (target) target.webContents.executeJavaScript(executeCommandJS('app:open-settings'));
-        } },
-        { type: 'separator' },
-        { role: 'services' },
-        { type: 'separator' },
-        { label: 'Hide OpenSidian', click: () => app.hide(), accelerator: 'Cmd+H' },
-        { role: 'hideOthers' },
-        { role: 'unhide' },
-        { type: 'separator' },
-        { label: 'Quit OpenSidian', click: () => app.quit(), accelerator: 'Cmd+Q' },
-      ],
-    }] : []),
-    {
-      label: '&File',
-      submenu: [
-        { type: 'separator' },
-        { label: 'Open Vault...', click: () => openVaultStarter() },
-        { type: 'separator' },
-        ...(IS_MAC ? [] : [{ id: 'quit', role: 'quit' }]),
-      ],
-    },
-    {
-      label: '&Edit',
-      submenu: [
-        { role: 'undo' }, { role: 'redo' }, { type: 'separator' },
-        { role: 'cut' }, { role: 'copy' }, { role: 'paste' },
-        { label: 'Paste as text', accelerator: IS_MAC ? 'Cmd+Shift+V' : 'Shift+CommandOrControl+V', click: (mi, win) => { if (win) win.webContents.pasteAndMatchStyle(); } },
-        { role: 'delete' }, { role: 'selectAll' },
-      ],
-    },
-    {
-      label: '&View',
-      submenu: [
-        ...(IS_DEV ? [{ role: 'reload' }] : []),
-        { label: 'Actual Size', accelerator: 'CommandOrControl+0', click: (mi, win) => { if (win) win.webContents.setZoomLevel(0); } },
-        { label: 'Zoom In', accelerator: 'CommandOrControl+=', click: (mi, win) => { if (win) win.webContents.setZoomLevel(Math.min(5, win.webContents.getZoomLevel() + 0.5)); } },
-        { label: 'Zoom Out', accelerator: 'CommandOrControl+-', click: (mi, win) => { if (win) win.webContents.setZoomLevel(Math.max(-3, win.webContents.getZoomLevel() - 0.5)); } },
-        { type: 'separator' },
-        ...(IS_DEV ? [{ role: 'forceReload', accelerator: '' }] : []),
-        { role: 'toggleDevTools' },
-        { type: 'separator' },
-        { role: 'togglefullscreen' },
-      ],
-    },
-    {
-      label: '&Window', role: 'window',
-      submenu: [
-        { role: 'minimize', accelerator: IS_MAC ? 'CommandOrControl+M' : '' },
-        ...(IS_MAC ? [{ role: 'zoom' }] : []),
-        { type: 'separator' },
-        { id: 'window-always-on-top', checked: false, enabled: true, type: 'checkbox', label: 'Always on Top', click: (mi, win) => {
-          if (!win) return;
-          win.setAlwaysOnTop(!win.isAlwaysOnTop());
-        } },
-        { role: 'front' },
-      ],
-    },
-    {
-      label: '&Help', role: 'help',
-      submenu: [
-        { label: 'Homepage', click: () => shell.openExternal('https://obsidian.md') },
-      ],
-    },
-  ];
-  rootMenuTemplate.splice(0, rootMenuTemplate.length, ...template);
-  return Menu.buildFromTemplate(template);
-}
-
-let appMenu = null;
-function installMenu() {
-  appMenu = buildAppMenu();
-  Menu.setApplicationMenu(appMenu);
-}
-
 // ---------------------------------------------------------------------------
 // app:// protocol
 // ---------------------------------------------------------------------------
-function registerAppProtocol() {
-  protocol.handle(SCHEME, async (request) => {
-    let url = request.url;
-    // strip query/hash
-    try {
-      const u = new URL(url);
-      url = `${u.protocol}//${u.host}${u.pathname}`;
-    } catch (e) { /* ignore */ }
-
-    let filePath = null;
-    let noframe = false;
-    if (url.startsWith(APP_ORIGIN)) {
-      let sub = decodeURIComponent(url.slice(APP_ORIGIN.length));
-      // serve from renderer dir; dist/ for built files, assets/ for assets
-      let resolved = path.resolve(RENDERER_DIR, sub);
-      if (sub.startsWith('dist/') || sub.startsWith('assets/')) {
-        resolved = path.resolve(APP_ROOT, sub);
-      }
-      if (!resolved.startsWith(RENDERER_DIR) && !resolved.startsWith(path.join(APP_ROOT, 'dist')) && !resolved.startsWith(ASSETS_DIR)) {
-        return new Response('Not Found', { status: 400 });
-      }
-      filePath = resolved;
-      noframe = true;
-    } else if (url.startsWith(FILE_ORIGIN)) {
-      let sub = url.slice(FILE_ORIGIN.length);
-      if (IS_MAC || process.platform === 'linux') sub = '/' + sub;
-      filePath = path.resolve(decodeURIComponent(sub));
-    } else {
-      return new Response('Not Found', { status: 400 });
-    }
-
-    try {
-      const stat = await fs.promises.stat(filePath);
-      const headers = new Headers();
-      let status = 200;
-      let stream;
-      const range = request.headers.get('Range');
-      if (range) {
-        const m = range.match(/^bytes=(\d*)-(\d*)/);
-        if (!m) return new Response('Range Not Satisfiable', { status: 416 });
-        const start = Number(m[1] || 0);
-        const end = Number(m[2] || stat.size - 1);
-        if (isNaN(start) || isNaN(end) || start < 0 || end > stat.size - 1 || start > end) {
-          return new Response('Range Not Satisfiable', { status: 416 });
-        }
-        headers.set('Accept-Ranges', 'bytes');
-        headers.set('Content-Length', String(end - start + 1));
-        headers.set('Content-Range', `bytes ${start}-${end}/${stat.size}`);
-        status = 206;
-        stream = fs.createReadStream(filePath, { start, end });
-      } else {
-        headers.set('Content-Length', String(stat.size));
-        stream = fs.createReadStream(filePath);
-      }
-      headers.set('Access-Control-Allow-Origin', '*');
-      headers.set('Last-Modified', stat.mtime.toUTCString());
-      if (noframe) headers.set('X-Frame-Options', 'DENY');
-      return new Response(streamToWeb(stream), { status, headers });
-    } catch (e) {
-      return new Response('Not Found', { status: 404 });
-    }
-  });
-}
-
-function streamToWeb(nodeStream) {
-  return new ReadableStream({
-    start(controller) {
-      nodeStream.on('data', (chunk) => controller.enqueue(new Uint8Array(chunk)));
-      nodeStream.on('end', () => controller.close());
-      nodeStream.on('error', (err) => controller.error(err));
-    },
-    cancel() { nodeStream.destroy(); },
-  });
-}
-
 // ---------------------------------------------------------------------------
 // Window creation
 // ---------------------------------------------------------------------------
@@ -908,7 +727,7 @@ if (!gotLock) {
 
   app.whenReady().then(() => {
     if (E2E && IS_MAC && app.dock) { try { app.dock.hide(); } catch (e) { /* ignore */ } }
-    registerAppProtocol();
+    registerAppProtocol({ SCHEME, APP_ORIGIN, FILE_ORIGIN, RENDERER_DIR, APP_ROOT, ASSETS_DIR });
     settingsWindows = setupSettingsWindows({
       BrowserWindow,
       ipcMain,
@@ -923,7 +742,7 @@ if (!gotLock) {
       isChinese: () => String(app.getLocale()).toLowerCase().startsWith('zh'),
     });
     setupIpc();
-    installMenu();
+    installAppMenu(openVaultStarter);
     applyAppIcon();
 
     const session0 = session.defaultSession;

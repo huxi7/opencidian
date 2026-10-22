@@ -1,6 +1,6 @@
 /**
  * [INPUT]: 独立临时 vault 与 OBS_ACT eval 注入的应用实例。
- * [OUTPUT]: 返回验收断言结果；失败抛出异常，供运行器判定。
+ * [OUTPUT]: 返回 {pass,count,checks} 断言回执；失败抛出异常。
  * [POS]: download-attachments 场景。仅由 run.mjs 在带标记的临时库执行。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
@@ -141,5 +141,5 @@
   assert('plain note untouched', (await app.vault.read(plain)) === plainSource);
   delete app.requestUrl;
 
-  return { status: 'PASS', checks: results.length, assertions: results, vault: vaultRoot };
+  return { pass: true, status: 'PASS', count: results.length, checks: results, assertions: results, vault: vaultRoot };
 })()

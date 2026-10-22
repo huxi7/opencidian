@@ -1,13 +1,13 @@
 /**
  * [INPUT]: 独立临时 vault 与 OBS_ACT eval 注入的应用实例。
- * [OUTPUT]: 返回验收断言结果；失败抛出异常，供运行器判定。
+ * [OUTPUT]: 返回 {pass,count,checks} 断言回执；失败抛出异常。
  * [POS]: settings-ui 场景：侧栏页签顺序（含原版独立的“界面”页签）、侧栏全局搜索（位置/结构/跨页签过滤/命中高亮/还有 N 个/跳转闪烁/清空 + 原版 aliases 别名三路匹配：别名挂载、别名命中、别名命中不高亮、名称命中仍高亮、描述命中不高亮、别名命中跳转闪烁）、界面页（标题栏/功能区/缩放/原生菜单/窗口边框/新窗口设置）、功能区子页面、编辑器（拼写词典/语言胶囊/Not available/Vim 验证/默认模式同步）、文件页（路径建议、忽略文件子页面与新增表单、附件位置、重建缓存）、关于页（版本行、检查更新、可以更新行、语言重启状态、硬件加速、启动时间弹窗）；
  *        并锁住导航无 hover、开关无 hover 阴影、按钮/输入无过渡与输入 focus 焦点环。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 (async()=>{
 const wait=ms=>new Promise(r=>setTimeout(r,ms));const ok=(b,m)=>{if(!b)throw Error(m)};
-let count=0;const check=(b,m)=>{count++;ok(b,m)};
+const checks=[];let count=0;const check=(b,m)=>{count++;ok(b,m);checks.push(m)};
 const cssRules=()=>{const out=[];const walk=(list)=>{for(const r of list){if(r.cssRules&&r.cssRules.length)walk(r.cssRules);else if(r.selectorText)out.push(r);}};for(const ss of document.styleSheets){try{walk(ss.cssRules);}catch(e){}}return out;};
 const colorOf=(name)=>{const probe=document.createElement('div');probe.style.color='var('+name+')';document.body.appendChild(probe);const c=getComputedStyle(probe).color;probe.remove();return c;};
 const rowByName=(root,re)=>[...root.querySelectorAll('.setting-item')].find((el)=>{
@@ -509,5 +509,5 @@ check(!rowByName(app.setting.activeTab.containerEl,/显示标签页标题栏|Sho
 check(!rowByName(app.setting.activeTab.containerEl,/窗口边框样式|Frame style/),'外观页不再重复窗口边框样式行');
 app.setting.openTabById('about');await wait(120);
 app.setting.close();
-return {pass:true,count};
+return {pass:true,count,checks};
 })()

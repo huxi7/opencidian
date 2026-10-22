@@ -215,5 +215,5 @@ snapshot('metadataPropertyValueInput',q('.metadata-property-value .metadata-inpu
 st.propertyCount=q('.metadata-container')?q('.metadata-container').getAttribute('data-property-count'):'MISSING';
 
 console.log('PROBE-READING '+JSON.stringify({theme:wantDark?'dark':'light',scrollTop,st:Object.keys(st).length},null,1));
-return {pass:true,checks,theme:wantDark?'dark':'light',scrollTop,st};
+return {pass:true,count:checks.length,checks,theme:wantDark?'dark':'light',scrollTop,st};
 })()

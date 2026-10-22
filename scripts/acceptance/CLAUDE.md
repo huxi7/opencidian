@@ -3,6 +3,8 @@
 
 场景由 OBS_ACT 在真实 Electron 渲染进程执行。
 运行器只允许带标记的临时库。日志错误使运行失败。
+正式场景返回 {pass,count,checks}，count 等于 checks.length。
+全量入口固定 --no-screenshot，排除 probe-* 诊断脚本。
 
 成员清单
 RESULTS.md: 本轮结果、证据目录与复跑方式。
@@ -11,7 +13,7 @@ core-ribbon.js: 插件入口启停、普通/Mod 点击、键盘、设置开关�
 core-views.js: 出链面板(已解析/未解析/副文本/空态/折叠/点击打开)与属性插件(全部属性计数与四种排序、点击开搜索、文件属性跟随、状态栏计数、关闭释放、禁停恢复、设置页开关)。
 sidebar-shell.js: 固定侧栏、底部设置与切库、旧布局恢复和窄栏验收；标签列表/固定标签/状态栏双段/拖拽幽灵/空标签。
 stacked-tabs.js: 堆叠标签页：命令开关当前标签组、头叶交替结构、滑动布局、切换/关闭/固定、layout JSON 的 stacked 键与装载保持、分组隔离与侧栏拒绝、标签列表菜单入口。
-page-preview.js: 悬停预览（21 项）：阅读模式 popover、未解析空态、Escape 关闭、编辑模式 Mod 门控；原版 .markdown-embed 结构、inline-title 文件名、400px 限高内部滚动、32px 内容 padding、内部滚动不关闭。
+page-preview.js: 悬停预览（22 项）：阅读模式 popover、未解析空态、Escape 关闭、编辑模式 Mod 门控；原版 .markdown-embed 结构、inline-title 文件名、400px 限高内部滚动、32px 内容 padding、内部滚动不关闭。
 settings-ui.js: 设置页 UI（220 项）：拼写词典/语言行、默认编辑模式同步、路径建议、忽略文件规则子页面与表单弹窗、重建缓存按钮、启动时间弹窗；侧栏全局搜索框（位置/结构/占位/跨页签分组与高亮/前 3 条折叠与「还有 N 个」/跳转闪烁/空态/清空）；设置项别名（原版 loe.search 的 name/desc/aliases 三路匹配与子串 AND 匹配器）：基础颜色/主题色/主题/字体大小/默认编辑模式的别名命中与负例，别名命中不高亮而名称命中高亮，别名不进结果文案。
 search.js: 全局搜索（489 项）：字段/属性查询、引号/正则/否定/OR/括号、大小写与排序、结果分组/折叠/解释、键盘导航、复制结果弹窗与空态；建议弹层（算子 6 项、说明文案、组头与图标、历史存取与清除、键盘与插入语义、定位与宽度）；白板节点文本命中且不计入计数；真 Electron + 真实输入。
 search-views.js: 搜索视图形态（69 项）：侧栏形态与独立标签形态的 DOM 与计算样式、输入聚焦与清空按钮、结果点击跳转（文件/行号/Mod 新标签）、计数千分位与清空后计数保留、复制弹窗、白板搜索、标签/目录上下文建议、结果悬停预览（出现/贴目标定位/移出收起/Mod 门控/悬停后按 Mod 补弹）。
@@ -20,7 +22,7 @@ canvas-embed.js: 笔记内嵌白板（81 项）：阅读视图与实时预览里
 canvas-dummy.js: 画布临时虚影与拖拽体检（59 项）：卡片菜单「添加卡片/笔记/媒体」、节点连线手柄、边端点改接三条路径在纯点击后画布内 .is-dummy 必须为 0（虚影与临时边一律在拖拽真正开始时才建）；虚影几何（目标尺寸、指针减半尺寸、按网格/物体吸附、落点同尺寸建真实节点）；真实 PointerEvent 拖拽后节点坐标确实变化且无残留；新建文本卡进编辑态可写并落盘 JSON；已聚焦 md 卡单击正文进卡片内编辑并写回真实文件；.canvas 卡渲染缩略图。
 link-suggest.js: [[链接]] 单列浮窗（168 项）：无 .cm-completionInfo、.suggestion-container 结构/382.8×78.1 几何/31.5 行高/15-19.5 标题/12-15.6 路径、标题+灰色路径两行、选中态、上下/Page/Home/End/Ctrl+P/N/Enter/Tab/Shift+Enter/点击/Esc/失焦/滚动/缩放、# 标题、^ 块、| 显示文本、空态与重复路径。
 settings-plugins.js: 快捷键页状态筛选芯片、按快捷键捕获筛选与 Esc、冲突芯片跳筛选；核心插件页齿轮/快捷键入口显隐与跳转；新增 locale 键逐条比对 zh+en 原版译文。
-settings-window.js: 设置独立窗口（17 步/49 项）：标题 `设置 - 库名 - 应用版本`、900×700、多库隔离、窗口内切换「在窗口中打开设置」的注销不死锁、主窗缓存同步、浅/深截图；macOS 红绿灯按 popout 32px 落在 (10,8)。
+settings-window.js: 设置独立窗口（50 项真实断言）：标题 `设置 - 库名 - 应用版本`、900×700、多库隔离、窗口内切换「在窗口中打开设置」的注销不死锁、主窗缓存同步、浅/深截图；macOS 红绿灯按 popout 32px 落在 (10,8)。
 vault-switcher.js: 仓库切换入口（13 项）：侧栏底部库名 →「管理仓库…」→ starter 窗口，注册表与菜单文案。
 vault-switcher.starter.js: starter 第二窗口 1.14.4（129 项、浅/深）：800×650/titlebar 30、最近仓库列 280/行高 76.49、打开/新建两屏、行菜单（重命名/移动/复制 ID/访达/移除）、键盘 Enter/Esc、空名称提示与位置预览、移除只删注册表不删文件夹、空态快速开始、语言/帮助行。
 modal-ui.js: 通用模态基座（21 项）：mod-dim 遮罩与 0.85 覆盖色、大阴影、视口居中、背景点击关闭、拖选保护、ESC、重开复位、确认弹窗标题/双按钮。
@@ -33,7 +35,7 @@ canvas-edit.js: 画布文本卡片的内嵌 CM6 实时预览编辑器：挂载�
 canvas-selection.js: 画布多选与批量操作。多选状态（单击单选只置聚焦、Shift+点击增删选、单选↔多选切换清理聚焦态、普通点击替换）、空白拖动框选（矩形挂 .canvas-selection、外扩 10px 定位、分组需完整包含、松手清除、Shift 异或）、多选包围盒（.mod-group-selection + 8 个 data-resize 手柄、并集外扩 10px）、拖动任一选中卡片整体位移并保持相对位置、Delete 删除与 Mod+Z 撤销/重做落盘、拖动即置顶、数据层按 z 升序写出节点、浮动工具条按钮与排布子菜单 13 项（真实点击驱动：对齐 6 向坐标断言、分布 2 向首尾不动、水平拉伸、网格排列）、从选中集合建组（几何外扩 20px）、拖组带动内部节点、分组恒为负 z、分组菜单提供编辑文字且无「取消分组」（原版无该命令，删组保留子节点）、Alt(mac)/Ctrl 拖动克隆整组、Mod+框选收尾弹建卡菜单并在关闭后收起矩形、只读画布隐藏非恒显按钮。
 canvas-ui.js: 画布视觉/样式层断言（192 项、浅深两套）：外壳与点阵、控件四组图标顺序与快捷键后缀、快速设置三态、分组负 z、标签 always/hover/never、md 卡正文 padding 与弹性留白、图片宽高比回写、损坏图/缺文件占位、着色卡 rgba(...,0.07)、边（双 path、箭头顶点、描边宽度、标签字号）、悬停手柄门控与连接点嵌位、只读、缩放断点、帮助弹窗 14 条、空态三行；右键/中键 5px 平移、macOS 先 contextmenu 后移动的关闭、Windows pointerup 后 contextmenu 抑制；分组背景文件/文件夹重命名、移动、删除后的 bgPath/getData/contentEl/JSON 生命周期；.canvas 文件卡渲染缩略图而非原始 JSON。
 view-header.js: 视图头 1.14.4（82 项、浅/深）：左导航钮/面包屑分隔与 aria、标题左对齐（桌面 --file-header-justify:start）、mod-fade 三态、聚焦底色与 mod-active 同步、←→ 可用性、头部模式钮真实指针命中与编辑/阅读双向切换；模式钮图标随模式更换（编辑视图 lucide-book-open / 阅读视图 lucide-edit-3）、aria-label 三行（状态句 + 动作句 + ⌘+单击在新标签页打开）、无 is-active、⌘+单击走新标签页打开且不改当前模式。
-dialogs.js: 弹窗复开、确认结果与选择器布局；命令面板复杂项（标题进内容列、热键同行靠右，原版 mod-complex）。
+dialogs.js: 弹窗复开、确认结果与选择器布局（43 项）；命令面板复杂项（标题进内容列、热键同行靠右，原版 mod-complex）。
 quick-switcher.js: 快速切换 1.14.4 全锁（130 项、浅/深）：prompt 几何/圆角/阴影/边框、六条指令栏、最近 10 项 MRU、文件/别名/未解析/附件/书签行结构、创建项与 Enter/Shift+Enter/Cmd+Enter、键盘全键位与 Tab 补全、附件/仅已创建/所有类型三开关。
 download-attachments.js: 外部附件下载。命令门控（md 可用 / txt 与图片等非 md 不可用）、画廊模态结构与命名、取消不落盘、部分勾选只下载勾选项、字节完整性、嵌入与 frontmatter 改写、Notice 计数与无附件提示。stub app.requestUrl，不访问真实网络。
 editor-switch.js: 切换文件先保存，已删除视图再次打开文件可编辑。
@@ -54,13 +56,13 @@ folding-disabled.js: 禁止语法回退绕过折叠开关。
 layout-split.js: 分屏/工作区布局几何（78 项）：初始、左右分屏、上下分屏、保存-加载布局、关闭叶子后，root/中心列/叶子/内容容器全部落在视口内且不互相越界；两块叶子不重叠、加载前后几何一致。
 layout-modals.js: 弹窗与新建视图的全屏几何（31 项）：设置弹窗遮罩铺满视口 + 两栏高度正常、布局管理弹窗、加载布局 SuggestModal、新建标签页只有一个 view-content（无占位残留）、新建画布铺满视图内容。
 graph.js: 142 项图谱交互与销毁。含颜色组拖拽排序（顺序即优先色）与新建组按组序×40° 递增色相、节点悬停 hover-link 预览（载荷五项、无补弹）、力参数滑杆区间与换算、右键菜单分节表与 view.linked 子菜单、面板菜单恰好 1 条图谱项、键盘表（数字键不触发缩放）、命中半径（桌面 1×，移动端 5×）、graph.json 键集 20 项逐键锁定。
-graph-worker.js: 图谱力学 worker 化（100 项）。后端三级回退（app:// 直载 → fetch+Blob → 本地）、位置发布与主线程零物理、钉住/解钉、力参数唤醒与再沉降、空图停摆与唤醒、关闭终止 worker、消息载荷与原版 sim.js 逐字段对齐（stub Worker 截获）、本地回退后端回归、crossOriginIsolated=false 时如实走 transfer。
+graph-worker.js: 图谱力学 worker 化（96 项真实断言；环境信息另存 notes）。后端三级回退（app:// 直载 → fetch+Blob → 本地）、位置发布与主线程零物理、钉住/解钉、力参数唤醒与再沉降、空图停摆与唤醒、关闭终止 worker、消息载荷与原版 sim.js 逐字段对齐（stub Worker 截获）、本地回退后端回归、crossOriginIsolated=false 时如实走 transfer。
 graph-perf.js: 生成库性能基线（100/1000/5000 节点）：打开耗时、单 tick 耗时、沉降帧率、关闭释放、关闭后可响应。
 graph-persist-read.js: 重启核对图谱偏好。
 graph-persist-write.js: 写入图谱偏好。
 math.js: 离线 CHTML、字体、错误隔离与两种视图。
 notes.js: 五个笔记插件的创建、编辑与重启。
-notes-settings.js: 笔记插件设置控件截图。
+notes-settings.js: 四类笔记插件设置页。输入真实控件，验证选项、落盘和重开，每页 9 项。
 recovery.js: 快照、恢复、工作区与幻灯片的分阶段验收。覆盖旧 intervalSeconds→分钟迁移、设置页签文本输入即时生效、弹窗复制/差异开关、Canvas 快照与打开视图重载。
 settings-restart.js: 重启核对四类设置。
 settings-write.js: 写入四类用户设置。
@@ -80,5 +82,8 @@ probe-topbar.js / probe-canvas.js / probe-reading.js / probe-ui.js / probe-canva
 probe-canvas-drop: 画布拖入诊断探针（残留虚影体检）。模拟文件树拖入与卡片菜单纯点击两条路径，报告 .is-dummy 数量、accent 填充元素、画布内彩色框与卡片 DOM/几何；非断言锁，用于定位画布残影。
 
 bases.js: Bases P1。原版格式、嵌套筛选、排序、未知键保留与两种笔记嵌入，55 项。
+
+full.sh: 全量入口。定位仓库根并独占构建锁，参数原样传给 full.mjs。
+full.mjs: 枚举正式场景和链式阶段。--only 定向补跑并补齐读回前置；输出回执与汇总。
 
 [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md

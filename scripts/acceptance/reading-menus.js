@@ -68,5 +68,5 @@ rightClick(missing);
 await until(()=>!!document.querySelector('body > .menu'),'未解析链接菜单',2500);
 check(has('创建此文件')||has('Create this file'),'未解析链接含创建此文件');
 await closeMenu();
-return {pass:true,checks};
+return {pass:true,count:checks.length,checks};
 })()

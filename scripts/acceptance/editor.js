@@ -244,7 +244,7 @@
     const indicators = [...markerDom.querySelectorAll('.cm-foldGutter .collapse-indicator')];
     assert(indicators.length > 0, 'LP fold indicators present');
     assert(indicators.some(el => !el.classList.contains('is-collapsed') && getComputedStyle(el).opacity === '0'), 'LP fold indicators hidden by default');
-    return { role: 'editor', passed: true, checks, fixture };
+    return { role: 'editor', pass: true, count: checks.length, passed: true, checks, fixture };
   } finally {
     app.settings.updateAppSettings(saved);
     for (const leaf of leaves) {

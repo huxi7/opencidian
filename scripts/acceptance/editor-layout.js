@@ -86,5 +86,5 @@ check(!!view.editor.cm.dom.querySelector('.cm-lineNumbers'),'折叠全关后开�
 check(!!scroller.querySelector(':scope > .cm-sizer > .cm-contentContainer > .cm-gutters'),'gutter 容器位于 .cm-contentContainer 内');
 check(getComputedStyle(scroller.querySelector('.cm-gutters')).position==='absolute','gutter 绝对定位，不占正文宽度（原版无 gutter 偏移）');
 app.settings.updateAppSettings({showLineNumber:false,foldHeading:true,foldIndent:true});
-return {pass:true,checks};
+return {pass:true,count:checks.length,checks};
 })()

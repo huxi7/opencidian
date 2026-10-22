@@ -41,7 +41,7 @@ if(scene==='empty'){
     buttons:[...document.querySelectorAll('.canvas-card-menu-button')].map(b=>({cls:b.className,icon:b.querySelector('svg')?.getAttribute('class'),svgFill:b.querySelector('svg')?getComputedStyle(b.querySelector('svg')).fill:null,styles:pick(b,['color','padding','height'])})),
     dividerCount:document.querySelectorAll('.canvas-card-menu-divider').length};
   console.log('PROBE-CANVAS '+JSON.stringify(report,null,1));
-  return {pass:true,checks,scene};
+  return {pass:true,count:checks.length,checks,scene};
 }
 
 await app.vault.create('Note.md','# Note\n\n内容 **bold** 与链接 [a](https://example.com)\n\n- 项一\n- 项二\n');
@@ -135,7 +135,7 @@ if(scene==='states'){
   view.setReadonly(false);
   report.single=report.single||null;
   console.log('PROBE-CANVAS '+JSON.stringify(report,null,1));
-  return {pass:true,checks,scene};
+  return {pass:true,count:checks.length,checks,scene};
 }
 
 if(scene==='menus'){
@@ -164,7 +164,7 @@ if(scene==='menus'){
     rows:modal?[...modal.querySelectorAll('.canvas-instruction')].map(r=>({label:r.querySelector('.canvas-instruction-label').textContent,keys:[...r.querySelectorAll('.setting-hotkey')].map(k=>k.textContent)})):null,
     box:modal?rectOfEl(modal):null};
   console.log('PROBE-CANVAS '+JSON.stringify(report,null,1));
-  return {pass:true,checks,scene};
+  return {pass:true,count:checks.length,checks,scene};
 }
 
 const geom=nodes.map(n=>{
@@ -222,5 +222,5 @@ report.snapshotHooks=[
   String(document.querySelectorAll('.canvas-node-label').length),
 ];
 console.log('PROBE-CANVAS '+JSON.stringify(report,null,1));
-return {pass:true,checks,scene};
+return {pass:true,count:checks.length,checks,scene};
 })()

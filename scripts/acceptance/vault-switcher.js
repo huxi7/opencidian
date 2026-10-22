@@ -42,5 +42,5 @@
 
   // 第二窗口的断言与浅/深截图在 800-1100ms 后开始；留足执行时间再让主钩子收尾。
   await pause(6500);
-  return { pass: true, checks, vault: app.vaultPath };
+  return { pass: true, count: checks.length, checks, vault: app.vaultPath };
 })()

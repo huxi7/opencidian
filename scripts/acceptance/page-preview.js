@@ -1,12 +1,12 @@
 /**
  * [INPUT]: 独立临时 vault 与 OBS_ACT eval 注入的应用实例。
- * [OUTPUT]: 返回验收断言结果；失败抛出异常，供运行器判定。
+ * [OUTPUT]: 返回 {pass,count,checks} 断言回执；失败抛出异常。
  * [POS]: page-preview 场景：阅读模式悬停 popover、未解析链接空态、Escape 关闭、编辑模式 Mod 门控。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 (async()=>{
 const wait=ms=>new Promise(r=>setTimeout(r,ms));const ok=(b,m)=>{if(!b)throw Error(m)};
-let count=0;const check=(b,m)=>{count++;ok(b,m)};
+const checks=[];let count=0;const check=(b,m)=>{count++;ok(b,m);checks.push(m)};
 const findPop=()=>document.querySelector('body > .popover.hover-popover');
 
 const target = app.vault.getFileByPath('Preview Target.md') || await app.vault.create('Preview Target.md', '# 目标标题\n\n这是预览目标的内容 UNIQUE_PREVIEW_MARKER。\n');
@@ -14,7 +14,7 @@ const source = app.vault.getFileByPath('Preview Source.md') || await app.vault.c
 await app.workspace.openFile(source);
 await wait(200);
 const view = app.workspace.getActiveViewOfType('markdown');
-ok(view, 'markdown 视图已打开');
+check(view, 'markdown 视图已打开');
 
 view.mode = 'preview';
 view._applyMode();
@@ -81,5 +81,5 @@ await wait(120);
 check(!findPop(), '松开 Mod 后预览收起');
 document.dispatchEvent(new KeyboardEvent('keyup', { key: 'Meta', metaKey: false, bubbles: true }));
 
-return {pass:true,count};
+return {pass:true,count,checks};
 })()

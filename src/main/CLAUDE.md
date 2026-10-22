@@ -2,7 +2,7 @@
 
 > L2 | 父级: /src/CLAUDE.md
 
-Electron 主进程。按运行入口与开发验收分离：窗口生命周期、app:// 协议、IPC 通道、原生菜单、vault 注册表。渲染进程通过 `window.app.commands.executeCommandById` 接收菜单命令。
+Electron 主进程。按运行入口与开发验收分离：窗口生命周期、IPC 通道与库注册表。资源协议和原生菜单委托独立模块。渲染进程通过 `window.app.commands.executeCommandById` 接收菜单命令。
 
 成员清单
 main.js: 应用主进程装配。要点：`DATA_DIR=userData`（应用名 OpenSidian）保存 vault 注册表(opensidian.json，首次启动从旧 "Obsidian Copy" 目录迁移)；`APP_ORIGIN=app://opensidian.app/` 服务 src/renderer 与 dist/；`FILE_ORIGIN=app://<16hex>/` 流式读取任意 vault 文件(支持 Range)；`openVaultPath()` 打开/新建 vault；`windows[id]` 映射 vault 窗口；`frameWindowOptions()` 按 opensidian.json 的 frame 键选 hidden/custom/native 边框；`setWindowOpenHandler` 把 about:blank popup 交给 settings-window.js（设置独立窗口）；disable-gpu 读写(启动时 app.disableHardwareAcceleration)；locale ipc(app.getLocale)；env 钩子 `OBS_VAULT_PATH`(直开 vault)/`OBS_SCREENSHOT`(截图自检)/`OBS_ACT`(调试动作：open/open-settings/exec/eval)；starter 窗口在 E2E 下 focusable=false/opacity=0/backgroundThrottling=false。
@@ -12,5 +12,8 @@ settings-window.js: 设置独立窗口管理器。每库至多一窗（Map<vault
 dev-hooks.js: OBS_* 门控的动作、DOM 探针与截图。只向 OBS_VAULT_PATH 对应窗口注入验收，切库窗口不重放动作；第二窗口（starter）以独立 prefix/logTag 挂载，支持浅色截图与加载完成竞态兜底。
 
 原生 macOS 菜单保留 Settings 入口，直接分派 app:open-settings。
+
+app-menu.js: 原生菜单装配。菜单命令交给活动渲染器；仓库入口由主进程注入。
+app-protocol.js: app:// 资源协议。分派应用与库文件，支持 Range 与取消释放流。
 
 [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md

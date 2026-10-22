@@ -1,12 +1,12 @@
 /**
  * [INPUT]: 独立临时 vault 与 OBS_ACT eval 注入的应用实例。
- * [OUTPUT]: 返回验收断言结果；失败抛出异常，供运行器判定。
+ * [OUTPUT]: 返回 {pass,count,checks} 断言回执；失败抛出异常。
  * [POS]: appearance 场景：主题列表（现代主题/旧版主题）、旧版主题实际生效（themes/<name>.css）、主题管理弹窗（社区主题骨架/搜索/计数/徽标/使用）、字体子页面（说明段/当前字体列表/建议组/缺失提示/增删/数量回显）、主题色恢复默认、半透明效果、CSS 样式代码片段子页面（列表/启用/空态）。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 (async()=>{
 const wait=ms=>new Promise(r=>setTimeout(r,ms));const ok=(b,m)=>{if(!b)throw Error(m)};
-let count=0;const check=(b,m)=>{count++;ok(b,m)};
+const checks=[];let count=0;const check=(b,m)=>{count++;ok(b,m);checks.push(m)};
 const cssRules=()=>{const out=[];const walk=(list)=>{for(const r of list){if(r.cssRules&&r.cssRules.length)walk(r.cssRules);else if(r.selectorText)out.push(r);}};for(const ss of document.styleSheets){try{walk(ss.cssRules);}catch(e){}}return out;};
 const fsc=require('fs');const pth=require('path');
 const rowByName=(root,re)=>[...root.querySelectorAll('.setting-item')].find((el)=>{
@@ -220,5 +220,5 @@ check(resetBtn.getAttribute('aria-disabled')==='true','重设后恢复按钮 ari
 const colorInput=accentRow.querySelector('input[type=color]');
 check(/^#[0-9a-f]{6}$/i.test(colorInput.value)&&colorInput.value!=='#ff0000','重设后色块回到主题默认色');
 app.setting.close();
-return {pass:true,count};
+return {pass:true,count,checks};
 })()

@@ -49,5 +49,5 @@ await wait(350);
 const mer=view.editor.cm.contentDOM.querySelector('.cm-lp-mermaid');
 check(!!mer,'Mermaid widget 渲染');
 check(!!(mer&&mer.querySelector('.edit-block-button')),'Mermaid 含 edit-block-button');
-return {pass:true,checks};
+return {pass:true,count:checks.length,checks};
 })()

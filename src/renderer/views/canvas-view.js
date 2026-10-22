@@ -1,11 +1,12 @@
 /**
  * [INPUT]: 依赖 ./canvas-interactions.js 的 CanvasInteractions（类链基类）；依赖 ../core/i18n.js 的 t；依赖 ../core/icons.js 的 setIcon；依赖 ../core/notices.js 的 Notice；依赖 ../core/ipc.js 的 Desktop；依赖 ../core/keymap.js 的 IS_MAC；
- *          依赖 ./canvas-utils.js 的 genId、boxesIntersect、expandBBox、nearestSide、rectFromPos、distanceToBox、rectOf、MultiMap；
+ *          依赖 ./canvas-utils.js 的 genId、boxesIntersect、expandBBox、nearestSide、distanceToBox、rectOf、MultiMap；
  *          依赖 ./canvas-node.js 的 CanvasNode/CanvasDummyNode；依赖 ./canvas-text-node.js 的 CanvasTextNode；依赖 ./canvas-link-node.js 的 CanvasLinkNode；依赖 ./canvas-group-node.js 的 CanvasGroupNode；依赖 ./canvas-file-node.js 的 CanvasFileNode；依赖 ./canvas-edge.js 的 CanvasEdge；
  *          依赖 ./canvas-menu.js 的 FileSuggestModal/LinkSuggestModal/JumpToGroupModal/installCanvasViewActions；
  *          依赖 ./canvas-controls.js 的 buildCardMenu/buildControls（建卡菜单与控件组的 DOM 构建）；依赖 ./canvas-arrange.js 的 buildCanvasMenu（选择浮动工具条与多选包围盒）；依赖 ./canvas-export.js 的 renderCanvasImage/exportCanvasImage；
  *          依赖 ./canvas-clipboard.js 的 handleCanvasCopy/handleCanvasCut/handleCanvasPaste；依赖 ./canvas-drop.js 的 installCanvasDrop；
  *          依赖 ./canvas-options.js 的 loadCanvasOptions/saveCanvasOptions（.obsidian/canvas.json，与白板设定页共用同一份选项）
+ *          节点创建委托 canvas-node-factory.js。
  * [OUTPUT]: 导出 CanvasView 类（含 renderCanvasImage 渲染入口、generateHDImage 导出入口与 promptImageSavePath 保存对话框入口）
  * [POS]: views/ 画布类链的末端：View → CanvasViewport（视口）→ CanvasInteractions（交互）→ CanvasView（装配与调度）。持有 .canvas-wrapper DOM、节点/边集合、选择集合、JSON Canvas 读写。
  *        ResizeObserver 在挂载后更新视口。节点与边几何分层；数据防抖 500ms 写回，关闭时 flush。
@@ -36,7 +37,7 @@ import { Notice } from '../core/notices.js';
 import { Desktop } from '../core/ipc.js';
 import { debounce } from '../core/events.js';
 import {
-  genId, boxesIntersect, containsBox, expandBBox, nearestSide, rectFromPos, distanceToBox, rectOf, MultiMap,
+  genId, boxesIntersect, containsBox, expandBBox, nearestSide, distanceToBox, rectOf, MultiMap,
 } from './canvas-utils.js';
 import {
   CanvasNode, CanvasDummyNode,
@@ -54,6 +55,8 @@ import { FileSuggestModal, LinkSuggestModal, JumpToGroupModal, installCanvasView
 import { buildCardMenu, buildControls } from './canvas-controls.js';
 import { buildCanvasMenu } from './canvas-arrange.js';
 import { renderCanvasImage, exportCanvasImage } from './canvas-export.js';
+
+import { createTextNode, createFileNode, createLinkNode, createGroupNode } from './canvas-node-factory.js';
 
 const SAVE_DELAY = 500;
 
@@ -480,49 +483,13 @@ export class CanvasView extends CanvasInteractions {
 
   /* ------------------------------------------------------------ 创建节点 */
 
-  createTextNode(opts = {}) {
-    const size = opts.size || this.config.defaultTextNodeDimensions;
-    const node = new CanvasTextNode(this);
-    node.moveAndResize(rectFromPos(opts.pos || this.posCenter(), size, opts.position));
-    if (opts.text) node.setText(opts.text);
-    this.addNode(node);
-    if (opts.save !== false) this.requestSave();
-    if (opts.focus !== false) { this.selectOnly(node); node.startEditing(); }
-    return node;
-  }
+  createTextNode(opts = {}) { return createTextNode(this, opts); }
 
-  createFileNode(opts = {}) {
-    const size = opts.size || this.config.defaultFileNodeDimensions;
-    const node = new CanvasFileNode(this);
-    node.moveAndResize(rectFromPos(opts.pos || this.posCenter(), size, opts.position));
-    if (opts.file) node.setFile(opts.file, opts.subpath);
-    this.addNode(node);
-    if (opts.save !== false) this.requestSave();
-    if (opts.focus !== false) this.selectOnly(node);
-    return node;
-  }
+  createFileNode(opts = {}) { return createFileNode(this, opts); }
 
-  createLinkNode(opts = {}) {
-    const size = opts.size || this.config.defaultFileNodeDimensions;
-    const node = new CanvasLinkNode(this);
-    node.moveAndResize(rectFromPos(opts.pos || this.posCenter(), size, opts.position));
-    if (opts.url) node.setUrl(opts.url);
-    this.addNode(node);
-    if (opts.save !== false) this.requestSave();
-    if (opts.focus !== false) this.selectOnly(node);
-    return node;
-  }
+  createLinkNode(opts = {}) { return createLinkNode(this, opts); }
 
-  createGroupNode(opts = {}) {
-    const size = opts.size || this.config.defaultFileNodeDimensions;
-    const node = new CanvasGroupNode(this);
-    node.moveAndResize(rectFromPos(opts.pos || this.posCenter(), size, opts.position));
-    node.setLabel(opts.label || t('plugins.canvas.label-untitled-group'));
-    this.addNode(node);
-    if (opts.save !== false) this.requestSave();
-    if (opts.focus !== false) { this.selectOnly(node); node.focusLabel(); }
-    return node;
-  }
+  createGroupNode(opts = {}) { return createGroupNode(this, opts); }
 
   createEdge(from, to, save = true) {
     const edge = new CanvasEdge(this, genId(), from, to);

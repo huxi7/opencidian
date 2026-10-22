@@ -459,6 +459,6 @@
   check(bottomBox.bottom <= bottomCursor.top + 1, '底部空间不足时浮窗翻到光标上方');
   check(bottomBox.height <= 300, '翻转后高度不超过 300');
 
-  return { pass: true, checks };
+  return { pass: true, count: checks.length, checks };
 })()
 

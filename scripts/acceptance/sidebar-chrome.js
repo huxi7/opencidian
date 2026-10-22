@@ -260,5 +260,5 @@ await wait(160);
 check(feView._allCollapsed===false&&!!feView._collapseAllBtn.querySelector('.lucide-chevrons-down-up'),
   '手动展开文件夹后按钮回到 Collapse all 态');
 
-return {pass:true,checks};
+return {pass:true,count:checks.length,checks};
 })()

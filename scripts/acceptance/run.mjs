@@ -1,6 +1,6 @@
 /**
  * [INPUT]: Node 文件与进程 API、Electron、场景名称、--seed-vaults 与同名 .starter.js。
- * [OUTPUT]: 独立临时库、主窗/第二窗口回执与浅深截图、日志与退出码；--no-screenshot 跳过截图。
+ * [OUTPUT]: 独立临时库、规范 {pass,count,checks} 回执与可选浅深截图、日志与退出码；--no-screenshot 跳过截图。
  * [POS]: 桌面验收运行器。.starter.js 不作为独立场景，由同名主场景触发；不自行构建。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
@@ -107,15 +107,39 @@ if (starterSource) {
 const require = createRequire(import.meta.url);
 const electron = require(path.join(repository, 'node_modules/electron'));
 console.log(JSON.stringify({ scenario, phase, vault, screenshot, logfile }));
+const timeoutMs = Number(option('--timeout', '300000'));
+if (!Number.isFinite(timeoutMs) || timeoutMs < 1000) throw new Error('--timeout 需为至少 1000ms');
 const child = spawn(electron, ['--user-data-dir=' + path.join(vault, '.electron-user-data'), repository], {
-  cwd: repository, env, stdio: ['ignore', 'pipe', 'pipe'],
+  cwd: repository, env, detached: process.platform !== 'win32', stdio: ['ignore', 'pipe', 'pipe'],
 });
 let log = '';
+let timedOut = false;
+const stopOwnedChild = signal => {
+  try {
+    if (process.platform === 'win32') child.kill(signal);
+    else process.kill(-child.pid, signal);
+  } catch (error) { if (error.code !== 'ESRCH') throw error; }
+};
+let forceTimer;
+const timeout = setTimeout(() => {
+  timedOut = true;
+  log += '\n[acceptance] Electron timeout after ' + timeoutMs + 'ms\n';
+  stopOwnedChild('SIGTERM');
+  forceTimer = setTimeout(() => stopOwnedChild('SIGKILL'), 3000);
+}, timeoutMs);
+const interrupted = () => { stopOwnedChild('SIGKILL'); process.exit(130); };
+process.once('SIGINT', interrupted);
+process.once('SIGTERM', interrupted);
 for (const stream of [child.stdout, child.stderr]) stream.on('data', chunk => { log += chunk.toString(); });
 const code = await new Promise((resolve, reject) => {
   child.on('error', reject);
   child.on('close', resolve);
 });
+clearTimeout(timeout);
+clearTimeout(forceTimer);
+if (timedOut) stopOwnedChild('SIGKILL');
+process.removeListener('SIGINT', interrupted);
+process.removeListener('SIGTERM', interrupted);
 fs.writeFileSync(logfile, log);
 const lines = log.split('\n');
 const receipt = lines.find(line => line.startsWith('[dev] eval: '));
@@ -125,18 +149,17 @@ let result;
 try { result = JSON.parse(receipt?.slice('[dev] eval: '.length)); } catch { result = null; }
 let starterResult;
 try { starterResult = JSON.parse(starterReceipt?.slice('[dev-starter] eval: '.length)); } catch { starterResult = null; }
-const resultCount = (value) => value?.count || value?.checks?.length || value?.assertions?.length || (typeof value?.passed === 'number' ? value.passed : 0);
-const starterOk = !starterSource || (starterReceipt && starterResult?.pass === true &&
+const valid = value => value?.pass === true && Array.isArray(value.checks) &&
+  Number.isInteger(value.count) && value.count === value.checks.length;
+const starterOk = !starterSource || (starterReceipt && valid(starterResult) &&
   (!starterScreenshot || fs.existsSync(starterScreenshot)) &&
   (!starterLightScreenshot || fs.existsSync(starterLightScreenshot)));
-const passed = code === 0 && !failure && (!screenshot || fs.existsSync(screenshot)) && starterOk &&
-  (result?.pass === true || result?.passed === true || result?.passed > 0 || result?.ok === true || result?.status === 'PASS');
+const passed = !timedOut && code === 0 && !failure && (!screenshot || fs.existsSync(screenshot)) && starterOk && valid(result);
+const checks = [...(Array.isArray(result?.checks) ? result.checks : []),
+  ...(Array.isArray(starterResult?.checks) ? starterResult.checks : [])];
 console.log(JSON.stringify({
-  passed,
-  checks: resultCount(result) + resultCount(starterResult),
-  logfile, screenshot,
-  starterScreenshot, starterLightScreenshot,
-  starterChecks: resultCount(starterResult),
-  vault,
+  pass: passed, count: checks.length, checks,
+  logfile, screenshot, starterScreenshot, starterLightScreenshot,
+  starterCount: starterResult?.count || 0, vault,
 }));
 if (!passed) { console.error(log.slice(-6000)); process.exitCode = 1; }

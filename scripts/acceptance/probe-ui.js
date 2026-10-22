@@ -101,5 +101,5 @@ if(state==='settings'){
 }
 
 console.log('PROBE-UI '+JSON.stringify(info));
-return {pass:true,checks};
+return {pass:true,count:checks.length,checks};
 })()

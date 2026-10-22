@@ -1,6 +1,6 @@
 /**
  * [INPUT]: 独立临时 vault 与 OBS_ACT eval 注入的应用实例。
- * [OUTPUT]: 返回验收断言结果；失败抛出异常，供运行器判定。
+ * [OUTPUT]: 返回 {pass,count,checks} 断言回执；失败抛出异常。
  * [POS]: notes 场景。仅由 run.mjs 在带标记的临时库执行。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
@@ -95,7 +95,7 @@
       await waitFor('heading extraction prompt', () => [...document.querySelectorAll('.prompt-input')].find(el=>el.getBoundingClientRect().height>0));
     } else if (stage === 'result') await openFile(app.vault.getFileByPath(manifest.target));
     else throw new Error('Unknown notes acceptance stage: ' + stage);
-    return { status: 'PASS', stage, checks: results.length, assertions: results, fixture: manifest.base };
+    return { pass: true, status: 'PASS', stage, count: results.length, checks: results, assertions: results, fixture: manifest.base };
   }
   const ids = ['daily-notes','templates','note-composer','random-note','zk-prefixer'];
   for (const id of ids) await enable(id);
@@ -200,10 +200,11 @@
   manifest = { base, source: source.path, heading: heading.path, target: target.path, extracted: extracted.path, trash, options,
     files: [source.path, heading.path, target.path, today.path, previous.path, firstUnique.path, ...unique.map(file => file.path), extracted.path] };
   await app.vault.adapter.write(manifestFile, JSON.stringify(manifest, null, 2));
-  const report = { status: 'PASS', stage, checks: results.length, assertions: results, fixture: base,
+  const report = { pass: true, status: 'PASS', stage, count: results.length, checks: results, assertions: results, fixture: base,
     settings: Object.keys(options), screenshotStages: ['daily-notes','templates','note-composer','zk-prefixer','template-picker','extract-heading','result'] };
-  await app.vault.adapter.write('.obsidian/notes-acceptance-result.json', JSON.stringify(report, null, 2));
   // 默认留在设置页供 OBS_SCREENSHOT 捕获；其余截图阶段复用 manifest。
   openSettings('zk-prefixer');
+  report.count = results.length;
+  await app.vault.adapter.write('.obsidian/notes-acceptance-result.json', JSON.stringify(report, null, 2));
   return report;
 })()

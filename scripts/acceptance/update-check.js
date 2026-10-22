@@ -64,5 +64,5 @@ try {
   app.settings.updateAppSettings({ updateFeed: '' });
   clearNotices();
 }
-return {pass:true,checks};
+return {pass:true,count:checks.length,checks};
 })()

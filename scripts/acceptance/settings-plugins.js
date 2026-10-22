@@ -1,13 +1,13 @@
 /**
  * [INPUT]: 独立临时 vault 与 OBS_ACT eval 注入的应用实例。
- * [OUTPUT]: 返回验收断言结果；失败抛出异常，供运行器判定。
+ * [OUTPUT]: 返回 {pass,count,checks} 断言回执；失败抛出异常。
  * [POS]: settings-plugins 场景：侧栏分组结构（选项组含独立“界面”页签 / 核心插件组）、locale 键按原版 i18n 补齐（键存在且是原版译文）、快捷键页裸搜索框/状态筛选芯片/冲突徽标、按快捷键捕获与 Esc、冲突芯片跳筛选、空数组压制默认键、行内录制；核心插件页搜索聚焦/空态、齿轮/快捷键入口显隐与跳转、开关不重建行、插件设置页签归入核心插件分组。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 (async()=>{
 const wait=ms=>new Promise(r=>setTimeout(r,ms));
 const ok=(b,m)=>{if(!b)throw Error(m)};
-let count=0;const check=(b,m)=>{count++;ok(b,m)};
+const checks=[];let count=0;const check=(b,m)=>{count++;ok(b,m);checks.push(m)};
 const text=el=>String((el&&el.textContent)||'').trim();
 const until=async(fn,label)=>{for(let n=0;n<120;n++){if(fn())return;await wait(25)}throw Error(label)};
 const rowsOf=root=>[...root.querySelectorAll('.setting-items > .setting-item')];
@@ -281,5 +281,5 @@ for (const [key,zh,en] of expectLocale) {
 
 if(app.setting&&app.setting.close)app.setting.close();
 await app.saveLayout();
-return {pass:true,count};
+return {pass:true,count,checks};
 })()

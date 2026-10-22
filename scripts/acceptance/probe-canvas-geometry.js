@@ -3,6 +3,7 @@
  * [OUTPUT]: 新建画布后的祖先链几何与计算样式（console.log PROBE-CANVAS-GEO + 截图）。
  * [POS]: 诊断探针（非断言锁）。用于定位"画布只占下半屏"：逐层打印 leaf / view-content / canvas-wrapper
  *        的 rect 与 position/height/display/contain/transform，确认 100% 高度的包含块是谁。
+ * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 (async()=>{
 const wait=ms=>new Promise(r=>setTimeout(r,ms));
@@ -24,7 +25,7 @@ const kids=[...(leaf?leaf.querySelectorAll(':scope > .workspace-leaf-content > *
 console.log('PROBE-CANVAS-KIDS '+JSON.stringify(kids));
 console.log('PROBE-CANVAS-STATE '+JSON.stringify({leafCount:document.querySelectorAll('.workspace-leaf').length, activeType:app.workspace.activeLeaf&&app.workspace.activeLeaf.view&&app.workspace.activeLeaf.view.getViewType(), leafSame:!!(leaf&&app.workspace.activeLeaf&&app.workspace.activeLeaf.containerEl===leaf)}));
 const wrapper=document.querySelector('.canvas-wrapper');
-if(!wrapper){console.log('PROBE-CANVAS-GEO '+JSON.stringify({error:'no wrapper'}));return {pass:true,count:1,checks:['no wrapper']};}
+if(!wrapper){console.log('PROBE-CANVAS-GEO '+JSON.stringify({error:'no wrapper'}));return {pass:true,count:0,checks:[]};}
 const chain=[];
 let node=wrapper;
 for(let i=0;i<8&&node;i++){
@@ -34,5 +35,5 @@ for(let i=0;i<8&&node;i++){
 const info={viewport:[innerWidth,innerHeight],chain};
 console.log('PROBE-CANVAS-GEO '+JSON.stringify(info,null,1));
 await app.saveLayout();
-return {pass:true,count:1,checks:['probe'],info};
+return {pass:true,count:0,checks:[],info};
 })()

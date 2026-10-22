@@ -127,5 +127,5 @@ if (want('empty')) {
     .map((el)=>({text:el.textContent.trim(),w:+el.getBoundingClientRect().width.toFixed(1),h:+el.getBoundingClientRect().height.toFixed(1)}));
 }
 console.log('PROBE-TOPBAR '+JSON.stringify({state,bodyClass:String(body.className),nodes,aligned,pseudo,variables,rows},null,1));
-return {pass:true,checks,state,ribbonClass:String(ribbon.className),ribbonBg:nodes.ribbon&&nodes.ribbon.color,ribbonBefore:pseudo.ribbonBefore,centerHeader: nodes.centerHeader};
+return {pass:true,count:checks.length,checks,state,ribbonClass:String(ribbon.className),ribbonBg:nodes.ribbon&&nodes.ribbon.color,ribbonBefore:pseudo.ribbonBefore,centerHeader: nodes.centerHeader};
 })()

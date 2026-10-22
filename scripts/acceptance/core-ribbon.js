@@ -26,7 +26,7 @@
       check(app.plugins.getInternalPlugin(plugin).enabled, plugin + ' 启用配置保留');
       check(buttons(command).length === 1, plugin + ' 重启恢复唯一功能区入口');
     }
-    return { pass: true, checks };
+    return { pass: true, count: checks.length, checks };
   }
   check(buttons('graph:open').length === 1, '默认启用的图谱启动即注册入口');
   for (const [plugin, command, icon] of entries) {
@@ -89,5 +89,5 @@
   await until(() => app.workspace.activeLeaf?.view.getViewType() === 'canvas', '白板按钮创建并打开画布');
   check(app.workspace._sideOf(app.workspace.activeLeaf) === 'center', '白板在中心打开');
   await app.saveLayout();
-  return { pass: true, checks };
+  return { pass: true, count: checks.length, checks };
 })()

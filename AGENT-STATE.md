@@ -650,3 +650,13 @@ node --experimental-vm-modules src/renderer/core/workspace-regression.js
 - bases 场景 55 项通过；内存回归 19/19。静态证据与写回边界见 _analysis/bases-114/FACTS.md。
 - 未知视图只提示降级；未知键保留。顶层流式或锚点冲突时保留值重写，排版和注释不保证全部保持。
 - Wave 2 的其它视图、分组、汇总、完整公式、日期和 CSV 尚未启动。
+
+
+### T4 工程卫生与最终集成回归
+
+- 主进程 main.js 拆出 app-menu/app-protocol；画布拆出 canvas-drag/canvas-node-factory。另按原层叠顺序拆出 layout-shell/components-overlays。全部 src/scripts 文件不超过 800 行。
+- 正式场景统一 {pass,count,checks}。步骤与环境信息另存，count 必须等于实际检查名称数量。notes-settings 四页各 9 项输入/写盘/重开断言。
+- 新入口：sh scripts/acceptance/full.sh，自持锁、默认 build、全部 --no-screenshot。--only 定向补跑；链式 reader 自动补 writer。超时只清理自身 Electron 进程组。
+- 最终集成有效覆盖 67 场景/97 次/6477 断言全绿。实际执行 104 次（含 7 次计数修正补跑）；初轮 theme-tokens 回执不规范的失败保留。证据 /tmp/opensidian-wave1-full-1022/summary-final.json。
+- 最终内存回归 19/19；日志 /tmp/opensidian-wave1-memory-1022.log。未启动原版，只读静态包；未做视觉验收。
+- 本轮只执行 Wave 1。Wave 2 的其它数据库视图、分组、汇总、完整公式与 CSV，以及 Wave 3 的打包冒烟仍待执行。

@@ -14,6 +14,7 @@
       !/obs-copy-graph-perf-/.test(root)) {
     throw new Error('graph-perf 只在生成的临时库运行，且需要 OBS_GRAPH_PERF_NODES');
   }
+  const checks = [];
   const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
   const wait = async (label, predicate, timeout = 240000) => {
     const end = Date.now() + timeout;
@@ -21,6 +22,7 @@
       if (Date.now() > end) throw new Error('timeout: ' + label);
       await delay(50);
     }
+    checks.push(label);
   };
   await wait('vault scan completes', () => app.vault.getMarkdownFiles().length === expected);
   // 打开图谱（与用户入口一致：新建叶子 → graph 视图）
@@ -72,7 +74,8 @@
     tickMs: Number(tickMs.toFixed(2)),
     fps: Number(fps.toFixed(1)),
     disposed,
-    count: 4,
+    count: checks.length,
+    checks,
   };
   fs.writeFileSync(nodePath.join(root, '.obs-copy-graph-perf.json'), JSON.stringify(report, null, 2));
   return report;

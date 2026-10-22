@@ -1,6 +1,6 @@
 /**
  * [INPUT]: 独立临时 vault 与 OBS_ACT eval 注入的应用实例。
- * [OUTPUT]: 返回验收断言结果；失败抛出异常，供运行器判定。
+ * [OUTPUT]: 返回 {pass,count,checks} 断言回执；失败抛出异常。
  * [POS]: core-views 场景。覆盖 outgoing-link 与 properties 两个核心插件：
  *        出链列表/未解析样式/空态、全部属性排序、文件属性跟随、状态栏计数与禁停恢复。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
@@ -276,6 +276,7 @@
     workspace.revealLeaf(reopenedOutgoing);
     await wait(150);
     result.ok = true;
+    result.pass = true;
     result.count = checks.length;
     result.folder = folder;
     result.visibleType = workspace.activeLeaf.view.getViewType();

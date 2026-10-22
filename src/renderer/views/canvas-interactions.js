@@ -1,5 +1,6 @@
 /**
  * [INPUT]: 依赖 ./canvas-viewport.js 的 CanvasViewport（类链基类）；依赖 ./canvas-node.js 的 CanvasNode（instanceof 判定）；依赖 ./canvas-utils.js 的 clamp、containsBox、unionBBox、expandBBox、bboxOf、rectFromBBox；依赖 ./canvas-selection.js 的 CanvasSelectionBox；依赖 ../core/menu.js 的 Menu；依赖 ../core/keymap.js 的 IS_MAC；依赖 ../core/i18n.js 的 t；依赖 ./canvas-menu.js 的 showCreationMenu、showQuickSettingsMenu
+ *          拖拽原语委托 canvas-drag.js，并保留重导出接口。
  * [OUTPUT]: 导出 CanvasInteractions 类（选择集合语义：select/deselect/toggleSelect/selectOnly/selectAll/deselectAll、updateSelection/applySelectionDiff、deleteSelection；指针/键盘/拖拽/框选/滚轮/右键菜单；悬停命中 hitTestNode/interactionHitTest/setInteractionTarget/onPointermove/onPointerleave）与 startDrag、suppressClick、suppressContextMenu 三个拖拽原语。
  * [POS]: views/ 画布类链的第三层：View → CanvasViewport → CanvasInteractions → CanvasView。所有画布指针语义（阈值 5px 才成拖拽、拖到视口边缘 30px 自动平移、拖拽后吞掉一次 click）集中于此；
  *        选择集合也归本层：改动一律走 updateSelection（先拍旧集合、置 selectionChanged），帧尾由 applySelectionDiff 统一处理焦点/高亮进出。
@@ -30,74 +31,8 @@ import { showCreationMenu, showQuickSettingsMenu } from './canvas-menu.js';
 
 const PAN_SPEED_FACTOR = 0.93;
 
-/** 原版 kg：吞掉拖拽之后紧跟的那一次 click。 */
-export function suppressClick(el) {
-  const handler = (e) => { e.preventDefault(); e.stopPropagation(); e.stopImmediatePropagation(); };
-  window.setTimeout(() => el.removeEventListener('click', handler, { capture: true }), 0);
-  el.addEventListener('click', handler, { capture: true });
-}
-
-/**
- * 原版 sM(el, "contextmenu")：吞掉拖拽收尾后浏览器补发的那一次 contextmenu。
- * Windows 的顺序是 pointerup → contextmenu；监听必须在 pointerup 的同一任务里挂好，
- * 所以这里与 suppressClick 一样用 0ms 定时器摘除，而不是等下一帧。
- */
-export function suppressContextMenu(el) {
-  const handler = (e) => { e.preventDefault(); e.stopPropagation(); e.stopImmediatePropagation(); };
-  window.setTimeout(() => el.removeEventListener('contextmenu', handler, { capture: true }), 0);
-  el.addEventListener('contextmenu', handler, { capture: true });
-}
-
-/** 原版 wg：指针拖拽助手。factory 在超过 threshold 后调用一次；cleanup 先于 end/cancel 执行。 */
-export function startDrag(e, factory, threshold = 5, onIdle = null) {
-  const win = window;
-  const start = { x: e.clientX, y: e.clientY };
-  let drag = null;
-  let done = false;
-  const cleanup = () => {
-    if (done) return;
-    done = true;
-    win.removeEventListener('pointermove', onMove, true);
-    win.removeEventListener('pointerup', onUp, true);
-    win.removeEventListener('pointercancel', onCancel, true);
-    win.removeEventListener('keydown', onKeyDown, true);
-    win.removeEventListener('keyup', onKeyUp, true);
-    if (drag && drag.cleanup) drag.cleanup();
-  };
-  function onMove(ev) {
-    if (ev.pointerId !== e.pointerId) return;
-    if (!drag) {
-      if (Math.hypot(ev.clientX - start.x, ev.clientY - start.y) < threshold) return;
-      drag = factory();
-      if (!drag) { cleanup(); return; }
-    }
-    if (drag.move) drag.move(ev);
-  }
-  function onUp(ev) {
-    // 原版 oM：pointerup 必须来自发起拖动的同一个指针与同一个按键，避免右键拖动被左键松开收尾。
-    if (ev.pointerId !== e.pointerId || ev.button !== e.button) return;
-    const current = drag;
-    cleanup();
-    if (current && current.end) current.end(ev);
-    // 纯点击（未越过阈值）：拖拽工厂从未创建，必须走 idle 收尾，
-    // 否则调用方在 pointerdown 时置的拖动状态永远清不掉（原版 cleanup 总会执行）。
-    else if (!current && onIdle) onIdle(ev);
-  }
-  function onCancel(ev) {
-    if (ev.pointerId !== e.pointerId) return;
-    const current = drag;
-    cleanup();
-    if (current && current.cancel) current.cancel(ev);
-    else if (!current && onIdle) onIdle(ev);
-  }
-  function onKeyDown(ev) { if (drag && drag.keydown) drag.keydown(ev); }
-  function onKeyUp(ev) { if (drag && drag.keyup) drag.keyup(ev); }
-  win.addEventListener('pointermove', onMove, true);
-  win.addEventListener('pointerup', onUp, true);
-  win.addEventListener('pointercancel', onCancel, true);
-  win.addEventListener('keydown', onKeyDown, true);
-  win.addEventListener('keyup', onKeyUp, true);
-}
+export { startDrag, suppressClick, suppressContextMenu } from './canvas-drag.js';
+import { startDrag, suppressClick, suppressContextMenu } from './canvas-drag.js';
 
 export class CanvasInteractions extends CanvasViewport {
   /* -------------------------------------------------------------- 键盘 */

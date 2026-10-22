@@ -630,6 +630,6 @@
     await delay(300);
     engine.onNodeRightClick(new MouseEvent('contextmenu', { button: 2, clientX: rect.left + 100, clientY: rect.top + 100 }), 'A.md', '');
   }
-  return { role: 'graph', passed: checks.length, checks, fixture: realVault, screen,
+  return { role: 'graph', pass: true, count: checks.length, passed: checks.length, checks, fixture: realVault, screen,
     screenshots: ['global: 全局节点、附件/标签、控制面板', 'filter: tag:project 仅保留 A 和标签', 'local: 左右全局/局部图和邻居连线', 'menu: A.md 右键菜单'] };
 })()

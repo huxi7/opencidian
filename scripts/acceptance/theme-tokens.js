@@ -21,8 +21,8 @@
  */
 (async()=>{
 const wait=ms=>new Promise(r=>setTimeout(r,ms));
-let count=0;const failures=[];
-const check=(cond,msg)=>{count++;if(!cond)failures.push(msg);};
+const checks=[];let count=0;const failures=[];
+const check=(cond,msg)=>{count++;checks.push(msg);if(!cond)failures.push(msg);};
 const norm=s=>String(s==null?'':s).replace(/\s+/g,' ').trim();
 const near=(a,b,tol)=>Math.abs(a-b)<=tol;
 
@@ -502,6 +502,7 @@ const runTheme=async(mode)=>{
   const problems=[];
   for(const name of Object.keys(expected)){
     const item=expected[name];
+    checks.push(mode+' '+name+' 期望 '+expectLabel(item)+'（app.css:'+item.line+'）');
     if(item.kind==='color'){
       const got=parseRgb(colorOf(name));
       if(!got){problems.push(name+' 不是可解析颜色（期望 '+item.value+'）');continue;}
@@ -612,5 +613,5 @@ if(failures.length){
   const head=failures.slice(0,60).join('\n');
   throw Error('主题变量对齐失败 '+failures.length+' 项（共断言 '+count+'）：\n'+head+(failures.length>60?'\n…其余 '+(failures.length-60)+' 项':''));
 }
-return {pass:true,count,theme:originalTheme,swatches:swatchNames.length,panel:true};
+return {pass:true,count,checks,theme:originalTheme,swatches:swatchNames.length,panel:true};
 })()

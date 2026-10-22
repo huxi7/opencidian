@@ -1,14 +1,14 @@
 /**
  * [INPUT]: 独立临时 vault 与 OBS_ACT eval 注入的 app；app.setting（Modal 子类实例）；app.fileManager 的删除确认。
- * [OUTPUT]: 返回 {pass,checks}；失败抛异常，供 run.mjs 判定。
+ * [OUTPUT]: 返回 {pass,count,checks}；步骤摘要独立保存在 steps。
  * [POS]: modal-ui 场景。锁定应用内模态的视觉与交互契约：mod-dim 大阴影、0.85 遮罩、cover 取色、
  *        视口居中、背景点击关闭与 5px 拖选保护、ESC、关闭后摘除、确认弹窗标题/按钮。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 (async()=>{
 const wait=ms=>new Promise(r=>setTimeout(r,ms));
-const ok=(b,m)=>{if(!b)throw Error(m)};
-const checks=[];
+const ok=(b,m)=>{if(!b)throw Error(m);checks.push(m)};
+const checks=[];const steps=[];
 
 // ---- 打开应用内设置模态（E2E 下 shouldUsePopout 返回 false）
 app.setting.open();await wait(300);
@@ -30,7 +30,7 @@ const cr=container.getBoundingClientRect();
 ok(Math.abs(cr.width-window.innerWidth)<=1&&Math.abs(cr.height-window.innerHeight)<=1,'模态容器铺满视口');
 ok(getComputedStyle(host.closeButtonEl).display!=='none','应用内显示关闭按钮');
 ok((host.titleEl.textContent||'').trim().length>0,'模态标题非空: '+host.titleEl.textContent);
-checks.push('mod-dim + cover + shadow + centering');
+steps.push('mod-dim + cover + shadow + centering');
 
 // ---- 背景点击：位移 >=5px 视为拖选，不关闭（macOS 保护）
 bg.dispatchEvent(new MouseEvent('mousedown',{bubbles:true,screenX:10,screenY:10}));
@@ -41,19 +41,19 @@ bg.dispatchEvent(new MouseEvent('mousedown',{bubbles:true,screenX:20,screenY:20}
 bg.dispatchEvent(new MouseEvent('click',{bubbles:true,screenX:22,screenY:21}));
 await wait(250);
 ok(!container.isConnected,'轻点背景关闭模态');
-checks.push('bg click + drag guard');
+steps.push('bg click + drag guard');
 
 // ---- 重开：mod-dim 与遮罩同时复位
 app.setting.open();await wait(250);
 ok(container.isConnected&&container.hasClass('mod-dim'),'重开后重新挂载并带 mod-dim');
 ok(bg.style.opacity==='0.85','重开后遮罩恢复 0.85');
-checks.push('reopen restores dim');
+steps.push('reopen restores dim');
 
 // ---- ESC 关闭
 document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}));
 await wait(250);
 ok(!container.isConnected,'ESC 关闭模态');
-checks.push('ESC closes');
+steps.push('ESC closes');
 
 // ---- 模态内把「在新窗口中打开设置」切为开：close() 必须先关闭模态，不能因配置已变而滞留
 app.setting.open();await wait(250);
@@ -63,7 +63,7 @@ app.setting.close();await wait(300);
 ok(!container.isConnected,'配置切到独立窗口后模态正常关闭');
 window.__SETTINGS_POPOUT_FORCE__=false;
 app.settings.updateAppSettings({settingsPopoutWindow:false});
-checks.push('modal closes when switching to popout');
+steps.push('modal closes when switching to popout');
 
 // ---- 确认弹窗：标题、双按钮、mod-dim；取消不删除
 const file=await app.vault.create('Modal-'+Date.now()+'.md','# confirm');
@@ -79,7 +79,7 @@ ok(cModal.hasClass('mod-dim'),'确认弹窗同样带 mod-dim');
 const cancelBtn=buttons.find((b)=>!b.classList.contains('mod-warning'));
 cancelBtn.click();await wait(50);await task;
 ok(app.vault.getFileByPath(file.path),'取消后文件仍在');
-checks.push('confirm title/buttons + cancel');
+steps.push('confirm title/buttons + cancel');
 
-return {pass:true,checks};
+return {pass:true,count:checks.length,checks,steps};
 })()

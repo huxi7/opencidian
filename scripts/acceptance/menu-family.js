@@ -182,5 +182,5 @@ check(linkRowTitles.includes('重命名'),'反链条目含重命名');
 check(linkRowTitles.includes('复制路径'),'反链条目含复制路径（file-menu 填充）');
 await closeMenu();
 
-return {pass:true,checks};
+return {pass:true,count:checks.length,checks};
 })()

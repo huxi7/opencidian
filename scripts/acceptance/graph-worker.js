@@ -1,6 +1,6 @@
 /*
  * [INPUT]: OBS_ACT eval 注入；由 run.mjs 新建的 obs-copy-graph-worker-* 临时库（5 篇互链笔记）。
- * [OUTPUT]: 返回 {role, passed, checks, backend, workerShared, fallbackReason}；断言失败抛错。
+ * [OUTPUT]: 返回 {pass,count,checks}；环境诊断另存 notes，失败抛错。
  * [POS]: 图谱力学 worker 化验收。覆盖后端选择（app:// 直载 → Blob 回退 → 本地）、位置由 worker 发布且主线程零物理、
  *        真实 worker 的 SAB/transfer 缓冲区形态与 crossOriginIsolated 平台限制、钉住/解钉、力参数唤醒与再沉降、
  *        关闭视图终止 worker、消息载荷与原版 sim.js 逐字段对齐、本地回退后端回归。
@@ -17,7 +17,8 @@
   if (app.vault.getFiles().length) throw new Error('fixture 必须使用空 vault，请每次新建目录');
   const checks = [];
   const assert = (condition, label) => { if (!condition) throw new Error('graph-worker: ' + label); checks.push(label); };
-  const note = (label) => { checks.push(label); };
+  const notes = [];
+  const note = (label) => { notes.push(label); };
   const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
   const wait = async (predicate, label, timeout = 15000) => {
     const end = Date.now() + timeout;
@@ -465,6 +466,7 @@
     passed: checks.length,
     count: checks.length,
     checks,
+    notes,
     backend: sim.backend,
     workerShared: sim.workerShared,
     workerAttempts: sim.attempts,
