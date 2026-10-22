@@ -688,3 +688,13 @@ L3/L2同步；源码与脚本均≤800行。上述为开发分段回归，不混
 - 边界：派生对象/公式/其它文件字段只读；超预算表达式明确拒绝；特殊 YAML 排版保留能力有限。静态、真实事件与写盘对齐不等于截图像素 1:1。
 
 末次 UI 审查补修：拒写改名不改变选择；新增数值/布尔筛选按库级类型生成字面量，无效数字不写盘。build 后 UI68、views125、new-item36 共229条通过，/tmp/opensidian-bases-last-two-fixes.jsonl；真实主进程 IO/CAS 拒写仍保留磁盘与原选择。
+
+## 画布导出尺寸、视口与隐私字形（2026-10-23）
+
+改动 views/canvas-export/dialog/tiles 与新增 limits/privacy；新增 acceptance/canvas-export-fidelity，更新 canvas/canvas-export 场景。原版静态 app.js 3352197 的长边16284、设备密度取整及 app.css 的隐私字体/媒体契约见 _analysis/canvas-export-114/FACTS.md。
+
+- 超过4096仍按真实整窗分块导出，长边16284；截图及大位图分配前检查512MiB估算预算，超限明确拒绝，不静默降级。
+- 视口弹层不提交隐藏的全图倍率，程序入口也忽略视口scale；真实PNG大小保持当前视口像素。
+- 自绘字形在原卡片/标签DOM层中，浏览器按z及overflow合成；内部裁切另限矩形。保留媒体、文字几何和颜色，成功/异常均移除临时SVG并释放位图。不复制许可不明的Flow Circular；不声称覆盖媒体内部文本或与原字体逐像素一致。
+- with-lock内 build + canvas-export-fidelity/canvas-export，30+24条通过，/tmp/opensidian-canvas-export-followup-1023.log（CtPDLv/YdnSj7）。进一步强化隐私异常清理后，canvas-export24 + canvas101通过，/tmp/opensidian-canvas-final-regression-1023.log（LNIjNC/osTKiu）。共4次179条开发验证，不冒充一次3场景执行。
+- Node limits18条通过，/tmp/opensidian-final-canvas-limits.log；原有默认/Retina密度、大图、无缝跨块及真实媒体像素均有断言。所有E2E均 --no-screenshot，导出PNG是功能验收产物。

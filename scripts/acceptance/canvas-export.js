@@ -1,6 +1,7 @@
 /**
  * [INPUT]: 隔离临时库中的画布与 Electron 截图 IPC。
  * [OUTPUT]: {pass,count,checks}；断言失败抛错。
+ * 接缝采样固定 pixelRatio:1；默认与 Retina 密度由 fidelity 场景验证。
  * [POS]: 验证整窗分块 PNG、跨块像素连续、真实正文与网页、取消和异常恢复。
  * 不打开浏览器、访达或保存对话框；截图仅为图片导出功能的内部实现。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
@@ -40,7 +41,7 @@
     mounted: node.isContentMounted, selection: [...canvas.selection] };
   const file = app.vaultPath + '/Tiles.png';
   canvas.promptImageSavePath = () => ({ canceled: false, filePath: file });
-  const result = await canvas.generateHDImage({ frame: 'full', scale: 1, showLogo: false });
+  const result = await canvas.generateHDImage({ frame: 'full', scale: 1, pixelRatio: 1, showLogo: false });
   ok(result && result.tiles > 1, '真实导出跨多个整窗块');
   ok(result.width === 2000 && result.height === 420, '导出包含100世界单位边距');
   ok(fs.existsSync(file), '真实导出写出 PNG');
@@ -66,7 +67,7 @@
   canvas.selectOnly(node); await wait(100);
   const selected = [...canvas.selection];
   canvas.promptImageSavePath = () => ({ canceled: false, filePath: app.vaultPath + '/Private.png' });
-  const privateResult = await canvas.generateHDImage({ frame: 'full', scale: 1, privacyMode: true, showLogo: false });
+  const privateResult = await canvas.generateHDImage({ frame: 'full', scale: 1, pixelRatio: 1, privacyMode: true, showLogo: false });
   ok(fs.readFileSync(privateResult.filePath).compare(fs.readFileSync(file)) !== 0, '隐私导出隐藏真实正文像素');
   ok(canvas.selection.size === selected.length && selected.every(item => canvas.selection.has(item)), '导出保留选择集合');
   ok(!canvas.wrapperEl.classList.contains('is-text-garbled'), '隐私导出恢复正文可见性');
@@ -75,7 +76,7 @@
   webFrame.setZoomFactor(1.25);
   await wait(250);
   canvas.promptImageSavePath = () => ({ canceled: false, filePath: app.vaultPath + '/Zoomed.png' });
-  const zoomed = await canvas.generateHDImage({ frame: 'full', scale: 1, showLogo: false });
+  const zoomed = await canvas.generateHDImage({ frame: 'full', scale: 1, pixelRatio: 1, showLogo: false });
   const zoomedPng = await loadPng(zoomed.filePath);
   ok(zoomedPng.width === png.width && zoomedPng.height === png.height, '界面缩放不改变输出像素尺寸');
   webFrame.setZoomFactor(originalZoom); await wait(250);
@@ -95,12 +96,12 @@
       return invoke.call(ipcRenderer, channel, ...args);
     };
     let rejected = false;
-    try { await canvas.generateHDImage({ frame: 'full' }); } catch (error) { rejected = /验收截图异常/.test(error.message); }
+    try { await canvas.generateHDImage({ frame: 'full', privacyMode: true }); } catch (error) { rejected = /验收截图异常/.test(error.message); }
     ok(rejected, '截图失败向调用方返回真实错误');
     ok(!fs.existsSync(app.vaultPath + '/Failed.png'), '截图失败不落盘简化替代图片');
     ok(!canvas.screenshotting && !canvas.wrapperEl.classList.contains('is-screenshotting'), '异常分支解除截图状态');
     ok(canvas.x === saved.x && canvas.y === saved.y && canvas.zoom === saved.zoom, '异常分支保留视口');
-    ok(![...document.querySelectorAll('style')].some(el => el.textContent.includes('.canvas-wrapper.is-text-garbled webview')), '异常分支移除临时导出样式');
+    ok(!canvas.wrapperEl.querySelector('.canvas-privacy-glyphs') && ![...document.querySelectorAll('style')].some(el => el.textContent.includes('.canvas-wrapper.is-screenshotting .canvas-background')), '异常分支移除临时导出样式和隐私字形 DOM');
   } finally { ipcRenderer.invoke = invoke; }
   let invalidRejected = false;
   try { await ipcRenderer.invoke('canvas-capture-page', { x: -1, y: 0, width: 10, height: 10 }); }

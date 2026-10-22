@@ -2,7 +2,7 @@
  * [INPUT]: 独立临时 vault 与 OBS_ACT eval 注入的应用实例。
  * [OUTPUT]: 返回验收断言结果；失败抛出异常，供运行器判定。
  * [POS]: canvas 场景。仅由 run.mjs 在带标记的临时库执行。覆盖新建/编辑落盘/连线/缩放/重开/边跟随/撤销重做/微移/快速设置/转换/只读恢复，
- *        并覆盖图片导出（命令可用性、面板菜单文案、导出弹窗四项设置与取消不落盘、确认后按倍率落盘并遵守 4096 上限、
+ *        并覆盖图片导出（命令可用性、面板菜单文案、导出弹窗四项设置与取消不落盘、确认后按倍率落盘并遵守 16284 上限、
  *        renderCanvasImage 的 dataURL/maxSize 上限/倍率/视口范围/水印/隐私模式与文字墨迹消失）与拖动对齐参考线
  *        （吸附到对齐值、出现 svg.canvas-snaps 参考线、松手清除、snapToObjects 关闭时不吸附）。
  *        链接卡导出：进程内 HTTP 页面 → webview.capturePage 真实 PNG → renderCanvasImage 像素 → generateHDImage 落盘 PNG 含网页画面。
@@ -145,8 +145,8 @@ ok(localStorage.getItem('canvas-'+f.path)===null,'readonly cleared from local da
 reopened.selectAll();reopened.deleteSelection();await wait(60);
 const gA=reopened.createTextNode({pos:{x:100,y:100},size:{width:100,height:100},text:'Guide A',focus:false,save:false});
 const gB=reopened.createTextNode({pos:{x:400,y:300},size:{width:100,height:100},text:'Guide B',focus:false,save:false});
-const guideGroup=reopened.createGroupNode({pos:{x:2000,y:1600},size:{width:400,height:300},label:'Guide Group',focus:false,save:false});
-reopened.createLinkNode({pos:{x:2600,y:2000},size:{width:200,height:100},url:'https://example.com',focus:false,save:false});
+const guideGroup=reopened.createGroupNode({pos:{x:1400,y:200},size:{width:400,height:100},label:'Guide Group',focus:false,save:false});
+reopened.createLinkNode({pos:{x:1800,y:300},size:{width:200,height:100},url:'https://example.com',focus:false,save:false});
 reopened.createEdge({side:'right',node:gA,end:'none'},{side:'left',node:gB,end:'arrow'},false);
 ok(reopened.nodes.size===4&&reopened.edges.size===1,'guide fixtures replace canvas content');
 reopened.deselectAll();
@@ -164,7 +164,7 @@ const fullImage=reopened.renderCanvasImage();
 ok(!!fullImage&&fullImage.dataURL.startsWith('data:image/png;base64,'),'render returns PNG data URL');
 ok(fullImage.dataURL.length>1000,'export PNG carries payload');
 ok(atob(fullImage.dataURL.split(',')[1].slice(0,16)).startsWith('\u0089PNG'),'export payload is a PNG file');
-ok(fullImage.width>1024&&fullImage.height>1024,'full export larger than the cap used below');
+ok(fullImage.width>1024&&fullImage.height>0,'full export wider than the cap used below');
 const cappedImage=reopened.renderCanvasImage({maxSize:1024});
 ok(cappedImage.width<=1024&&cappedImage.height<=1024&&cappedImage.width>0,'export size capped by maxSize');
 const drawn=await countNonBackgroundPixels(cappedImage);
@@ -220,7 +220,7 @@ ok(!!openDialog(),'pane menu export opens the settings dialog');
 openDialog().querySelector('.modal-close-button').click();
 await wait(250);
 ok(!openDialog()&&saveCalls===0,'menu-driven cancel produces no output');
-// ---- 确认弹出：滑杆拉到上限，输出按倍率落盘并遵守 4096 上限 ----
+// ---- 确认弹出：滑杆拉到上限，输出按倍率落盘并遵守 16284 上限 ----
 const pending=reopened.generateHDImage();
 await wait(180);
 dialog=openDialog();
@@ -229,7 +229,9 @@ const confirmSlider=dialog.querySelector('.setting-item input.slider');
 confirmSlider.value=confirmSlider.max;
 confirmSlider.dispatchEvent(new Event('change',{bubbles:true}));
 await wait(60);
-ok(/4,?096px/.test(settingDesc(1)),'estimated dimensions follow the zoom multiplier');
+const maximumZoom=Math.pow(2,Number(confirmSlider.max));
+const expectedZoom=reopened.renderCanvasImage({scale:maximumZoom});
+ok(settingDesc(1).includes(expectedZoom.width.toLocaleString()+'px'),'estimated dimensions include density and zoom multiplier');
 dialog.querySelector('.modal-button-container .mod-cta').click();
 const exported=await pending;
 await wait(200);
@@ -237,18 +239,18 @@ ok(saveCalls===1,'confirm asks the view for a save path');
 ok(!!exported&&exported.filePath===exportPath,'confirm writes to the chosen path');
 const png=require('fs').readFileSync(exportPath);
 ok(png.slice(1,4).toString()==='PNG','written file is a PNG');
-ok(png.readUInt32BE(16)===4096&&png.readUInt32BE(20)>fullImage.height,'written image respects the 4096 cap and the zoom multiplier');
+ok(png.readUInt32BE(16)===expectedZoom.width&&png.readUInt32BE(20)===expectedZoom.height&&expectedZoom.width<=16284,'written image matches density, zoom and 16284 cap');
 // ---- 渲染器选项：倍率、视口范围、水印、隐私模式 ----
 const zoomedImage=reopened.renderCanvasImage({scale:2});
-ok(zoomedImage.width>fullImage.width&&zoomedImage.width<=4096&&zoomedImage.height<=4096,'scale raises output size under the cap');
+ok(zoomedImage.width>fullImage.width&&zoomedImage.width<=16284&&zoomedImage.height<=16284,'scale raises output size under the cap');
 const halfImage=reopened.renderCanvasImage({scale:0.5});
 ok(Math.abs(halfImage.width-Math.round(fullImage.width/2))<=1,'scale lowers output size by the multiplier');
 const viewportImage=reopened.renderCanvasImage({frame:'viewport'});
-ok(Math.abs(viewportImage.width-Math.round(reopened.canvasRect.width))<=2&&viewportImage.width<fullImage.width,'viewport frame crops to the visible area');
+ok(Math.abs(viewportImage.width-Math.round(reopened.canvasRect.width*Math.round(devicePixelRatio/require('electron').webFrame.getZoomFactor()*1e5)/1e5))<=2&&viewportImage.width<fullImage.width,'viewport frame crops to the visible area');
 const logoImage=reopened.renderCanvasImage({showLogo:true});
 ok(await countNonBackgroundPixels(logoImage)>await countNonBackgroundPixels(fullImage),'logo adds drawn pixels');
 const privacyImage=reopened.renderCanvasImage({privacyMode:true});
-ok(await countTextInkPixels(fullImage)>0&&await countTextInkPixels(privacyImage)===0,'privacy mode replaces text with bars');
+ok(await countTextInkPixels(fullImage)>0&&await countTextInkPixels(privacyImage)>0&&privacyImage.dataURL!==fullImage.dataURL,'privacy mode preserves text geometry with unreadable glyphs');
 // ---- 链接卡网页画面进入导出：webview.capturePage 真实截图 ----
 const http=require('http');
 const linkServer=http.createServer((req,res)=>{

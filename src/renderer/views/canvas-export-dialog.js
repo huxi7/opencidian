@@ -5,7 +5,7 @@
  *        .modal.mod-narrow > .modal-content 内 p.u-muted（标题描述）+ 四个 Setting（范围下拉/缩放滑杆/显示水印/隐私模式），
  *        确认按钮在 .modal-button-container（mod-cta，文案 dialogue.button-save）。
  *        弹窗不渲染图像、不碰磁盘：数值全经构造参数注入（dimensionsFor 由 canvas-export.js 提供，避免两模块循环依赖），
- *        onSave 只回报 { frame, scale, showLogo, privacyMode }。范围选「仅当前部分」时缩放与水印控件隐藏（原版行为）。
+ *        onSave 回报导出选项；viewport 不回报 scale。范围选「仅当前部分」时隐藏缩放与水印；预计尺寸含取整后的设备密度与 16284 长边限制。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 /* Canvas export options modal — original CanvasExportModal (generateHDImage step 1). */
@@ -90,7 +90,7 @@ export class CanvasExportModal extends Modal {
     this.logoSetting.settingEl.toggleClass('is-hidden', !full);
   }
 
-  /** 预计图像尺寸：取当前倍率下的输出尺寸（含 4096 上限），与原版 labelExportPngDimensions 一致。 */
+  /** 预计图像尺寸：使用原版密度取整与 16284 长边限制，由注入的几何函数返回。 */
   syncDimensions() {
     const size = this.metrics.dimensionsFor(Math.pow(2, this.zoom));
     const dimensions = `${size.width.toLocaleString()}px x ${size.height.toLocaleString()}px`;
@@ -100,10 +100,10 @@ export class CanvasExportModal extends Modal {
   submit() {
     const options = {
       frame: this.frame,
-      scale: Math.pow(2, this.zoom),
       showLogo: this.showLogo,
       privacyMode: this.privacyMode,
     };
+    if (this.frame === 'full') options.scale = Math.pow(2, this.zoom);
     this.metrics.onSave(options);
     this.close();
   }

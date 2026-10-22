@@ -21,4 +21,5 @@ vault-watch.test.mjs: 真实 Chokidar 22 条。扫描空档、身份、增删改
 dev-hooks.test.mjs: 双窗口协调 11 条。迟到、失败、超时和回执校验，不启动 Electron。
 bases-editing.test.mjs: 数据库编辑单测。52 条覆盖视图身份、并发、类型、日期和属性写回。
 render-cancel.test.mjs: 渲染取消单测。9 条覆盖结算、监听释放与迟到结果。
+canvas-export-limits.test.mjs: 导出预算单测。18 条覆盖密度、取整、长边与分配上限。
 [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md

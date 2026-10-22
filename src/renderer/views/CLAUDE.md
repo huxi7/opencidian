@@ -39,8 +39,8 @@ canvas-minimap.js: 画布文件缩略图与画布嵌入层（移植原版 lte / 
 canvas-edge.js: 连线与标签几何。拖动连接点吸附节点并保存端点；点击边选中同时聚焦 wrapper，保持复制/Delete 等键盘语义作用在画布。拖边端点改接别处时，临时虚影与临时边在**拖拽真正开始**时才建（原版 oM 工厂语义），纯点击不残留。
 canvas-menu.js: 文件、链接、分组选择与画布上下文菜单。快速设置菜单三项：对齐网格/对齐物体/只读。另含视图面板菜单 showCanvasPaneMenu（action 段「导出图片」）与 installCanvasViewActions（在 .view-actions 建「更多选项」按钮并弹出该菜单）。
 canvas-utils.js: 无状态几何、颜色与多值索引。供节点、边、视口与选择框共用；rectFromBBox 把 bbox 折成矩形。
-canvas-export.js: 几何、选项与保存编排。真实落盘走整窗分块；取消不截图，失败不写图。同步 renderCanvasImage 仅为简化预览，输出上限 4096。
-canvas-export-dialog.js: 导出图片设置弹窗（原版 generateHDImage 第一步）。.modal.mod-narrow 内 p.u-muted 描述 + 四个 Setting：范围下拉(整个白板/仅当前部分)、缩放滑杆(log2 值，getValuePretty 显示倍率，描述显示预计尺寸)、显示水印(默认开)、隐私模式(默认关)；范围选「仅当前部分」时缩放与水印设置隐藏。不渲染图像、不碰磁盘，数值经构造参数注入（dimensionsFor/onSave），回报 { frame, scale, showLogo, privacyMode }。
+canvas-export.js: 几何、选项与保存编排。真实落盘走整窗分块；取消不截图，失败不写图。同步 renderCanvasImage 仅为简化预览；上限 16284，密度按原版取整；视口忽略隐藏的缩放值。
+canvas-export-dialog.js: 导出图片设置弹窗（原版 generateHDImage 第一步）。.modal.mod-narrow 内 p.u-muted 描述 + 四个 Setting：范围下拉(整个白板/仅当前部分)、缩放滑杆(log2 值，getValuePretty 显示倍率，描述显示预计尺寸)、显示水印(默认开)、隐私模式(默认关)；范围选「仅当前部分」时缩放与水印设置隐藏。不渲染图像、不碰磁盘，数值经构造参数注入（dimensionsFor/onSave），回报 { frame, scale?, showLogo, privacyMode }；仅全图回报 scale。
 bookmarks-view.js: 书签树与行内重命名。空分组可见，活动项按文件路径匹配。条目图标按原版 1.14.4 写死 lucide-* 全名（file/heading/toy-brick/layout-dashboard/folder/search/git-fork，显式前缀绕开别名表）；分组折叠用 right-triangle；视图头四钮 bookmark-plus/folder-plus/chevrons-down-up/search；行尾没有“…”按钮（原版只给右键菜单）；搜索钮展开 SearchComponent 并按标题/路径过滤。
 slides-presentation.js: SlidesPresentation。全窗口演示宿主（对齐原版 M9：document.body 上的 .slides-container + Escape 关闭；无 reveal.js，分页自有）。按顶层 hr 分页，保留代码围栏和引用内分隔线，每页 renderMarkdown；←/→/点击左右半屏翻页、Esc/关闭按钮销毁覆盖层。演示期间不动底层 markdown 视图，退出后模式、滚动与选区天然保持；导出 splitSlides。
 
@@ -48,4 +48,6 @@ canvas-export-tiles.js: 同一 DOM 场景平移截图。重叠裁边、整数输
 canvas-drag.js: 指针阈值、收尾与单次事件抑制。由交互层转出旧接口。
 canvas-node-factory.js: 四类画布节点构造。视图保持几何、保存和聚焦顺序。
 
+canvas-export-limits.js: 导出尺寸与密度预算。长边 16284，原版密度取整，分配与截图前检查 512MiB 预算。
+canvas-export-privacy.js: 隐私字形进入原卡片 DOM 层级。浏览器保留裁切与遮挡，成功/失败移除临时层，不复制许可不明字体。
 [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md

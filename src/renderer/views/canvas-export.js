@@ -1,9 +1,9 @@
 /**
- * [INPUT]: 画布几何与节点类型；CanvasExportModal；renderCanvasTiles；桌面保存对话框。
+ * [INPUT]: 画布几何与节点；导出弹层、分块截图、内存边界、自绘隐私字形与桌面保存入口。
  * [OUTPUT]: MAX_SIZE、canvasExportMetrics、renderCanvasImage、exportCanvasImage、saveCanvasImage。
  * [POS]: 画布图片导出编排。真实导出走整窗分块截图，保留浏览器渲染的完整场景。
  * renderCanvasImage 保留同步简化预览，供几何与像素单元验收使用，不参与真实落盘。
- * 全画布外扩 100，输出上限 4096；当前视口跟随缩放，不显示水印。
+ * 全画布外扩 100，长边上限 16284；分配前检查内存预算，隐私字形保留文本几何。
  * 保存路径取消时不截图；截图失败不写盘。水印只使用 OpenSidian。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
@@ -15,13 +15,14 @@ import { CanvasLinkNode } from './canvas-link-node.js';
 import { CanvasFileNode } from './canvas-file-node.js';
 import { CanvasExportModal } from './canvas-export-dialog.js';
 import { renderCanvasTiles } from './canvas-export-tiles.js';
+import { MAX_SIZE, assertCanvasExportBudget, canvasPixelRatio } from './canvas-export-limits.js';
+import { drawPrivacyText } from './canvas-export-privacy.js';
+export { MAX_SIZE } from './canvas-export-limits.js';
 import { t } from '../core/i18n.js';
 import { Notice } from '../core/notices.js';
 import { Desktop } from '../core/ipc.js';
 import { IS_MAC } from '../core/keymap.js';
 
-/** 导出像素上限（原版上限 16284；本复刻缩到 4096 以限制一次性绘制的内存）。 */
-export const MAX_SIZE = 4096;
 /** 全画布范围的外扩（原版 v3(box, 100)）。 */
 const PADDING = 100;
 /** 缩放滑杆上限（原版 h 里的 2：最高 2 倍输出）。 */
@@ -37,22 +38,27 @@ const CARD_PADDING = 16;
  * @param {{frame?:'full'|'viewport', box?:object, scale?:number, padding?:number, maxSize?:number}} [opts]
  */
 export function canvasExportMetrics(canvas, opts = {}) {
-  const maxSize = opts.maxSize || MAX_SIZE;
+  const maxSize = Math.min(opts.maxSize || MAX_SIZE, MAX_SIZE);
+  if (!Number.isFinite(maxSize) || maxSize <= 0) throw Error('画布导出长边尺寸无效');
   const box = exportBBox(canvas, opts);
   const worldWidth = Math.max(box.maxX - box.minX, 1);
   const worldHeight = Math.max(box.maxY - box.minY, 1);
+  const density = opts.pixelRatio ?? canvasPixelRatio(canvas.wrapperEl?.ownerDocument.defaultView.devicePixelRatio || 1, require('electron').webFrame.getZoomFactor());
+  if (!Number.isFinite(density) || density <= 0) throw Error('画布导出像素密度无效');
   // 视口范围是「所见即所得」：倍率跟随画布缩放；全画布按世界坐标 1:1 起步
-  const multiplier = opts.scale !== undefined ? opts.scale : (opts.frame === 'viewport' ? canvas.scale : 1);
-  const scale = Math.min(multiplier, maxSize / worldWidth, maxSize / worldHeight);
+  const multiplier = opts.frame === 'viewport' ? canvas.scale : (opts.scale ?? 1);
+  if (![box.minX, box.minY, box.maxX, box.maxY, multiplier].every(Number.isFinite) || multiplier <= 0) throw Error('画布导出范围或缩放无效');
+  const scale = Math.min(multiplier * density, maxSize / worldWidth, maxSize / worldHeight);
   return {
     box,
     worldWidth,
     worldHeight,
     maxSize,
-    maxZoom: Math.min(MAX_ZOOM, maxSize / worldWidth, maxSize / worldHeight),
+    pixelRatio: density,
+    maxZoom: Math.min(MAX_ZOOM, maxSize / density / worldWidth, maxSize / density / worldHeight),
     scale,
-    width: Math.max(1, Math.ceil(worldWidth * scale)),
-    height: Math.max(1, Math.ceil(worldHeight * scale)),
+    width: Math.max(1, Math.min(maxSize, Math.ceil(worldWidth * scale))),
+    height: Math.max(1, Math.min(maxSize, Math.ceil(worldHeight * scale))),
   };
 }
 
@@ -73,7 +79,9 @@ function exportBBox(canvas, opts) {
  */
 export function renderCanvasImage(canvas, opts = {}) {
   if (!canvas.nodes.size) return null;
-  const { box, scale, width, height } = canvasExportMetrics(canvas, opts);
+  const metrics = canvasExportMetrics(canvas, opts);
+  assertCanvasExportBudget(metrics, opts);
+  const { box, scale, width, height } = metrics;
   const privacyMode = !!opts.privacyMode;
   const showLogo = !!opts.showLogo && opts.frame !== 'viewport';
 
@@ -175,21 +183,6 @@ function edgeColor(edge) {
     if (stroke && stroke !== 'none') return stroke;
   }
   return 'rgb(192, 192, 192)';
-}
-
-/** 解析 rgb()/rgba() 计算色；失败返回 null。 */
-function parseRgb(color) {
-  const m = /rgba?\(\s*([\d.]+)[,\s]+([\d.]+)[,\s]+([\d.]+)/.exec(color || '');
-  if (!m) return null;
-  return { r: Number(m[1]), g: Number(m[2]), b: Number(m[3]) };
-}
-
-/** 隐私模式的占位灰条：正文色按 22% 混进背景色，浅深主题下都可见且不构成「文字墨迹」。 */
-function privacyBarColor(canvas, node) {
-  const bg = parseRgb(canvasBackground(canvas)) || { r: 255, g: 255, b: 255 };
-  const fg = parseRgb(nodeTextColor(node)) || { r: 0, g: 0, b: 0 };
-  const mix = (a, b) => Math.round(a * 0.78 + b * 0.22);
-  return `rgb(${mix(bg.r, fg.r)}, ${mix(bg.g, fg.g)}, ${mix(bg.b, fg.b)})`;
 }
 
 /* ------------------------------------------------------------------ 绘制 */
@@ -371,30 +364,22 @@ function drawGroupLabel(ctx, node, origin, scale) {
   ctx.fillText(label, origin.x, origin.y - 4 * scale);
 }
 
-/** 隐私模式：正文位置画 2~3 条灰条占位。 */
+/** 同步预览用实际文字的前进量生成圆角字形；真实导出直接量取 DOM Range。 */
 function drawPrivacyBars(ctx, node, origin, width, height, scale) {
-  const padding = CARD_PADDING * scale;
-  const barHeight = Math.max(2, Math.round(10 * scale));
-  const gap = Math.max(2, Math.round(barHeight * 0.9));
-  const ratios = [0.72, 0.92, 0.45];
-  ctx.fillStyle = privacyBarColor(node.canvas, node);
-  let y = origin.y + padding;
-  for (const ratio of ratios) {
-    if (y + barHeight > origin.y + height - padding + gap) break;
-    const barWidth = Math.max(4, (width - padding * 2) * ratio);
-    roundRectPath(ctx, origin.x + padding, y, barWidth, barHeight, barHeight / 2);
-    ctx.fill();
-    y += barHeight + gap;
-  }
+  const text = node.text || node.url || node.file?.basename || node.filePath || node.placeholderText || '';
+  ctx.font = nodeFont(node, scale);
+  ctx.fillStyle = nodeTextColor(node);
+  const size = parseFloat(ctx.font.match(/([\d.]+)px/)?.[1] || '16');
+  drawPrivacyText(ctx, text, origin.x + CARD_PADDING * scale, origin.y + CARD_PADDING * scale,
+    width - CARD_PADDING * scale * 2, size * 1.4);
 }
-
-/** 隐私模式下的分组标签：框顶上方画一条灰条。 */
 function drawPrivacyLabelBar(ctx, node, origin, width, scale) {
-  const height = Math.max(3, Math.round(12 * scale));
-  const barWidth = Math.max(16, Math.min(width, 240 * scale) * 0.4);
-  ctx.fillStyle = privacyBarColor(node.canvas, node);
-  roundRectPath(ctx, origin.x, origin.y - 4 * scale - height, barWidth, height, height / 2);
-  ctx.fill();
+  const label = node.labelEl?.textContent || node.label || '';
+  const style = getComputedStyle(node.labelEl || node.nodeEl);
+  const size = (parseFloat(style.fontSize) || 24) * scale;
+  ctx.font = `${style.fontWeight || '400'} ${size}px ${style.fontFamily || 'sans-serif'}`;
+  ctx.fillStyle = style.color;
+  drawPrivacyText(ctx, label, origin.x, origin.y - size * 1.4 - 4 * scale, width, size * 1.4);
 }
 
 /** 文件卡片：左上角文件名 + 居中的图标占位矩形（原版占位 .canvas-icon-placeholder 宽 25%）。 */

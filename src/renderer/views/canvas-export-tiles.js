@@ -1,5 +1,5 @@
 /**
- * [INPUT]: 画布 DOM、canvas-export.js 的几何；ipcInvoke 调用发送方窗口截图。
+ * [INPUT]: 画布 DOM、导出几何、分配预算、文本几何隐私层；ipcInvoke 调用发送方窗口截图。
  * [OUTPUT]: renderCanvasTiles 返回整窗分块合成 PNG；planCanvasTiles 返回整数分块。
  * [POS]: 画布真实导出器。整张场景随同一世界原点移动，保留正文、背景、连线与网页的合成关系。
  * 每块重叠 2 DIP 后裁边，输出只占一次整数像素，避免接缝和独立卡片缩放误差。
@@ -7,6 +7,8 @@
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 import { ipcInvoke } from '../core/ipc.js';
+import { assertCanvasExportBudget } from './canvas-export-limits.js';
+import { prepareCanvasPrivacy } from './canvas-export-privacy.js';
 
 const GUTTER = 2;
 const nextPaint = () => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
@@ -37,17 +39,17 @@ const captureStyles = `
 .canvas-wrapper.is-screenshotting .cm-cursorLayer,
 .canvas-wrapper.is-screenshotting .cm-selectionLayer { visibility:hidden!important; }
 .canvas-wrapper.is-screenshotting .canvas-node-container { outline:none!important;box-shadow:none!important; }
+.canvas-wrapper.is-text-garbled .canvas-node-content,
 .canvas-wrapper.is-text-garbled .canvas-node-content *,
-.canvas-wrapper.is-text-garbled .canvas-group-label { color:transparent!important;text-shadow:none!important; }
-.canvas-wrapper.is-text-garbled webview,
-.canvas-wrapper.is-text-garbled iframe,
-.canvas-wrapper.is-text-garbled img,
-.canvas-wrapper.is-text-garbled video { visibility:hidden!important; }
+.canvas-wrapper.is-text-garbled .canvas-node-label,
+.canvas-wrapper.is-text-garbled .canvas-group-label,
+.canvas-wrapper.is-text-garbled .canvas-edge-label { -webkit-text-fill-color:transparent!important;text-shadow:none!important; }
 `;
 
 /** 不开辅助窗口。截图失败直接报错，拒绝退回简化重绘冒充成功。 */
 export async function renderCanvasTiles(canvas, metrics, options = {}, decorate) {
   if (canvas.screenshotting) throw new Error('画布正在导出');
+  assertCanvasExportBudget(metrics, options);
   const wrapper = canvas.wrapperEl;
   const factor = require('electron').webFrame.getZoomFactor();
   const saved = {
@@ -65,6 +67,7 @@ export async function renderCanvasTiles(canvas, metrics, options = {}, decorate)
   output.width = metrics.width;
   output.height = metrics.height;
   const ctx = output.getContext('2d');
+  let privacy;
   canvas.screenshotting = true;
   // 不改 x/y/zoom 或选择集合。暂停交互，避免异步截图期间状态被指针覆盖。
   const block = event => { event.preventDefault(); event.stopImmediatePropagation(); };
@@ -72,7 +75,7 @@ export async function renderCanvasTiles(canvas, metrics, options = {}, decorate)
   try {
     document.head.appendChild(stylesheet);
     wrapper.classList.add('is-screenshotting');
-    wrapper.classList.toggle('is-text-garbled', !!options.privacyMode);
+    // 先挂载正文，之后捕获原色和真实文本布局，再隐藏字形。
     blocked.forEach(type => document.addEventListener(type, block, true));
     canvas.cancelFrame();
     canvas.requestFrame = () => {};
@@ -83,6 +86,10 @@ export async function renderCanvasTiles(canvas, metrics, options = {}, decorate)
     wrapper.style.setProperty('--zoom-multiplier', String(Math.sqrt(factor / metrics.scale)));
     await document.fonts.ready;
     await nextPaint();
+    if (options.privacyMode) {
+      privacy = prepareCanvasPrivacy(wrapper);
+      wrapper.classList.add('is-text-garbled');
+    }
     canvas.cancelFrame();
     const rect = wrapper.getBoundingClientRect();
     const capture = {
@@ -117,6 +124,8 @@ export async function renderCanvasTiles(canvas, metrics, options = {}, decorate)
     return { dataURL: output.toDataURL('image/png'), width: output.width,
       height: output.height, scale: metrics.scale, tiles: tiles.length };
   } finally {
+    privacy?.clear();
+    output.width = 0; output.height = 0;
     blocked.forEach(type => document.removeEventListener(type, block, true));
     stylesheet.remove();
     wrapper.classList.toggle('is-screenshotting', saved.screenshotting);
