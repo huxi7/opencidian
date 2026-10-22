@@ -1,10 +1,12 @@
 /**
- * [INPUT]: View 生命周期、BaseDocument 与 queryBase、数据库样式安装器。
+ * [INPUT]: View 生命周期、BaseDocument 与 queryBase、数据库样式安装器与富值 DOM 适配器。
  * [OUTPUT]: 导出 BasesView、mountBaseEmbed 与插件启停同步函数；嵌入返回释放订阅的函数。
- * [POS]: Bases 文件与笔记嵌入共用的渲染器。文件变化重读磁盘，关闭撤销订阅。
+ * [POS]: Bases 文件与笔记嵌入共用的渲染器。文件变化重读磁盘，关闭撤销订阅。查询的 this 读取数据库或嵌入宿主。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 import { View } from '../core/view.js';
+import { formatBaseValue as format } from './bases-values.js';
+import { renderBaseRichValue } from './bases-values-render.js';
 import { BaseDocument, queryBase, propertyValue } from './bases-model.js';
 import { installBasesStyles } from './bases-styles.js';
 
@@ -13,13 +15,6 @@ export function setBasesEnabled(app, enabled) {
   for (const controller of controllers) if (controller.app === app) controller.setEnabled(enabled);
 }
 
-function format(value) {
-  if (value == null) return '';
-  if (Array.isArray(value)) return value.map(format).join(', ');
-  if (value instanceof Date) return value.toISOString().slice(0, 10);
-  if (typeof value === 'object') return JSON.stringify(value);
-  return String(value);
-}
 function el(parent, tag, cls, text) {
   const node = document.createElement(tag);
   if (cls) node.className = cls;
@@ -29,6 +24,7 @@ function el(parent, tag, cls, text) {
 export class BasesController {
   constructor(app, container, file, options = {}) {
     this.app = app; this.container = container; this.file = file; this.viewName = options.viewName || '';
+    this.sourceFile = options.sourceFile || app.vault.getFileByPath(options.sourcePath || '') || file;
     this.document = null; this.refs = []; this.closed = false; this.sequence = 0; this.queue = Promise.resolve();
     installBasesStyles(container.ownerDocument);
     container.classList.add('bases-embed');
@@ -75,7 +71,7 @@ export class BasesController {
     const view = this.view;
     if (!view) { this.warning(this.viewName ? '找不到视图：' + this.viewName : '未定义视图'); return; }
     if (view.type !== 'table') {
-      this.result = queryBase(this.app, this.document, view);
+      this.result = queryBase(this.app, this.document, view, this.sourceFile);
       for (const warning of this.result.warnings) this.warning(warning);
       return;
     }
@@ -93,7 +89,7 @@ export class BasesController {
       this.patchView('limit', value);
     });
     let result;
-    try { result = queryBase(this.app, this.document, view); }
+    try { result = queryBase(this.app, this.document, view, this.sourceFile); }
     catch (error) { this.warning('无法计算数据库：' + error.message); return; }
     this.result = result;
     for (const warning of result.warnings) this.warning(warning);
@@ -124,7 +120,7 @@ export class BasesController {
           if (['file', 'file.file', 'file.name', 'file.basename', 'file.fullname', 'file.path'].includes(property)) {
             const link = el(cell, 'a', 'internal-link bases-rendered-value', format(value)); link.href = '#'; link.dataset.href = row.file.path;
             link.addEventListener('click', event => { event.preventDefault(); this.app.workspace.openFile(row.file, { newLeaf: event.metaKey || event.ctrlKey ? 'tab' : false }); });
-          } else el(cell, 'div', 'bases-rendered-value', format(value));
+          } else renderBaseRichValue(this, cell, value, row.file.path);
         } catch (error) { el(cell, 'div', 'bases-warning', error.message); }
       }
     }

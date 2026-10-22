@@ -1,7 +1,7 @@
 /**
  * [INPUT]: 依赖 CM6 的 WidgetType/Facet；依赖 ../markdown/reading.js 的 renderMarkdown/stripFrontmatter/attachMarkdownInteractions；
  *          依赖 ../markdown/math.js 的 renderMath；依赖 ../core/ipc.js 的 Desktop；依赖 ../core/icons.js 的 setIcon；
- *          依赖 ../core/i18n.js 的 tt；数据库嵌入按 # 指定视图，委托 ../plugins-core/bases-embed.js；画布嵌入委托 ../views/canvas-minimap.js 的 createCanvasEmbedWidget/missingCanvasNote。
+ *          依赖 ../core/i18n.js 的 tt；数据库嵌入保留宿主文件上下文并按 # 指定视图，委托 ../plugins-core/bases-embed.js；画布嵌入委托 ../views/canvas-minimap.js 的 createCanvasEmbedWidget/missingCanvasNote。
  * [OUTPUT]: 导出 appFacet 与 CheckboxWidget/BulletWidget/ImageWidget/imageWidget/MathWidget/HrWidget/LangWidget/LinkWidget。
  * [POS]: editor/ 实时预览的**行内** widget 层（从 live-preview.js 拆出以守住 800 行上限）。
  *        复选框、列表记号、图片（尺寸语法已在上游解析）、行内数学、水平线、代码块语言角标与链接/嵌入；
@@ -130,7 +130,7 @@ export class LinkWidget extends WidgetType {
       if (file && file.extension === 'base' && app.plugins?.getInternalPlugin?.('bases')?.enabled) {
         const wrap = createDiv({ cls: 'internal-embed bases-embed' });
         wrap.setAttr('tabindex', '-1');
-        wrap._baseEmbedCleanup = mountBaseEmbed(app, wrap, file, { viewName: this.target.split('|')[0].split('#').slice(1).join('#') });
+        wrap._baseEmbedCleanup = mountBaseEmbed(app, wrap, file, { viewName: this.target.split('|')[0].split('#').slice(1).join('#'), sourcePath: this.sourcePath });
         wrap._baseEmbedCleanup.ready.then(() => { if (view.dom.isConnected) view.requestMeasure(); });
         return wrap;
       }

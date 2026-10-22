@@ -1,10 +1,13 @@
 /**
- * [INPUT]: js-yaml 读取数据库文本；表达式模块计算筛选；Vault 与 MetadataCache 提供笔记。
- * [OUTPUT]: 导出 BaseDocument、queryBase 与属性读取函数；块式 YAML 局部写回。
+ * [INPUT]: js-yaml 读取数据库文本；表达式模块计算筛选；bases-context 提供属性，bases-values 定义真值与排序。
+ * [OUTPUT]: 导出 BaseDocument、queryBase 与属性读取函数；查询与文件上下文共用富值类型。块式 YAML 局部写回。
  * [POS]: Bases 数据边界。保留未知键和视图；流式或锚点冲突时保留值重写。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 import { compileExpression } from './bases-expression.js';
+import { createContext, propertyValue } from './bases-context.js';
+import { baseTruthy, compareBaseValues } from './bases-values.js';
+export { createContext, propertyValue } from './bases-context.js';
 const yaml = require('js-yaml');
 const object = value => value !== null && typeof value === 'object' && !Array.isArray(value);
 const dump = value => yaml.dump(value, { lineWidth: -1, noRefs: true, quotingType: '"' }).trimEnd();
@@ -87,48 +90,20 @@ function escapeRE(text) { return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
 
 export function compileFilter(filter) {
   if (filter == null) return () => true;
-  if (typeof filter === 'string') { const expression = compileExpression(filter); return context => !!expression(context); }
+  if (typeof filter === 'string') { const expression = compileExpression(filter); return context => baseTruthy(expression(context)); }
   if (!object(filter) || Object.keys(filter).length !== 1) throw new Error('filters 只允许一个 and、or 或 not 键');
   const key = Object.keys(filter)[0], values = filter[key];
   if (!['and', 'or', 'not'].includes(key) || !Array.isArray(values)) throw new Error('and、or、not 必须是数组');
   const tests = values.map(compileFilter);
   return context => key === 'and' ? tests.every(test => test(context)) : key === 'or' ? tests.some(test => test(context)) : !tests.some(test => test(context));
 }
-export function createContext(app, file, formulas = {}) {
-  const cache = app.metadataCache.getFileCache(file) || {};
-  const note = { ...(cache.frontmatter || {}) }; delete note.position;
-  const tags = [...(Array.isArray(note.tags) ? note.tags : typeof note.tags === 'string' ? note.tags.split(/[,\s]+/) : []), ...(cache.tags || []).map(tag => tag.tag)].map(tag => String(tag).replace(/^#/, ''));
-  const fileProps = {
-    file: file.basename, name: file.basename, basename: file.basename, fullname: file.name, path: file.path,
-    folder: file.parent?.path || '', ext: file.extension, size: file.stat?.size || 0,
-    ctime: file.stat?.ctime || 0, mtime: file.stat?.mtime || 0, tags,
-    links: (cache.links || []).map(link => link.link), embeds: (cache.embeds || []).map(link => link.link),
-    backlinks: Object.keys(app.metadataCache.resolvedLinks || {}).filter(path => app.metadataCache.resolvedLinks[path]?.[file.path]),
-  };
-  const context = { file: fileProps, note, tags, links: fileProps.links, formula: Object.create(null) };
-  const evaluating = new Set(), cached = new Map();
-  for (const [name, source] of Object.entries(formulas)) Object.defineProperty(context.formula, name, { enumerable: true, get() {
-    if (cached.has(name)) return cached.get(name);
-    if (evaluating.has(name)) throw new Error('公式循环引用：' + name);
-    evaluating.add(name);
-    try { const value = compileExpression(source)(context); cached.set(name, value); return value; }
-    finally { evaluating.delete(name); }
-  } });
-  return context;
-}
-export function propertyValue(context, property) {
-  if (property === 'file' || property === 'file.file') return context.file.file;
-  if (property.startsWith('file.')) return context.file[property.slice(5)] ?? null;
-  if (property.startsWith('formula.')) return context.formula[property.slice(8)] ?? null;
-  return context.note[property.startsWith('note.') ? property.slice(5) : property] ?? null;
-}
-export function queryBase(app, document, view) {
+export function queryBase(app, document, view, sourceFile = null) {
   if (!view) return { rows: [], columns: [], warnings: ['未定义视图'] };
   if (view.type !== 'table') return { rows: [], columns: [], warnings: ['尚不支持的视图类型：' + view.type + '。原始配置已保留。'] };
   const tests = [compileFilter(document.data.filters), compileFilter(view.filters)];
   const rows = [], warnings = new Set();
   for (const file of app.vault.getMarkdownFiles()) {
-    const context = createContext(app, file, document.data.formulas);
+    const context = createContext(app, file, document.data.formulas, sourceFile);
     try { if (tests.every(test => test(context))) rows.push({ file, context }); }
     catch (error) { warnings.add('筛选无法计算：' + error.message); }
   }
@@ -142,7 +117,7 @@ export function queryBase(app, document, view) {
       let x, y;
       try { x = propertyValue(a.context, property); y = propertyValue(b.context, property); }
       catch (error) { warnings.add(error.message); continue; }
-      const value = x == null ? (y == null ? 0 : -1) : y == null ? 1 : typeof x === 'number' && typeof y === 'number' ? x - y : String(x).localeCompare(String(y), undefined, { numeric: true, sensitivity: 'base' });
+      const value = compareBaseValues(x, y);
       if (value) return sort.direction === 'DESC' ? -value : value;
     }
     return a.file.path.localeCompare(b.file.path, undefined, { numeric: true });

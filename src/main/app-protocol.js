@@ -1,6 +1,6 @@
 /**
  * [INPUT]: Electron protocol；主入口提供应用与文件资源路径。
- * [OUTPUT]: 导出 registerAppProtocol，安装 app:// 流式协议。
+ * [OUTPUT]: 导出 registerAppProtocol，安装 app:// 流式协议并声明 SVG 媒体类型。
  * [POS]: 主进程资源边界。Range 请求与取消释放共用流适配器。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
@@ -43,6 +43,7 @@ function registerAppProtocol({ SCHEME, APP_ORIGIN, FILE_ORIGIN, RENDERER_DIR, AP
     try {
       const stat = await fs.promises.stat(filePath);
       const headers = new Headers();
+      if (path.extname(filePath).toLowerCase() === '.svg') headers.set('Content-Type', 'image/svg+xml');
       let status = 200;
       let stream;
       const range = request.headers.get('Range');

@@ -13,4 +13,7 @@ acceptance/: full.sh 是全量入口。真实 Electron 场景，隔离库与日�
 make-app-icon.py: 生成应用图标（原创设计：地平线与曜日）→ build/icon.png 与 icon.icns（iconutil）。
 smoke-packaged.mjs: 打包版冒烟。用 OBS_ACT 通道启动 release/ 下的 .app，断言库启动/建文件/开文件后退出；用法 `node scripts/smoke-packaged.mjs [binary]`。
 
+bases-formulas.test.mjs: Node 公式单测。固定 UTC、时钟与随机源，对照原始 78 个函数说明。
+bases-csv.test.mjs: Node CSV 单测。检查转义、富值、取消与写盘失败边界，不启动 Electron。
+
 [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md

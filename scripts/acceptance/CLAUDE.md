@@ -87,4 +87,7 @@ canvas-export.js: 整窗分块导出。跨块连续、正文、缩放、隐私�
 full.sh: 全量入口。定位仓库根并独占构建锁，参数原样传给 full.mjs。
 full.mjs: 枚举正式场景和链式阶段。--only 定向补跑并补齐读回前置；输出回执与汇总。
 
+bases-formulas.js: 真实元数据的 P3 公式和文件属性，覆盖阅读/实时预览的宿主 this。
+bases-values.js: 富值 DOM、受控导航、SVG 资源与 CSV 命令写盘，不弹原生保存框。
+
 [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md

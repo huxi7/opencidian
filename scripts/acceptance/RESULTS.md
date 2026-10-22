@@ -522,3 +522,23 @@ sh scripts/with-lock.sh "npm run build && node scripts/acceptance/run.mjs canvas
 - 最终内存回归：`node --experimental-vm-modules src/renderer/core/workspace-regression.js`，**19/19 通过**。日志 `/tmp/opensidian-wave1-memory-1022.log`。这 19 组未混入 E2E 的 6477 条。
 - 行数检查：src/scripts 中 JS、MJS、CSS、SH、Markdown 均不超过 800 行；最大 795 行。L3、L2 与本结果文档已回环。
 - 本轮范围止于 Wave 1。Wave 2 的 Bases P2/P3、Wave 3 的打包冒烟尚未执行。未配置 remote，未 push。
+
+## Wave 2：Bases P2/P3（2026-10-22）
+
+基线 `c532b55`，工作区干净。先跑 build + bases，**55 项通过**。
+日志：`/tmp/obs-copy-acceptance/bases-run-result-B5IA9u/run.log`。
+只读原版静态包，未启动原版。所有 E2E 加 --no-screenshot，不弹原生保存框或外部程序。
+两条线并行，P3 类型/公式/CSV 先提交，P2 布局依赖它们后提交。
+
+### T6 Bases P3
+
+- 改动：`plugins-core/bases-expression.js`、`bases-formula-functions.js`、`bases-context.js`、`bases-values{,-file,-render}.js`、`bases-csv.js`；共享 `bases-model.js`、`bases.js`、`markdown/reading.js`、`editor/live-preview-inline-widgets.js`。主进程资源协议补 SVG 媒体类型，文件视图接富值与宿主上下文。
+- Node：`node scripts/bases-formulas.test.mjs`，**273 条通过**，逐项覆盖原版 formulas.funcs 的 **78 个说明键**；`node scripts/bases-csv.test.mjs`，**11 条通过**。固定 UTC、时钟和随机源，不依赖当前日期。
+- E2E：新增 `bases-formulas` **34 条**、`bases-values` **30 条**通过；后者验证真实富值 DOM/导航、PNG/SVG 资源、CSV 命令及取消/最新配置/插件卸载。
+- 公式对齐 Null 传播、稀疏属性算符、惰性条件、类型继承、同一正则状态、日期溢出、无效日期及 ISO 时长截断。this 在独立数据库指 base，在阅读/实时预览指宿主 Markdown。
+- CSV 复用当前列与查询，按原版 LF/引号转义，无 BOM/尾换行；失败单元格留空。确认后重读磁盘，取消不写盘。默认视图名.csv，复用受控 Desktop 保存通道。
+- 对照：`_analysis/bases-114/P3-FACTS.md`、`P3-FUNCTIONS.md`。CSV app.js 偏移 1620621、2497522、2518446；类型、算符和文件属性偏移见事实表。
+- 边界：HTML 以源码显示；Markdown 只渲染标准行内语法且明示降级；超预算表达式与危险正则报错。未声称这些渲染能力已完全 1:1。
+- 证据：`/tmp/opensidian-wave2-formulas-unit.json`、`/tmp/opensidian-wave2-csv-unit.json`；最终 E2E 原日志路径见下方目标回归汇总。
+
+- P3 独立提交验证：从暂存树生成隔离快照，未带入 P2 布局代码；独立 build、Node 273+11、bases-formulas 34、bases-values 30、bases 55 均通过。三个 E2E 回执 CjDjPM、3Sjmw8、TrvbV7 保留在 /tmp/obs-copy-acceptance/；临时源码快照已删除。

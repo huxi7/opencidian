@@ -2,7 +2,7 @@
 
 > 本文件不属于 GEB 文档体系，是 agent 的跨上下文记忆。每次重要推进后更新。
 > 更新时机：阶段完成 / 提交前后 / 发现关键事实 / 子代理交付验收后。
-> **交接安排以 §10 为准；实现状态见 §9，功能边界见 §8。§3 和 §7 是历史记录。**
+> **当前交接以 §27 Wave 2 为准；§26 保留 Wave 1 结果，早期章节仅作历史。**
 
 ---
 
@@ -18,13 +18,13 @@
   3. 设置功能是重中之重，必须可用。
   4. 用 REA 工作流：静态/行为分析 → 常规工具重建；不搬运专有代码。
   5. GEB 分形文档：L1 `/CLAUDE.md`、L2 模块 `CLAUDE.md`、L3 文件头 `[INPUT]/[OUTPUT]/[POS]/[PROTOCOL]`；改代码必须回环更新文档；单文件 ≤800 行。
-  6. CSS/布局一切以 `_analysis/obsidian-asar/app.css`、`app.js` 为事实源，逐字移植。
+  6. CSS/布局以 `_analysis/obsidian-114/renderer/app.css`、`app.js` 为事实源，逐字移植。
   7. 提交策略：按阶段提交（用户授权 agent 自行决定时机）。
 
 ## 1. 事实源（_analysis，未入库）
 
-- `_analysis/obsidian-asar/app.js` — 原版主 bundle（反混淆片段可 grep）。
-- `_analysis/obsidian-asar/app.css` — 原版样式（逐字移植来源）。
+- `_analysis/obsidian-114/renderer/app.js` — 原版主 bundle（反混淆片段可 grep）。
+- `_analysis/obsidian-114/renderer/app.css` — 原版样式（逐字移植来源）。
 - 图标链：36 自有图标 + 152 别名 + Lucide；解析键双类 `svg-icon <key>`。
 - 原版设置宿主类 `fte`（我们复刻为 SettingsHost）；页签基类 `U1`；组构建器 `Hk`；控件 `Wk/jk/Uk/Jk/Gk/Kk/eC`。
 - 原版页签：`O7`=关于、`nte`=编辑器、`lte`=文件与链接、`Jee`=外观、`w0`=快捷键、`dte`=核心插件、`tte`=第三方插件。
@@ -675,3 +675,19 @@ node --experimental-vm-modules src/renderer/core/workspace-regression.js
 - 删除未实现的 workspace:move-to-new-window。标签菜单同样无入口；设置独立窗口保持可用。
 - 输出沿用 4096 像素上限；隐私模式隐藏内容，未复刻乱码字体。renderCanvasImage 只保留作简化预览验收，真实落盘不用它。
 - 四任务各一提交，未配置 remote，未 push。Wave 2 与打包冒烟尚未执行。
+
+
+## 27. Wave 2：Bases P2/P3（2026-10-22）
+
+基线 HEAD c532b55，工作区干净，build + bases 55 项通过。
+原版只读静态包；所有 E2E 使用 --no-screenshot。
+提交先落 P3 公共类型与公式，再落依赖它们的 P2 布局。
+
+### T6 公式、文件属性与 CSV
+
+- 新增白名单 AST、类型和值域边界、元数据适配、宿主 this、富值 DOM 与 CSV。78 个原版说明键逐项覆盖，Node 公式单测 273、CSV 单测 11 项通过。
+- 对齐 Null 传播、惰性 condition.if、String 继承、正则 lastIndex、日期溢出和 ISO 时长截断；不自行修改原版可观察语义。
+- 阅读与实时预览传宿主文件；独立数据库 this 指 base。链接 string 解析回 TFile。CSV 默认视图名、LF/引号规则和当前查询列一致，取消不写盘。
+- P3 公式 E2E 34、富值/CSV E2E 30 项通过。SVG 解码补齐 app 协议媒体类型；标签点击复用搜索窗格时更新查询。证据见 _analysis/bases-114/P3-FACTS.md 与 P3-FUNCTIONS.md。
+- HTML 显示源码；Markdown 只渲染标准行内语法并明示降级；超预算表达式报错。这些不是完全 1:1 的渲染能力。
+- 提交前另用隔离暂存树独立构建和验收 P3：Node 273+11、E2E 34+30+55 通过，未依赖未提交的 P2 布局。临时源码快照已清理。
