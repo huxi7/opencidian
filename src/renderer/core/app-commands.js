@@ -2,6 +2,7 @@
  * [INPUT]: 命令注册、Workspace、WorkspaceTabs、设置宿主与桌面 IPC。
  * [OUTPUT]: 注册导航、设置、窗口及文档标签命令（含 workspace:toggle-stacked-tabs）。
  * [POS]: 用户命令层。关闭与固定标签命令只作用于中心文档；堆叠命令作用于当前中心标签组。
+ * 文档弹出窗口尚未实现，因此不注册移动到新窗口命令。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 /*
@@ -251,12 +252,6 @@ export function registerAppCommands(app) {
       }
       return true;
     },
-  });
-
-  add({
-    id: 'workspace:move-to-new-window',
-    name: t('interface.menu.move-to-new-window') || 'Move to new window',
-    callback: () => new Notice('Opening new windows is not supported in this replica.', 3000),
   });
 
   // 检查更新（只提示 + 打开下载页；配置 updateFeed 后才联网）

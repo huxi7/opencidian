@@ -667,3 +667,11 @@ node --experimental-vm-modules src/renderer/core/workspace-regression.js
 - 库根 obsidian.css 开关和热更新为兼容扩展。macOS 半透明调用真实 sidebar vibrancy；appearance/backlink 配置跨设置窗口定向同步。
 - 默认应用动作由文件视图共用，Markdown/画布/Bases 均走受保护 open-path；文件菜单复用原入口，不拉起外部应用做验收。
 - small-gaps 49、appearance 99、view-header 82 通过；原版静态证据见 _analysis/small-gaps-114/FACTS.md。无截图视觉结论。
+
+### T3 画布导出与新窗口入口
+
+- PNG 落盘从逐卡截图/离屏重绘改为整窗分块。2 DIP 重叠裁边、整数输出、界面缩放换算，finally 恢复视口与选择。取消不截图；截图失败不写简化替代图。
+- canvas-export 24、canvas 101 通过，最终集成 6477 条有效断言包含这两场景。原版 generateHDImage/capturePage 分块偏移见 RESULTS。
+- 删除未实现的 workspace:move-to-new-window。标签菜单同样无入口；设置独立窗口保持可用。
+- 输出沿用 4096 像素上限；隐私模式隐藏内容，未复刻乱码字体。renderCanvasImage 只保留作简化预览验收，真实落盘不用它。
+- 四任务各一提交，未配置 remote，未 push。Wave 2 与打包冒烟尚未执行。

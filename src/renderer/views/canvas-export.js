@@ -1,23 +1,12 @@
 /**
- * [INPUT]: 依赖 ./canvas-utils.js 的 unionBBox/expandBBox/sidePoint/offsetPoint/bezierFor/SIDE_ROTATION；
- *          依赖 ./canvas-link-node.js 的 CanvasLinkNode；依赖 ./canvas-group-node.js 的 CanvasGroupNode；依赖 ./canvas-file-node.js 的 CanvasFileNode；
- *          依赖 ./canvas-export-dialog.js 的 CanvasExportModal；依赖 ../core/i18n.js 的 t；
- *          依赖 ../core/notices.js 的 Notice；依赖 ../core/ipc.js 的 Desktop；依赖 ../core/keymap.js 的 IS_MAC
- * [OUTPUT]: 导出 MAX_SIZE、renderCanvasImage(canvas, opts)、canvasExportMetrics(canvas, opts)、exportCanvasImage(canvas, opts)、
- *           saveCanvasImage(canvas, opts) 与 loadLinkCardImages(canvas)（链接卡截图预载，验收可直接调用）。
- * [POS]: views/ 画布类的图片导出层。renderCanvasImage 用离屏 2D canvas 画出与视图一致的画面（背景取 .canvas-wrapper 计算色，
- *        边取 .canvas-display-path 计算描边色，卡片取 .canvas-node-container 计算底色/边框/圆角），是纯函数、不弹对话框，供验收直接断言。
- *        opts 逐条对齐原版 generateHDImage 的选项：frame 'full'（全画布，外扩 100）| 'viewport'（当前视口，倍率取画布缩放，不画水印）、
- *        scale（输出倍率，缺省 1；受 MAX_SIZE 4096 上限约束）、showLogo（左下角应用标记）、privacyMode（正文改灰条占位，原版 .is-text-garbled 的等价物）。
- *        opts.images 是可选的分组背景图 Map（node → HTMLImageElement）；real export 由 saveCanvasImage 按 bgPath 预载后注入，
- *        不依赖 vault 索引对象（文件夹重命名后索引可能滞后），纯函数模式不等待网络。
- *        opts.linkImages 是可选链接卡网页截图 Map（node → HTMLImageElement）；真实画面由 CanvasLinkNode.captureFrameImage
- *        经 webview.capturePage() 取得，拿不到（iframe 回退、失败态、空图）时退回 URL 文本，绝不画假缩略图。
- *        exportCanvasImage 是命令与面板菜单入口：空画布提示 msg-export-failed-empty-canvas → 设置弹窗（取消返回 null）→ saveCanvasImage 落盘。
- *        saveCanvasImage 走视图的 promptImageSavePath（原版 dialog.showSaveDialog）→ 预载分组背景图与链接卡截图 → 写 PNG → 通知带「在访达中显示」。
+ * [INPUT]: 画布几何与节点类型；CanvasExportModal；renderCanvasTiles；桌面保存对话框。
+ * [OUTPUT]: MAX_SIZE、canvasExportMetrics、renderCanvasImage、exportCanvasImage、saveCanvasImage。
+ * [POS]: 画布图片导出编排。真实导出走整窗分块截图，保留浏览器渲染的完整场景。
+ * renderCanvasImage 保留同步简化预览，供几何与像素单元验收使用，不参与真实落盘。
+ * 全画布外扩 100，输出上限 4096；当前视口跟随缩放，不显示水印。
+ * 保存路径取消时不截图；截图失败不写盘。水印只使用 OpenSidian。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
-/* Canvas image export — offscreen 2D canvas renderer + options modal + save dialog (original generateHDImage). */
 import {
   unionBBox, expandBBox, sidePoint, offsetPoint, bezierFor, SIDE_ROTATION,
 } from './canvas-utils.js';
@@ -25,6 +14,7 @@ import { CanvasGroupNode } from './canvas-group-node.js';
 import { CanvasLinkNode } from './canvas-link-node.js';
 import { CanvasFileNode } from './canvas-file-node.js';
 import { CanvasExportModal } from './canvas-export-dialog.js';
+import { renderCanvasTiles } from './canvas-export-tiles.js';
 import { t } from '../core/i18n.js';
 import { Notice } from '../core/notices.js';
 import { Desktop } from '../core/ipc.js';
@@ -137,14 +127,9 @@ function promptCanvasExportOptions(canvas) {
   });
 }
 
-/** 确认后的落盘链路：渲染 → 保存对话框 → 写 PNG → 通知「在访达中显示」。 */
+/** 确认后的落盘链路：保存对话框 → 整窗分块截图 → 写 PNG → 通知。 */
 export async function saveCanvasImage(canvas, options) {
-  const images = options && options.images ? options.images : await loadGroupBackgrounds(canvas);
-  const linkImages = options && options.linkImages
-    ? options.linkImages
-    : (options && options.privacyMode ? new Map() : await loadLinkCardImages(canvas));
-  const image = renderCanvasImage(canvas, { ...options, images, linkImages });
-  if (!image) {
+  if (!canvas.nodes.size) {
     new Notice(t('plugins.canvas.msg-export-failed-empty-canvas'));
     return null;
   }
@@ -152,13 +137,22 @@ export async function saveCanvasImage(canvas, options) {
   const result = canvas.promptImageSavePath(name + '.png');
   const filePath = result && !result.canceled && result.filePath ? result.filePath : null;
   if (!filePath) return null;
+  const opts = options || {};
+  const decorate = opts.showLogo && opts.frame !== 'viewport' ? drawLogo : undefined;
+  let image;
+  try {
+    image = await renderCanvasTiles(canvas, canvasExportMetrics(canvas, opts), opts, decorate);
+  } catch (error) {
+    new Notice('图片导出失败：' + error.message);
+    throw error;
+  }
   const base64 = image.dataURL.slice(image.dataURL.indexOf(',') + 1);
   require('fs').writeFileSync(filePath, Buffer.from(base64, 'base64'));
   const notice = new Notice(filePath, 10000);
   notice.addButton(IS_MAC
     ? t('plugins.open-with-default-app.action-show-in-folder-mac')
     : t('plugins.open-with-default-app.action-show-in-folder'), () => Desktop.showItemInFolder(filePath));
-  return { filePath, width: image.width, height: image.height };
+  return { filePath, width: image.width, height: image.height, tiles: image.tiles };
 }
 
 /* ------------------------------------------------------------------ 颜色 */
@@ -344,79 +338,6 @@ function drawGroupBackground(ctx, node, image, origin, width, height, scale, rad
     ctx.drawImage(image, sx, sy, sw, sh, origin.x, origin.y, width, height);
   }
   ctx.restore();
-}
-
-/** 真实导出前预载分组背景（原版浏览器截图天然包含背景图；离屏 2D 画布需要显式等待图片解码）。 */
-async function loadGroupBackgrounds(canvas) {
-  const images = new Map();
-  const groups = Array.from(canvas.nodes.values()).filter((node) => node instanceof CanvasGroupNode && node.bgPath);
-  await Promise.all(groups.map(async (node) => {
-    const image = new Image();
-    image.src = canvas.app.vault.adapter.getResourcePath(node.bgPath);
-    try {
-      if (image.decode) await image.decode();
-      else await new Promise((resolve, reject) => { image.onload = resolve; image.onerror = reject; });
-      images.set(node, image);
-    } catch (e) { /* 图片损坏或路径失效时不阻断导出，保留分组底色 */ }
-  }));
-  return images;
-}
-
-/**
- * 链接卡截图：webview.capturePage() 直接在渲染进程取 guest 画面，不需要主进程 IPC。
- * 只收真实 NativeImage；iframe 回退、失败态、加载中或空图都跳过，导出回退为 URL 文本。
- * webview 不在视口内时 guest 不会光栅化，capturePage 会挂起；这里逐个把卡片临时居中，
- * 截完恢复原视口。若主进程要走 capturePage 的整窗截图，需要新增 IPC，超出本批文件范围。
- */
-export async function loadLinkCardImages(canvas) {
-  const images = new Map();
-  const nodes = Array.from(canvas.nodes.values()).filter((node) => node instanceof CanvasLinkNode);
-  if (!nodes.length) return images;
-  const saved = { x: canvas.x, y: canvas.y, tx: canvas.tx, ty: canvas.ty, zoom: canvas.zoom, tZoom: canvas.tZoom };
-  const nextFrame = () => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
-  try {
-    for (const node of nodes) {
-      if (typeof node.captureFrameImage !== 'function' || !node.frameLoaded || node.frameError) continue;
-      const box = node.getBBox();
-      const view = canvas.getViewportBBox();
-      const visible = box.minX >= view.minX && box.maxX <= view.maxX && box.minY >= view.minY && box.maxY <= view.maxY;
-      if (!visible) {
-        canvas.x = canvas.tx = (box.minX + box.maxX) / 2;
-        canvas.y = canvas.ty = (box.minY + box.maxY) / 2;
-        canvas.finishViewportAnimation = true;
-        canvas.markViewportChanged();
-        await nextFrame();
-        await new Promise((resolve) => setTimeout(resolve, 80));
-      }
-      let dataURL = null;
-      try {
-        dataURL = await Promise.race([
-          node.captureFrameImage(),
-          new Promise((resolve) => setTimeout(() => resolve(null), 4000)),
-        ]);
-      } catch (e) {
-        dataURL = null;
-      }
-      if (!dataURL) continue;
-      const image = new Image();
-      image.src = dataURL;
-      try {
-        if (image.decode) await image.decode();
-        else await new Promise((resolve, reject) => { image.onload = resolve; image.onerror = reject; });
-        images.set(node, image);
-      } catch (e) { /* 截图损坏时保留 URL 文本回退 */ }
-    }
-  } finally {
-    canvas.x = saved.x;
-    canvas.y = saved.y;
-    canvas.tx = saved.tx;
-    canvas.ty = saved.ty;
-    canvas.zoom = saved.zoom;
-    canvas.tZoom = saved.tZoom;
-    canvas.finishViewportAnimation = true;
-    canvas.markViewportChanged();
-  }
-  return images;
 }
 
 function nodeFont(node, scale) {

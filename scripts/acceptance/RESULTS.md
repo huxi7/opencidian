@@ -483,6 +483,25 @@ sh scripts/with-lock.sh "npm run build && node scripts/acceptance/run.mjs canvas
 - 缺口：仅 table 与安全表达式子集。其它视图、分组、汇总、完整公式、日期类型和 CSV 留 Wave 2。块式 YAML 按键局部写回；顶层流式或锚点冲突时保留值重写，排版与注释不保证全部保持。
 - 主代理内存回归：新扩展名分派更新 VM 注册表替身，base 启停映射纳入既有用例，**19/19 通过**。
 
+### T2 1.14.4 小缺口
+
+- 文件：`plugins-core/backlink.js`、`core/{app,settings,ipc,custom-css,file-view-actions,view-header}.js`、`views/{markdown-view,settings-tabs-appearance}.js`、`styles/desktop-gaps.css`、`index.html`；主进程 `window-effects.js` 与对应 IPC 装配。删除旧 mod-translucent 假近似规则。
+- 场景：新增 `small-gaps`，**49 项通过**；更新 `appearance`，**99 项通过**。共享文件动作再回归 `view-header`，**82 项通过**。
+- 命令：`sh scripts/with-lock.sh "npm run build && node scripts/acceptance/run.mjs small-gaps --no-screenshot && node scripts/acceptance/run.mjs view-header --no-screenshot"`；`appearance` 同运行器单独执行。
+- 日志：`small-gaps-run-result-VI7CuX/run.log`、`view-header-run-result-yJKE5v/run.log`、`appearance-run-result-9jtmsk/run.log`，均在 `/tmp/obs-copy-acceptance/`。
+- 对照：`_analysis/small-gaps-114/FACTS.md`。原版 A8 文档默认反链、Markdown backlinks 状态、embedded-backlinks 样式与 sidebar vibrancy。
+- 缺口：根 obsidian.css 开关为兼容扩展；默认应用只验证受保护 IPC。vibrancy 验证真实 API 成功下发后的状态，无截图视觉结论。既有反链导航能力未扩展为全部原版选项。
+
+### T3 画布收口
+
+- 文件：`views/canvas-export.js`、`views/canvas-export-tiles.js`、`main/canvas-capture.js`、`core/app-commands.js` 与主进程注册入口。
+- 场景：新增 `canvas-export`，**24 项通过**；受影响 `canvas`，**101 项通过**。
+- 命令：`sh scripts/with-lock.sh "npm run build && node scripts/acceptance/run.mjs canvas-export --no-screenshot && node scripts/acceptance/run.mjs canvas --no-screenshot"`。
+- 日志：`/tmp/obs-copy-acceptance/canvas-export-run-result-BfUL9c/run.log`、`canvas-run-result-ewJD0T/run.log`。后者为新增场景扩为 24 项前的旧场景回归，最终集成结果见全量汇总。
+- 对照：原版 app.js 字符偏移 3351618（generateHDImage）、3357674（取整）、3358537（整窗截图）、3358805（分块）、3359608（恢复）；app.css 18214–18223。
+- 结果：真实落盘使用同一场景整窗分块。验收跨块连续 1770 像素、真实正文、缩放、隐私与选择恢复、取消零截图、异常不写假图。删除未实现的文档新窗口命令。
+- 缺口：沿用 4096 像素上限；隐私模式隐藏正文与媒体，未复刻 Flow Circular 乱码字体。同步 renderCanvasImage 仅为简化预览验收，真实落盘完全不用它。设置独立窗口仍可用。
+
 ### T4 工程卫生
 
 - 主进程拆出 `app-menu.js`、`app-protocol.js`；画布拆出 `canvas-drag.js`、`canvas-node-factory.js`。原入口保持不变。
@@ -503,12 +522,3 @@ sh scripts/with-lock.sh "npm run build && node scripts/acceptance/run.mjs canvas
 - 最终内存回归：`node --experimental-vm-modules src/renderer/core/workspace-regression.js`，**19/19 通过**。日志 `/tmp/opensidian-wave1-memory-1022.log`。这 19 组未混入 E2E 的 6477 条。
 - 行数检查：src/scripts 中 JS、MJS、CSS、SH、Markdown 均不超过 800 行；最大 795 行。L3、L2 与本结果文档已回环。
 - 本轮范围止于 Wave 1。Wave 2 的 Bases P2/P3、Wave 3 的打包冒烟尚未执行。未配置 remote，未 push。
-
-### T2 1.14.4 小缺口
-
-- 文件：`plugins-core/backlink.js`、`core/{app,settings,ipc,custom-css,file-view-actions,view-header}.js`、`views/{markdown-view,settings-tabs-appearance}.js`、`styles/desktop-gaps.css`、`index.html`；主进程 `window-effects.js` 与对应 IPC 装配。删除旧 mod-translucent 假近似规则。
-- 场景：新增 `small-gaps`，**49 项通过**；更新 `appearance`，**99 项通过**。共享文件动作再回归 `view-header`，**82 项通过**。
-- 命令：`sh scripts/with-lock.sh "npm run build && node scripts/acceptance/run.mjs small-gaps --no-screenshot && node scripts/acceptance/run.mjs view-header --no-screenshot"`；`appearance` 同运行器单独执行。
-- 日志：`small-gaps-run-result-VI7CuX/run.log`、`view-header-run-result-yJKE5v/run.log`、`appearance-run-result-9jtmsk/run.log`，均在 `/tmp/obs-copy-acceptance/`。
-- 对照：`_analysis/small-gaps-114/FACTS.md`。原版 A8 文档默认反链、Markdown backlinks 状态、embedded-backlinks 样式与 sidebar vibrancy。
-- 缺口：根 obsidian.css 开关为兼容扩展；默认应用只验证受保护 IPC。vibrancy 验证真实 API 成功下发后的状态，无截图视觉结论。既有反链导航能力未扩展为全部原版选项。

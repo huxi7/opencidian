@@ -82,10 +82,9 @@ probe-topbar.js / probe-canvas.js / probe-reading.js / probe-ui.js / probe-canva
 probe-canvas-drop: 画布拖入诊断探针（残留虚影体检）。模拟文件树拖入与卡片菜单纯点击两条路径，报告 .is-dummy 数量、accent 填充元素、画布内彩色框与卡片 DOM/几何；非断言锁，用于定位画布残影。
 
 bases.js: Bases P1。原版格式、嵌套筛选、排序、未知键保留与两种笔记嵌入，55 项。
-
+small-gaps.js: 底部反链、根 CSS、默认应用与原生半透明，49 项。
+canvas-export.js: 整窗分块导出。跨块连续、正文、缩放、隐私、取消与异常恢复，24 项。
 full.sh: 全量入口。定位仓库根并独占构建锁，参数原样传给 full.mjs。
 full.mjs: 枚举正式场景和链式阶段。--only 定向补跑并补齐读回前置；输出回执与汇总。
-
-small-gaps.js: 底部反链、根 CSS、默认应用与原生半透明，49 项。
 
 [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md

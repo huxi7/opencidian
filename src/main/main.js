@@ -1,5 +1,5 @@
 /**
- * [INPUT]: 依赖 electron 的 app/BrowserWindow/ipcMain/protocol/shell/dialog/session；Node 内置 fs/path
+ * [INPUT]: 依赖 electron 的 app/BrowserWindow/ipcMain/protocol/shell/dialog/session；Node 内置 fs/path；窗口材质委托 window-effects，画布截图委托 canvas-capture
  * [OUTPUT]: 主进程全部 IPC handler（vault 注册表、文件读写、窗口控制、回收站、拼写检查词典/语言）、app:// 协议、devScreenshotHook（OBS_* 环境变量门控的调试钩子）、设置独立窗口、app-menu 与 app-protocol 的装配
  * [POS]: 应用主进程入口。vault 注册表存于 userData/opensidian.json（启动时从旧产品名 "Obsidian Copy" 的 userData 迁移一次）；拼写检查自加词存 userData/spellcheck-words.json，语言选择存 opensidian.json 的 spellcheckLanguages。渲染进程经 renderer/core/ipc.js 调用此处 handler。原生菜单保留设置入口。dev-hooks 只在指定测试库窗口执行。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
@@ -20,6 +20,7 @@ const crypto = require('crypto');
 const { devScreenshotHook } = require('./dev-hooks');
 const { setupSettingsWindows } = require('./settings-window');
 const { registerWindowEffectsIpc } = require('./window-effects');
+const { registerCanvasCaptureIpc } = require('./canvas-capture');
 const { installAppMenu } = require('./app-menu');
 const { registerAppProtocol } = require('./app-protocol');
 const { app, BrowserWindow, protocol, ipcMain, Menu, shell, dialog, session, nativeTheme } = require('electron');
@@ -744,6 +745,7 @@ if (!gotLock) {
     });
     setupIpc();
     registerWindowEffectsIpc({ ipcMain, BrowserWindow });
+    registerCanvasCaptureIpc({ ipcMain, BrowserWindow });
     installAppMenu(openVaultStarter);
     applyAppIcon();
 
