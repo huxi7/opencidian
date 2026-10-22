@@ -1,0 +1,67 @@
+/*
+ * [INPUT]: Markdown 底部反链 DOM 与 macOS is-translucent 状态。
+ * [OUTPUT]: 文档反链与原生半透明窗口样式。
+ * [POS]: 逐条复刻 1.14.4 app.css 的 14709–14747、6570–6590。
+ * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
+ */
+.embedded-backlinks {
+  border-top: 1px solid var(--background-modifier-border);
+}
+.markdown-preview-view .embedded-backlinks {
+  margin-top: 3em;
+}
+.embedded-backlinks .backlink-pane {
+  padding: 0;
+}
+.embedded-backlinks .backlink-pane .search-empty-state,
+.embedded-backlinks .backlink-pane .tree-item-self {
+  /* 保留原版字号下限。 */
+  font-size: max(var(--font-ui-small),var(--font-smaller));
+  align-items: center;
+}
+.embedded-backlinks .backlink-pane > .tree-item-self {
+  font-size: max(var(--font-ui-small),1em);
+  width: fit-content;
+}
+.embedded-backlinks .backlink-pane > .tree-item-self .tree-item-inner {
+  margin-inline-end: var(--size-2-3);
+}
+.embedded-backlinks .backlink-pane .tree-item-flair {
+  font-size: max(var(--font-ui-small),var(--font-smallest));
+}
+.embedded-backlinks .nav-header {
+  padding: var(--size-4-3) 0 0 0;
+  position: relative;
+}
+.embedded-backlinks .nav-header > .search-input-container {
+  width: calc(100% - 150px);
+  margin: 0 0 var(--size-4-3) 0;
+}
+.embedded-backlinks .nav-buttons-container {
+  position: absolute;
+  inset-inline-end: 0;
+  top: var(--size-4-3);
+  z-index: 1;
+}
+body.is-translucent { background-color: transparent; }
+.is-translucent:not(.is-fullscreen) {
+  --nav-collapse-icon-color: color-mix(in oklch, var(--mono-100) 30%, transparent);
+  --nav-collapse-icon-color-collapsed: color-mix(in oklch, var(--mono-100) 30%, transparent);
+  --divider-color: rgba(0, 0, 0, 0.15);
+}
+.is-translucent:not(.is-fullscreen) .titlebar,
+.is-translucent:not(.is-fullscreen) .app-container {
+  background-color: var(--workspace-background-translucent);
+}
+.is-translucent:not(.is-fullscreen) .workspace-ribbon.mod-primary,
+.is-translucent:not(.is-fullscreen) .workspace-tabs,
+.is-translucent:not(.is-fullscreen) .workspace-split,
+.is-translucent:not(.is-fullscreen) .sidebar-toggle-button,
+.is-translucent:not(.is-fullscreen) .mod-primary-split .workspace-tab-header-container,
+.is-translucent:not(.is-fullscreen) .mod-secondary-split .workspace-tab-header-container,
+.is-translucent:not(.is-fullscreen) .mod-top .workspace-tab-header-container,
+.is-translucent:not(.is-fullscreen) .workspace-tabs .workspace-leaf,
+.is-translucent:not(.is-fullscreen) .workspace-sidedock-vault-profile,
+.is-translucent:not(.is-fullscreen) .workspace-ribbon.mod-primary:before {
+  background-color: transparent !important;
+}

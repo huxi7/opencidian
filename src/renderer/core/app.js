@@ -3,7 +3,7 @@
  * [OUTPUT]: 导出 App，装配启动、外观、事件与布局保存。
  * [POS]: 应用组合根。新建和修改进入元数据解析，启动修复固定侧栏入口。isSettingsWindow（1.14.4 设置独立窗口）只跳过看门狗/后台索引/布局加载，其余状态照常装配。
  *        新库默认只展开左栏（右栏反链/大纲收起）；body 补 obsidian-app 与 show-inline-title，不再挂 body.is-folding。
- *        _applyCustomCss 注入当前主题：现代主题 themes/<name>/theme.css，旧版主题（themes/ 下的裸 .css）读 themes/<name>.css（对齐原版 customCss.getThemePath）。
+ *        _applyCustomCss 注入库根 obsidian.css 并监听热更新；原生半透明经 Desktop 下发。当前主题：现代主题 themes/<name>/theme.css，旧版主题（themes/ 下的裸 .css）读 themes/<name>.css（对齐原版 customCss.getThemePath）。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 /*
@@ -20,6 +20,7 @@ import { CommandManager } from './commands.js';
 import { Keymap, HotkeyManager } from './keymap.js';
 import { Settings } from './settings.js';
 import { Desktop, ipcOn, ipcSync } from './ipc.js';
+import { applyVaultCss, watchVaultCss } from './custom-css.js';
 import { checkForUpdates } from './update-check.js';
 import { detectLanguage, setLanguage, t, getNouns } from './i18n.js';
 import { Notice } from './notices.js';
@@ -134,8 +135,10 @@ export class App extends Events {
     else await this._loadWorkspace();
 
     // theme
+    this._stopVaultCssWatch = watchVaultCss(this);
     this._applyTheme();
     this.settings.on('change', () => this._applyTheme());
+    this._stopPreferenceWatch = this.settings.watchDesktopPreferences();
 
     // 触摸板捏合 / Ctrl+滚轮：仅"快速调整字体大小"开启时改字号（外观页开关，默认关）。
     // 任何情况下都吞掉默认行为：整页视觉缩放必须锁死（主进程 setVisualZoomLevelLimits(1,1) 兜底）。
@@ -212,6 +215,12 @@ export class App extends Events {
     if (statusBar) statusBar.toggle(config.showStatusBar !== false);
     // 行宽（readableLineLength）由 MarkdownView 挂在视图元素上，见 views/markdown-view.js
     document.body.toggleClass('show-inline-title', this.settings.appSettings.showInlineTitle !== false);
+    const translucent = process.platform === 'darwin' && appearance.translucency === true;
+    document.body.toggleClass('is-translucent', translucent);
+    if (this._lastTranslucency !== translucent) {
+      this._lastTranslucency = translucent;
+      Desktop.setTranslucency(translucent);
+    }
     // 自定义主题与 CSS 代码片段
     this._applyCustomCss();
   }
@@ -256,6 +265,7 @@ export class App extends Events {
     } else if (themeEl) {
       themeEl.remove();
     }
+    applyVaultCss(this);
     // snippets
     document.querySelectorAll('style[data-css-snippet]').forEach((el) => el.remove());
     for (const name of appearance.enabledCssSnippets || []) {

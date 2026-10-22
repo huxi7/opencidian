@@ -155,10 +155,10 @@ const translucentToggle=translucentRow.querySelector('.checkbox-container');
 check(!!translucentToggle&&!translucentToggle.classList.contains('is-enabled'),'半透明效果默认关闭');
 translucentToggle.click();await wait(80);
 check(app.settings.appearance.translucency===true,'半透明效果写入 appearance.translucency');
-check(document.body.classList.contains('mod-translucent'),'半透明效果给 body 加 mod-translucent 类');
+check(document.body.classList.contains('is-translucent'),'半透明效果给 body 加 is-translucent 类');
 translucentToggle.click();await wait(80);
 check(app.settings.appearance.translucency===false,'半透明效果可关闭');
-check(!document.body.classList.contains('mod-translucent'),'关闭后移除 mod-translucent 类');
+check(!document.body.classList.contains('is-translucent'),'关闭后移除 is-translucent 类');
 
 /* CSS 样式代码片段：原版是可导航子页面 */
 const snippetRow=rowByName(app.setting.activeTab.containerEl,/CSS (样式)?代码片段|CSS snippets/);

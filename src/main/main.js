@@ -19,6 +19,7 @@ const fs = require('fs');
 const crypto = require('crypto');
 const { devScreenshotHook } = require('./dev-hooks');
 const { setupSettingsWindows } = require('./settings-window');
+const { registerWindowEffectsIpc } = require('./window-effects');
 const { installAppMenu } = require('./app-menu');
 const { registerAppProtocol } = require('./app-protocol');
 const { app, BrowserWindow, protocol, ipcMain, Menu, shell, dialog, session, nativeTheme } = require('electron');
@@ -674,7 +675,7 @@ function setupIpc() {
   });
   ipcMain.on('window-state', (e) => {
     const w = BrowserWindow.fromWebContents(e.sender);
-    e.returnValue = w ? { maximized: w.isMaximized(), fullscreen: w.isFullScreen() } : { maximized: false, fullscreen: false };
+    e.returnValue = w ? { maximized: w.isMaximized(), fullscreen: w.isFullScreen(), vibrancy: IS_MAC ? w._opensidianVibrancy || null : null } : { maximized: false, fullscreen: false, vibrancy: null };
   });
   // 原版 updateStatus：按缩放补偿 macOS 红绿灯位置
   ipcMain.on('set-traffic-light-position', (e, x, y) => {
@@ -742,6 +743,7 @@ if (!gotLock) {
       isChinese: () => String(app.getLocale()).toLowerCase().startsWith('zh'),
     });
     setupIpc();
+    registerWindowEffectsIpc({ ipcMain, BrowserWindow });
     installAppMenu(openVaultStarter);
     applyAppIcon();
 

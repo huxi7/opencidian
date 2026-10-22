@@ -16,4 +16,6 @@ dev-hooks.js: OBS_* 门控的动作、DOM 探针与截图。只向 OBS_VAULT_PAT
 app-menu.js: 原生菜单装配。菜单命令交给活动渲染器；仓库入口由主进程注入。
 app-protocol.js: app:// 资源协议。分派应用与库文件，支持 Range 与取消释放流。
 
+window-effects.js: 原生半透明窗口 IPC。macOS 按发送方窗口切换 sidebar 材质。
+
 [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md

@@ -1,7 +1,7 @@
 /**
  * [INPUT]: 依赖 ../core/i18n.js 的 tt；依赖 ../core/setting.js 的 SettingGroup/SettingTab；依赖 ../core/notices.js 的 Notice；依赖 ../core/ipc.js 的 Desktop；依赖 ../core/icons.js 的 setIcon；依赖 ../core/window-chrome.js 的 syncTrafficLightPosition；依赖 ./settings-tabs-dialogs.js 的 ThemeManagerModal/openFontPage/trackSliderFill/addSliderValue/readInstalledThemes；Node 内置 fs/path；Electron renderer 的 webFrame/ipcRenderer
  * [OUTPUT]: 导出 AppearanceTab（外观页签）、InterfaceTab（界面页签）
- * [POS]: views/ 的外观与界面设置页签。AppearanceTab 对齐原版 Jee：基础组（基础颜色/主题色/主题/已安装主题/CSS 样式代码片段）、字体组（三行字体为可导航子页面 + 字号/快速调整）、高级组（自定义应用图标/半透明效果）。InterfaceTab 对齐原版 1.14.4 独立的“界面”页签：显示标签页标题栏/显示功能区/功能区 + 高级组（缩放比例/原生菜单/窗口边框样式/在新窗口中打开设置）。功能区、CSS 片段与字体是原版的可导航子页面，走 SettingsHost.openPage。半透明效果写 appearance.json 的 translucency；硬件加速属于关于页高级组。基础颜色/主题色/主题/字体大小四行按原版带 aliases（经 setting.setSettingAliases 挂到 data-aliases），供设置侧栏全局搜索匹配。
+ * [POS]: views/ 的外观与界面设置页签。AppearanceTab 对齐原版 Jee：基础组（基础颜色/主题色/主题/已安装主题/CSS 样式代码片段）、字体组（三行字体为可导航子页面 + 字号/快速调整）、高级组（自定义应用图标/半透明效果）。InterfaceTab 对齐原版 1.14.4 独立的“界面”页签：显示标签页标题栏/显示功能区/功能区 + 高级组（缩放比例/原生菜单/窗口边框样式/在新窗口中打开设置）。功能区、CSS 片段与字体是原版的可导航子页面，走 SettingsHost.openPage。半透明效果写 appearance.json 的 translucency 并启用 macOS 原生 vibrancy；库根 CSS 开关写 customCss；硬件加速属于关于页高级组。基础颜色/主题色/主题/字体大小四行按原版带 aliases（经 setting.setSettingAliases 挂到 data-aliases），供设置侧栏全局搜索匹配。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 /* Appearance + Interface settings tabs — DOM 1:1 with the original. */
@@ -258,18 +258,18 @@ export class AppearanceTab extends SettingTab {
         b.onClick(() => location.reload());
       });
     });
-    // 原版：半透明效果写 appearance.json 的 translucency（macOS vibrancy）。
-    // 本复刻无原生 vibrancy 通道，改用原版 token --workspace-background-translucent 近似。
-    const applyTranslucency = (on) => {
-      try { document.body.toggleClass('mod-translucent', !!on); } catch (e) {}
-    };
-    applyTranslucency(app.settings.appearance.translucency === true);
     adv.addSetting((s) => s
+      .setName(tt('plugins.custom-css.name', '自定义 CSS'))
+      .setDesc(tt('plugins.custom-css.desc', '读取并应用仓库文件夹中的 “obsidian.css”。'))
+      .addToggle((tog) => tog.setValue(app.settings.appearance.customCss !== false).onChange((value) => {
+        app.settings.updateAppearance({ customCss: value });
+      })));
+    // 原版 1.14.4 只在 macOS 显示原生半透明开关。
+    if (process.platform === 'darwin') adv.addSetting((s) => s
       .setName(tt('setting.appearance.option-translucency', '半透明效果'))
-      .setDesc(tt('setting.appearance.option-translucency-desc', '开启半透明效果以增强沉浸感（深色模式下开启效果更佳）。Linux 不支持此效果。'))
+      .setDesc(tt('setting.appearance.option-translucency-desc', '开启半透明效果以增强沉浸感（深色模式下开启效果更佳）。'))
       .addToggle((tog) => tog.setValue(app.settings.appearance.translucency === true).onChange((v) => {
         app.settings.updateAppearance({ translucency: v });
-        applyTranslucency(v);
       })));
   }
 

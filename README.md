@@ -101,6 +101,8 @@ sh scripts/acceptance/full.sh --output /tmp/opensidian-full
 
 ## 已知边界
 
+- **桌面兼容**：文档底部反链、默认应用打开、macOS vibrancy 已接通；库根 `obsidian.css` 开关和热更新为兼容扩展。
+
 - **Bases P1**：仅表格与安全表达式子集；其它视图、分组、汇总、完整公式、日期类型和 CSV 留待后续。未知能力明确降级，未知 YAML 数据保留；顶层流式或锚点冲突时保留值重写，不能保留全部排版与注释。
 
 - **不覆盖的原版功能**（按约定不做，不做假 UI）：第三方/社区插件生态（整体移除）、Sync、Publish、Web Viewer、slash-command、密钥链、账户、insider build。

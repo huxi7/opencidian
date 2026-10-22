@@ -554,11 +554,6 @@ body:not(.is-mobile) .setting-group.mod-list .checkbox-container.is-enabled:afte
   --setting-item-name-color: var(--text-muted);
 }
 
-/* 半透明效果（原版 translucency）：用原版 token --workspace-background-translucent 近似 */
-body.mod-translucent .workspace {
-  background-color: var(--workspace-background-translucent);
-}
-
 /* --------------------------------------------------- setting page (app.css 5554) */
 /* 原版 1.14.4 的可导航子页面：.setting-page 覆盖页签内容，顶栏含返回按钮与标题 */
 .modal.mod-settings .vertical-tab-content:not(.setting-page) {

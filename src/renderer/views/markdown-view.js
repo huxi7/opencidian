@@ -1,7 +1,7 @@
 /**
- * [INPUT]: 依赖 ../core/view.js 的 View 基类；依赖 ../core/i18n.js 的 t；依赖 ../core/icons.js 的 setIcon；依赖 ../core/keymap.js 的 IS_MAC；依赖 ../editor/editor.js 的 Editor 与 livePreviewExtension；依赖 ../markdown/reading.js 的 renderMarkdown/attachMarkdownInteractions；依赖 ../markdown/properties.js 的 renderProperties
+ * [INPUT]: 依赖 ../core/view.js 的 View 基类；依赖 ../core/i18n.js 的 t；依赖 ../core/icons.js 的 setIcon；依赖 ../core/keymap.js 的 IS_MAC；依赖 ../editor/editor.js 的 Editor 与 livePreviewExtension；依赖 ../markdown/reading.js 的 renderMarkdown/attachMarkdownInteractions；依赖 ../markdown/properties.js 的 renderProperties；依赖 BacklinkView 的文件绑定结果与 file-view-actions 的共用文件动作
  * [OUTPUT]: 导出 MarkdownView 类（三模式：source/live/preview），registerView 注册 'markdown'
- * [POS]: views/ 的 Markdown 生命周期入口。行内标题挂在编辑器 .cm-sizer 内；行宽 class 挂视图元素。换文件前保存正文；首次加载与布局恢复均同步模式 DOM；设置事件热重配编辑器。阅读正文交给 markdown/ 渲染。重命名/换文件后由 _updateTitles 回填视图头标题与面包屑。视图头模式钮按原版 1.14.4：图标表示「点它会切到哪个视图」（编辑视图 lucide-book-open / 阅读视图 lucide-edit-3），aria-label 三行（状态句 + 动作句 + ⌘+单击在新标签页打开），模式切换后随 _applyMode 立即换图标与文案。
+ * [POS]: views/ 的 Markdown 生命周期入口。行内标题挂在编辑器 .cm-sizer 内；行宽 class 挂视图元素。换文件前保存正文；首次加载与布局恢复均同步模式 DOM；设置事件热重配编辑器。阅读正文交给 markdown/ 渲染；底部反链复用 BacklinkView 并绑定当前文件。重命名/换文件后由 _updateTitles 回填视图头标题与面包屑。视图头模式钮按原版 1.14.4：图标表示「点它会切到哪个视图」（编辑视图 lucide-book-open / 阅读视图 lucide-edit-3），aria-label 三行（状态句 + 动作句 + ⌘+单击在新标签页打开），模式切换后随 _applyMode 立即换图标与文案。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 /*
@@ -20,6 +20,8 @@ import {
 import { renderProperties } from '../markdown/properties.js';
 import { Notice } from '../core/notices.js';
 import { normalizePath } from '../core/vault.js';
+import { BacklinkView } from '../plugins-core/backlink.js';
+import { addDefaultAppAction } from '../core/file-view-actions.js';
 import { IS_MAC } from '../core/keymap.js';
 import { PromptModal } from '../core/modals.js';
 import { showEditorContextMenu } from '../editor/editor-menu.js';
@@ -39,6 +41,7 @@ export class MarkdownView extends View {
     this._renderedText = null;
     this._saveTimer = null;
     this._pendingScroll = null;
+    this.showBacklinks = !!this.app.workspace.backlinkInDocument;
   }
 
   getViewType() { return 'markdown'; }
@@ -47,7 +50,7 @@ export class MarkdownView extends View {
   getMode() { return this.mode; }
 
   getState() {
-    const state = { file: this.file ? this.file.path : undefined, mode: this.mode };
+    const state = { file: this.file ? this.file.path : undefined, mode: this.mode, backlinks: this.showBacklinks };
     if (this.mode !== 'preview') state.mode = this.mode;
     if (this.editor && this.mode !== 'preview') {
       state.scroll = this.editor.getScrollInfo().top;
@@ -68,6 +71,7 @@ export class MarkdownView extends View {
 
   async setState(state, result) {
     state = state || {};
+    if (typeof state.backlinks === 'boolean') this.showBacklinks = state.backlinks;
     if (state.mode === 'preview') this.mode = 'preview';
     else if (state.mode === 'source' || state.mode === 'live') { this.mode = state.mode; this._lastEditMode = state.mode; }
     if (state.file && (!this.file || this.file.path !== state.file)) {
@@ -132,6 +136,7 @@ export class MarkdownView extends View {
     this.readingTitle = this.readingContent.createDiv('inline-title');
     this.propertiesReadingEl = this.readingContent.createDiv('metadata-container-host');
     this.renderedContent = this.readingContent.createDiv('markdown-content');
+    this.backlinksEl = contentEl.createDiv('embedded-backlinks');
     attachMarkdownInteractions(this.app, this.readingEl, () => (this.file ? this.file.path : ''));
 
     // react to external changes/renames
@@ -176,6 +181,8 @@ export class MarkdownView extends View {
     this._refs = [];
     if (this._saveTimer) { clearTimeout(this._saveTimer); this._saveTimer = null; }
     await this.save();
+    this.backlinks?.onClose();
+    this.backlinks = null;
     if (this.editor) this.editor.destroy();
   }
 
@@ -294,9 +301,38 @@ export class MarkdownView extends View {
     } else {
       this.editor.refresh();
     }
+    this.updateShowBacklinks();
     this._fillViewActions();
     this.app.workspace.trigger('markdown-view-mode-change', this);
     this.app.workspace.trigger('layout-change');
+  }
+
+  canToggleBacklinks() { return !!this.file && !!this.app.plugins.getInternalPlugin('backlink')?.enabled; }
+
+  toggleBacklinks() {
+    if (!this.canToggleBacklinks()) return;
+    this.showBacklinks = !this.showBacklinks;
+    this.updateShowBacklinks();
+    this.app.workspace.trigger('layout-change');
+  }
+
+  updateShowBacklinks() {
+    if (!this.backlinksEl) return;
+    const visible = this.showBacklinks && this.canToggleBacklinks();
+    this.backlinksEl.toggle(visible);
+    if (!this.showBacklinks || !this.canToggleBacklinks()) {
+      this.backlinks?.onClose(); this.backlinks = null;
+      this.backlinksEl.empty();
+      return;
+    }
+    const host = this.mode === 'preview' ? this.readingContent : this.editor.sizerEl;
+    host.appendChild(this.backlinksEl);
+    if (!this.backlinks) {
+      this.backlinks = new BacklinkView(this.leaf);
+      this.backlinks.ownerView = this;
+      this.backlinks.contentEl = this.backlinksEl;
+      this.backlinks.onOpen();
+    } else this.backlinks._render();
   }
 
   toggleMode() {
@@ -486,6 +522,7 @@ export class MarkdownView extends View {
       this.toggleMode();
     };
 
+    addDefaultAppAction(this.app, this, el);
     const more = el.createDiv('clickable-icon view-action mod-more-options');
     more.setAttr('aria-label', t('interface.menu.more-options') || 'More options');
     setIcon(more, 'more-horizontal');
@@ -549,6 +586,9 @@ export class MarkdownView extends View {
   onPaneMenu(menu, source) {
     if (source !== 'tab-header' && source !== 'more-options') return;
     const editMode = this.mode === 'live' || this.mode === 'source';
+    if (this.canToggleBacklinks()) menu.addItem((i) => i.setSection('pane')
+      .setTitle(t('plugins.backlinks.menu-opt-backlinks-in-document'))
+      .setIcon('links-coming-in').setChecked(this.showBacklinks).onClick(() => this.toggleBacklinks()));
     menu.addItem((i) => i.setSection('pane')
       .setTitle(t('interface.menu.toggle-reading-view') || 'Reading view')
       .setIcon('lucide-book-open')

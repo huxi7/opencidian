@@ -2,7 +2,7 @@
 
 > L2 | 父级: /src/renderer/CLAUDE.md
 
-全部 CSS。加载顺序由 index.html 决定：fonts → tokens → base → layout → components → download-attachments → tree → explorer → editor → markdown → popover → search → properties → graph → settings → settings-hotkeys → settings-dialogs → canvas → bookmarks → slides。所有颜色/间距/字体一律引用 tokens.css 中的变量，禁止硬编码色值(阴影与罕见例外除外)。
+全部 CSS。加载顺序由 index.html 决定：fonts → tokens → base → layout → components → download-attachments → tree → explorer → editor → markdown → popover → search → properties → graph → settings → settings-hotkeys → settings-dialogs → canvas → bookmarks → desktop-gaps → slides。所有颜色/间距/字体一律引用 tokens.css 中的变量，禁止硬编码色值(阴影与罕见例外除外)。
 
 成员清单
 starter.css: 仓库选择窗口 1.14.4 几何（800×650、titlebar 30、最近仓库列 280/行高 76.49、设置组 448/语言行 70、按钮 100×30）；打开/新建/空态与行菜单，通用控件复用 components/settings。
@@ -34,6 +34,8 @@ canvas-nodes.css: 原版画布布局、节点、分组与手柄规则。含链�
 canvas-edges.css: 原版连接线与标签规则、拖动对齐参考线（.canvas-snaps 的 line/circle 取强调色，位于 .canvas-edges 之前）、编辑控件与链接卡失败占位（.canvas-link-error 图标/标题/URL/原因/重试按钮，is-visible 切换）。 另含行内画布嵌入限高 --embed-canvas-max-height（400px，原版 app.css 2238）与 .canvas-minimap 缩略图段（app.css 18999-19023）。
 bookmarks.css: 书签树滚动、操作图标与视图头部收藏状态。
 slides.css: 全窗口演示覆盖层。.slides-container/.slides-close-btn/.collapse-indicator/.controls 段移植自原版 app.css slides 段；deck/section/progress 为翻页渲染新增；容器 position:fixed 覆盖全窗口(对齐原版)，背景走 --background-primary（原版硬编码 #191919 由 reveal 主题覆盖，此处取应用主题色）。
+
+desktop-gaps.css: 文档底部反链与 macOS 半透明窗口样式。
 
 layout-shell.css: 窗口外壳、功能区与根分割规则。由 layout.css 前置导入。
 components-overlays.css: 菜单和弹窗规则。由 components.css 前置导入。

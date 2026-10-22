@@ -1,7 +1,7 @@
 /**
  * [INPUT]: View 生命周期、workspace 当前文件、metadataCache 反链索引与 DOM 图标。
- * [OUTPUT]: 导出 BacklinkView、findLinkContexts 与插件 create；插件在状态栏维护当前文件反链计数条目。
- * [POS]: 右栏反链视图。复用搜索结果结构，关闭时释放订阅与重绘计时器。
+ * [OUTPUT]: 导出 BacklinkView、findLinkContexts、settingTab 与插件 create；插件在状态栏维护当前文件反链计数条目。
+ * [POS]: 侧栏与文档底部共用反链视图；文档实例绑定所属笔记。复用搜索结果结构，关闭时释放订阅与重绘计时器。
  *        链接文件行与未链接提及行右键弹原版链接菜单（workspace.buildLinkMenu + handleLinkContextMenu）。
  *        状态栏条目按 resolvedLinks 汇总反链数，点击展开右栏反链（原版 updateBacklinks）。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
@@ -9,6 +9,7 @@
 import { View } from '../core/view.js';
 import { t, getNouns } from '../core/i18n.js';
 import { setIcon } from '../core/icons.js';
+import { SettingGroup } from '../core/setting.js';
 
 export const nameKey = 'plugins.backlinks';
 
@@ -67,9 +68,10 @@ export class BacklinkView extends View {
     this._filePath = null;
     this._collapsedFiles = new Set();
   }
+  _getFile() { return this.ownerView ? this.ownerView.file : this.app.workspace.getActiveFile(); }
   getViewType() { return 'backlink'; }
   getDisplayText() {
-    const file = this.app.workspace.getActiveFile();
+    const file = this._getFile();
     return file ? (t('plugins.backlinks.tab-title', { displayText: file.basename }) || `Backlinks for ${file.basename}`) : (t('plugins.backlinks.name') || 'Backlinks');
   }
   getIcon() { return 'arrow-left-right'; }
@@ -104,14 +106,14 @@ export class BacklinkView extends View {
     this._pending = setTimeout(() => { this._pending = null; this._render(); }, 120);
   }
   _updateTitle() {
-    if (this.leaf) this.leaf.updateTabHeader();
+    if (!this.ownerView && this.leaf) this.leaf.updateTabHeader();
   }
 
   _render() {
     if (!this._pane) return;
     this._pane.empty();
     this._updateTitle();
-    const file = this.app.workspace.getActiveFile();
+    const file = this._getFile();
     if (this._filePath !== (file?.path || null)) {
       this._filePath = file?.path || null;
       this._collapsedFiles.clear();
@@ -226,7 +228,7 @@ export class BacklinkView extends View {
   _renderBacklinkFile(container, path, count) {
     const source = this.app.vault.getAbstractFileByPath(path);
     if (!source) return;
-    const current = this.app.workspace.getActiveFile();
+    const current = this._getFile();
     const item = container.createDiv('tree-item search-result');
     item.setAttr('data-path', path);
     const self = item.createDiv('tree-item-self search-result-file-title is-clickable mod-collapsible');
@@ -292,8 +294,23 @@ function findContextsByName(app, sourceFile, name) {
   return out;
 }
 
+/** 原版 A8：默认只作用于后续打开的笔记；各标签页保存独立 backlinks 状态。 */
+export function settingTab(app, containerEl) {
+  const options = app.settings.loadPluginData('backlink.json', { backlinkInDocument: false });
+  const group = new SettingGroup(containerEl).setHeading(t('plugins.backlinks.name'));
+  group.addSetting((s) => s
+    .setName(t('plugins.backlinks.option-backlink-in-document'))
+    .setDesc(t('plugins.backlinks.option-backlink-in-document-desc'))
+    .addToggle((toggle) => toggle.setValue(!!options.backlinkInDocument).onChange((value) => {
+      options.backlinkInDocument = value;
+      app.workspace.backlinkInDocument = value;
+      app.settings.savePluginData('backlink.json', options);
+    })));
+}
+
 export function create(app) {
   let statusEl = null;
+  let refs = [];
 
   /** 原版 updateBacklinks：statusBar 显示当前文件的反链数，点击打开右栏反链。 */
   function updateStatus() {
@@ -314,13 +331,17 @@ export function create(app) {
 
   return {
     onload() {
+      app.workspace.backlinkInDocument = !!app.settings.loadPluginData('backlink.json', {}).backlinkInDocument;
       statusEl = app.workspace.statusBar.createDiv('status-bar-item plugin-backlink mod-clickable');
       statusEl.addEventListener('click', () => {
         app.workspace.ensureSideLeaf('backlink', 'right', { active: true, reveal: true });
       });
-      app.workspace.on('file-open', updateStatus);
-      app.workspace.on('active-leaf-change', updateStatus);
-      app.metadataCache.on('resolved', updateStatus);
+      refs = [app.workspace.on('file-open', updateStatus),
+        app.workspace.on('active-leaf-change', updateStatus),
+        app.metadataCache.on('resolved', updateStatus),
+        app.settings.on('change', () => {
+          app.workspace.backlinkInDocument = !!app.settings.loadPluginData('backlink.json', {}).backlinkInDocument;
+        })];
       updateStatus();
       app.viewRegistry.registerView('backlink', (leaf) => new BacklinkView(leaf));
       app.commands.addCommand({
@@ -342,14 +363,19 @@ export function create(app) {
         id: 'backlink:toggle-backlinks-in-document',
         name: t('plugins.backlinks.action-toggle-backlinks-in-document') || 'Toggle backlinks in document',
         checkCallback: (checking) => {
-          const file = app.workspace.getActiveFile();
-          if (!file) return false;
-          if (!checking) app.workspace.ensureSideLeaf('backlink', 'right', { reveal: true });
+          const view = app.workspace.activeLeaf?.view;
+          if (!view?.canToggleBacklinks?.()) return false;
+          if (!checking) view.toggleBacklinks();
           return true;
         },
       });
     },
     onunload() {
+      refs.forEach((ref) => ref.unregister()); refs = [];
+      app.workspace.backlinkInDocument = false;
+      for (const leaf of app.workspace.getLeavesOfType('markdown')) {
+        leaf.view.showBacklinks = false; leaf.view.updateShowBacklinks?.();
+      }
       app.viewRegistry.unregisterView('backlink');
       if (statusEl) { statusEl.detach(); statusEl = null; }
     },

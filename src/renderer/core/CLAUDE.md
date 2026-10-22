@@ -9,14 +9,14 @@ dom.js: Element/Document 原型的 createEl/setText/addClass 等助手(安装即
 events.js: Events 基类(on/off/once/trigger/offref) + debounce(带 run/cancel)/sleep。
 i18n.js: setLanguage/detectLanguage(systemLocale)/t(带 {{var}} 与 _plural 处理)/tt(key,fallback,vars)(设置界面兜底)/getNouns(连字符 key)。
 icons.js: resolveIcon/createIcon/setIcon/getIconData/iconExists/getIconIds/addIcon/removeIcon。解析链逐字复刻原版 Zm()：lucide- 前缀 → 运行时图标 → 36 个自有图标(assets/icons-obsidian.json) → 152 条别名映射(assets/icon-aliases.json) → 1874 个 Lucide 图标(assets/icons.json)。
-ipc.js: ipcSync/ipcSend/ipcInvoke/ipcOn + Desktop 门面(与主进程通道一一对应)。
+ipc.js: IPC 与 Desktop 门面。半透明通道只向主进程下发偏好。
 tooltip.js: 全局 tooltip 单例(叶子，仅用 DOM 助手)。导入即安装 body 级 pointerover/pointerout 委托(只认鼠标)与 pointerdown/滚动/blur/Escape 收起；文案取 aria-label(其次被暂存的 title)，data-tooltip-delay 默认 1000ms，data-tooltip-position 默认 bottom(放不下翻 mod-top)，data-tooltip-classes 追加类；补 Element.prototype.setTooltip/setTooltipGenerator。
 vault.js: Vault/TFile/TFolder/FileSystemAdapter/normalizePath/parentPathOf/isHiddenPath。文件 IO 走 Node fs；watch 用 chokidar。首次扫描与文件监听均拒绝点开头路径段。
 vault-utils.js: getUniquePath 等路径纯函数。
 metadata.js: MetadataCache。内存态：headings/links/embeds/tags/frontmatter；getFirstLinkpathDest 解析短链。
 fileManager.js: 文件创建/重命名/删除/移动，含链接自动更新与 processFrontMatter。generateMarkdownLink 仅对 .md 省略扩展名，附件（png 等）保留（shortest/markdown 两种格式同规则）。附件路径四语义(attachmentFolderPath: '/' 根 | './' 当前文件夹 | './sub' 子文件夹 | 'name' 指定文件夹)；删除走 promptDelete + trashOption(system|local|none)。重命名链接更新对齐原版：alwaysUpdateLinks 为假时弹窗（总是更新/仅此一次/不做更新），计数与文本替换必须在 metadataCache.onFileRename 之前完成。downloadAttachmentsForNote 是薄封装，正文在 attachments-downloader.js。
 attachments-downloader.js: 外部附件下载流程（原版 fileManager.downloadAttachmentsForNote + promptForImageDownload）。扫描源文本：frontmatter 的 http(s) 图片值 + 正文 ![](url) 的 http(s)/data 嵌入（掩掉围栏代码块与行内代码，不依赖 metadataCache 位置）。画廊模态（.attachments-gallery）逐项复选框默认勾选，确认后只下载勾选项：data URL 直接解码，远程走 app.requestUrl（缺省落 Desktop.requestUrl）；文件名 URL 末段优先，其次 content-disposition: filename=，再 content-type→Image.<ext>，最后 Image.jpg。改写阶段按 offset 降序替换嵌入为 !generateMarkdownLink，frontmatter 命中值经 processFrontMatter 写成 [[attachment 链接文本]]；单条下载失败只跳过该项。
-settings.js: 读写 .obsidian/*.json (app/appearance/hotkeys/core-plugins)，merge 写入保留未知字段；DEFAULT_CORE_PLUGINS 定义于此处。app.json 键名逐字对齐原版(focusNewTab/smartIndentList/defaultViewMode(source|preview)/livePreview/promptDelete/deleteUnlinkedAttachments(ask|always|never)/trashOption(system|local|none)/openBehavior(''|new|daily|file:<path>))；含 1.14 的 settingsPopoutWindow（默认 true，设置独立窗口开关）。hotkeys 值为数组（含空数组）表示用户覆盖，空数组用于压制默认键；null/undefined 删除覆盖并恢复默认。
+settings.js: 监听 appearance/backlink 配置，跨窗口去重同步。读写 .obsidian/*.json (app/appearance/hotkeys/core-plugins)，merge 写入保留未知字段；DEFAULT_CORE_PLUGINS 定义于此处。app.json 键名逐字对齐原版(focusNewTab/smartIndentList/defaultViewMode(source|preview)/livePreview/promptDelete/deleteUnlinkedAttachments(ask|always|never)/trashOption(system|local|none)/openBehavior(''|new|daily|file:<path>))；含 1.14 的 settingsPopoutWindow（默认 true，设置独立窗口开关）。hotkeys 值为数组（含空数组）表示用户覆盖，空数组用于压制默认键；null/undefined 删除覆盖并恢复默认。
 setting.js: 设置控件层。Setting/SettingGroup/SettingTab 基类与全部控件(Toggle/Dropdown/Slider/Button/ExtraButton/Text/Search/ColorPicker/TextArea/ProgressBar/MomentFormat)；DOM 结构对齐原版(fte 宿主消费)。SettingGroup.addSearch 直接创建裸 SearchComponent 并挂到 .setting-group-search，addSearchControl 提供 .setting-group-search-control 芯片行；不得再包 Setting 行。SettingTab 必须放这里，放 views 会造成 tabs↔view 循环 import。
 keymap.js: Keymap/HotkeyManager/hotkeyToString/eventToHotkey/IS_MAC。按键归一化与作用域栈；全局 keydown 入口。
 default-hotkeys.js: 30 条原版默认快捷键(id → hotkeys)。
@@ -42,8 +42,12 @@ workspace-regression.js: 19 组内存回归。覆盖导航、分栏、恢复、�
 plugins.js: PluginManager(内部插件宿主)。核心插件模块经 plugins-registry.js 汇总，启停写 core-plugins.json；插件设置页经 manifest.module.settingTab(app, containerEl) 由设置宿主打开。不扫描 .obsidian/plugins、不加载任何第三方代码（社区插件宿主、shim、安全模式与信任模态已整体移除）。
 plugins-registry.js: corePluginModules 汇总表(id → 模块)。新增核心插件必须登记在此；已含数据库(bases)、出链(outgoing-link)、属性(properties)与录音机(audio-recorder)。对象顺序即功能区按钮顺序；1.14.4 顺序 switcher→graph→canvas→daily→templates→command-palette。
 app-commands.js: 导航、设置与文档命令。关闭、固定标签操作只作用于中心文档。堆叠命令 workspace:toggle-stacked-tabs 作用于当前中心标签组，侧栏组拒绝执行。
-app.js: App 装配。新建与修改均进入元数据解析。initialize 顺序：bootTime → language(须最先，界面模块构造前) → 非 macOS 加 body.styled-scrollbars → vault 身份 → settings → vault+watch → metadata/fileManager/hotkeyManager/plugins → workspace.mount → 插件加载 → _loadWorkspace → _applyTheme → settings 'change' 监听 → Ctrl+滚轮/捏合字号监听（仅外观「快速调整字体大小」开启时改字号，默认关；ctrl+wheel 恒 preventDefault，配合主进程 setVisualZoomLevelLimits(1,1) 锁死整页视觉缩放）→ _runOpeningBehavior。_applyTheme 应用 theme/accent/字体/--indent-size/根字号并调 _applyCustomCss(注入主题与启用的 snippets：现代主题 themes/<x>/theme.css，回退旧版主题 themes/<x>.css，与原版 getThemePath 同规则；style 元素带 data-css-theme)。ipcOn('context-menu') 保存主进程菜单参数并唤醒 _contextParamWaiters（编辑器右键菜单取拼写建议/剪贴板状态）。OBS_ACT 调试钩子支持 open/open-settings/exec(命令)。设置窗口以 app.isSettingsWindow(URL #settings-window) 分流：只跳过看门狗/后台索引/布局加载，其余照常装配。新库默认右栏收起；body 补 obsidian-app/show-inline-title。
+app.js: App 装配。监听库根 CSS；外观偏好驱动原生半透明。新建与修改均进入元数据解析。initialize 顺序：bootTime → language(须最先，界面模块构造前) → 非 macOS 加 body.styled-scrollbars → vault 身份 → settings → vault+watch → metadata/fileManager/hotkeyManager/plugins → workspace.mount → 插件加载 → _loadWorkspace → _applyTheme → settings 'change' 监听 → Ctrl+滚轮/捏合字号监听（仅外观「快速调整字体大小」开启时改字号，默认关；ctrl+wheel 恒 preventDefault，配合主进程 setVisualZoomLevelLimits(1,1) 锁死整页视觉缩放）→ _runOpeningBehavior。_applyTheme 应用 theme/accent/字体/--indent-size/根字号并调 _applyCustomCss(注入主题与启用的 snippets：现代主题 themes/<x>/theme.css，回退旧版主题 themes/<x>.css，与原版 getThemePath 同规则；style 元素带 data-css-theme)。ipcOn('context-menu') 保存主进程菜单参数并唤醒 _contextParamWaiters（编辑器右键菜单取拼写建议/剪贴板状态）。OBS_ACT 调试钩子支持 open/open-settings/exec(命令)。设置窗口以 app.isSettingsWindow(URL #settings-window) 分流：只跳过看门狗/后台索引/布局加载，其余照常装配。新库默认右栏收起；body 补 obsidian-app/show-inline-title。
 
 workspace-file-view.js: 文件视图分派。Markdown 读取编辑偏好，插件扩展名读取视图注册表。
+
+custom-css.js: 库根 obsidian.css 兼容层。按开关注入，监听创建、修改和删除。
+
+file-view-actions.js: 文件视图共用默认应用动作。非文件视图隐藏入口。
 
 [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md

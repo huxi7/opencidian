@@ -1,7 +1,7 @@
 /**
  * [INPUT]: 依赖 ./events.js 的 Events；Node 内置 fs/path
  * [OUTPUT]: 导出 Settings 类（load/save/get/set/on('change')/config 合并视图）、DEFAULT_APP_SETTINGS/DEFAULT_APPEARANCE_SETTINGS/DEFAULT_CORE_PLUGINS（逐字对齐原版桌面默认配置）
- * [POS]: core/ 的配置层，读写 vault 下 .obsidian/*.json，合并保留未知键。workspace.js 与各视图通过它读取用户偏好；config getter 合并 app.json+appearance.json（appearance 优先），对齐原版 vault.config。
+ * [POS]: core/ 的配置层，读写 vault 下 .obsidian/*.json，合并保留未知键；customCss 保存库根 CSS 开关。外观与反链配置监听支撑设置独立窗口同步。workspace.js 与各视图通过它读取用户偏好；config getter 合并 app.json+appearance.json（appearance 优先），对齐原版 vault.config。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 /* Settings: vault .obsidian config files with merge-preserving writes. */
@@ -69,6 +69,7 @@ export const DEFAULT_APPEARANCE_SETTINGS = {
   showRibbon: true,
   nativeMenus: null,                  // null = 跟随平台（macOS 用原生菜单）
   translucency: false,
+  customCss: true,                    // 兼容扩展：应用库根 obsidian.css
   textFontFamily: '',
   interfaceFontFamily: '',
   monospaceFontFamily: '',
@@ -155,7 +156,9 @@ export class Settings extends Events {
     const merged = { ...current, ...patch };
     try {
       fs.mkdirSync(this.dir, { recursive: true });
-      fs.writeFileSync(nodePath.join(this.dir, name), JSON.stringify(merged));
+      const serialized = JSON.stringify(merged);
+      fs.writeFileSync(nodePath.join(this.dir, name), serialized);
+      if (this._desktopPreferenceContents?.has(name)) this._desktopPreferenceContents.set(name, serialized);
     } catch (e) {
       console.error('Failed to write settings', name, e);
     }
@@ -181,6 +184,41 @@ export class Settings extends Events {
       }
     }
     this.trigger('change');
+  }
+
+  /** 设置独立窗口写盘后，主窗同步外观与反链默认值。 */
+  watchDesktopPreferences() {
+    if (this._desktopPreferenceStop) return this._desktopPreferenceStop;
+    const watched = [];
+    const contents = this._desktopPreferenceContents = new Map();
+    const read = (file) => { try { return fs.readFileSync(file, 'utf8'); } catch (_) { return null; } };
+    for (const name of ['appearance.json', 'backlink.json']) {
+      const file = nodePath.join(this.dir, name);
+      contents.set(name, read(file));
+      const update = () => {
+        const current = read(file);
+        if (contents.get(name) === current) return;
+        let data = {};
+        if (current !== null) {
+          try { data = JSON.parse(current); } catch (_) { return; }
+          if (!data || typeof data !== 'object' || Array.isArray(data)) return;
+        }
+        contents.set(name, current);
+        if (name === 'appearance.json') {
+          this.appearance = { ...DEFAULT_APPEARANCE_SETTINGS, ...data };
+        }
+        this.trigger('change');
+        this.app.workspace?.trigger('settings-changed');
+      };
+      fs.watchFile(file, { persistent: false, interval: 250 }, update);
+      watched.push(() => fs.unwatchFile(file, update));
+    }
+    const stop = this._desktopPreferenceStop = () => {
+      watched.forEach((fn) => fn());
+      this._desktopPreferenceStop = null;
+    };
+    window.addEventListener('beforeunload', stop, { once: true });
+    return stop;
   }
 
   updateAppSettings(patch) {

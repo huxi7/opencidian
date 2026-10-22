@@ -503,3 +503,12 @@ sh scripts/with-lock.sh "npm run build && node scripts/acceptance/run.mjs canvas
 - 最终内存回归：`node --experimental-vm-modules src/renderer/core/workspace-regression.js`，**19/19 通过**。日志 `/tmp/opensidian-wave1-memory-1022.log`。这 19 组未混入 E2E 的 6477 条。
 - 行数检查：src/scripts 中 JS、MJS、CSS、SH、Markdown 均不超过 800 行；最大 795 行。L3、L2 与本结果文档已回环。
 - 本轮范围止于 Wave 1。Wave 2 的 Bases P2/P3、Wave 3 的打包冒烟尚未执行。未配置 remote，未 push。
+
+### T2 1.14.4 小缺口
+
+- 文件：`plugins-core/backlink.js`、`core/{app,settings,ipc,custom-css,file-view-actions,view-header}.js`、`views/{markdown-view,settings-tabs-appearance}.js`、`styles/desktop-gaps.css`、`index.html`；主进程 `window-effects.js` 与对应 IPC 装配。删除旧 mod-translucent 假近似规则。
+- 场景：新增 `small-gaps`，**49 项通过**；更新 `appearance`，**99 项通过**。共享文件动作再回归 `view-header`，**82 项通过**。
+- 命令：`sh scripts/with-lock.sh "npm run build && node scripts/acceptance/run.mjs small-gaps --no-screenshot && node scripts/acceptance/run.mjs view-header --no-screenshot"`；`appearance` 同运行器单独执行。
+- 日志：`small-gaps-run-result-VI7CuX/run.log`、`view-header-run-result-yJKE5v/run.log`、`appearance-run-result-9jtmsk/run.log`，均在 `/tmp/obs-copy-acceptance/`。
+- 对照：`_analysis/small-gaps-114/FACTS.md`。原版 A8 文档默认反链、Markdown backlinks 状态、embedded-backlinks 样式与 sidebar vibrancy。
+- 缺口：根 obsidian.css 开关为兼容扩展；默认应用只验证受保护 IPC。vibrancy 验证真实 API 成功下发后的状态，无截图视觉结论。既有反链导航能力未扩展为全部原版选项。

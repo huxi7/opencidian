@@ -660,3 +660,10 @@ node --experimental-vm-modules src/renderer/core/workspace-regression.js
 - 最终集成有效覆盖 67 场景/97 次/6477 断言全绿。实际执行 104 次（含 7 次计数修正补跑）；初轮 theme-tokens 回执不规范的失败保留。证据 /tmp/opensidian-wave1-full-1022/summary-final.json。
 - 最终内存回归 19/19；日志 /tmp/opensidian-wave1-memory-1022.log。未启动原版，只读静态包；未做视觉验收。
 - 本轮只执行 Wave 1。Wave 2 的其它数据库视图、分组、汇总、完整公式与 CSV，以及 Wave 3 的打包冒烟仍待执行。
+
+### T2 桌面小缺口
+
+- 反链设置页随设置打开全量登记。阅读与实时预览底部反链绑定所属文件，标签独立 backlinks 状态写布局，关闭释放订阅。
+- 库根 obsidian.css 开关和热更新为兼容扩展。macOS 半透明调用真实 sidebar vibrancy；appearance/backlink 配置跨设置窗口定向同步。
+- 默认应用动作由文件视图共用，Markdown/画布/Bases 均走受保护 open-path；文件菜单复用原入口，不拉起外部应用做验收。
+- small-gaps 49、appearance 99、view-header 82 通过；原版静态证据见 _analysis/small-gaps-114/FACTS.md。无截图视觉结论。
