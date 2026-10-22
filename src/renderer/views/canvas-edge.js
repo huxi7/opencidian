@@ -288,7 +288,8 @@ export class CanvasEdge {
 
     canvas.handleDragWithPan(e, {
       start: () => {
-        dummy = canvas.createDummyNode();
+        // 原版：拖线端点只建不挂载的几何占位，不能出现可见虚影。
+        dummy = canvas.createDummyNode({ attach: false });
         canvas.canvasEl.addClass('is-connecting');
         canvas.deselectAll();
       },

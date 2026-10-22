@@ -371,7 +371,8 @@ export class CanvasNode {
     let snapped = null;
     canvas.handleDragWithPan(e, {
       start: () => {
-        dummy = canvas.createDummyNode();
+        // 原版：连线手柄拖动只建不挂载的几何占位，不能出现可见虚影。
+        dummy = canvas.createDummyNode({ attach: false });
         from = { side, node: this, end: 'none' };
         to = { side: opposite, node: dummy, end: 'arrow' };
         edge = canvas.createEdge(from, to, false);

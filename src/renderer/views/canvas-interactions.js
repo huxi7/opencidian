@@ -49,7 +49,7 @@ export function suppressContextMenu(el) {
 }
 
 /** 原版 wg：指针拖拽助手。factory 在超过 threshold 后调用一次；cleanup 先于 end/cancel 执行。 */
-export function startDrag(e, factory, threshold = 5) {
+export function startDrag(e, factory, threshold = 5, onIdle = null) {
   const win = window;
   const start = { x: e.clientX, y: e.clientY };
   let drag = null;
@@ -79,12 +79,16 @@ export function startDrag(e, factory, threshold = 5) {
     const current = drag;
     cleanup();
     if (current && current.end) current.end(ev);
+    // 纯点击（未越过阈值）：拖拽工厂从未创建，必须走 idle 收尾，
+    // 否则调用方在 pointerdown 时置的拖动状态永远清不掉（原版 cleanup 总会执行）。
+    else if (!current && onIdle) onIdle(ev);
   }
   function onCancel(ev) {
     if (ev.pointerId !== e.pointerId) return;
     const current = drag;
     cleanup();
     if (current && current.cancel) current.cancel(ev);
+    else if (!current && onIdle) onIdle(ev);
   }
   function onKeyDown(ev) { if (drag && drag.keydown) drag.keydown(ev); }
   function onKeyUp(ev) { if (drag && drag.keyup) drag.keyup(ev); }
@@ -275,7 +279,7 @@ export class CanvasInteractions extends CanvasViewport {
           this.panBy(start.x - pos.x, start.y - pos.y);
         },
         cleanup: () => this.setDragging(false),
-      }), 0);
+      }), 0, () => this.setDragging(false));
       return;
     }
     const rightButton = e.button === 2 || (IS_MAC && e.button === 0 && e.ctrlKey);
@@ -553,7 +557,7 @@ export class CanvasInteractions extends CanvasViewport {
           if (rest.cleanup) rest.cleanup();
         },
       };
-    }, 0);
+    }, 0, () => this.setDragging(false));
   }
 
   /** 拖动选中节点（分组会带上内部节点；mac 按住 Alt / 其他平台按住 Ctrl 改为克隆整组）。 */

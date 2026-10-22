@@ -637,3 +637,5 @@ node --experimental-vm-modules src/renderer/core/workspace-regression.js
 - **书签图标（2026-10-22）**：`folder` 走别名表变 folder-open；原版是闭口 lucide-folder。全部改显式 lucide-* 前缀；删除原版没有的行尾「…」按钮；补视图头搜索钮。bookmarks 0 → 28 项。
 - **版本号单一事实源（2026-10-22）**：About/`version` IPC 从 1.12.4 → 1.14.4；渲染层 `VERSION` 改读 `Desktop.version()`，不再写死 1.0.0；旧取证目录引用 `obsidian-asar` → `obsidian-114/renderer`。
 - **Bases 缺口**：原版 1.14.4 有 Bases 核心插件（29 个核心插件之一，i18n 含数据库/视图/公式/筛选全套）；本仓库只有 149 条 `plugins.bases.*` 文案，没有模块与视图 → 设置里点不到。README 的「已知边界」已列 Bases。
+- **画布拖线紫框（2026-10-22）**：原版临时节点只做几何占位（不 attach/render）；`createDummyNode()` 无条件挂 DOM 并 render，露出 `.is-dummy` 的 accent 方框。改 `attach:false`（拖线端点 + 连线手柄）。
+- **画布点击后卡住（2026-10-22）**：`handleDragWithPan` 在 pointerdown 即 `setDragging(true)`，纯点击不触发拖拽工厂 → `cleanup` 不执行 → `isDragging` 永久为真，滚轮/悬停手柄/双击被吞。`startDrag` 增加 idle 收尾。canvas-dummy 59 → 71。

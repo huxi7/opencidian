@@ -458,10 +458,17 @@ export class CanvasView extends CanvasInteractions {
     return best ? { node: best.node, side: best.side } : null;
   }
 
-  createDummyNode() {
+  /**
+   * 临时节点（原版 Pee）。attach/render 只在需要可见替身时开启：
+   * 拖线端点与连线手柄只把它当几何占位（原版从不 attach/render），
+   * 一旦挂进 DOM 就会露出 100×100 的 accent 方框。
+   */
+  createDummyNode(options = {}) {
     const dummy = new CanvasDummyNode(this);
-    dummy.attach();
-    dummy.render();
+    if (!options || options.attach !== false) {
+      dummy.attach();
+      dummy.render();
+    }
     return dummy;
   }
 

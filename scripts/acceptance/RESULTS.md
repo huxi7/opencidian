@@ -445,3 +445,9 @@ MathJax 独立适配器子代理的41项基础/故障测试见 assets/mathjax/SO
 - **旧版本残留清理**：About 页与主进程 `version` 通道还写着 **1.12.4**，安装程序版本写死 **1.0.0**；现统一为 1.14.4，渲染层 `VERSION` 改从主进程 IPC 读取（单一事实源）。同时把 `_analysis/obsidian-asar` 旧取证引用改为 `_analysis/obsidian-114/renderer`。
 - **Bases 仍未实现**：`plugins.bases.*` 只有 149 条文案，没有插件模块；核心插件清单里点不到「数据库」。
 - 本轮最终全量：**64 场景 / 5110 断言全绿**；日志 `/tmp/opensidian-full-1022-a/summary.txt`；链式 `settings-restart` 与 `graph-persist-write → graph-persist-read` 通过；`vault-switcher --seed-vaults 3` 142、`graph-perf --nodes 1000` 4。版本号收口后补跑 `settings-ui` 220 / `settings-plugins` 111 / `bookmarks` 28 / `layout-modals` 31 全绿。
+
+## 画布拖线紫框 / 点击后卡住（2026-10-22）
+
+- **拖线端点出现 100×100 紫色方框**：原版的临时节点（`Pee`）只做几何占位，**从不 attach/render**；我们的 `createDummyNode()` 无条件 `attach()+render()`，把 `.canvas-node.is-dummy` 的 accent 边框 + 20% 填充画了出来。现改为 `createDummyNode({ attach: false })`，拖线端点与卡片连线手柄两条路径都不再挂 DOM。
+- **点击卡片后画布卡住、节点动不了**：`handleDragWithPan` 在 pointerdown 就 `setDragging(true)`，但纯点击（位移 < 5px）时拖拽工厂不会创建，`cleanup` 不执行 → `isDragging` 永久为真。滚轮缩放、悬停手柄（连线点/缩放手柄）、双击建卡全被 `if (this.isDragging) return` 吞掉。`startDrag` 增加 idle 收尾：未越过阈值也复位拖动状态。
+- canvas-dummy 59 → **71** 项：新增「拖动中无可见虚影」「连线成功吸附后建边 / 拖动态复位 / 节点仍可拖动」「纯点击后状态复位并仍可拖动」。

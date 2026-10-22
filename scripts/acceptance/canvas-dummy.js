@@ -188,6 +188,73 @@
   ok(dummies() === 0, '边端点点击后无残留虚影');
   ok(view.edges.size === edgesBefore, '边端点点击后边数不变');
 
+  /* 拖动中的临时节点必须不挂 DOM：原版只做几何占位，挂出来就是 100×100 accent 方框 */
+  screenPointer(connectPoint, 'pointerdown', { x: cpRect.x + cpRect.width / 2, y: cpRect.y + cpRect.height / 2 });
+  await wait(30);
+  pointer(window, 'pointermove', { x: 120, y: 80 });
+  await wait(120);
+  ok(dummies() === 0, '连线拖动中不出现可见虚影');
+  window.dispatchEvent(new PointerEvent('pointercancel', {
+    bubbles: true, cancelable: true, isPrimary: true, pointerType: 'mouse', pointerId: 32, button: 0, buttons: 0,
+    clientX: cpRect.x + cpRect.width / 2, clientY: cpRect.y + cpRect.height / 2,
+  }));
+  await wait(220);
+  ok(dummies() === 0, '连线拖动取消后无残留虚影');
+  ok(view.edges.size === edgesBefore, '连线拖动取消后不留悬空边');
+
+  screenPointer(edgeGroup, 'pointerdown', { x: egRect.x + egRect.width / 2, y: egRect.y + egRect.height / 2 });
+  await wait(30);
+  pointer(window, 'pointermove', { x: 150, y: 90 });
+  await wait(120);
+  ok(dummies() === 0, '边端点拖动中不出现可见虚影');
+  window.dispatchEvent(new PointerEvent('pointercancel', {
+    bubbles: true, cancelable: true, isPrimary: true, pointerType: 'mouse', pointerId: 32, button: 0, buttons: 0,
+    clientX: egRect.x + egRect.width / 2, clientY: egRect.y + egRect.height / 2,
+  }));
+  await wait(220);
+  ok(dummies() === 0, '边端点拖动取消后无残留虚影');
+
+  /* 连线成功吸附后：边建立、拖动态复位、节点仍可拖动 */
+  const cpRect2 = connectPoint.getBoundingClientRect();
+  const n2Box = n2.nodeEl.getBoundingClientRect();
+  const dropAt = { x: n2Box.x + n2Box.width / 2, y: n2Box.y + n2Box.height / 2 };
+  screenPointer(connectPoint, 'pointerdown', { x: cpRect2.x + cpRect2.width / 2, y: cpRect2.y + cpRect2.height / 2 });
+  await wait(30);
+  screenPointer(window, 'pointermove', dropAt);
+  await wait(100);
+  screenPointer(window, 'pointerup', dropAt);
+  await wait(300);
+  ok(view.edges.size === edgesBefore + 1, '连线吸附后建立新边');
+  ok(view.isDragging === false, '连线成功后拖动状态复位');
+  const n2After = centerOf(n2);
+  const snapBefore = { x: n2.x, y: n2.y };
+  pointer(n2.contentBlockerEl, 'pointerdown', n2After);
+  pointer(window, 'pointermove', { x: n2After.x + 45, y: n2After.y + 25 });
+  await wait(80);
+  pointer(window, 'pointerup', { x: n2After.x + 45, y: n2After.y + 25 });
+  await wait(200);
+  ok(n2.x !== snapBefore.x || n2.y !== snapBefore.y, '连线成功后节点仍可拖动');
+  const addedEdge = Array.from(view.edges.values()).find((e) => e.id !== 'e1');
+  if (addedEdge) view.removeEdge(addedEdge);
+  await wait(150);
+
+  /* 纯点击后拖动态必须复位：isDragging 卡死会吞掉滚轮、悬停手柄与双击建卡 */
+  const c2click = centerOf(n2);
+  pointer(n2.contentBlockerEl, 'pointerdown', c2click);
+  await wait(20);
+  pointer(window, 'pointerup', { x: c2click.x, y: c2click.y });
+  await wait(150);
+  ok(view.isDragging === false, '纯点击卡片后不残留拖动状态');
+  ok(!view.wrapperEl.classList.contains('is-dragging'), '纯点击卡片后无 is-dragging 类');
+  const beforeMove = { x: n2.x, y: n2.y };
+  pointer(n2.contentBlockerEl, 'pointerdown', c2click);
+  pointer(window, 'pointermove', { x: c2click.x + 50, y: c2click.y + 25 });
+  await wait(80);
+  pointer(window, 'pointerup', { x: c2click.x + 50, y: c2click.y + 25 });
+  await wait(180);
+  ok(n2.x !== beforeMove.x || n2.y !== beforeMove.y, '点击后节点仍可拖动');
+  ok(view.isDragging === false, '拖动收尾后拖动状态复位');
+
   /* ================= E. Alt 克隆拖动：收尾不留替身虚影 ================= */
   view.selectOnly(n1);
   await wait(80);
