@@ -25,6 +25,10 @@ npm run dev        # 开发模式（watch + 自动重启）
 
 数据库入口：点击左侧功能区的列表布局图标「新建数据库」，或空标签页、文件夹右键菜单的「新建数据库」。打开已有数据库时，直接点击文件树中的 `.base` 文件。
 
+数据库顶部可切换视图、排序、分组、筛选、选择属性和搜索。表格单元格双击或按 Enter/F2 编辑；拖动列边界调整宽度。工具栏「新建」立即创建笔记，并打开就地编辑器。入口随设置 → 核心插件 → 数据库的开关启停。
+
+升级本轮代码后，请完整退出并重启 OpenSidian（源码运行用 `npm start`）。主进程新增了窗口与写盘 IPC，仅用 ⌘R 刷新不能加载它们。
+
 ## 项目结构
 
 ```
@@ -48,9 +52,9 @@ node scripts/acceptance/run.mjs core-ribbon --no-screenshot
 node scripts/acceptance/run.mjs canvas --no-screenshot
 ```
 
-- 正式隔离 E2E 场景 **70 个**（不含 `probe-*` 诊断），当前全量 **100 次执行 / 6666 条断言**全绿；运行器在系统临时目录创建带标记的测试库，不会触碰你的真实笔记。
-- 每个场景都是**真实交互**（真实指针/键盘/输入、真实 DOM 与计算样式断言），不是快照对比。
-- 本轮汇总：`/tmp/opensidian-wave3-full-1022/summary.txt`；内存回归 19/19，公式与 CSV Node 单测 273 + 11 条通过。
+- 正式隔离 E2E 场景 **84 个**（不含 `probe-*` 诊断）。本轮有效覆盖 **117 次 / 7288 条断言**，包含定向补跑；完整执行的原始结果、失败与实际计数见 [验收报告](scripts/acceptance/RESULTS.md) 和 [逐条回执](scripts/acceptance/RECEIPTS.json)。运行器只操作带标记的临时库。
+- E2E 在真实 Electron 内验证 DOM、事件、写盘与资源释放；Node/VM 逻辑检查单独计数。
+- 本轮工作区逻辑回归 **29/29**；另有真实 GC/DOM/事件/Worker 生命周期验收。公式与 CSV 单测 **273 + 11** 条通过，完整数字与验证边界见报告。
 
 ## 打包分发
 
@@ -58,12 +62,12 @@ node scripts/acceptance/run.mjs canvas --no-screenshot
 npm install
 npm run dist:dir   # 快速验证：release/mac-arm64/OpenSidian.app
 npm run dist       # 正式产物：release/*.dmg 与 *.zip
-node scripts/smoke-packaged.mjs --no-screenshot  # ASAR 核对 + 隔离真实启动，34 条断言
+node scripts/smoke-packaged.mjs --no-screenshot  # ASAR 核对 + 隔离真实启动 + 正常退出
 ```
 
 - 当前为**未签名**构建（`electron-builder.yml` 里 `identity: null`）。macOS Gatekeeper 首次打开需右键 → 打开，或 `xattr -dr com.apple.quarantine /Applications/OpenSidian.app`。
-- 当前目录包：`release/mac-arm64/OpenSidian.app`，版本 **1.14.4**，打包冒烟 **34/34**；许可证原文随 ASAR 分发。本轮没有生成或更新 DMG/ZIP。
-- 冒烟先核对身份、版本和当前构建哈希，拒绝启动陈旧包；运行后等待自身进程退出并清理辅助进程。
+- 当前目录包：`release/mac-arm64/OpenSidian.app`，版本 **1.14.4**，打包冒烟 **39/39**；许可证原文随 ASAR 分发。本轮没有生成或更新 DMG/ZIP。
+- 冒烟先核对身份、版本和当前构建哈希，拒绝启动陈旧包；回执后等待正常退出。超时明确失败，只清理自建进程组。
 - 应用图标由 `scripts/make-app-icon.py` 生成（原创几何设计），可自行替换 `build/icon.icns`。
 - 正式对外分发需 Apple 开发者证书：移除 `identity: null` 并配置签名/公证。
 
@@ -105,12 +109,12 @@ sh scripts/acceptance/full.sh --output /tmp/opensidian-full
 
 ## 已知边界
 
-- **Bases**：四类布局、分组汇总、标量看板拖放、封面、公式与 CSV 已实现。文件/公式/复杂值分组只读；虚拟滚动、列宽拖动、单元格编辑及新组创建尚未 1:1。HTML 和部分 Markdown 使用明示降级，超预算表达式报错。顶层流式或锚点冲突的 YAML 写回保留值，不能保留全部排版。
-- **画布导出**：真实 PNG 使用整窗分块，输出上限 4096 像素；隐私模式隐藏正文与媒体，未复刻乱码字体。
+- **Bases**：四类布局、分组汇总、单元格编辑、列宽/列序、类型候选、新组、就地新建与两层虚拟滚动已接通。日期/链接/列表分组和 `file.folder` 可写；公式、派生对象和其它文件属性只读。HTML 先净化，Markdown 使用完整阅读管线。超预算表达式明确报错。特殊流式或锚点冲突的 YAML 写回保留值，不能保留全部排版。
+- **画布导出**：真实 PNG 使用整窗分块，最长边 16284 像素，分配前检查 512 MiB 预算。隐私模式使用自绘字形并保留媒体；没有复制许可不明的原版字体，字形不宣称一致。
 - **桌面兼容**：文档底部反链、默认应用打开、macOS vibrancy 已接通；库根 `obsidian.css` 开关和热更新为兼容扩展。文档可移动或复制到独立窗口，同库编辑同步，窗口布局与缩放可恢复；macOS 缺省使用系统菜单，可切回主题菜单。
 
 - **不覆盖的原版功能**（按约定不做，不做假 UI）：第三方/社区插件生态（整体移除）、Sync、Publish、Web Viewer、slash-command、密钥链、账户、insider build。
-- **未 1:1 的部分**：社区主题的下载/更新（需要社区主题目录与更新器后端）；Windows 平台的右键拖动平移顺序未真机验证。
+- **验证边界**：本轮以原版静态包、真实 DOM/事件与写盘验收对齐，未做截图像素对比；社区主题的下载/更新未接通，Windows 平台未真机验证。
 - 不劫持 `obsidian://` 协议；不读写真实 Obsidian 应用的 userData。
 - 本项目与 Obsidian（Dynalist Inc.）无关联，未获其背书。「Obsidian」是其权利人的商标。
 

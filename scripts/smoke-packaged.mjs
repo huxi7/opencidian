@@ -2,7 +2,7 @@
  * [INPUT]: release/ 下的 OpenSidian 可执行文件、隔离临时库与可选 --no-screenshot。
  * [OUTPUT]: {pass,count,checks}、运行日志与失败退出码；不生成截图。
  * [POS]: 打包产物的真实启动冒烟。先比对 ASAR 身份及当前代码，再校验编辑器、Bases、公式、CSV 和 SVG。
- * 只终止自己创建的 Electron 进程组，不接触用户正在运行的应用。
+ * 回执后必须自行正常退出；超时只终止自建进程组，不接触用户应用。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 import { spawn } from 'node:child_process';
@@ -97,12 +97,12 @@ const js = String.raw`
 const env = { ...process.env };
 for (const key of Object.keys(env)) if (key.startsWith('OBS_')) delete env[key];
 delete env.ELECTRON_RUN_AS_NODE;
-Object.assign(env, { E2E: '1', OBS_ALLOW_MULTI: '1', OBS_VAULT_PATH: vault, OBS_ACT: JSON.stringify({ action: 'eval', js }) });
+Object.assign(env, { E2E: '1', OBS_ALLOW_MULTI: '1', OBS_VAULT_PATH: vault, OBS_SCREENSHOT_EXIT: '1', OBS_ACT: JSON.stringify({ action: 'eval', js }) });
 const started = Date.now();
 const child = spawn(binary, ['--user-data-dir=' + path.join(vault, '.electron-user-data')], {
   env, cwd: repository, detached: process.platform !== 'win32', stdio: ['ignore', 'pipe', 'pipe'],
 });
-let log = '', result = null, failureReason = '', stopRequested = false, forceTimer;
+let log = '', result = null, failureReason = '', stopRequested = false, forceTimer, exitTimer;
 const killOwned = signal => {
   try {
     if (process.platform === 'win32') child.kill(signal);
@@ -126,15 +126,16 @@ const consume = chunk => {
   const receipt = log.split('\n').find(line => line.startsWith('[dev] eval: '));
   if (!receipt) return;
   try { result = JSON.parse(receipt.slice('[dev] eval: '.length)); } catch { return; }
-  stop();
+  if (!exitTimer) exitTimer = setTimeout(() => { failureReason ||= '收到回执后 15 秒仍未自行退出'; stop(); }, 15000);
 };
 for (const stream of [child.stdout, child.stderr]) stream.on('data', consume);
-const exitCode = await new Promise(resolve => {
-  child.once('error', error => { failureReason = error.message; resolve(null); });
-  child.once('close', resolve);
+const { exitCode, exitSignal } = await new Promise(resolve => {
+  child.once('error', error => { failureReason = error.message; resolve({ exitCode: null, exitSignal: null }); });
+  child.once('close', (code, signal) => resolve({ exitCode: code, exitSignal: signal }));
 });
 clearTimeout(timeout);
 clearTimeout(forceTimer);
+clearTimeout(exitTimer);
 process.removeListener('SIGINT', interrupted);
 process.removeListener('SIGTERM', interrupted);
 if (stopRequested) killOwned('SIGKILL');
@@ -142,14 +143,15 @@ fs.writeFileSync(logfile, log);
 const valid = result?.pass === true && Number.isInteger(result.count) && result.count > 0 &&
   Array.isArray(result.checks) && result.count === result.checks.length;
 if (!valid) failureReason ||= '缺少规范的打包冒烟回执';
-if (exitCode !== null && exitCode !== 0) failureReason ||= '打包进程异常退出：' + exitCode;
+if (exitCode !== 0 || exitSignal || stopRequested) failureReason ||= '打包进程未自行正常退出：' + (exitSignal || exitCode);
 const checks = [...preflightChecks, ...(Array.isArray(result?.checks) ? result.checks : [])];
+if (!failureReason && exitCode === 0 && !exitSignal && !stopRequested) checks.push('打包进程自行正常退出');
 const report = {
   pass: !failureReason && !badLog.test(log) && valid,
   count: checks.length, checks, preflightCount: preflightChecks.length, archiveSha256,
   version: result?.version, electron: result?.electron,
   binary, vault, logfile, screenshot: null, bootMs: Date.now() - started,
-  exitCode, ...(failureReason ? { failureReason } : {}),
+  exitCode, exitSignal, ...(failureReason ? { failureReason } : {}),
 };
 fs.writeFileSync(path.join(output, 'result.json'), JSON.stringify(report, null, 2));
 console.log(JSON.stringify(report));

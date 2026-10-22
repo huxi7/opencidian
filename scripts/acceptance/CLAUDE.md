@@ -5,10 +5,11 @@
 运行器只允许带标记的临时库。日志错误使运行失败。
 正式场景返回 {pass,count,checks}，count 为正且等于 checks.length。
 全量入口固定 --no-screenshot，排除 probe-* 诊断脚本。
-Wave 3：70 个正式场景，100 次执行，6666 条断言全绿。
+当前 84 个正式场景。完整执行及定向补跑分别留存，最终有效覆盖见 RECEIPTS.json。
 
 成员清单
 RESULTS.md: 本轮结果、证据目录与复跑方式。
+RECEIPTS.json: 逐条有效覆盖、原始失败和补跑来源哈希；Node/VM 与 E2E 分开计数。
 bases-entry.js: 数据库可见入口。功能区、空标签键盘、文件夹及根菜单创建真实文件，插件启停对称，重启读回。
 properties-editing.js: 属性类型、侧栏编辑、剪贴板、首项与改名。54 条，verify 阶段重启读回 11 条。
 frontmatter-write.js: 多窗口真实属性写回。CAS 冲突、坏 YAML 原文、失败恢复与 CRLF 正文保留。
@@ -98,7 +99,6 @@ bases-views.js: Bases P2。四种布局、配置、分组汇总、看板写回�
 bases-formulas.js: 真实元数据的 P3 公式和文件属性，覆盖阅读/实时预览的宿主 this。
 bases-values.js: 富值 DOM、受控导航、SVG 资源与 CSV 命令写盘，不弹原生保存框。
 
-window-save-race.js: 真实双窗竞争、恢复在途新输入、最后输入和损坏布局拒绝丢稿，35 条。
 bases-editing.js: 真实编辑与列操作、类型候选、分组和并发写盘，86 条。
 bases-ui.js: 原版工具栏、视图菜单、类型筛选、改名拒写与公式帮助，68 条。
 bases-new-item.js: 立即创建与锚定编辑、属性推导、CAS 及草稿关闭/拒停保护，36 条。
@@ -106,4 +106,5 @@ bases-perf.js: 千/万笔记及万组压力。四类布局挂载上界、查询/
 bases-rich-render.js: 净化 HTML、块 Markdown、嵌入/数学/图表与派生只读控件，30 条。
 bases-rich-lifecycle.js: 挂起渲染时取消、稳定宿主、重绘及虚拟换窗释放，32 条。
 canvas-export-fidelity.js: 真实大图、密度、弹层视口、隐私裁切/遮挡/媒体与预算，30 条。
+window-save-race.js: 真实双窗竞争、恢复在途新输入、最后输入和损坏布局拒绝丢稿，35 条。
 [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md

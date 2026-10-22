@@ -698,3 +698,28 @@ L3/L2同步；源码与脚本均≤800行。上述为开发分段回归，不混
 - 自绘字形在原卡片/标签DOM层中，浏览器按z及overflow合成；内部裁切另限矩形。保留媒体、文字几何和颜色，成功/异常均移除临时SVG并释放位图。不复制许可不明的Flow Circular；不声称覆盖媒体内部文本或与原字体逐像素一致。
 - with-lock内 build + canvas-export-fidelity/canvas-export，30+24条通过，/tmp/opensidian-canvas-export-followup-1023.log（CtPDLv/YdnSj7）。进一步强化隐私异常清理后，canvas-export24 + canvas101通过，/tmp/opensidian-canvas-final-regression-1023.log（LNIjNC/osTKiu）。共4次179条开发验证，不冒充一次3场景执行。
 - Node limits18条通过，/tmp/opensidian-final-canvas-limits.log；原有默认/Retina密度、大图、无缝跨块及真实媒体像素均有断言。所有E2E均 --no-screenshot，导出PNG是功能验收产物。
+
+## 本轮最终完整覆盖与目录包（2026-10-23）
+
+代码冻结提交 d5f3a8c；覆盖入口、属性、桌面窗口、保存安全、Bases与画布。完整回执已入库 RECEIPTS.json，包含真实checks、原失败、补跑来源和SHA-256，不依赖仅有汇总数字。
+
+| 验证组 | 实际结果 | 证据 |
+| --- | --- | --- |
+| 首轮完整 | 84场景/116次，113通过/3失败，6947条已完成检查 | /tmp/opensidian-p0-p3-full-1022/summary.json |
+| 第二轮完整 | 84场景/117次，116通过/1失败，7193条已完成检查 | /tmp/opensidian-p0-p3-final-full-1022/summary.json |
+| 最终有效覆盖 | 84场景/117次覆盖/7288条，全通过 | RECEIPTS.json 的 records |
+| 本验收组实际执行 | 完整117次+定向15次=132次，含原始失败1次，累计7989条检查 | executionGroup 与 supplementaryRuns |
+| Node | 273公式+11 CSV+52编辑+32保存+18预算+9取消+22监听+11协调=428条 | nodeReceipts，逐条checks与来源 |
+| Workspace VM | 29/29，DOM逻辑检查 | /tmp/opensidian-save-review-vm.log |
+| 最终包 | 18静态核对+20真实运行+1正常退出=39/39 | /tmp/opensidian-p0-p3-packaged-1023.json |
+
+第二轮唯一失败为search-views夹具，随后修复并以新库69条通过；UI68、保存35、导出精度30及布局等最后补修均选最新通过回执。有效覆盖替换旧条目，原始完整报告不改写。不能把此结果写成单次连续全绿。
+本验收组的15次定向执行来自 final-harness-proof（3）、bases-last-two-fixes（3）、save-review-final-e2e（1）、layout-final-1023（4）、canvas-export-followup-1023（2）、canvas-final-regression-1023（2）。更早开发回归、首轮完整、单测与打包不混入本组132次。
+
+复现完整执行：`sh scripts/acceptance/full.sh --output /tmp/opensidian-full`；Node各脚本与VM命令见 scripts/CLAUDE.md。所有E2E由入口固定 --no-screenshot。
+最终包命令：`sh scripts/with-lock.sh 'npm run dist:dir -- --publish never'`，随后 `sh scripts/with-lock.sh 'node scripts/smoke-packaged.mjs --no-screenshot'`。日志 /tmp/opensidian-p0-p3-dist-1023.log，构建成功；Info.plist 1.14.4，Electron33.4.11，macOS arm64。
+ASAR 87000452字节，SHA-256 `36eba075a6ed9d03ec0f725d3ba020413f880d5eb1803807350a98c92a7777e3`。冒烟比较当前主进程/入口/bundle哈希及LICENSE原文；隔离库中真实创建/打开/查询/编辑器/公式/列表/CSV/SVG通过，screenshot:null，exitCode:0、exitSignal:null。
+冒烟原来收到回执就主动发SIGTERM。本轮改为显式请求正常退出、等待exitCode=0；超时明确失败。试验中缺退出标记的1K6iju确实失败，保留 /tmp/opensidian-p0-p3-packaged-natural.json；补齐退出标记后通过，最终又在新包复验。旧38条回执不能证明正常退出。
+
+README、AGENT-STATE、L1/L2/L3已回环；源码、验收脚本与本轮文档均≤800行。LICENSE内容不变，未配置remote或push。
+只更新 release/mac-arm64/OpenSidian.app 目录包，未更新旧DMG/ZIP或已安装应用，未签名、公证、安装、发布。未启动原版，未做截图像素1:1证明。升级须完整退出并重启OpenSidian；只⌘R无法替换主进程IPC。
