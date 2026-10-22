@@ -79,4 +79,6 @@ probe-topbar.js / probe-canvas.js / probe-reading.js / probe-ui.js / probe-canva
 - probe-settings-shot：`--screen <tabId>` 打开指定设置页并打印侧栏分组/条目与关于页版本行。
 probe-canvas-drop: 画布拖入诊断探针（残留虚影体检）。模拟文件树拖入与卡片菜单纯点击两条路径，报告 .is-dummy 数量、accent 填充元素、画布内彩色框与卡片 DOM/几何；非断言锁，用于定位画布残影。
 
+bases.js: Bases P1。原版格式、嵌套筛选、排序、未知键保留与两种笔记嵌入，55 项。
+
 [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md

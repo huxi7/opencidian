@@ -1,5 +1,5 @@
 /**
- * [INPUT]: Node 的 test/assert/fs/path/url/vm；读取工作区源码，模拟 DOM、视图与 IPC。
+ * [INPUT]: Node 的 test/assert/fs/path/url/vm；读取工作区源码，模拟 DOM、扩展名注册表、视图与 IPC。
  * [OUTPUT]: 提供可独立运行的工作区逻辑回归，不进入 renderer 依赖图。
  * [POS]: 固定公开接口、叶子操作、布局恢复与链接路径转换的行为。
  * 只读源码，不启动 Electron，不读写仓库配置或真实笔记。
@@ -185,10 +185,10 @@ async function harness(settings = {}) {
   await entry.link((specifier, parent) => load(path.resolve(path.dirname(parent.identifier), specifier)));
   await entry.evaluate();
   const api = entry.namespace;
-  const files = new Map(['A.md', 'B.md', 'C.md', 'Board.canvas', 'picture.png', 'clip.mp4', 'voice.mp3', 'paper.pdf']
+  const files = new Map(['A.md', 'B.md', 'C.md', 'Board.canvas', 'Tasks.base', 'picture.png', 'clip.mp4', 'voice.mp3', 'paper.pdf']
     .map((name) => [name, { path: name, name, basename: name.split('.')[0], extension: name.split('.').pop() }]));
   const factories = new Map();
-  for (const type of ['empty', 'markdown', 'graph', 'search', 'outline', 'canvas', 'image', 'video', 'audio', 'pdf']) {
+  for (const type of ['empty', 'markdown', 'graph', 'search', 'outline', 'canvas', 'bases', 'image', 'video', 'audio', 'pdf']) {
     factories.set(type, (leaf) => ({
       leaf, state: {}, _children: [() => lifecycle.push(['dispose', type])],
       getViewType() { return type; },
@@ -213,7 +213,10 @@ async function harness(settings = {}) {
       getName: () => 'Test vault',
     },
     metadataCache: { getFirstLinkpathDest: () => 'A.md' },
-    viewRegistry: { getViewCreator: (type) => factories.get(type) },
+    viewRegistry: {
+      getViewCreator: (type) => factories.get(type),
+      getTypeByExtension: (ext) => ext === 'canvas' ? 'canvas' : ext === 'base' && factories.has('bases') ? 'bases' : null,
+    },
   };
   const workspace = new api.Workspace(app);
   app.workspace = workspace;
@@ -286,11 +289,13 @@ test('openFile 普通打开复用叶子，模式与文件类型保持映射', as
   app.settings.appSettings.defaultViewMode = 'preview';
   await ws.openFile(file('C.md'));
   assert.equal(view.getState().mode, 'preview');
-  for (const [name, type] of [['Board.canvas', 'canvas'], ['picture.png', 'image'],
+  for (const [name, type] of [['Board.canvas', 'canvas'], ['Tasks.base', 'bases'], ['picture.png', 'image'],
     ['clip.mp4', 'video'], ['voice.mp3', 'audio'], ['paper.pdf', 'pdf']]) {
     assert.equal(ws._getViewStateForFile(file(name)).type, type);
   }
   assert.equal(ws._getViewStateForFile({ extension: 'unknown' }).type, 'empty');
+  app.viewRegistry.getTypeByExtension = () => null;
+  assert.equal(ws._getViewStateForFile(file('Tasks.base')).type, 'empty');
 });
 
 test('新标签保留 focusNewTab、查重与 always 分支', async () => {

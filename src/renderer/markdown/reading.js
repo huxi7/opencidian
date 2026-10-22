@@ -1,5 +1,5 @@
 /**
- * [INPUT]: 依赖 markdown-it、footnote/task-lists、Desktop、图标和 vault 路径；代码块委托 highlight.js，公式委托 math.js；转义、frontmatter 剥离与图片尺寸语法来自 source-text.js；画布嵌入委托 views/canvas-minimap.js 的 mountCanvasEmbed。
+ * [INPUT]: 依赖 markdown-it、footnote/task-lists、Desktop、图标和 vault 路径；代码块委托 highlight.js，公式委托 math.js，图表委托 mermaid.js；转义、frontmatter 剥离与图片尺寸语法来自 source-text.js；画布嵌入委托 views/canvas-minimap.js，数据库嵌入委托 plugins-core/bases-embed.js。
  * [OUTPUT]: 导出 getMarkdownIt、renderMarkdown、attachMarkdownInteractions、stripFrontmatter、scrollToSubpath、resolvePath、resolveFileUrl 与 escapeHtml
  * [POS]: markdown/ 的阅读视图渲染器，被 markdown-view.js（阅读模式）与 live-preview.js（块级 widget 内嵌 HTML）共同调用。callout 渲染为 div.callout（原版 DOM 非 blockquote），标题行 softbreak 剥离且图标走 lucide- 原名（note=pencil，不走 pencil→edit-3 别名）。图片尺寸语法 `|300` / `|300x200` 由 source-text.js 解析，这里负责落成 img 的 width/height 与 .image-wrapper 结构；带尺寸的图片另外带 data-source-* 区间提示，图片右键交给 source-text.js 的 fillImageContextMenu。渲染后由 decorateReadingDom 补齐原版阅读 DOM：无序列表的 has-list-bullet/.list-bullet 圆点、任务项的 data-task/is-checked 与可点击复选框、脚注的 .footnote-link；笔记嵌块走原版 inline-embed 结构（标题 + 内容 + 右上角链接按钮），不可渲染附件走 .file-embed.mod-generic。.canvas 嵌入改走「画布嵌入」（原版 cte）：这里只放占位标记，容器与缩略图由 views/canvas-minimap.js 异步补齐；目标文件不存在时按原版落 .file-embed.mod-empty 提示。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
@@ -17,11 +17,14 @@ import { tt } from '../core/i18n.js';
 import { normalizePath, parentPathOf } from '../core/vault.js';
 import { codeLanguageName, highlightCodeBlocks } from './highlight.js';
 import { renderMathBlocks } from './math.js';
+import { renderMermaidBlocks } from './mermaid.js';
+export { renderMermaidBlocks } from './mermaid.js';
 import {
   escapeAttr, escapeHtml, fillImageContextMenu, installSourceOffsets, sizeAttrText,
   sourceRangeAttrs, splitEmbedSize, splitImageSize, stripFrontmatter,
 } from './source-text.js';
 import { missingCanvasNote, mountCanvasEmbed } from '../views/canvas-minimap.js';
+import { mountBaseEmbed } from '../plugins-core/bases-embed.js';
 
 const IMAGE_EXTS = ['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'bmp', 'avif'];
 const AUDIO_EXTS = ['mp3', 'wav', 'm4a', 'ogg', '3gp', 'flac', 'opus'];
@@ -29,7 +32,6 @@ const VIDEO_EXTS = ['mp4', 'webm', 'ogv', 'mov', 'mkv'];
 const MAX_EMBED_DEPTH = 5;
 
 let mdInstance = null;
-let mermaidInstance = null;
 
 export function getMarkdownIt() {
   if (mdInstance) return mdInstance;
@@ -452,6 +454,11 @@ function renderEmbed(env, target, subpath, alias, token, inner) {
   }
   const ext = file.extension;
   const url = app.vault.adapter.getResourcePath(file.path);
+  if (ext === 'base' && app.plugins?.getInternalPlugin?.('bases')?.enabled) {
+    const id = 'embed-' + Math.random().toString(36).slice(2);
+    pendingEmbeds.push({ id, kind: 'base', path: file.path, viewName: subpath });
+    return `<div class="internal-embed bases-embed" data-base-embed="${id}"></div>`;
+  }
   if (ext === 'canvas' && app.plugins?.getInternalPlugin?.('canvas')?.enabled !== false) {
     // 原版 cte：.canvas 走画布嵌入（容器由 views/canvas-minimap.js 造）；插件停用时原版注销该扩展，退回通用附件嵌块
     const id = 'embed-' + Math.random().toString(36).slice(2);
@@ -501,6 +508,7 @@ export async function renderMarkdown(app, markdown, el, sourcePath, options = {}
   pendingEmbeds = [];
   const env = { app, sourcePath, depth: options.depth || 0 };
   let html = md.render(markdown, env);
+  for (const old of el.querySelectorAll('[data-base-embed]')) old._baseEmbedCleanup?.();
   el.innerHTML = html;
   decorateReadingDom(el);
   const highlighting = highlightCodeBlocks(el);
@@ -511,6 +519,12 @@ export async function renderMarkdown(app, markdown, el, sourcePath, options = {}
   const embeds = pendingEmbeds;
   pendingEmbeds = [];
   for (const emb of embeds) {
+    if (emb.kind === 'base') {
+      const mount = el.querySelector(`[data-base-embed="${emb.id}"]`);
+      const file = app.vault.getFileByPath(emb.path);
+      if (mount && file) { mount._baseEmbedCleanup = mountBaseEmbed(app, mount, file, { viewName: emb.viewName }); await mount._baseEmbedCleanup.ready; }
+      continue;
+    }
     if (emb.kind === 'canvas') {
       await mountCanvasEmbed(app, el, emb);
       continue;
@@ -540,34 +554,6 @@ export async function renderMarkdown(app, markdown, el, sourcePath, options = {}
   annotateHeadings(el);
 
   return { el };
-}
-
-/**
- * 渲染容器内所有 .mermaid-source 节点为图表（阅读视图与实时预览共用）。
- * 惰性加载 mermaid（首次调用时 initialize，主题跟随 body.theme-dark）。
- */
-export async function renderMermaidBlocks(el) {
-  const mermaidEls = el.findAll ? el.findAll('.mermaid-source') : el.querySelectorAll('.mermaid-source');
-  if (!mermaidEls.length) return;
-  try {
-    if (!mermaidInstance) {
-      const mermaid = (await import('mermaid')).default;
-      mermaid.initialize({ startOnLoad: false, theme: document.body.hasClass('theme-dark') ? 'dark' : 'default', securityLevel: 'loose' });
-      mermaidInstance = mermaid;
-    }
-    let i = 0;
-    for (const src of mermaidEls) {
-      const code = src.getAttr('data-source') || '';
-      try {
-        const { svg } = await mermaidInstance.render('mermaid-' + Date.now() + '-' + (i++), code);
-        src.innerHTML = svg;
-        src.addClass('mermaid');
-        src.removeClass('mermaid-source');
-      } catch (e) {
-        src.addClass('mermaid-error');
-      }
-    }
-  } catch (e) { console.error('mermaid load failed', e); }
 }
 
 /**

@@ -1,3 +1,9 @@
+/**
+ * [INPUT]: 事件名称、回调与防抖时限。
+ * [OUTPUT]: 导出 Events 与可取消、可立即执行的 debounce。
+ * [POS]: 核心事件原语。订阅返回释放句柄，宿主负责生命周期。
+ * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
+ */
 /* Events — same shape as Obsidian's public Events class. */
 export class Events {
   constructor() { this._events = {}; }

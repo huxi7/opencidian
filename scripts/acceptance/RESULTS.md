@@ -457,3 +457,28 @@ MathJax 独立适配器子代理的41项基础/故障测试见 assets/mathjax/SO
 - **点击/拖出「添加卡片」后整窗卡死**：`dragTempNode` 把 **rect**（x/y/width/height）直接传给 `getSnapping`，而该函数的契约是 **bbox**（minX/minY/maxX/maxY）→ `boxSnapPoints` 解构出 undefined → 吸附点全为 NaN → `findSnapMatches` 内层 `NaN === NaN` 恒为 false、`index` 不前进 → 主线程死循环。空画布时没有吸附目标所以旧用例没暴露（`snapToObjects=false` 的拖出用例也不经过该分支）。
 - **修法**：`place()` 传 bbox；`findSnapMatches` 过滤非有限坐标并在分组为空时强制前进（双保险）。
 - canvas-dummy 71 → **75**：新增 `snapToObjects=true + 板上已有卡片` 的拖出用例（虚影坐标有限、落卡成功、无残留）。
+
+
+## Wave 1：Bases P1、桌面缺口、画布收口与工程卫生（2026-10-22）
+
+基线：`c117d96`，工作区干净。未配置 remote。
+先执行用户指定命令：
+
+```sh
+sh scripts/with-lock.sh "npm run build && node scripts/acceptance/run.mjs canvas-dummy --no-screenshot"
+```
+
+构建成功，canvas-dummy **75 项通过**。
+日志：`/tmp/obs-copy-acceptance/canvas-dummy-run-result-svcKsb/run.log`。
+本轮只读 `_analysis/obsidian-114/renderer/`，未启动原版。
+全部 E2E 使用 `--no-screenshot`，未调用浏览器或访达。
+
+### T1 Bases P1
+
+- 文件：`plugins-core/bases{,-model,-expression,-view,-embed,-styles}.js`；共享入口 `core/plugins-registry.js`、`core/workspace{,-file-view}.js`、`core/settings.js`、`plugins-core/file-explorer.js`、`markdown/reading.js`、`editor/live-preview-inline-widgets.js`。阅读模块为守上限拆出 `markdown/mermaid.js`。
+- 场景：新增 `bases`，**55 项通过**。原版格式 YAML 能开，嵌套 and/or/not、排序、limit、基础公式、两种嵌入和 # 指定视图均验收。未知键/视图不丢；插件启停、外部修改、断开后的订阅释放均验收。
+- 命令：`sh scripts/with-lock.sh "npm run build && node scripts/acceptance/run.mjs bases --no-screenshot"`。
+- 日志：`/tmp/obs-copy-acceptance/bases-run-result-OTIuzh/run.log`。
+- 对照：`_analysis/bases-114/FACTS.md`。原版 e9 插件、d$/r$ 筛选、g$ 视图配置与 s$/l$ 默认列/排序。
+- 缺口：仅 table 与安全表达式子集。其它视图、分组、汇总、完整公式、日期类型和 CSV 留 Wave 2。块式 YAML 按键局部写回；顶层流式或锚点冲突时保留值重写，排版与注释不保证全部保持。
+- 主代理内存回归：新扩展名分派更新 VM 注册表替身，base 启停映射纳入既有用例，**19/19 通过**。

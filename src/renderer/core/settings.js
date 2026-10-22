@@ -116,7 +116,7 @@ export const DEFAULT_CORE_PLUGINS = {
   'web-viewer': false,
   publish: false,
   sync: false,
-  bases: false,
+  bases: true,
   'unique-note-creator': false,
 };
 

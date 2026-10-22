@@ -640,3 +640,13 @@ node --experimental-vm-modules src/renderer/core/workspace-regression.js
 - **画布拖线紫框（2026-10-22）**：原版临时节点只做几何占位（不 attach/render）；`createDummyNode()` 无条件挂 DOM 并 render，露出 `.is-dummy` 的 accent 方框。改 `attach:false`（拖线端点 + 连线手柄）。
 - **画布点击后卡住（2026-10-22）**：`handleDragWithPan` 在 pointerdown 即 `setDragging(true)`，纯点击不触发拖拽工厂 → `cleanup` 不执行 → `isDragging` 永久为真，滚轮/悬停手柄/双击被吞。`startDrag` 增加 idle 收尾。canvas-dummy 59 → 71。
 - **硬规则（2026-10-22，用户第二次强调）**：**禁止再启动原版 Obsidian 做取证**。macOS 上原版窗口无法可靠隐藏/移出屏幕（预置 `userData/<vaultId>.json` 的 x=-32000 会被它重新居中；CDP 的 Browser.setWindowBounds 在 Obsidian 不可用；`window.moveTo` 对非脚本窗口无效），每次启动都会抢焦点、跳到用户面前。今后原版取证只用 `_analysis/obsidian-114/renderer/` 静态包（app.js / app.css / i18n.js）逐行比对；运行时验证只用本仓库 E2E（隐形窗口、不抢焦点）。确需真实原版时才另行征求用户同意。
+
+
+## 26. Wave 1（2026-10-22）
+
+### T1 Bases P1
+
+- 新增数据库核心插件、YAML 数据边界、安全表达式子集和共用表格控制器。文件分派读取视图注册表；阅读与实时预览支持嵌入和 # 指定视图。
+- bases 场景 55 项通过；内存回归 19/19。静态证据与写回边界见 _analysis/bases-114/FACTS.md。
+- 未知视图只提示降级；未知键保留。顶层流式或锚点冲突时保留值重写，排版和注释不保证全部保持。
+- Wave 2 的其它视图、分组、汇总、完整公式、日期和 CSV 尚未启动。

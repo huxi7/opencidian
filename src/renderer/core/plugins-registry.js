@@ -1,5 +1,5 @@
 /*
- * [INPUT]: 依赖 ../plugins-core/*.js 的全部核心插件模块
+ * [INPUT]: 依赖 ../plugins-core/*.js 的全部核心插件模块（含 Bases）
  * [OUTPUT]: 导出 corePluginModules（id → 模块对象的汇总表）
  * [POS]: core/ 的核心插件注册表。PluginManager.loadInternalPlugins 经 loadCoreModules 消费它；模块 id 必须与 .obsidian/core-plugins.json 的键一致。
  *        对象顺序即加载顺序，也决定功能区按钮顺序（switcher→graph→canvas→daily→templates→command-palette）；改动前核对 1.14.4 功能区。
@@ -23,6 +23,7 @@ import * as editorStatus from '../plugins-core/editor-status.js';
 import * as wordCount from '../plugins-core/word-count.js';
 import * as graph from '../plugins-core/graph.js';
 import * as canvas from '../plugins-core/canvas.js';
+import * as bases from '../plugins-core/bases.js';
 import * as bookmarks from '../plugins-core/bookmarks.js';
 import * as dailyNotes from '../plugins-core/daily-notes.js';
 import * as templates from '../plugins-core/templates.js';
@@ -48,6 +49,7 @@ export const corePluginModules = {
   'word-count': wordCount,
   'graph': graph,
   'canvas': canvas,
+  'bases': bases,
   'bookmarks': bookmarks,
   'daily-notes': dailyNotes,
   'templates': templates,

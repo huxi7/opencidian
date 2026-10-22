@@ -10,7 +10,7 @@ src/ - 全部源码 (2 子目录)
   renderer/ - 渲染进程：应用主体 (6 子目录: core, editor, markdown, views, plugins-core, styles)
 scripts/ - esbuild 构建与隔离 Electron 验收 (acceptance/)
 assets/ - 图标表、字体与官方 MathJax 离线资源
-_analysis/ - 原版解包产物 (obsidian-114/ 为 1.14.4 提取源)，只读参考资料
+_analysis/ - 原版解包产物 (obsidian-114/ 为 1.14.4 提取源)，只读参考资料；bases-114/ 保存数据库静态事实
 dist/ - esbuild 输出 (renderer.js, starter.js, graph-sim-worker.js)
 </directory>
 

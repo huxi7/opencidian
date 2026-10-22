@@ -1,6 +1,6 @@
 /**
  * [INPUT]: 依赖 Events、metadata/vault、视图注册表与桌面 IPC。
- * 依赖 workspace-model 的节点；委托 workspace-renderer 与 workspace-interactions。
+ * 依赖 workspace-file-view 的文件分派、workspace-model 的节点；委托 workspace-renderer 与 workspace-interactions。
  * [OUTPUT]: 导出 Workspace、WorkspaceItem、WorkspaceSplit、WorkspaceTabs、
  * WorkspaceLeaf 与 parseSubpath。保留既有方法签名和调用入口。
  * [POS]: 装配分割树与导航。侧栏工具固定，文档新标签始终进入中心。侧栏沿用最近中心文件，链接路径由 vault 转为文件。
@@ -13,6 +13,7 @@
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 import { Events } from './events.js';
+import { viewStateForFile } from './workspace-file-view.js';
 import { t } from './i18n.js';
 import { Notice } from './notices.js';
 import { FileNameModal } from './modals.js';
@@ -363,22 +364,7 @@ export class Workspace extends Events {
     return leaf;
   }
 
-  _getViewStateForFile(file) {
-    const ext = (file.extension || '').toLowerCase();
-    if (ext === 'md') {
-      const settings = this.app.settings.appSettings;
-      // 原版语义：defaultViewMode 'source'（编辑视图）| 'preview'（阅读视图）；livePreview 决定编辑视图用实时预览还是源码
-      const editingMode = settings.livePreview === false ? 'source' : 'live';
-      const mode = settings.defaultViewMode === 'preview' ? 'preview' : editingMode;
-      return { type: 'markdown', state: { file: file.path, mode } };
-    }
-    if (ext === 'canvas') return { type: 'canvas', state: { file: file.path } };
-    if (['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'bmp', 'avif'].includes(ext)) return { type: 'image', state: { file: file.path } };
-    if (['mp4', 'webm', 'ogv', 'mov', 'mkv'].includes(ext)) return { type: 'video', state: { file: file.path } };
-    if (['mp3', 'wav', 'm4a', 'ogg', 'flac', '3gp', 'opus'].includes(ext)) return { type: 'audio', state: { file: file.path } };
-    if (ext === 'pdf') return { type: 'pdf', state: { file: file.path } };
-    return { type: 'empty', state: {} };
-  }
+  _getViewStateForFile(file) { return viewStateForFile(this.app, file); }
 
   _addLastOpenFile(path) {
     this.lastOpenFiles = [path, ...this.lastOpenFiles.filter((p) => p !== path)].slice(0, 40);

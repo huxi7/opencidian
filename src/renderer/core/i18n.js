@@ -1,3 +1,9 @@
+/**
+ * [INPUT]: 原版提取的中英文语言表与系统语言。
+ * [OUTPUT]: 导出语言选择、本地化查询与复数插值函数。
+ * [POS]: 界面文案唯一查询层。缺键退回英文，再退回末段键名。
+ * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
+ */
 /* i18n — uses the locale files extracted 1:1 from the original app. */
 import en from '../locales/locale-en.json';
 import zh from '../locales/locale-zh.json';
