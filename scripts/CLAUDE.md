@@ -19,4 +19,6 @@ bases-csv.test.mjs: Node CSV 单测。检查转义、富值、取消与写盘失
 window-save.test.mjs: 视图保存单测。32 条覆盖 CAS、迟到保存、dirty 与关闭失败。
 vault-watch.test.mjs: 真实 Chokidar 22 条。扫描空档、身份、增删改与反复启停。
 dev-hooks.test.mjs: 双窗口协调 11 条。迟到、失败、超时和回执校验，不启动 Electron。
+bases-editing.test.mjs: 数据库编辑单测。52 条覆盖视图身份、并发、类型、日期和属性写回。
+render-cancel.test.mjs: 渲染取消单测。9 条覆盖结算、监听释放与迟到结果。
 [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md

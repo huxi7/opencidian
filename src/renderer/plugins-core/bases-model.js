@@ -1,12 +1,12 @@
 /**
  * [INPUT]: js-yaml 读取数据库文本；表达式模块计算筛选；bases-context 提供属性，bases-values 定义真值与排序。
- * [OUTPUT]: 导出 BaseDocument、queryBase 与属性读取函数；查询供四类视图复用。块式 YAML 局部写回。
+ * [OUTPUT]: 导出 BaseDocument、queryBase 与属性读取函数；查询供四类视图复用，按文件失效行上下文缓存。块式 YAML 局部写回，拒绝越界索引与原型键。
  * [POS]: Bases 数据边界。保留未知键和视图；流式或锚点冲突时保留值重写。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 import { compileExpression } from './bases-expression.js';
 import { createContext, propertyValue } from './bases-context.js';
-import { baseTruthy, compareBaseValues } from './bases-values.js';
+import { baseTruthy, compareBaseValues, safeKey } from './bases-values.js';
 export { createContext, propertyValue } from './bases-context.js';
 const yaml = require('js-yaml');
 const object = value => value !== null && typeof value === 'object' && !Array.isArray(value);
@@ -31,10 +31,18 @@ export class BaseDocument {
   getView(name) { return name ? (this.data.views || []).find(view => view.name === name) : this.data.views?.[0]; }
   /** 普通块 YAML 原地替换；流式 YAML 只重写最近父区段，未知数据仍保留。 */
   patch(path, value) {
+    if (!Array.isArray(path) || !path.length) throw Error('写入路径不能为空。');
     const next = yaml.load(dump(this.data));
     let owner = next;
-    for (const key of path.slice(0, -1)) { if (!owner[key] || typeof owner[key] !== 'object') owner[key] = {}; owner = owner[key]; }
-    owner[path.at(-1)] = value;
+    for (const key of path.slice(0, -1)) {
+      safeKey(key);
+      if (Array.isArray(owner) && (!Number.isInteger(key) || key < 0 || key >= owner.length)) throw Error('写入数组索引无效。');
+      if (!owner[key] || typeof owner[key] !== 'object') owner[key] = {};
+      owner = owner[key];
+    }
+    const last = path.at(-1); safeKey(last);
+    if (Array.isArray(owner) && (!Number.isInteger(last) || last < 0 || last >= owner.length)) throw Error('写入数组索引无效。');
+    owner[last] = value;
     const lines = this.source.split(/\r?\n/);
     if (/^\s*\{/.test(this.source)) return new BaseDocument(dump(next) + '\n');
     const range = findRange(lines, path, 0, lines.length, 0);
@@ -97,16 +105,32 @@ export function compileFilter(filter) {
   const tests = values.map(compileFilter);
   return context => key === 'and' ? tests.every(test => test(context)) : key === 'or' ? tests.some(test => test(context)) : !tests.some(test => test(context));
 }
-export function queryBase(app, document, view, sourceFile = null) {
+export function queryBase(app, document, view, sourceFile = null, cache = null) {
   if (!view) return { rows: [], columns: [], warnings: ['未定义视图'] };
   if (!['table', 'list', 'cards', 'kanban'].includes(view.type)) return { rows: [], columns: [], warnings: ['尚不支持的视图类型：' + view.type + '。原始配置已保留。'] };
   const tests = [compileFilter(document.data.filters), compileFilter(view.filters)];
   const rows = [], warnings = new Set();
+  const reusable = cache && cache.document === document && cache.view === view && cache.sourceFile === sourceFile;
+  const entries = reusable ? cache.entries : new Map(), alive = new Set();
+  // 跨文件公式和宿主属性在任意文件变化时重新求值。
+  const relational = /\b(?:this|now|today)\b|\bfile\s*\(|\b(?:backlinks|links|tags|hasLink|hasTag|properties)\b/i.test(JSON.stringify([document.data.filters, view.filters, document.data.formulas]));
+  const invalidateAll = reusable && relational && cache.dirty?.size > 0;
+  let evaluated = 0;
   for (const file of app.vault.getMarkdownFiles()) {
-    const context = createContext(app, file, document.data.formulas, sourceFile);
-    try { if (tests.every(test => test(context))) rows.push({ file, context }); }
-    catch (error) { warnings.add('筛选无法计算：' + error.message); }
+    alive.add(file.path);
+    let entry = entries.get(file.path);
+    if (!entry || entry.file !== file || invalidateAll || cache?.dirty?.has(file.path)) {
+      const context = createContext(app, file, document.data.formulas, sourceFile);
+      entry = { file, context, included: false }; evaluated++;
+      try { entry.included = tests.every(test => test(context)); }
+      catch (error) { entry.warning = '筛选无法计算：' + error.message; }
+      entries.set(file.path, entry);
+    }
+    if (entry.warning) warnings.add(entry.warning);
+    if (entry.included) rows.push(entry);
   }
+  for (const path of entries.keys()) if (!alive.has(path)) entries.delete(path);
+  if (cache) { Object.assign(cache, { document, view, sourceFile, entries, evaluated }); cache.dirty?.clear(); }
   // 未知筛选不能产生看似完整的结果。
   if (warnings.size) return { rows: [], columns: [], warnings: [...warnings] };
   const sorts = Array.isArray(view.sort) ? view.sort : [{ property: 'file.name', direction: 'ASC' }];

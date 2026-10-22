@@ -1,6 +1,6 @@
 /**
  * [INPUT]: 隔离 Electron 临时库、原版四种视图格式与未知扩展字段。
- * [OUTPUT]: 返回 {pass,count,checks}；验证布局、分组、汇总、配置与嵌入生命周期。
+ * [OUTPUT]: 返回 {pass,count,checks}；验证布局、可写分组、汇总、配置与嵌入生命周期。
  * [POS]: Bases P2 场景。由持锁且带 --no-screenshot 的验收运行器执行。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
@@ -157,8 +157,10 @@
   await app.fileManager.processFrontMatter(alpha, fm => { fm.arrayGroup = ['a', 'b']; });
   await until(() => Array.isArray(app.metadataCache.getFileCache(alpha)?.frontmatter?.arrayGroup), '等待复杂分组属性');
   await c.patchView('groupBy', { property: 'note.arrayGroup', direction: 'ASC' });
-  check(!view.contentEl.querySelector('.bases-kanban-item[data-path="P2/Alpha.md"]').draggable, '复杂列表分组不提供假拖动能力');
-  check(view.contentEl.textContent.includes('列表和对象分组只读'), '复杂值只读原因可见');
+  check(view.contentEl.querySelector('.bases-kanban-item[data-path="P2/Alpha.md"]').draggable, '列表属性分组提供真实拖动能力');
+  await drag(alpha.path, null);
+  await until(() => !app.metadataCache.getFileCache(alpha)?.frontmatter?.arrayGroup && boardColumn(null)?.querySelector('[data-path="P2/Alpha.md"]'), '等待列表分组移入空组');
+  check(!Object.hasOwn(yaml.load((await app.vault.read(alpha)).split('---')[1]), 'arrayGroup'), '列表分组移入空组真实删除属性');
   await c.patchView('groupBy', { property: 'note.status', direction: 'ASC' });
   const originalProcess = app.fileManager.processFrontMatter;
   const beforeFailure = await app.vault.read(beta);
@@ -194,10 +196,10 @@
   const beforeUnknown = await app.vault.read(file);
   c.switchView('Unknown');
   check(view.contentEl.textContent.includes('尚不支持的视图类型'), '未知视图明确降级');
-  check(!view.contentEl.querySelector('button,input'), '未知布局不显示不可用配置控件');
+  check(!view.contentEl.querySelector('.bases-toolbar-sort-menu,.bases-toolbar-group-menu,.bases-toolbar-filter-menu,.bases-toolbar-properties-menu,.bases-toolbar-search,.bases-toolbar-new-item-menu,input'), '未知布局不显示不可用配置控件');
   const escape = view.contentEl.querySelector('.bases-view-switcher');
   check(!!escape, '未知布局保留已有视图切换入口');
-  escape.value = 'Table'; escape.dispatchEvent(new Event('change', { bubbles: true }));
+  escape.click(); view.contentEl.querySelector('.bases-config-menu [data-view="Table"] button').click();
   check(c.view.type === 'table' && !!view.contentEl.querySelector('tbody'), '真实切换事件能从未知布局返回表格');
   check((await app.vault.read(file)) === beforeUnknown, '从未知布局切回不改写未知配置');
   await c.patchView('groupBy', null);
@@ -227,17 +229,20 @@
   const change = async (control, value) => { control.value = value; control.dispatchEvent(new Event('change', { bubbles: true })); await c.queue; await wait(20); await c.queue; };
   let panel = c.openConfig();
   check(panel.getAttribute('role') === 'dialog', '视图配置使用可访问弹层');
-  await change(panel.querySelectorAll('select')[0], 'list');
+  await change(panel.querySelector('[data-config-field="type"]'), 'list');
   check(c.view.type === 'list' && view.contentEl.querySelector('.bases-list-container'), '配置布局选择即时切换并写回');
   panel = c.openConfig();
-  await change(panel.querySelectorAll('select')[1], 'note.status');
+  await change(panel.querySelector('[data-config-field="groupBy"]'), 'note.status');
   check(c.view.groupBy.property === 'note.status', '配置分组属性持久化');
   panel = c.openConfig();
-  await change(panel.querySelectorAll('select')[2], 'DESC');
+  await change(panel.querySelector('[data-config-field="groupDirection"]'), 'DESC');
   check(c.view.groupBy.direction === 'DESC', '配置分组排序持久化');
   panel = c.openConfig();
-  panel.querySelector('.bases-config-filter textarea').value = 'score >= 4';
-  panel.querySelector('.bases-config-filter button').click(); await c.queue;
+  const filterSection = panel.querySelector('.bases-config-filter'); filterSection.open = true;
+  [...filterSection.querySelectorAll('button')].find(button => button.getAttribute('aria-label') === '添加公式').click();
+  const formula = filterSection.querySelector('.formula-editor');
+  formula.basesFormulaEditor.setValue('score >= 4');
+  filterSection.querySelector('.bases-filter-apply').click(); await c.queue;
   check(c.result.rows.length === 2 && c.view.filters === 'score >= 4', '配置弹层只写当前视图筛选');
   check(c.document.data.filters === config.filters, '视图筛选不覆盖全局筛选');
   await c.patchView('filters', null);
@@ -308,13 +313,17 @@
   await app.plugins.enableInternalPlugin('bases'); await Promise.all(embedded.map(controller => controller.ready));
   check(embedded.every(controller => controller.refs.length === 5), '插件重启只恢复各五个订阅');
   await embedLeaf.view.setState({ file: embed.path, mode: 'live' });
-  await until(() => embedLeaf.view.contentEl.querySelector('.cm-content .bases-kanban-container'), '等待实时预览看板');
-  check(!!embedLeaf.view.contentEl.querySelector('.cm-content .bases-list-container'), '实时预览列表布局');
-  check(!!embedLeaf.view.contentEl.querySelector('.cm-content .bases-cards-container'), '实时预览卡片布局');
-  check(!!embedLeaf.view.contentEl.querySelector('.cm-content .bases-kanban-container'), '实时预览看板布局');
+  const liveControllers = new Set();
+  // CodeMirror 只挂载视口部件；逐个滚到实际嵌入，保持真实布局断言。
+  for (const [type, line, label] of [['list', 2, '列表'], ['cards', 4, '卡片'], ['kanban', 6, '看板']]) {
+    embedLeaf.view.editor.scrollTo(line);
+    await until(() => embedLeaf.view.contentEl.querySelector('.cm-content .bases-' + type + '-container'), '等待实时预览' + label);
+    check(!!embedLeaf.view.contentEl.querySelector('.cm-content .bases-' + type + '-container'), '实时预览' + label + '布局');
+    for (const node of embedLeaf.view.contentEl.querySelectorAll('.cm-content .bases-embed')) if (node.basesController) liveControllers.add(node.basesController);
+  }
   await until(() => embedded.every(controller => controller.suspended), '等待读视图挂起');
   check(embedded.every(controller => controller.refs.length === 0), '切实时预览释放隐藏阅读嵌入订阅');
-  const live = [...embedLeaf.view.contentEl.querySelectorAll('.cm-content .bases-embed')].map(el => el.basesController).filter(Boolean);
+  const live = [...liveControllers];
   await embedLeaf.view.setState({ file: embed.path, mode: 'source' });
   await until(() => live.every(controller => controller.closed), '等待实时预览嵌入释放');
   check(live.every(controller => controller.refs.length === 0), '离开实时预览释放全部布局订阅');

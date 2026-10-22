@@ -1,7 +1,7 @@
 /**
- * [INPUT]: BasesController 视图、局部 patch、布局汇总清单与图片封面选项。
- * [OUTPUT]: 导出 openBasesConfig，返回可关闭的视图配置弹层。
- * [POS]: Bases 配置边界。每次操作只写对应 YAML 键，未知字段留给文档模型保留。
+ * [INPUT]: BasesController 局部写回、布局汇总清单、封面选项与可视筛选构造器。
+ * [OUTPUT]: 导出 openBasesConfig 与 availableProperties，返回原版结构的视图配置页。
+ * [POS]: 配置只提交用户操作的键。选择由成功事务更新；拒写保留当前视图。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 import { tt } from '../core/i18n.js';
@@ -10,17 +10,18 @@ import { groupRows, summaryNamesFor } from './bases-grouping.js';
 import { baseEquals, formatBaseValue } from './bases-values.js';
 import { exportBaseCsv } from './bases-csv.js';
 import { setIcon } from '../core/icons.js';
+import { renderBasesFilterBuilder, baseFilterPropertyType } from './bases-ui-filters.js';
 
 const tr = (key, fallback) => tt('plugins.bases.' + key, fallback);
 
 function select(parent, label, options, value, action) {
-  const row = el(parent, 'label', 'bases-config-row', label);
+  const row = el(parent, 'label', 'bases-config-row input-row', label);
   const control = el(row, 'select'); control.setAttribute('aria-label', label);
   for (const [key, text] of options) { const option = el(control, 'option', '', text); option.value = key; }
   control.value = value; control.addEventListener('change', () => action(control.value)); return control;
 }
 function input(parent, label, value, action, type = 'text') {
-  const row = el(parent, 'label', 'bases-config-row', label);
+  const row = el(parent, 'label', 'bases-config-row input-row', label);
   const control = el(row, 'input'); control.type = type; control.value = value;
   control.setAttribute('aria-label', label); control.addEventListener('change', () => { control.setCustomValidity(''); action(control.value, control); }); return control;
 }
@@ -35,11 +36,16 @@ export function availableProperties(controller) {
   return [...properties];
 }
 export function openBasesConfig(controller) {
+  controller._basesSortState = null;
+  controller.container.querySelectorAll('.bases-filter-builder').forEach(node => node.basesFilterDestroy?.());
+  controller._basesMenuAbort?.abort(); controller._basesMenuAbort = null;
   controller.closeConfig();
+  controller.container.querySelectorAll('.has-active-menu').forEach(node => { node.classList.remove('has-active-menu'); node.setAttribute('aria-expanded', 'false'); });
   const root = controller.container, view = controller.view;
-  const panel = el(root, 'div', 'bases-config-menu'); panel.setAttribute('role', 'dialog'); panel.setAttribute('aria-label', tr('label-configure-view', '配置视图'));
-  const title = el(panel, 'div', 'bases-config-title', tr('label-configure-view', '配置视图'));
-  const close = el(title, 'button', '', tt('interface.action-close', '关闭')); close.type = 'button'; close.addEventListener('click', () => controller.closeConfig());
+  const panel = el(root, 'div', 'bases-config-menu bases-toolbar-menu bases-toolbar-menu-form view-config-menu'); panel.setAttribute('role', 'dialog'); panel.setAttribute('aria-label', tr('label-configure-view', '配置视图'));
+  const title = el(panel, 'div', 'bases-config-title bases-toolbar-menu-container-header');
+  el(title, 'span', 'menu-title', tr('label-configure-view', '配置视图'));
+  const close = el(title, 'button', 'clickable-icon close-icon'); close.type = 'button'; close.setAttribute('aria-label', tt('interface.action-close', '关闭')); setIcon(close, 'lucide-x'); close.addEventListener('click', () => controller.closeConfig());
   const csv = el(panel, 'button', 'bases-export-csv'); csv.type = 'button';
   setIcon(el(csv, 'span', 'bases-export-icon'), 'lucide-file-down');
   el(csv, 'span', '', tr('action-export-c-s-v', '导出 CSV…'));
@@ -50,17 +56,21 @@ export function openBasesConfig(controller) {
     const name = value.trim();
     if (!name || /[\[\]#|^\\]/.test(name)) { control.setCustomValidity('名称不能为空或含有 []#|^\\'); error.textContent = control.validationMessage; return; }
     if (controller.document.data.views.some(other => other !== view && other.name === name)) { error.textContent = tr('msg-duplicate-view-name', '视图名称已存在'); return; }
-    await controller.patchView('name', name); controller.viewName = name; controller.render(); controller.onViewChange?.();
+    const saved = await controller.patchView('name', name);
+    if (!saved) { control.value = controller.view?.name || view.name; control.setCustomValidity('视图名称未保存，请查看保存失败提示。'); error.textContent = control.validationMessage; }
+    // 成功后的选择与布局同步由控制器事务完成；拒写时不改变当前视图。
   });
-  select(panel, tr('label-view-layout', '布局'), Object.entries(BASE_LAYOUTS), view.type, type => controller.patchView('type', type));
+  select(panel, tr('label-view-layout', '布局'), Object.entries(BASE_LAYOUTS), view.type, type => controller.patchView('type', type)).dataset.configField = 'type';
+  if (view.type === 'table') select(panel, tr('table.label-row-height', '行高'), [['', tr('table.option-short', '矮')], ['medium', tr('table.option-medium', '中')], ['tall', tr('table.option-tall', '高')], ['extra', tr('table.option-extra-tall', '超高')]], view.rowHeight || '', value => controller.patchView('rowHeight', value)).dataset.configField = 'rowHeight';
   const groupOptions = [['', tr('list.option-none', '不分组')], ...propertyOptions];
   select(panel, tr('label-group-by', '分组属性'), groupOptions, view.groupBy?.property || '', async property => {
     if (Array.isArray(view.groupOrder) && property !== view.groupBy?.property) await controller.patchView('groupOrder', null);
     await controller.patchView('groupBy', property ? { property, direction: view.groupBy?.direction || 'ASC' } : null);
-  });
-  select(panel, tr('label-sort-by', '分组排序'), [['ASC', tr('label-sort-a-z', 'A → Z')], ['DESC', tr('label-sort-z-a', 'Z → A')]], view.groupBy?.direction || 'ASC', direction => {
+  }).dataset.configField = 'groupBy';
+  const groupDirection = select(panel, tr('label-sort-by', '分组排序'), [['ASC', tr('label-sort-a-z', 'A → Z')], ['DESC', tr('label-sort-z-a', 'Z → A')]], view.groupBy?.direction || 'ASC', direction => {
     if (view.groupBy?.property) controller.patchView('groupBy', { ...view.groupBy, direction });
-  }).disabled = !view.groupBy;
+  });
+  groupDirection.dataset.configField = 'groupDirection'; groupDirection.disabled = !view.groupBy;
   if (view.groupBy) {
     const section = el(panel, 'div', 'bases-config-section bases-group-config', tr('kanban.action-edit-columns', '编辑分组'));
     let groups = [];
@@ -100,20 +110,9 @@ export function openBasesConfig(controller) {
     if (!Number.isInteger(number) || number < 0) { control.setCustomValidity('请输入非负整数'); error.textContent = control.validationMessage; return; }
     controller.patchView('limit', number);
   }, 'number'); limit.min = '0';
-  const filterSection = el(panel, 'label', 'bases-config-filter', tr('label-view-filters', '视图筛选'));
-  const filter = el(filterSection, 'textarea');
-  filter.setAttribute('aria-label', tr('label-view-filters', '视图筛选'));
-  const yaml = require('js-yaml');
-  filter.value = view.filters == null ? '' : yaml.dump(view.filters, { lineWidth: -1 }).trimEnd();
-  const applyFilter = el(filterSection, 'button', '', tt('interface.action-apply', '应用')); applyFilter.type = 'button';
-  applyFilter.addEventListener('click', () => {
-    try {
-      const value = filter.value.trim() ? yaml.load(filter.value) : null;
-      const index = controller.document.data.views.indexOf(view);
-      controller.document.patch(['views', index, 'filters'], value);
-      controller.patchView('filters', value);
-    } catch (failure) { error.textContent = failure.message; }
-  });
+  const filterSection = el(panel, 'details', 'bases-config-filter bases-toolbar-section');
+  el(filterSection, 'summary', 'bases-toolbar-section-header', tr('label-view-filters', '视图筛选'));
+  renderBasesFilterBuilder(filterSection, view.filters, { properties, propertyType: key => baseFilterPropertyType(controller, key), onApply: value => controller.patchView('filters', value) });
   if (view.type === 'list') {
     select(panel, tr('list.label-markers', '列表标记'), [['bullet', tr('list.option-bullet', '项目符号')], ['number', tr('list.option-number', '编号')], ['none', tr('list.option-none', '无')]], view.markers || 'bullet', value => controller.patchView('markers', value));
     input(panel, tr('list.label-property-separator', '属性分隔符'), view.separator || ', ', value => controller.patchView('separator', value));
@@ -167,7 +166,10 @@ export function openBasesConfig(controller) {
     const value = name.value.trim();
     if (!value || /[\[\]#|^\\]/.test(value)) { error.textContent = '请输入有效视图名称'; return; }
     if (controller.document.data.views.some(other => other.name === value)) { error.textContent = tr('msg-duplicate-view-name', '视图名称已存在'); return; }
-    await controller.patch(['views'], [...controller.document.data.views, { type: type.value, name: value, order: [...controller.result.columns] }]);
+    await controller.transact(current => {
+      if (current.data.views.some(other => other.name === value)) throw Error(tr('msg-duplicate-view-name', '视图名称已存在'));
+      return current.patch(['views'], [...current.data.views, { type: type.value, name: value, order: [...controller.result.columns] }]);
+    });
     controller.switchView(value);
   });
   panel.addEventListener('keydown', event => { if (event.key === 'Escape') { event.preventDefault(); controller.closeConfig(); } });

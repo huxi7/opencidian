@@ -1,5 +1,5 @@
 /**
- * [INPUT]: BasesController 查询、分组汇总、富值 DOM、封面适配与看板拖放边界。
+ * [INPUT]: BasesController 查询、分组汇总、富值、编辑、组层与记录窗口化及锚定新建浮层。
  * [OUTPUT]: 导出 renderBaseLayout、renderBaseValue、BASE_LAYOUTS 与 appendBaseElement。
  * [POS]: 四种 Bases 布局共用值渲染与笔记导航；不拥有数据订阅或持久化。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
@@ -9,6 +9,12 @@ import { propertyValue } from './bases-model.js';
 import { renderBaseRichValue } from './bases-values-render.js';
 import { groupRows, summarizeRows, formatBaseValue } from './bases-grouping.js';
 import { renderBaseCover } from './bases-card-media.js';
+import { mountBaseVirtualRows, mountBaseVirtualGrid } from './bases-virtual.js';
+import { mountBaseGroupWindow } from './bases-ui-group-window.js';
+import { toggleBaseNewItem } from './bases-ui-new-item.js';
+import { setIcon } from '../core/icons.js';
+import { renderBaseAddGroup } from './bases-edit-groups.js';
+import { bindBaseCell, bindBaseColumn } from './bases-edit-cells.js';
 import { bindKanbanCard, bindKanbanColumn, kanbanWriteInfo } from './bases-kanban.js';
 
 export const BASE_LAYOUTS = {
@@ -58,10 +64,15 @@ function renderSummaries(controller, parent, rows, columns) {
 function renderTable(controller, parent, rows, columns) {
   const view = controller.view;
   const wrap = el(parent, 'div', 'bases-table-container');
+  const multiplier = ({ medium: 2, tall: 4, extra: 8 })[view.rowHeight] || 1;
+  const baseHeight = parseFloat(parent.ownerDocument.defaultView.getComputedStyle(parent).getPropertyValue('--bases-table-row-height')) || 30;
+  const rowHeight = baseHeight * multiplier;
+  wrap.style.setProperty('--bases-table-current-row-height', rowHeight + 'px'); wrap.classList.toggle('mod-multiline', multiplier > 1);
   const table = el(wrap, 'table', 'bases-table');
   const head = el(el(table, 'thead', 'bases-thead'), 'tr', 'bases-tr');
   for (const property of columns) {
     const cell = el(head, 'th', 'bases-td'); cell.scope = 'col';
+    bindBaseColumn(controller, cell, property);
     const button = el(cell, 'button', 'bases-table-header', propertyLabel(controller, property));
     const active = view.sort?.find(sort => (sort.property || sort.column) === property);
     if (active) { button.dataset.sort = active.direction; el(button, 'span', 'bases-sort-indicator', active.direction === 'DESC' ? ' ↓' : ' ↑'); }
@@ -72,10 +83,18 @@ function renderTable(controller, parent, rows, columns) {
     });
   }
   const body = el(table, 'tbody', 'bases-tbody');
-  for (const row of rows) {
-    const tr = el(body, 'tr', 'bases-tr'); tr.dataset.path = row.file.path;
-    for (const property of columns) renderBaseValue(controller, el(tr, 'td', 'bases-td'), row, property);
-  }
+  const virtual = mountBaseVirtualRows(body, rows, row => {
+    const tr = body.ownerDocument.createElement('tr'); tr.className = 'bases-tr'; tr.dataset.path = row.file.path; tr.style.height = rowHeight + 'px';
+    for (const property of columns) {
+      const cell = el(tr, 'td', 'bases-td');
+      const width = view.columnSize?.[property];
+      if (Number.isFinite(width) && width > 0) { cell.style.width = width + 'px'; cell.style.minWidth = width + 'px'; }
+      const value = el(cell, 'div', 'bases-table-cell');
+      renderBaseValue(controller, value, row, property); bindBaseCell(controller, cell, row, property);
+    }
+    return tr;
+  }, { viewport: wrap, columns: columns.length, rowHeight });
+  controller.virtualizers.add(virtual);
   if (view.summaries) {
     const tr = el(el(table, 'tfoot', 'bases-summary'), 'tr', 'bases-tr');
     for (const property of columns) {
@@ -85,8 +104,8 @@ function renderTable(controller, parent, rows, columns) {
 }
 function renderList(controller, parent, rows, columns) {
   const view = controller.view, list = el(parent, 'div', 'bases-list-group-list');
-  rows.forEach((row, index) => {
-    const item = el(list, 'div', 'bases-list-item'); item.dataset.path = row.file.path;
+  const virtual = mountBaseVirtualGrid(list, rows, (row, index) => {
+    const item = list.ownerDocument.createElement('div'); item.className = 'bases-list-item'; item.dataset.path = row.file.path;
     const properties = el(item, 'div', 'bases-list-item-properties');
     const nested = view.indentProperties ? el(item, 'div', 'bases-list-item-properties nested') : properties;
     if (view.markers !== 'none') el(properties, 'span', view.markers === 'number' ? 'list-number' : 'list-bullet', view.markers === 'number' ? (index + 1) + '.' : '•');
@@ -98,15 +117,17 @@ function renderList(controller, parent, rows, columns) {
       if (column > 0 && !view.indentProperties) el(owner, 'span', 'bases-list-separator', String(view.separator || ', '));
       renderBaseValue(controller, el(owner, 'span', 'bases-list-property'), row, property);
     });
-  });
+    return item;
+  }, { viewport: list, columns: 1, gap: 0, estimatedHeight: 30 });
+  controller.virtualizers.add(virtual);
   renderSummaries(controller, parent, rows, columns);
 }
 function renderCards(controller, parent, rows, columns, kanban) {
   const cards = el(parent, 'div', kanban ? 'bases-kanban-column-content' : 'bases-cards-group');
   const size = kanban ? controller.view.columnWidth : controller.view.cardSize;
   if (Number.isFinite(size) && size >= 100 && size <= 1000) cards.style.setProperty('--bases-card-width', size + 'px');
-  for (const row of rows) {
-    const card = el(cards, 'article', kanban ? 'bases-kanban-item bases-cards-item' : 'bases-cards-item'); card.dataset.path = row.file.path;
+  const virtual = mountBaseVirtualGrid(cards, rows, row => {
+    const card = cards.ownerDocument.createElement('article'); card.className = kanban ? 'bases-kanban-item bases-cards-item' : 'bases-cards-item'; card.dataset.path = row.file.path;
     renderBaseCover(controller, card, row, kanban);
     if (kanban) bindKanbanCard(controller, card, row);
     for (const [index, property] of columns.entries()) {
@@ -114,7 +135,9 @@ function renderCards(controller, parent, rows, columns, kanban) {
       if (index) el(prop, 'div', 'bases-cards-label', propertyLabel(controller, property));
       renderBaseValue(controller, prop, row, property);
     }
-  }
+    return card;
+  }, { viewport: cards, cardWidth: size || 200, columns: kanban ? 1 : undefined, estimatedHeight: kanban ? 160 : 180, gap: kanban ? 8 : 12 });
+  controller.virtualizers.add(virtual);
   renderSummaries(controller, parent, rows, columns);
 }
 export function renderBaseLayout(controller) {
@@ -136,24 +159,32 @@ export function renderBaseLayout(controller) {
     const configure = el(placeholder, 'button', '', tt('plugins.bases.kanban.action-edit-columns', '编辑分组'));
     configure.addEventListener('click', () => controller.openConfig());
   }
-  for (const group of groups) {
-    const section = el(layout, 'section', view.type === 'kanban' ? 'bases-kanban-column' : 'bases-' + view.type + '-section');
+  mountBaseGroupWindow(controller, layout, groups, group => {
+    const section = layout.ownerDocument.createElement('section'); section.className = view.type === 'kanban' ? 'bases-kanban-column' : 'bases-' + view.type + '-section';
     if (view.type === 'kanban') bindKanbanColumn(controller, section, group);
     if (view.type === 'kanban' && Number.isFinite(view.columnWidth) && view.columnWidth >= 100 && view.columnWidth <= 1000) section.style.setProperty('--bases-card-width', view.columnWidth + 'px');
     if (group.grouped) {
-      const heading = el(section, 'button', 'bases-group-heading');
-      heading.type = 'button'; heading.dataset.group = group.id;
+      const heading = el(section, 'div', 'bases-group-heading');
+      heading.setAttribute('role', 'button'); heading.tabIndex = 0; heading.dataset.group = group.id;
       el(heading, 'span', 'bases-group-property', propertyLabel(controller, view.groupBy.property));
       el(heading, 'span', 'bases-group-value', group.key == null ? tt('plugins.bases.label-group-key-none', '无') : formatBaseValue(group.key));
       el(heading, 'span', 'bases-group-count', String(group.rows.length));
       heading.setAttribute('aria-expanded', String(!controller.folded.has(group.id)));
-      heading.addEventListener('click', () => { controller.folded.has(group.id) ? controller.folded.delete(group.id) : controller.folded.add(group.id); controller.render(); });
+      const fold = () => { controller.folded.has(group.id) ? controller.folded.delete(group.id) : controller.folded.add(group.id); controller.render(); };
+      heading.addEventListener('click', event => { if (!event.target.closest('.bases-group-new-item')) fold(); });
+      heading.addEventListener('keydown', event => { if (event.target === heading && ['Enter', ' '].includes(event.key)) { event.preventDefault(); fold(); } });
+      if (kanbanWriteInfo(controller, group.rows[0], view.groupBy.property).writable) {
+        const create = el(heading, 'button', 'clickable-icon bases-group-new-item'); create.type = 'button'; create.setAttribute('aria-label', '在分组中新建笔记'); setIcon(create, 'lucide-plus');
+        create.addEventListener('click', event => { event.stopPropagation(); toggleBaseNewItem(controller, create, group.key, true); });
+      }
     }
     const body = el(section, 'div', 'bases-group-body'); body.hidden = controller.folded.has(group.id);
     if (view.type === 'table') renderTable(controller, body, group.rows, columns);
     else if (view.type === 'list') renderList(controller, body, group.rows, columns);
     else renderCards(controller, body, group.rows, columns, view.type === 'kanban');
-  }
+    return section;
+  });
+  renderBaseAddGroup(controller, groups.length > 20 ? el(root, 'div', 'bases-group-actions') : layout);
   if (!rows.length) el(layout, 'div', 'bases-empty', '没有符合条件的笔记');
   if (view.type === 'kanban') {
     const unsupported = [kanbanWriteInfo(controller), ...rows.map(row => kanbanWriteInfo(controller, row))].find(info => !info.writable);

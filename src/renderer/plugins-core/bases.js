@@ -1,7 +1,7 @@
 /**
  * [INPUT]: 数据库视图、YAML 模板、功能区、文件菜单与文件创建接口。
  * [OUTPUT]: 注册 bases 视图、功能区和文件夹新建入口、新建与 CSV 命令。
- * [POS]: Bases 插件生命周期。可见入口共用创建流程，停用时对称撤销。
+ * [POS]: 可见入口共用创建流程。停用先验证草稿落盘；失败返回 false 保留入口。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 import { BasesView, setBasesEnabled } from './bases-view.js';
@@ -37,10 +37,11 @@ export function create(app) {
         return true;
       } });
     },
-    onunload() {
+    async onunload() {
+      if (!await setBasesEnabled(app, false)) return false;
       this.ribbonEl?.detach(); this.ribbonEl = null;
       this.menuRef?.unregister(); this.menuRef = null;
-      setBasesEnabled(app, false); app.commands.removeCommand('bases:new-file'); app.commands.removeCommand('bases:export-csv'); app.viewRegistry.unregisterView('bases');
+      app.commands.removeCommand('bases:new-file'); app.commands.removeCommand('bases:export-csv'); app.viewRegistry.unregisterView('bases');
     },
     async createNewBase(targetFolder = null, openInNewTab = false) {
       const current = app.workspace.getActiveFile();

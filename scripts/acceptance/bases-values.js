@@ -1,6 +1,6 @@
 /**
  * [INPUT]: 隔离库、Bases 富值公式、视图配置与受控 CSV 保存路径。
- * [OUTPUT]: 返回 {pass,count,checks}，验证富值 DOM、导航与真实 CSV 写盘。
+ * [OUTPUT]: 返回 {pass,count,checks}，验证可写笔记/只读公式富值、导航与真实 CSV 写盘。
  * [POS]: P3 在真实 Electron 的交付边界。不弹原生保存框，不调用外部程序。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
@@ -16,7 +16,7 @@
   await app.vault.create('Tiny.svg', '<svg xmlns="http://www.w3.org/2000/svg" width="1" height="2"><rect width="1" height="2" fill="red"/></svg>');
   await until(() => app.metadataCache.getFileCache(alpha)?.frontmatter?.done === true, '等待属性索引');
   const formulas = {
-    reference: 'link("Data/Beta.md", "Target")', fileValue: 'file("Data/Beta.md")',
+    readonlyDone: 'done', reference: 'link("Data/Beta.md", "Target")', fileValue: 'file("Data/Beta.md")',
     website: 'link("https://example.com", "Site")', mail: 'link("mailto:alice@example.com")',
     icon: 'icon("lucide-check")', image: 'image("Tiny.png")', svg: 'image("Tiny.svg")',
     html: 'html("<img src=x onerror=window.__baseHtmlExecuted=true>")',
@@ -32,7 +32,13 @@
   check(controller.result.rows.length === 2, '真实笔记查询产生两行富值');
   const cell = property => controller.container.querySelector('tbody tr').children[controller.result.columns.indexOf(property)];
   check(cell('note.done').querySelector('input[type=checkbox]')?.checked === true, '布尔属性显示真实复选框');
-  check(cell('note.done').querySelector('input').disabled, '只读属性明确禁用编辑');
+  check(!cell('note.done').querySelector('input').disabled, '笔记复选属性可编辑');
+  check(cell('formula.readonlyDone').querySelector('input').disabled, '公式复选值保持只读');
+  cell('note.done').querySelector('input').click(); await controller.queue;
+  await until(() => app.metadataCache.getFileCache(alpha)?.frontmatter?.done === false && !cell('note.done').querySelector('input').checked, '等待复选属性实际写回');
+  check(yaml.load((await app.vault.read(alpha)).split('---')[1]).done === false, '复选属性编辑真实写盘');
+  cell('note.done').querySelector('input').click(); await controller.queue;
+  await until(() => app.metadataCache.getFileCache(alpha)?.frontmatter?.done === true && cell('note.done').querySelector('input').checked, '等待复选属性恢复');
   check(cell('note.tags').querySelector('a.tag')?.textContent === '#rich-test', '标签列表渲染标签链接');
   check(cell('formula.reference').querySelector('a.internal-link')?.textContent === 'Target', 'Link 值显示自定义文本');
   check(cell('formula.fileValue').querySelector('a.internal-link')?.textContent === 'Beta', 'File 值显示目标笔记名');
@@ -41,10 +47,11 @@
   check(cell('formula.image').querySelector('img').naturalHeight === 1, '图片公式读取真实库内资源');
   await until(() => cell('formula.svg').querySelector('img')?.naturalWidth === 1, '等待 SVG 协议媒体类型与解码');
   check(cell('formula.svg').querySelector('img').naturalHeight === 2, 'SVG 公式通过真实 app 协议解码');
-  check(!cell('formula.html').querySelector('img') && cell('formula.html').textContent.includes('HTML 以源码显示'), 'HTML 明确降级且不创建危险节点');
+  check(!!cell('formula.html').querySelector('.bases-rich-html') && !cell('formula.html').querySelector('[onerror],script'), 'HTML 渲染真实内容并移除危险事件和脚本');
   check(window.__baseHtmlExecuted !== true, 'HTML 值没有执行事件代码');
+  await cell('formula.markdown').querySelector('.bases-rich-markdown').ready;
   check(cell('formula.markdown').querySelector('strong')?.textContent === 'bold', 'Markdown 公式渲染标准行内语法');
-  check(!cell('formula.markdown').querySelector('b') && cell('formula.markdown').textContent.includes('<b>literal</b>'), 'Markdown 原始 HTML 显示文本');
+  check(cell('formula.markdown').querySelector('b')?.textContent === 'literal' && !cell('formula.markdown').querySelector('script,[onerror]'), 'Markdown 复用阅读器渲染安全行内 HTML');
   check(!cell('formula.blocked').querySelector('a') && cell('formula.blocked').textContent.includes('不支持此链接协议'), '不支持的协议显示明确降级');
   check(cell('formula.values').querySelectorAll('.value-list-element').length === 4, '列表富值逐项渲染，不吞零假空值');
   const { ipcRenderer } = require('electron'), sent = [], send = ipcRenderer.send;

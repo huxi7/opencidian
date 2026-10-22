@@ -1,14 +1,13 @@
 /**
- * [INPUT]: Bases 富值、宿主工作区导航、图标表与受控桌面 IPC。
+ * [INPUT]: Bases 富值、工作区导航、图标、受控 IPC 与 bases-rich-render 的 HTML/Markdown 安全边界。
  * [OUTPUT]: 导出 renderBaseRichValue(controller,parent,value,sourcePath?)，返回已挂载的值节点。
- * [POS]: Bases 富值 DOM 适配器。链接经现有导航；HTML 明确降级为源码，Markdown 禁用原始 HTML。
+ * [POS]: Bases 富值 DOM 适配器。链接经现有导航；HTML 与 Markdown 经共享富文本边界渲染，异步结果挂在节点 ready。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 import { BaseLink, BaseTag, BaseDisplay, baseValueType, formatBaseValue } from './bases-values.js';
 import { setIcon, iconExists } from '../core/icons.js';
 import { Desktop } from '../core/ipc.js';
-const MarkdownIt = require('markdown-it');
-let inlineMarkdown;
+import { renderBaseHtml, renderBaseMarkdown } from './bases-rich-render.js';
 const external = value => /^(?:https?:|mailto:|tel:)/i.test(value);
 const openExternal = value => /^https?:/i.test(value) ? Desktop.openExternal(value) : Desktop.openUrl(value);
 function append(parent, tag, cls, text) {
@@ -74,20 +73,8 @@ export function renderBaseRichValue(controller, parent, value, sourcePath = '') 
       node.addEventListener('error', () => { if (node.parentNode) { const replacement = degraded(node.parentNode, '图片无法载入', value.value); node.replaceWith(replacement); } }, { once: true });
       node.src = remote ? value.value : controller.app.vault.adapter.getResourcePath(file.path); return node;
     }
-    if (value.kind === 'html') return degraded(parent, 'HTML 以源码显示', value.value);
-    if (value.kind === 'markdown') {
-      const node = append(parent, 'span', 'bases-rendered-value markdown-rendered');
-      node.dataset.basesDegraded = 'true'; node.title = 'Markdown 仅渲染标准行内语法；原始 HTML 与嵌入未启用';
-      inlineMarkdown ||= new MarkdownIt({ html: false, linkify: false });
-      node.innerHTML = inlineMarkdown.renderInline(value.value);
-      for (const image of node.querySelectorAll('img')) image.replaceWith(parent.ownerDocument.createTextNode(image.alt || image.getAttribute('src')));
-      for (const anchor of node.querySelectorAll('a')) {
-        const href = anchor.getAttribute('href');
-        if (!external(href)) { anchor.replaceWith(parent.ownerDocument.createTextNode(anchor.textContent)); continue; }
-        anchor.addEventListener('click', event => { event.preventDefault(); openExternal(href); });
-      }
-      return node;
-    }
+    if (value.kind === 'html') return renderBaseHtml(controller, parent, value.value, sourcePath);
+    if (value.kind === 'markdown') return renderBaseMarkdown(controller, parent, value.value, sourcePath);
   }
   return append(parent, 'span', 'bases-rendered-value', formatBaseValue(value));
 }

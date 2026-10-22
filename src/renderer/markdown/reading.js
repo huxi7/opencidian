@@ -1,6 +1,6 @@
 /**
- * [INPUT]: 依赖 markdown-it、footnote/task-lists、Desktop、图标和 vault 路径；代码块委托 highlight.js，公式委托 math.js，图表委托 mermaid.js；转义、frontmatter 剥离与图片尺寸语法来自 source-text.js；画布嵌入委托 views/canvas-minimap.js，数据库嵌入委托 plugins-core/bases-embed.js，保留宿主文件上下文。
- * [OUTPUT]: 导出 getMarkdownIt、renderMarkdown、attachMarkdownInteractions、stripFrontmatter、scrollToSubpath、resolvePath、resolveFileUrl 与 escapeHtml
+ * [INPUT]: 依赖 markdown-it、footnote/task-lists、Desktop、图标和 vault 路径；代码块委托 highlight.js，公式委托 math.js，图表委托 mermaid.js，取消等待委托 render-cancel.js；转义、frontmatter 剥离与图片尺寸语法来自 source-text.js；画布嵌入委托 views/canvas-minimap.js，数据库嵌入委托 plugins-core/bases-embed.js，保留宿主文件上下文。
+ * [OUTPUT]: 导出 getMarkdownIt、renderMarkdown、attachMarkdownInteractions、stripFrontmatter、scrollToSubpath、resolvePath、resolveFileUrl 与 escapeHtml；渲染与交互支持可选 AbortSignal
  * [POS]: markdown/ 的阅读视图渲染器，被 markdown-view.js（阅读模式）与 live-preview.js（块级 widget 内嵌 HTML）共同调用。callout 渲染为 div.callout（原版 DOM 非 blockquote），标题行 softbreak 剥离且图标走 lucide- 原名（note=pencil，不走 pencil→edit-3 别名）。图片尺寸语法 `|300` / `|300x200` 由 source-text.js 解析，这里负责落成 img 的 width/height 与 .image-wrapper 结构；带尺寸的图片另外带 data-source-* 区间提示，图片右键交给 source-text.js 的 fillImageContextMenu。渲染后由 decorateReadingDom 补齐原版阅读 DOM：无序列表的 has-list-bullet/.list-bullet 圆点、任务项的 data-task/is-checked 与可点击复选框、脚注的 .footnote-link；笔记嵌块走原版 inline-embed 结构（标题 + 内容 + 右上角链接按钮），不可渲染附件走 .file-embed.mod-generic。.canvas 嵌入改走「画布嵌入」（原版 cte）：这里只放占位标记，容器与缩略图由 views/canvas-minimap.js 异步补齐；目标文件不存在时按原版落 .file-embed.mod-empty 提示。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
@@ -15,9 +15,10 @@ import { Desktop } from '../core/ipc.js';
 import { createIcon, setIcon } from '../core/icons.js';
 import { tt } from '../core/i18n.js';
 import { normalizePath, parentPathOf } from '../core/vault.js';
-import { codeLanguageName, highlightCodeBlocks } from './highlight.js';
-import { renderMathBlocks } from './math.js';
-import { renderMermaidBlocks } from './mermaid.js';
+import { codeLanguageName, highlightCodeBlocks, cancelCodeHighlight } from './highlight.js';
+import { renderMathBlocks, cancelMath } from './math.js';
+import { renderMermaidBlocks, cancelMermaidBlocks } from './mermaid.js';
+import { RENDER_ABORTED, waitForRender } from './render-cancel.js';
 export { renderMermaidBlocks } from './mermaid.js';
 import {
   escapeAttr, escapeHtml, fillImageContextMenu, installSourceOffsets, sizeAttrText,
@@ -504,56 +505,66 @@ let pendingEmbeds = [];
 // Main render entry
 // ---------------------------------------------------------------------------
 export async function renderMarkdown(app, markdown, el, sourcePath, options = {}) {
-  const md = getMarkdownIt();
-  pendingEmbeds = [];
-  const env = { app, sourcePath, depth: options.depth || 0 };
-  let html = md.render(markdown, env);
-  for (const old of el.querySelectorAll('[data-base-embed]')) old._baseEmbedCleanup?.();
-  el.innerHTML = html;
-  decorateReadingDom(el);
-  const highlighting = highlightCodeBlocks(el);
-  addCodeBlockCopyButtons(el);
-  const mathematics = renderMathBlocks(el);
-
-  // nested embeds
-  const embeds = pendingEmbeds;
-  pendingEmbeds = [];
-  for (const emb of embeds) {
-    if (emb.kind === 'base') {
-      const mount = el.querySelector(`[data-base-embed="${emb.id}"]`);
+  const signal = options.signal;
+  const cancelled = () => ({ el, cancelled: true });
+  if (signal?.aborted) return cancelled();
+  const stop = () => {
+    for (const math of el.querySelectorAll('.math')) cancelMath(math);
+    for (const code of el.querySelectorAll('pre > code')) cancelCodeHighlight(code);
+    cancelMermaidBlocks(el);
+    for (const embedded of el.querySelectorAll('[data-base-embed]')) embedded._baseEmbedCleanup?.();
+  };
+  signal?.addEventListener('abort', stop, { once: true });
+  try {
+    const md = getMarkdownIt();
+    pendingEmbeds = [];
+    const env = { app, sourcePath, depth: options.depth || 0 };
+    const html = md.render(markdown, env);
+    for (const old of el.querySelectorAll('[data-base-embed]')) old._baseEmbedCleanup?.();
+    el.innerHTML = html;
+    decorateReadingDom(el);
+    const highlighting = highlightCodeBlocks(el);
+    addCodeBlockCopyButtons(el);
+    const mathematics = renderMathBlocks(el);
+    const embeds = pendingEmbeds;
+    pendingEmbeds = [];
+    for (const emb of embeds) {
+      if (signal?.aborted) return cancelled();
+      if (emb.kind === 'base') {
+        const mount = el.querySelector(`[data-base-embed="${emb.id}"]`);
+        const file = app.vault.getFileByPath(emb.path);
+        if (mount && file) {
+          mount._baseEmbedCleanup = mountBaseEmbed(app, mount, file, { viewName: emb.viewName, sourcePath: emb.sourcePath });
+          if (await waitForRender(mount._baseEmbedCleanup.ready, signal) === RENDER_ABORTED) return cancelled();
+        }
+        continue;
+      }
+      if (emb.kind === 'canvas') {
+        if (await waitForRender(mountCanvasEmbed(app, el, emb), signal) === RENDER_ABORTED) return cancelled();
+        continue;
+      }
+      const mount = el.querySelector(`[data-embed-mount="${emb.id}"]`);
+      if (!mount) continue;
       const file = app.vault.getFileByPath(emb.path);
-      if (mount && file) { mount._baseEmbedCleanup = mountBaseEmbed(app, mount, file, { viewName: emb.viewName, sourcePath: emb.sourcePath }); await mount._baseEmbedCleanup.ready; }
-      continue;
+      if (!file) { mount.setText(''); continue; }
+      try {
+        const text = await waitForRender(app.vault.cachedRead(file), signal);
+        if (text === RENDER_ABORTED || signal?.aborted) return cancelled();
+        const body = stripFrontmatter(text);
+        await renderMarkdown(app, body, mount, file.path, { depth: emb.depth, signal });
+        if (signal?.aborted) return cancelled();
+        if (emb.subpath) scrollToSubpath(mount.parentElement || mount, emb.subpath);
+      } catch (error) { if (!signal?.aborted) console.error('embed failed', error); }
     }
-    if (emb.kind === 'canvas') {
-      await mountCanvasEmbed(app, el, emb);
-      continue;
-    }
-    const mount = el.querySelector(`[data-embed-mount="${emb.id}"]`);
-    if (!mount) continue;
-    const file = app.vault.getFileByPath(emb.path);
-    if (!file) { mount.setText(''); continue; }
-    try {
-      const text = await app.vault.cachedRead(file);
-      // strip frontmatter
-      const body = stripFrontmatter(text);
-      await renderMarkdown(app, body, mount, file.path, { depth: emb.depth });
-      if (emb.subpath) scrollToSubpath(mount.parentElement || mount, emb.subpath);
-    } catch (e) { console.error('embed failed', e); }
-  }
-
-  // block refs: remove trailing ^id
-  el.findAll('.block-ref-id').forEach((e) => e.detach());
-
-  // mermaid diagrams
-  await renderMermaidBlocks(el);
-  await highlighting;
-  await mathematics;
-
-  // annotate headings for subpath navigation
-  annotateHeadings(el);
-
-  return { el };
+    if (signal?.aborted) return cancelled();
+    el.findAll('.block-ref-id').forEach(element => element.detach());
+    if (await waitForRender(renderMermaidBlocks(el, { signal }), signal) === RENDER_ABORTED) return cancelled();
+    if (await waitForRender(highlighting, signal) === RENDER_ABORTED) return cancelled();
+    if (await waitForRender(mathematics, signal) === RENDER_ABORTED) return cancelled();
+    if (signal?.aborted) return cancelled();
+    annotateHeadings(el);
+    return { el };
+  } finally { signal?.removeEventListener('abort', stop); }
 }
 
 /**
@@ -640,8 +651,9 @@ function cssEscape(s) {
 // ---------------------------------------------------------------------------
 // Interactivity: clicks inside a rendered markdown container
 // ---------------------------------------------------------------------------
-export function attachMarkdownInteractions(app, container, getSourcePath) {
-  container.addEventListener('click', async (ev) => {
+export function attachMarkdownInteractions(app, container, getSourcePath, options = {}) {
+  const listen = (type, callback) => container.addEventListener(type, callback, options.signal ? { signal: options.signal } : undefined);
+  listen('click', async (ev) => {
     const target = ev.target;
     if (!target || !target.closest) return;
 
@@ -718,7 +730,7 @@ export function attachMarkdownInteractions(app, container, getSourcePath) {
   });
 
   // callout folding
-  container.addEventListener('click', (ev) => {
+  listen('click', (ev) => {
     const fold = ev.target.closest && ev.target.closest('.callout-title .callout-fold');
     if (fold) {
       const callout = fold.closest('.callout');
@@ -733,7 +745,7 @@ export function attachMarkdownInteractions(app, container, getSourcePath) {
   });
 
   // 原版阅读视图右键：内部链接 / 外部链接 / 图片（复制图片 + 重置大小 + 删除图片）
-  container.addEventListener('contextmenu', (ev) => {
+  listen('contextmenu', (ev) => {
     const target = ev.target;
     if (!target || !target.closest) return;
     const sourcePath = getSourcePath ? getSourcePath() : '';

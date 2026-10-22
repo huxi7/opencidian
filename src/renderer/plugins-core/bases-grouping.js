@@ -1,7 +1,7 @@
 /**
  * [INPUT]: queryBase 的有序行、视图分组配置与 propertyValue 属性读取器。
  * [OUTPUT]: 导出分组、汇总、适用汇总名称与共用值格式化函数。
- * [POS]: Bases 展示计算层。分组与汇总只消费查询结果，不改笔记或 YAML。
+ * [POS]: Bases 展示计算层。标量分组走索引，富值保留宽松相等语义；不改笔记或 YAML。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 import { propertyValue } from './bases-model.js';
@@ -16,15 +16,17 @@ export function groupRows(rows, view) {
   if (!view.groupBy) return [{ id: 'all', key: null, rows, grouped: false }];
   const { property, direction } = view.groupBy;
   if (typeof property !== 'string' || !['ASC', 'DESC'].includes(direction)) throw new Error('groupBy 需要 property 与 ASC/DESC direction');
-  const groups = new Map();
-  for (const row of rows) {
-    const key = propertyValue(row.context, property);
-    let group = [...groups.values()].find(item => baseEquals(item.key, key));
-    if (!group) { const id = identity(key) + ':' + groups.size; group = { id, key, rows: [], grouped: true }; groups.set(id, group); }
+  const groups = new Map(), keys = rows.map(row => propertyValue(row.context, property));
+  const scalar = value => value == null || ['string', 'boolean'].includes(typeof value) || typeof value === 'number' && !Number.isNaN(value);
+  const indexed = keys.every(scalar), index = new Map();
+  for (let position = 0; position < rows.length; position++) {
+    const row = rows[position], key = keys[position];
+    let group = indexed ? index.get(key) : [...groups.values()].find(item => baseEquals(item.key, key));
+    if (!group) { const id = identity(key) + ':' + groups.size; group = { id, key, rows: [], grouped: true }; groups.set(id, group); if (indexed) index.set(key, group); }
     group.rows.push(row);
   }
   if (Array.isArray(view.groupOrder)) {
-    return view.groupOrder.map(key => [...groups.values()].find(group => baseEquals(group.key, key)) || { id: identity(key), key, rows: [], grouped: true });
+    return view.groupOrder.map(key => (indexed && scalar(key) ? index.get(key) : [...groups.values()].find(group => baseEquals(group.key, key))) || { id: identity(key), key, rows: [], grouped: true });
   }
   return [...groups.values()].sort((a, b) => compareBaseValues(a.key, b.key) * (direction === 'DESC' ? -1 : 1));
 }

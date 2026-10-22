@@ -50,22 +50,36 @@ workspaces.js: 命名布局保存与恢复。尊重保存失败，统一由 Work
 slides.js: 幻灯片插件。命令 slides:start 把当前 md 交给 SlidesPresentation(views/slides-presentation.js) 全窗口演示；不注册视图类型；包装层暴露 getPresentation()。原版 file-menu 菜单项因本项目无 file-menu 来源而省略。
 audio-recorder.js: 录音机插件(id audio-recorder，默认关闭)。命令 audio-recorder:start 与 audio-recorder:stop，checkCallback 按 recording 门控；功能区按钮 lucide-mic 切换开关，录音时加 is-active。扩展名 audio/mp4 可用时用 m4a，否则 webm/opus。命名 "Recording <YYYYMMDDHHmmss>"，经 editor/attachments.js 的 saveAttachment 落盘，并向活动 Markdown 视图插入嵌入链接。权限查询降级为 Permissions API 与 getUserMedia 错误映射，原版走 macOS systemPreferences。卸载停止录音并丢弃未完成条目。
 
-bases.js: 数据库插件入口。登记扩展名、文件视图、功能区、文件夹菜单及新建与 CSV 命令。停用时对称撤销。
-bases-model.js: YAML 数据边界。四类视图共用筛选、排序和 limit，局部写回保留未知数据。
+bases.js: 数据库入口。功能区、空标签和文件夹菜单共用新建；卸载预检草稿，失败保留入口。
+bases-model.js: YAML 边界。保留未知键，四类布局共用查询；按笔记失效缓存，拒绝危险路径。
 bases-expression.js: 安全 AST 求值。算符、惰性分支与原版 Null 传播共用白名单函数。
 bases-context.js: 行与宿主上下文。结果按行缓存，公式 AST 按文档共用。
 bases-formula-functions.js: 全局和实例函数。集中验证参数、类型与回调作用域。
 bases-values.js: 日期、时长、链接与展示值。共用格式、相等、排序与真值语义。
 bases-values-file.js: 只读文件适配。路径解析回 TFile，聚合属性与引用。
-bases-values-render.js: 富值 DOM。导航经现有入口，HTML 与部分 Markdown 明确降级。
+bases-values-render.js: 富值 DOM 门面。文件/标签经受控导航，HTML/Markdown 委托净化与生命周期模块。
 bases-csv.js: CSV 导出边界。转义遵循原版；保存重读查询，取消不写盘。
-bases-view.js: 文件与嵌入控制器。隐藏阅读嵌入挂起，未知布局保留返回入口。
+bases-view.js: 数据库和嵌入共用控制器。最新文档事务与缓存、类型/文件订阅、富值释放和新建草稿共同受生命周期约束。
 bases-embed.js: Markdown 嵌入入口。隔离文件视图生命周期。
-bases-layouts.js: 表格、列表、卡片、看板布局。共用富值、分组和汇总。
-bases-grouping.js: 组相等和排序。内置汇总与自定义汇总共用公式引擎。
-bases-config.js: 视图配置弹层。按操作写对应键，保存视图选择。
-bases-kanban.js: 看板拖放。标量笔记分组经 processFrontMatter 写回。
+bases-layouts.js: 四类布局。表格编辑、列操作和行高共用值层；行与组两层窗口化，出窗释放富值。
+bases-grouping.js: 分组与汇总。标量使用 Map 索引，富值保持相等语义；自定义汇总复用公式引擎。
+bases-config.js: 视图配置。按操作写当前键，最新文档追加视图；改名选择仅由成功事务推进。
+bases-kanban.js: 看板写回。日期、链接、列表与空值复用属性边界；file.folder 移动真实文件，公式只读。
 bases-card-media.js: 卡片与看板封面。解析图片、链接、首项与颜色，统一尺寸。
-bases-styles.js: 数据库局部样式。按文档幂等安装，四类布局复用主题变量。
+bases-styles.js: 数据库样式。原版 40px 工具栏、菜单和四档行高；虚拟占位与自然高度卡片共用主题变量。
 
+bases-edit-store.js: 数据库事务。按文件共用队列，最新文档按唯一名称定位视图；主进程 CAS 冲突重算。
+bases-edit-values.js: 属性编辑边界。复用库级类型，拒绝过时值与坏 YAML；文件夹移动委托 FileManager。
+bases-edit-cells.js: 单元格与列操作。编辑、保存、取消、列宽与列序共用控制器事务，释放全局拖动监听。
+bases-edit-groups.js: 空组创建。按真实属性类型转换组值，保留组序，不伪造笔记行。
+bases-edit-suggest.js: 属性候选。真实值、标签、文件、别名、标题、块和目录支持键盘与指针选择。
+bases-ui.js: 工具栏装配。视图、计数、排序、分组、筛选、属性、搜索与新建共用控制器。
+bases-ui-filters.js: 可视筛选树。嵌套 and/or/not 与公式共用 YAML 边界；库级类型决定数值/布尔标量。
+bases-ui-formula.js: 公式编辑。CodeMirror 补全、高亮、括号、历史和错误状态随浮层释放。
+bases-ui-functions.js: 原版公式签名和文案事实。78 个说明键提供补全和当前参数帮助，无原版运行依赖。
+bases-ui-new-item.js: 立即创建真实笔记与锚定编辑器。推导筛选/分组/模板属性；CAS 失败保草稿，销毁前真实另存。
+bases-ui-group-window.js: 组层窗口化。测量纵向组与横向看板列，旧组销毁子虚拟器及富值。
+bases-virtual.js: 行与网格窗口化。同范围复用 DOM，可变高度测量保留底部锚点，关闭释放观察器。
+bases-rich-render.js: HTML/Markdown 派生内容。独立 DOMPurify 净化；复用阅读器，派生任务只读。
+bases-rich-lifecycle.js: 富值资源所有权。弱引用观察器和 AbortSignal 取消迟到渲染，虚拟出窗及关闭释放子嵌入。
 [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md

@@ -1,8 +1,8 @@
 /**
  * [INPUT]: 依赖 DOM 与 /assets/mathjax/ 的官方 3.2.2 构建。
- * [OUTPUT]: 导出异步 renderMath、renderMathBlocks。
+ * [OUTPUT]: 导出异步 renderMath、renderMathBlocks 与 cancelMath；取消后清空宿主弱引用。
  * [POS]: markdown/ 的公共数学适配器。阅读器与编辑器共用。
- * 每个文档只初始化一次；公式串行转换，失败仅回退当前节点。
+ * 每个文档只初始化一次；公式串行转换，失败仅回退当前节点。任务持有弱引用，取消清空目标和源文。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 
@@ -143,7 +143,7 @@ export async function renderMath(element, tex, display = false) {
     return previous.promise;
   }
 
-  const job = { source, block, pending: true, node: null, promise: null };
+  const job = { source, block, pending: true, node: null, promise: null, target: new WeakRef(element) };
   renders.set(element, job);
   element.dataset.math = source;
   element.classList.add('math');
@@ -156,13 +156,14 @@ export async function renderMath(element, tex, display = false) {
   const state = getRuntime(document);
   job.promise = state.ready.then(() => {
     const conversion = state.queue.then(() => {
-      if (renders.get(element) !== job) return false;
-      const node = state.mathjax.tex2chtml(source, { display: block });
+      const target = job.target?.deref();
+      if (!target || renders.get(target) !== job) return false;
+      const node = state.mathjax.tex2chtml(job.source, { display: job.block });
       if (!node || node.querySelector('mjx-merror, [data-mjx-error]')) {
         throw new Error('MathJax could not render this formula');
       }
       updateStylesheet(document, state);
-      element.replaceChildren(node);
+      target.replaceChildren(node);
       job.node = node;
       return true;
     });
@@ -170,13 +171,22 @@ export async function renderMath(element, tex, display = false) {
     state.queue = conversion.catch(() => {});
     return conversion;
   }).catch(() => {
-    if (renders.get(element) === job) {
-      element.textContent = source;
-      element.classList.add('math-error');
+    const target = job.target?.deref();
+    if (target && renders.get(target) === job) {
+      target.textContent = job.source;
+      target.classList.add('math-error');
     }
     return false;
   }).finally(() => { job.pending = false; });
   return job.promise;
+}
+
+/** 取消当前宿主的转换，保留供其他宿主共用的 MathJax 初始化。 */
+export function cancelMath(element) {
+  const job = renders.get(element);
+  if (!job) return;
+  renders.delete(element);
+  job.target = null; job.node = null; job.source = '';
 }
 
 /**
@@ -187,6 +197,7 @@ export async function renderMathBlocks(root) {
   if (!root?.querySelectorAll) return [];
   const elements = [...root.querySelectorAll(SOURCE_SELECTOR)];
   if (root.matches?.(SOURCE_SELECTOR)) elements.unshift(root);
-  return Promise.all(elements.map((element) =>
-    renderMath(element, element.dataset.math, element.classList.contains('math-block'))));
+  const promises = elements.map(element => renderMath(element, element.dataset.math, element.classList.contains('math-block')));
+  elements.length = 0; root = null;
+  return Promise.all(promises);
 }

@@ -70,7 +70,7 @@
   controller.viewName = 'Future'; controller.render();
   check(view.contentEl.textContent.includes('尚不支持的视图类型'), '未知视图明确显示降级');
   check(!view.contentEl.querySelector('table'), '未知视图不伪装成表格');
-  check(!view.contentEl.querySelector('button,input'), '未知视图不显示不受支持的配置控件');
+  check(!view.contentEl.querySelector('.bases-toolbar-sort-menu,.bases-toolbar-group-menu,.bases-toolbar-filter-menu,.bases-toolbar-properties-menu,.bases-toolbar-search,.bases-toolbar-new-item-menu,input'), '未知视图不显示不受支持的配置控件');
   controller.viewName = 'Tasks'; controller.render();
   await controller.patch(['filters'], 'file.nonexistentCapability("x")');
   check(controller.result.rows.length === 0, '未知筛选函数不返回假匹配结果');

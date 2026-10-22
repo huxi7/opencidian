@@ -672,4 +672,19 @@ Node 保存 27、Workspace VM 26 通过；build + window-save-race31/editor-race
 L3/L2同步；源码与脚本均≤800行。上述为开发分段回归，不混入最终完整覆盖组。
 
 最终只读审查补修两处丢稿边界：冲突恢复读盘后复核文件、草稿和请求序号；布局在隔离树完成校验与反序列化后才关闭原树。Node32、VM29、真实双窗35条通过；首轮 gj6Z7q。最后布局专项与完整覆盖的最新回执见末节。
+
 最终布局专项：full.sh --only document-window,layout-split,layout-modals --output /tmp/opensidian-layout-final-1023，3场景4次136条全通过；保存一致性重跑35条 x2fpUA，/tmp/opensidian-save-review-final-e2e.log。Node /tmp/opensidian-save-review-node.json，VM /tmp/opensidian-save-review-vm.log。
+
+## Bases P0–P3：编辑、工具栏与万行布局（2026-10-23）
+
+文件边界：plugins-core/bases-view/model 与 bases-edit-* 承接最新磁盘事务和属性编辑；bases-ui* 承接工具栏、筛选、公式帮助与就地新建；bases-virtual 和 bases-ui-group-window 分别约束行和组的挂载量。bases-values-render/rich-render/rich-lifecycle 与 markdown/reading/math/mermaid/render-cancel 共用完整阅读管线及可取消资源所有权。DOMPurify 3.4.17 登记为直接依赖，lock 根版本同步 1.14.4。
+原版静态对照见 _analysis/bases-114/EDITING-FACTS.md、UI-FACTS.md、RENDER-FACTS.md：40px 工具栏八组入口、立即排序、立即真实新建、模板只复制属性、78 个公式说明键及参数帮助、四档表格行高和块级富值净化。没有启动原版或做像素对照。
+
+- 配置以唯一视图名定位，主进程 CAS 冲突重读重算，最多8次；重复/删除/外部改名明确拒写。单元格双击/Enter/F2，取消、类型输入和真实候选闭环；日期不操作不改文本。列宽/列序、新组、日期/链接/列表/空值看板与 file.folder 移动真实落盘。
+- 新建立即创建笔记并开锚定编辑器，推导筛选/分组/模板属性。CAS 失败保留输入；关闭、换视图与停用尊重失败。强制回收须先真实另存草稿并读回核对，保存失败不撤销入口。
+- 四类布局按行与组两层虚拟化；同范围保留 DOM，出窗明确释放富值。万笔记开发测量：打开417ms、重绘7ms、滚动27ms、单文件更新120ms、表格35行；万组四布局只挂4–8组，真实滚动到末组。性能只代表本机预算。
+- HTML 插入前净化，iframe 空 sandbox；Markdown 支持块、嵌入、数学与图表，派生任务只读。取消挂起读取/数学后立即结算，迟到结果不复活旧 DOM；虚拟出窗、重绘和控制器关闭都释放资源。
+- 开发分段证据：editing86、Node52；new-item36；views125；perf98；values32；bases55；rich-render30；rich-lifecycle32。日志见 /tmp/opensidian-bases-editing-final-lifecycle.log、opensidian-bases-new-cas-final.log、opensidian-bases-cas-grid-regression.log、opensidian-rich-lifecycle-complete.log。各数字不冒充同一次连续执行；最新完整覆盖及补跑取末节回执。
+- 边界：派生对象/公式/其它文件字段只读；超预算表达式明确拒绝；特殊 YAML 排版保留能力有限。静态、真实事件与写盘对齐不等于截图像素 1:1。
+
+末次 UI 审查补修：拒写改名不改变选择；新增数值/布尔筛选按库级类型生成字面量，无效数字不写盘。build 后 UI68、views125、new-item36 共229条通过，/tmp/opensidian-bases-last-two-fixes.jsonl；真实主进程 IO/CAS 拒写仍保留磁盘与原选择。

@@ -1,7 +1,8 @@
 /**
- * [INPUT]: View 生命周期、BaseDocument/queryBase、布局渲染器与视图配置弹层。
- * [OUTPUT]: 导出 BasesView、mountBaseEmbed 与插件启停同步函数；嵌入返回释放订阅的函数。
- * [POS]: Bases 文件与嵌入共用控制器。持有视图选择、组折叠与数据订阅。未知布局保留返回已支持视图的入口。
+ * [INPUT]: View 生命周期、增量 queryBase、布局渲染器、工具栏、配置与新建浮层。
+ * [OUTPUT]: 导出 BasesView、mountBaseEmbed 与可拒绝停用的插件同步函数。
+ * save/setState/onClose 传播草稿保存失败；嵌入返回订阅释放函数。
+ * [POS]: Bases 文件与嵌入共用控制器。持有视图选择、组折叠、行缓存与数据订阅；配置写入按最新文档和唯一视图名称定位。未知布局保留返回已支持视图的入口。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 import { tt } from '../core/i18n.js';
@@ -10,17 +11,29 @@ import { BaseDocument, queryBase } from './bases-model.js';
 import { installBasesStyles } from './bases-styles.js';
 import { BASE_LAYOUTS, renderBaseLayout, appendBaseElement as el } from './bases-layouts.js';
 import { openBasesConfig } from './bases-config.js';
+import { transactBaseDocument, resolveBaseView } from './bases-edit-store.js';
+import { disposeBaseRichController } from './bases-rich-lifecycle.js';
+import { closeBaseNewItem } from './bases-ui-new-item.js';
+import { disposeBaseEditing } from './bases-edit-cells.js';
+import { renderBasesToolbar, applyBaseSearch, openBasesFilters, disposeBasesUI } from './bases-ui.js';
 
 const controllers = new Set();
 export function setBasesEnabled(app, enabled) {
-  for (const controller of controllers) if (controller.app === app) controller.setEnabled(enabled);
+  const owned = [...controllers].filter(controller => controller.app === app);
+  if (enabled) { for (const controller of owned) controller.setEnabled(true); return true; }
+  return (async () => {
+    // 所有控制器先证明草稿已保存，再一起停订阅。失败时保留插件和浮层。
+    for (const controller of owned) if (!await closeBaseNewItem(controller, { preserveOnFailure: true })) return false;
+    for (const controller of owned) controller.setEnabled(false);
+    return true;
+  })();
 }
 
 export class BasesController {
   constructor(app, container, file, options = {}) {
     this.app = app; this.container = container; this.file = file; this.viewName = options.viewName || '';
     this.sourceFile = options.sourceFile || app.vault.getFileByPath(options.sourcePath || '') || file;
-    this.onViewChange = options.onViewChange; this.folded = new Set();
+    this.onViewChange = options.onViewChange; this.folded = new Set(); this.virtualizers = new Set(); this.queryCache = { dirty: new Set() };
     this.document = null; this.refs = []; this.closed = false; this.sequence = 0; this.queue = Promise.resolve();
     installBasesStyles(container.ownerDocument);
     container.classList.add('bases-embed');
@@ -28,14 +41,25 @@ export class BasesController {
     this.setEnabled(app.plugins.getInternalPlugin('bases')?.enabled !== false);
   }
   setEnabled(enabled) {
-    if (this.closed) return;
+    if (this.closed) return true;
+    if ((!enabled || this.suspended) && this._basesNewItem) return closeBaseNewItem(this, { preserveOnFailure: true }).then(saved => saved ? this.setEnabled(enabled) : false);
     const active = enabled && !this.suspended;
+    if (active) this.queryCache.document = null;
     for (const ref of this.refs) ref.unregister?.(); this.refs = [];
+    this.typeRef?.unregister(); this.typeRef = null;
     clearTimeout(this.timer); ++this.sequence; this.enabled = active;
-    if (!active) { this.container.replaceChildren(); if (!enabled) this.warning('数据库核心插件已停用'); this.ready = Promise.resolve(); return; }
-    const schedule = () => { clearTimeout(this.timer); this.timer = setTimeout(() => this.refresh(), 70); };
+    if (!active) { this.disposeRender(); this.queryCache.entries?.clear(); this.queryCache.document = null; this.result = null; this.container.replaceChildren(); if (!enabled) this.warning('数据库核心插件已停用'); this.ready = Promise.resolve(); return; }
+    const schedule = file => {
+      if (file?.path) this.queryCache.dirty.add(file.path); else this.queryCache.document = null;
+      clearTimeout(this.timer); this.timer = setTimeout(() => this.refresh(), 70);
+    };
     for (const event of ['create', 'modify', 'delete', 'rename']) this.refs.push(this.app.vault.on(event, schedule));
     this.refs.push(this.app.metadataCache.on('changed', schedule));
+    this.typeRef = this.app.workspace.on('properties-type-change', () => {
+      const editing = !!this.container.querySelector('.bases-cell-editor');
+      this.queryCache.document = null; this.render();
+      if (editing) this.warning('属性类型已变化，请重新编辑。');
+    });
     this.ready = this.refresh();
   }
   setSuspended(suspended) {
@@ -44,99 +68,105 @@ export class BasesController {
     this.setEnabled(this.app.plugins.getInternalPlugin('bases')?.enabled !== false);
   }
   async refresh() {
+    if (this.container.querySelector('.bases-cell-editor:not(:disabled)')) { this.pendingEditRefresh = true; return; }
+    this.pendingEditRefresh = false;
     const sequence = ++this.sequence;
     try {
       const source = await this.app.vault.cachedRead(this.file);
       if (this.closed || !this.enabled || sequence !== this.sequence) return;
-      this.document = new BaseDocument(source); this.render();
+      if (this.document?.source !== source) this.document = new BaseDocument(source);
+      if (!this.viewName) this.viewName = this.document.getView()?.name || '';
+      this.render();
     } catch (error) { if (!this.closed && sequence === this.sequence) { this.container.replaceChildren(); this.warning('无法读取数据库：' + error.message); } }
   }
   warning(text) { return el(this.container, 'div', 'bases-warning', text); }
   get view() { return this.document?.getView(this.viewName); }
-  patch(path, value) {
-    // 多窗口与外部编辑均以最新磁盘为起点，避免旧视图覆盖未知配置。
-    this.queue = this.queue.catch(() => {}).then(async () => {
-      if (this.closed || !this.enabled) return;
-      const current = new BaseDocument(await this.app.vault.read(this.file));
-      if (this.closed || !this.enabled) return;
-      const next = current.patch(path, value);
-      await this.app.vault.modify(this.file, next.source);
-      if (this.closed || !this.enabled) return;
-      this.document = next; this.render();
+  patch(path, value) { return this.transact(current => current.patch(path, value)); }
+  transact(action, onSaved = null) {
+    const operation = transactBaseDocument(this.app, this.file, current => {
+      if (this.closed || !this.enabled) return current;
+      return action(current);
+    }, onSaved);
+    this.queue = operation.then(next => {
+      if (!this.closed && this.enabled) { this.document = next; this.render(); }
+      return next;
     }).catch(error => { if (!this.closed) this.warning('保存失败：' + error.message); });
     return this.queue;
   }
+  viewIdentity() {
+    const view = this.view;
+    if (!view) throw Error('视图不存在。');
+    if (!this.editIdentity || this.editIdentity.name !== view.name) this.editIdentity = { name: view.name };
+    return this.editIdentity;
+  }
+  updateView(update) {
+    const identity = this.viewIdentity(); let renamed = identity.name;
+    return this.transact(current => {
+      const { view, index } = resolveBaseView(current, identity);
+      const result = update(current, view, index);
+      renamed = result.data.views[index]?.name;
+      return result;
+    }, () => {
+      if (renamed !== identity.name) {
+        const selected = this.viewName === identity.name; identity.name = renamed;
+        if (selected) { this.viewName = renamed; this.onViewChange?.(); }
+      }
+    });
+  }
   patchView(key, value) {
-    const index = this.document.data.views.indexOf(this.view);
-    return this.patch(['views', index, key], value);
+    return this.updateView((current, view, index) => {
+      if (key === 'name' && current.data.views.some((item, position) => position !== index && item.name === value)) throw Error('视图名称已存在。');
+      return current.patch(['views', index, key], value);
+    });
+  }
+  patchViewKey(key, property, value) {
+    return this.updateView((current, view, index) => {
+      const next = { ...(view[key] || {}) };
+      if (value == null) delete next[property]; else next[property] = value;
+      return current.patch(['views', index, key], next);
+    });
+  }
+  reorderColumn(from, to) {
+    return this.updateView((current, view, index) => {
+      const order = [...(view.order || ['file.name'])], source = order.indexOf(from), target = order.indexOf(to);
+      if (source < 0 || target < 0) throw Error('列已变化，请重新拖动。');
+      order.splice(source, 1); order.splice(target, 0, from);
+      return current.patch(['views', index, 'order'], order);
+    });
   }
   switchView(name) {
     if (!this.document?.getView(name)) return;
     this.viewName = name; this.folded.clear(); this.render(); this.onViewChange?.();
   }
-  closeConfig() { this.container.querySelector('.bases-config-menu')?.remove(); }
+  closeConfig() { disposeBasesUI(this); this.container.querySelector('.bases-config-menu')?.remove(); }
   openConfig() { return openBasesConfig(this); }
+  disposeRender() {
+    disposeBaseEditing(this); disposeBasesUI(this); disposeBaseRichController(this);
+    for (const handle of this.virtualizers) handle.destroy(); this.virtualizers.clear();
+  }
   render() {
     if (this.closed || !this.enabled || !this.document) return;
+    this.disposeRender();
     const root = this.container; root.replaceChildren();
     const view = this.view;
     if (!view) { this.warning(this.viewName ? '找不到视图：' + this.viewName : '未定义视图'); return; }
-    if (!Object.hasOwn(BASE_LAYOUTS, view.type)) {
-      this.renderViewSwitcher(el(root, 'div', 'bases-header'), view);
-      this.result = queryBase(this.app, this.document, view, this.sourceFile);
-      for (const warning of this.result.warnings) this.warning(warning);
-      return;
-    }
-    const header = el(root, 'div', 'bases-header');
-    this.renderViewSwitcher(header, view);
-    const configure = el(header, 'button', 'bases-config-button', tt('plugins.bases.label-configure-view', '配置视图'));
-    configure.type = 'button'; configure.addEventListener('click', () => this.openConfig());
-    const filter = el(header, 'button', 'bases-filter-button', '筛选');
-    filter.type = 'button'; filter.addEventListener('click', () => this.openFilters(header));
-    const limitLabel = el(header, 'label', 'bases-limit', '结果上限 ');
-    const limit = el(limitLabel, 'input'); limit.type = 'number'; limit.min = '0'; limit.placeholder = '不限';
-    limit.value = view.limit > 0 ? String(view.limit) : ''; limit.setAttribute('aria-label', '结果上限');
-    limit.addEventListener('change', () => {
-      const value = limit.value === '' ? 0 : Number(limit.value);
-      if (!Number.isInteger(value) || value < 0) { limit.setCustomValidity('请输入非负整数'); limit.value = String(view.limit || ''); return; }
-      this.patchView('limit', value);
-    });
-    try { this.result = queryBase(this.app, this.document, view, this.sourceFile); }
+    const unknown = !Object.hasOwn(BASE_LAYOUTS, view.type);
+    try { this.result = applyBaseSearch(this, queryBase(this.app, this.document, view, this.sourceFile, this.queryCache)); }
     catch (error) { this.warning('无法计算数据库：' + error.message); return; }
+    renderBasesToolbar(this, el(root, 'div', 'bases-header'), { unknown });
     for (const warning of this.result.warnings) this.warning(warning);
-    renderBaseLayout(this);
-    el(root, 'div', 'bases-results-count', '显示 ' + this.result.rows.length + (this.result.total > this.result.rows.length ? ' / ' + this.result.total : '') + ' 条结果');
+    if (!unknown) renderBaseLayout(this);
   }
-  renderViewSwitcher(header, view) {
-    const switcher = el(header, 'select', 'bases-view-switcher'); switcher.setAttribute('aria-label', tt('plugins.bases.command-change-view', '切换视图'));
-    for (const item of this.document.data.views) {
-      const option = el(switcher, 'option', '', item.name); option.value = item.name;
-    }
-    switcher.value = view.name; switcher.addEventListener('change', () => this.switchView(switcher.value));
-  }
-  openFilters(header) {
-    const existing = this.container.querySelector('.bases-filter-editor');
-    if (existing) { existing.remove(); return; }
-    const panel = document.createElement('div'); panel.className = 'bases-filter-editor'; header.after(panel);
-    el(panel, 'label', '', '全局筛选（YAML：字符串或 and / or / not）');
-    const textarea = el(panel, 'textarea'); textarea.setAttribute('aria-label', '全局筛选');
-    const yaml = require('js-yaml');
-    textarea.value = this.document.data.filters === undefined ? '' : yaml.dump(this.document.data.filters, { lineWidth: -1 }).trimEnd();
-    const message = el(panel, 'div', 'bases-filter-error');
-    const apply = el(panel, 'button', '', '应用'); apply.type = 'button';
-    apply.addEventListener('click', () => {
-      try {
-        const value = textarea.value.trim() ? yaml.load(textarea.value) : null;
-        // 保存前验证，不把错误筛选写回文件。
-        new BaseDocument(yaml.dump({ ...this.document.data, filters: value }));
-        this.patch(['filters'], value);
-      } catch (error) { message.textContent = error.message; }
-    });
-  }
+  openFilters(header) { return openBasesFilters(this, header?.querySelector?.('.bases-filter-button')); }
   destroy() {
+    if (this.closed) return true;
+    if (this._basesNewItem) return closeBaseNewItem(this, { preserveOnFailure: true }).then(saved => saved ? this.destroy() : false);
+    this.disposeRender();
     this.closed = true; controllers.delete(this); ++this.sequence; clearTimeout(this.timer);
+    this.typeRef?.unregister(); this.typeRef = null;
     for (const ref of this.refs) ref.unregister?.(); this.refs = [];
-    this.container.replaceChildren();
+    this.queryCache.entries?.clear(); this.queryCache.document = null; this.result = null; this.document = null; this.onViewChange = null;
+    this.container.replaceChildren(); return true;
   }
 }
 export function mountBaseEmbed(app, container, file, options = {}) {
@@ -165,9 +195,11 @@ export class BasesView extends View {
   getState() { return { file: this.file?.path, viewName: this.controller?.viewName || '' }; }
   async onOpen() {}
   async setState(state) {
-    this.controller?.destroy(); this.controller = null;
+    if (this.controller && !await closeBaseNewItem(this.controller)) return false;
+    if (this.controller && await this.controller.destroy() === false) return false; this.controller = null;
     this.file = this.app.vault.getFileByPath(state?.file || '');
     if (this.file) { this.controller = new BasesController(this.app, this.contentEl, this.file, { viewName: state.viewName, onViewChange: () => this.app.saveLayout?.() }); await this.controller.ready; }
   }
-  async onClose() { this.controller?.destroy(); this.controller = null; }
+  async save() { if (this.controller?._basesNewItem && !await this.controller._basesNewItem.flush()) return false; await this.controller?.queue; return true; }
+  async onClose() { if (this.controller && !await closeBaseNewItem(this.controller)) return false; if (this.controller && await this.controller.destroy() === false) return false; this.controller = null; return true; }
 }
