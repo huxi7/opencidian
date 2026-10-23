@@ -1,7 +1,7 @@
 /**
  * [INPUT]: 隔离临时库、真实 Electron、backlink 设置页与原生窗口状态 IPC。
  * [OUTPUT]: 返回 {pass, count, checks}，失败抛出具体断言。
- * [POS]: 1.14.4 小缺口验收。锁定底部反链、库根 CSS 热更新、默认应用通道与 vibrancy。
+ * [POS]: 1.14.4 小缺口验收。锁定底部反链、库根 CSS 热更新、文件菜单默认应用通道与 vibrancy。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 (async () => {
@@ -103,26 +103,26 @@
   app.setting.close();
   app.workspace.setActiveLeaf(leaf, { focus: false });
   view._fillViewActions();
-  const button = leaf._viewActionsEl.querySelector('.mod-open-default-app');
-  check(!!button, '视图头提供默认应用打开动作');
+  check(!leaf._viewActionsEl.querySelector('.mod-open-default-app'), '视图头不添加默认应用打开动作');
   const sent = [], send = ipcRenderer.send;
   ipcRenderer.send = function(channel, ...args) { if (channel === 'open-path') sent.push(args[0]); else return send.call(this, channel, ...args); };
   try {
-    button.click();
-    check(sent[0] === path.join(base, target.path), '视图头默认打开走受保护 open-path 通道');
     const menu = app.workspace.buildLinkMenu();
     app.workspace.trigger('file-menu', menu, target, 'file-explorer', leaf);
     const item = menu.items.find((i) => /使用默认应用打开|Open in default app/.test(i.title));
     check(!!item, '文件菜单提供默认应用动作');
     item.callback();
-    check(sent[1] === path.join(base, target.path), '文件菜单默认打开同一路径通道');
+    check(sent[0] === path.join(base, target.path), '文件菜单默认打开同一路径通道');
     for (const [name, source] of [['Default App.canvas', '{"nodes":[],"edges":[]}'], ['Default App.base', 'views:\n  - type: table\n    name: Table\n']]) {
       const file = await app.vault.create(name, source);
       const fileLeaf = await app.workspace.openFile(file, { newLeaf: 'tab' });
-      const action = fileLeaf._viewActionsEl.querySelector('.mod-open-default-app');
-      check(!!action, name + ' 文件视图头共用默认应用动作');
-      action.click();
-      check(sent.at(-1) === path.join(base, name), name + ' 文件视图头传入对应绝对路径');
+      check(!fileLeaf._viewActionsEl.querySelector('.mod-open-default-app'), name + ' 文件视图头不添加默认应用动作');
+      const fileMenu = app.workspace.buildLinkMenu();
+      app.workspace.trigger('file-menu', fileMenu, file, 'file-explorer', fileLeaf);
+      const action = fileMenu.items.find((item) => /使用默认应用打开|Open in default app/.test(item.title));
+      check(!!action, name + ' 文件菜单保留默认应用动作');
+      action.callback();
+      check(sent.at(-1) === path.join(base, name), name + ' 文件菜单传入对应绝对路径');
       await fileLeaf.detach();
     }
   } finally { ipcRenderer.send = send; }

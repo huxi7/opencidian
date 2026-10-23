@@ -2,7 +2,7 @@
  * [INPUT]: 依赖 ./canvas-interactions.js 的 CanvasInteractions（类链基类）；依赖 ../core/i18n.js 的 t；依赖 ../core/icons.js 的 setIcon；依赖 ../core/notices.js 的 Notice；依赖 ../core/ipc.js 的 Desktop；依赖 ../core/keymap.js 的 IS_MAC；
  *          依赖 ./canvas-utils.js 的 genId、boxesIntersect、expandBBox、nearestSide、distanceToBox、rectOf、MultiMap；
  *          依赖 ./canvas-node.js 的 CanvasNode/CanvasDummyNode；依赖 ./canvas-text-node.js 的 CanvasTextNode；依赖 ./canvas-link-node.js 的 CanvasLinkNode；依赖 ./canvas-group-node.js 的 CanvasGroupNode；依赖 ./canvas-file-node.js 的 CanvasFileNode；依赖 ./canvas-edge.js 的 CanvasEdge；
- *          依赖 ./canvas-menu.js 的 FileSuggestModal/LinkSuggestModal/JumpToGroupModal/installCanvasViewActions；
+ *          依赖 ./canvas-menu.js 的 FileSuggestModal/LinkSuggestModal/JumpToGroupModal/installCanvasViewActions/showCanvasPaneMenu；
  *          依赖 ./canvas-controls.js 的 buildCardMenu/buildControls（建卡菜单与控件组的 DOM 构建）；依赖 ./canvas-arrange.js 的 buildCanvasMenu（选择浮动工具条与多选包围盒）；依赖 ./canvas-export.js 的 renderCanvasImage/exportCanvasImage；
  *          依赖 ./canvas-clipboard.js 的 handleCanvasCopy/handleCanvasCut/handleCanvasPaste；依赖 ./canvas-drop.js 的 installCanvasDrop；
  *          依赖 ./canvas-options.js 的 loadCanvasOptions/saveCanvasOptions（.obsidian/canvas.json，与白板设定页共用同一份选项）
@@ -52,7 +52,7 @@ import { CanvasFileNode } from './canvas-file-node.js';
 import { loadCanvasOptions, saveCanvasOptions } from './canvas-options.js';
 import { loadCanvasLocalData, saveCanvasLocalData, migrateCanvasLocalData, dropCanvasLocalData } from './canvas-local-data.js';
 import { CanvasEdge } from './canvas-edge.js';
-import { FileSuggestModal, LinkSuggestModal, JumpToGroupModal, installCanvasViewActions } from './canvas-menu.js';
+import { FileSuggestModal, LinkSuggestModal, JumpToGroupModal, installCanvasViewActions, showCanvasPaneMenu } from './canvas-menu.js';
 import { buildCardMenu, buildControls } from './canvas-controls.js';
 import { buildCanvasMenu } from './canvas-arrange.js';
 import { renderCanvasImage, exportCanvasImage } from './canvas-export.js';
@@ -746,6 +746,7 @@ export class CanvasView extends CanvasInteractions {
 
   /** 视图头部「更多选项」按钮（原版 pane menu：导出图片）。 */
   _fillViewActions(actions) { installCanvasViewActions(this, actions); }
+  onPaneMenu(menu, source) { super.onPaneMenu(menu, source); showCanvasPaneMenu(this, menu); }
 
   /** 可测试的渲染入口：返回 { dataURL, width, height, scale }，空画布返回 null。 */
   renderCanvasImage(opts) { return renderCanvasImage(this, opts); }

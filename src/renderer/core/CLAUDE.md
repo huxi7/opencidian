@@ -26,7 +26,7 @@ modals.js: 可复开的 Modal 基座与确认、输入弹窗。确认先结算�
 menu.js: Menu/MenuItem。按偏好选择系统菜单或主题 DOM 菜单；上下文菜单、子菜单与键盘导航共用动作树；分节语义对齐 1.14.4：addSections/setSectionSubmenu/sort（显式声明分节表才排序，相邻节插分隔线，items 包 .menu-group）；setParentElement 在打开期间标记触发元素（has-active-menu）；选中项/Enter/Esc 经 _closeRoot 关闭整条菜单链。子菜单 DOM 不在父菜单内：document mousedown 归属沿 parentMenu 链判断，真实鼠标点按子菜单项不得先关父菜单。
 file-menu.js: 文件菜单补全层。文件可在同库独立窗口打开。app 级 file-menu/files-menu 监听：复制路径▸（Obsidian URL/基于库的相对路径/绝对路径）、默认应用打开/在访达中显示、移动到…（复用 file-explorer-multi 的移动弹窗）。
 suggest.js: 文件与命令建议。输入位于结果前，选择结果与取消关闭分开结算。输入容器带 .search-input-clear-button(非空清空并触发 input，空则关闭)。键盘：上下、PageUp/PageDown(按实测行高整页跳跃)、Home/End、Enter/auxclick、macOS Ctrl+p/n；isComposing 抑制。空态文案 emptyStateText（默认 'No results found.'，子类覆盖），空查询可用 noRecentFilesText 单独文案。
-view.js: View 基类(load/onOpen/onClose/getState/setState/_rootEl 契约) + ViewRegistry。
+view.js: 视图生命周期与扩展名注册；文件面板动作委托 view-pane-menu，宿主保留状态和渲染根。
 workspace-tab-move.js: 标签组搬移层。moveLeafToTabs 搬既有叶子与 DOM（同组重排/跨组移动都不重开视图），源组搬空交 _removeTabsNode 收敛；createTabsBySplit 只建目标分割与空标签组。
 workspace-serialize.js: 保存有限正 dimension 比例，根侧栏独立保存 size。布局序列化层。serializeNode/getLayout 递归经 workspace.serializeNode，保留 installStackedSerialization 对 tabs 的 stacked 键装饰。
 tab-animation.js: 标签开合动画层。animateTabIn 测量自然宽后从 0 宽/透明展开；animateTabOut 在旧位置留克隆收窄淡出后摘除；时长 200ms ease-in-out（原版 updateTabDisplay）。只做视觉，不改模型顺序。
@@ -49,7 +49,6 @@ workspace-file-view.js: 文件视图分派。Markdown 读取编辑偏好，插�
 
 custom-css.js: 库根 obsidian.css 兼容层。按开关注入，监听创建、修改和删除。
 
-file-view-actions.js: 文件视图共用默认应用动作。非文件视图隐藏入口。
 
 
 document-window.js: 文档转移协调器。先保存并等待新窗口就绪，失败保留原标签；支持打开副本与移动。
@@ -59,6 +58,8 @@ window-save.js: 文档保存协议。Markdown/Canvas 使用 CAS；窗口关闭�
 
 window-save-conflict.js: 保存冲突恢复。读盘后复核文件与草稿；确认载入磁盘，副本成功后才解除原草稿。
 workspace-close.js: 叶子关闭事务。布局先隔离校验和反序列化；同步视图同步关闭，异步等待，失败保留原树。
+view-pane-menu.js: 共用原生动作按钮、竖三点及 onPaneMenu/file-menu/leaf-menu 链；文件菜单保留原版系统项。
 workspace-resize.js: 根侧栏只改自身宽度，内部按轴拖动并保存比例；取消或重建释放全局监听。
 workspace-sidebar-transition.js: 每侧独立收展事务。锁内容宽度，同侧反向与 DOM 重建结算最新目标态。
+
 [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md

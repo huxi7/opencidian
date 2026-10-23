@@ -3,7 +3,7 @@
  * [OUTPUT]: 返回视图头结构/行为断言；失败抛出异常，供运行器判定。
  * [POS]: view-header 场景。按原版 1.14.4 钉住：left 导航钮（空视图也有）、面包屑分段与 :empty 隐藏、
  *        mod-fade 渐隐条件、聚焦底色与 mod-active、标题居中与省略；末尾验证 ← → 的可用性与回退行为，
- *        并锁住标签无过渡、关闭钮几何与 clickable-icon 图标 140ms。
+ *        并锁住标签无过渡、关闭钮几何与 clickable-icon 图标 140ms；Mod 点击创建右侧叶子并反转目标模式。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 (async()=>{
@@ -72,16 +72,16 @@ await app.vault.createFolder('VH-Probe/A/B');
 const deep=await app.vault.create('VH-Probe/A/B/Deep Note.md','# 深\n');
 const deepLeaf=await ws.openFile(deep);
 await wait(240);
-const header=headerOf(deepLeaf);
+let header=headerOf(deepLeaf);
 check(!!header,'活动叶有 view-header');
 const kids=[...header.children].map((el)=>String(el.className).split(' ')[0]);
 check(kids.join('|')==='view-header-left|view-header-title-container|view-actions',
   'view-header 子块顺序=left/title-container/actions :: '+kids.join('|'));
 check(getComputedStyle(header).flexShrink==='1','view-header flex-shrink=1（原版 flex:0 1 auto，阅读区满高时缩到 38px）');
 check(!!header.querySelector(':scope > .view-header-left > .view-header-nav-buttons'),'left 内含 view-header-nav-buttons');
-const container=header.querySelector(':scope > .view-header-title-container');
-const parentEl=container.querySelector(':scope > .view-header-title-parent');
-const titleEl=container.querySelector(':scope > .view-header-title');
+let container=header.querySelector(':scope > .view-header-title-container');
+let parentEl=container.querySelector(':scope > .view-header-title-parent');
+let titleEl=container.querySelector(':scope > .view-header-title');
 check(!!container&&!!parentEl&&!!titleEl,'title-container / title-parent / title 三层齐全');
 check(parentEl.nextElementSibling===titleEl,'面包屑在标题之前（DOM 相邻）');
 check(titleEl.textContent==='Deep Note','标题取 getDisplayText=文件名 basename');
@@ -114,14 +114,23 @@ await wait(320);
 check(deepLeaf.view.mode==='live','头部模式钮切回编辑视图');
 check(modeIcon(modeBtnNow()).includes('lucide-book-open'),'切回编辑视图后图标换回 lucide-book-open :: '+modeIcon(modeBtnNow()));
 check((modeBtnNow().getAttr('aria-label')||'').includes('该标签页处于编辑视图中'),'编辑视图下 aria-label 首行为编辑状态句');
-// 原版 tooltip 第三行承诺「⌘+单击以在新标签页中打开」：Mod+点击走「在新标签页打开」链路，且不改当前视图模式
+// 原版 onSwitchView：Mod 点击建右侧叶子并反转模式，来源保持原模式。
 const tabsBefore=document.querySelectorAll('.mod-root .workspace-tab-header').length;
-modeBtnNow().dispatchEvent(new MouseEvent('click',{bubbles:true,cancelable:true,metaKey:true}));
+modeBtnNow().dispatchEvent(new MouseEvent('click',{bubbles:true,cancelable:true,metaKey:navigator.platform.startsWith('Mac'),ctrlKey:!navigator.platform.startsWith('Mac')}));
 await wait(420);
 const tabsAfter=document.querySelectorAll('.mod-root .workspace-tab-header').length;
-check(tabsAfter<=tabsBefore+1,'⌘+单击走新标签页打开（不多开空标签）:: '+tabsBefore+'→'+tabsAfter);
-check(deepLeaf.view.mode==='live','⌘+单击不改当前视图模式');
-check(ws.getLeavesOfType('markdown').some((l)=>fileOf(l)===fileOf(deepLeaf)),'⌘+单击后该文件仍在某个 markdown 叶子中打开');
+check(tabsAfter===tabsBefore+1,'Mod 点击精确创建一个标签 :: '+tabsBefore+'→'+tabsAfter);
+check(deepLeaf.view.mode==='live','Mod 点击不改当前视图模式');
+const alternate=ws.activeLeaf;
+check(alternate!==deepLeaf&&alternate.parent!==deepLeaf.parent,'Mod 点击创建独立右侧标签组');
+check(fileOf(alternate)===deep.path&&alternate.view.mode==='preview','Mod 点击目标是同文件阅读视图');
+await alternate.detach();
+ws.setActiveLeaf(deepLeaf,{focus:false});
+// 拆分树重绘会替换头部节点，后续断言必须读取当前宿主。
+header=headerOf(deepLeaf);
+container=header.querySelector(':scope > .view-header-title-container');
+parentEl=container.querySelector(':scope > .view-header-title-parent');
+titleEl=container.querySelector(':scope > .view-header-title');
 
 /* ---------------------------------------------------------------- 面包屑 */
 const crumbs=[...parentEl.querySelectorAll('.view-header-breadcrumb')].map((el)=>el.textContent);

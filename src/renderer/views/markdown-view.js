@@ -1,7 +1,7 @@
 /**
- * [INPUT]: 依赖 window-save 的 CAS 保存与冲突保留；依赖 ../core/view.js 的 View 基类；依赖 ../core/i18n.js 的 t；依赖 ../core/icons.js 的 setIcon；依赖 ../core/keymap.js 的 IS_MAC；依赖 ../editor/editor.js 的 Editor 与 livePreviewExtension；依赖 ../markdown/reading.js 的 renderMarkdown/attachMarkdownInteractions；依赖 ../markdown/properties.js 的 renderProperties；依赖 BacklinkView 的文件绑定结果与 file-view-actions 的共用文件动作
+ * [INPUT]: 依赖 window-save 的 CAS 保存与冲突保留；依赖 ../core/view.js 的 View 基类；依赖 ../core/i18n.js 的 t；依赖 ../core/keymap.js 的 IS_MAC；依赖 ../editor/editor.js 的 Editor 与 livePreviewExtension；依赖 ../markdown/reading.js 的 renderMarkdown/attachMarkdownInteractions；依赖 ../markdown/properties.js 的 renderProperties；依赖 BacklinkView 的文件绑定结果与 view-pane-menu 的原生动作按钮与更多菜单
  * [OUTPUT]: 导出 MarkdownView 类（三模式：source/live/preview），registerView 注册 'markdown'
- * [POS]: views/ 的 Markdown 生命周期入口。行内标题挂在编辑器 .cm-sizer 内；行宽 class 挂视图元素。换文件与关闭前等待 CAS 保存；冲突保留编辑并拒绝切换；首次加载与布局恢复均同步模式 DOM；设置事件热重配编辑器。阅读正文交给 markdown/ 渲染；底部反链复用 BacklinkView 并绑定当前文件。重命名/换文件后由 _updateTitles 回填视图头标题与面包屑。视图头模式钮按原版 1.14.4：图标表示「点它会切到哪个视图」（编辑视图 lucide-book-open / 阅读视图 lucide-edit-3），aria-label 三行（状态句 + 动作句 + ⌘+单击在新标签页打开），模式切换后随 _applyMode 立即换图标与文案。
+ * [POS]: views/ 的 Markdown 生命周期入口。行内标题挂在编辑器 .cm-sizer 内；行宽 class 挂视图元素。换文件与关闭前等待 CAS 保存；冲突保留编辑并拒绝切换；首次加载与布局恢复均同步模式 DOM；设置事件热重配编辑器。阅读正文交给 markdown/ 渲染；底部反链复用 BacklinkView 并绑定当前文件。重命名/换文件后由 _updateTitles 回填视图头标题与面包屑。视图头模式钮按原版 1.14.4：图标表示「点它会切到哪个视图」（编辑视图 lucide-book-open / 阅读视图 lucide-edit-3），aria-label 三行（状态句 + 动作句 + ⌘+单击在新标签页打开），模式切换后随 _applyMode 立即换图标与文案；Mod/中键创建右侧叶子并反转目标模式，阅读状态保留源码偏好。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 /*
@@ -12,8 +12,6 @@
 import { View } from '../core/view.js';
 import { saveWindowView, hasUnsavedWindowView, reportWindowSaveError } from '../core/window-save.js';
 import { t } from '../core/i18n.js';
-import { setIcon } from '../core/icons.js';
-import { Menu } from '../core/menu.js';
 import { Editor } from '../editor/editor.js';
 import {
   renderMarkdown, attachMarkdownInteractions, scrollToSubpath, stripFrontmatter,
@@ -22,7 +20,7 @@ import { renderProperties } from '../markdown/properties.js';
 import { Notice } from '../core/notices.js';
 import { normalizePath } from '../core/vault.js';
 import { BacklinkView } from '../plugins-core/backlink.js';
-import { addDefaultAppAction } from '../core/file-view-actions.js';
+import { addViewAction, installViewMoreAction } from '../core/view-pane-menu.js';
 import { IS_MAC } from '../core/keymap.js';
 import { PromptModal } from '../core/modals.js';
 import { showEditorContextMenu } from '../editor/editor-menu.js';
@@ -52,7 +50,7 @@ export class MarkdownView extends View {
 
   getState() {
     const state = { file: this.file ? this.file.path : undefined, mode: this.mode, backlinks: this.showBacklinks };
-    if (this.mode !== 'preview') state.mode = this.mode;
+    if (this.mode === 'preview') state.source = this._lastEditMode === 'source';
     if (this.editor && this.mode !== 'preview') {
       state.scroll = this.editor.getScrollInfo().top;
     }
@@ -76,7 +74,10 @@ export class MarkdownView extends View {
       if (await this._loadFile(state.file, state) === false) return false;
     }
     if (typeof state.backlinks === 'boolean') this.showBacklinks = state.backlinks;
-    if (state.mode === 'preview') this.mode = 'preview';
+    if (state.mode === 'preview') {
+      this.mode = 'preview';
+      if (typeof state.source === 'boolean') this._lastEditMode = state.source ? 'source' : 'live';
+    }
     else if (state.mode === 'source' || state.mode === 'live') { this.mode = state.mode; this._lastEditMode = state.mode; }
     this._applyMode();
     if (state.scroll !== undefined && this.editor) {
@@ -493,9 +494,9 @@ export class MarkdownView extends View {
     // 所以这里没传 actions 时取叶子上的动作区（_applyMode 走的就是这条）。
     const el = actions || (this.leaf && this.leaf._viewActionsEl);
     if (!el) return;
+    const restoreFocus = el.ownerDocument?.activeElement?.classList.contains('mod-switch-view');
     el.empty();
     const preview = this.mode === 'preview';
-    const toggle = el.createDiv('clickable-icon view-action');
     // 原版 tooltip 三行：当前状态 + 点击动作 + 修饰键提示（app.css 同款 aria）
     const stateText = preview
       ? (t('interface.menu.read-view') || '该标签页处于阅读视图中')
@@ -505,62 +506,23 @@ export class MarkdownView extends View {
       : (t('interface.menu.switch-to-read-view') || '点击此处切换至阅读视图');
     const modText = t('interface.menu.mod-click-open-new-tab', { key: IS_MAC ? '⌘' : 'Ctrl' })
       || (IS_MAC ? '⌘' : 'Ctrl') + '+单击以在新标签页中打开';
-    toggle.setAttr('aria-label', `${stateText}\n${actionText}\n${modText}`);
-    // 原版图标表示「点它会切到哪个视图」：阅读视图 → 编辑（lucide-edit-3）；编辑视图 → 阅读（lucide-book-open）
-    setIcon(toggle, preview ? 'edit-3' : 'book-open');
-    toggle.onclick = (ev) => {
-      if (ev && (ev.metaKey || ev.ctrlKey)) {
-        // 原版 tooltip 第三行：⌘+单击以在新标签页中打开
-        if (!this.file) return;
-        this.app.workspace.openFile(this.file, { newLeaf: 'tab' });
-        return;
-      }
-      this.toggleMode();
-    };
-
-    addDefaultAppAction(this.app, this, el);
-    const more = el.createDiv('clickable-icon view-action mod-more-options');
-    more.setAttr('aria-label', t('interface.menu.more-options') || 'More options');
-    setIcon(more, 'more-horizontal');
-    more.onclick = (ev) => this._showMoreMenu(ev);
+    const toggle = addViewAction(el, preview ? 'edit-3' : 'book-open', `${stateText}\n${actionText}\n${modText}`, (event) => this.onSwitchView(event), 'mod-switch-view');
+    installViewMoreAction(this, el);
+    if (restoreFocus) toggle.focus({ preventScroll: true });
   }
 
-  _showMoreMenu(ev) {
-    const menu = new Menu(this.app);
-    if (this.mode === 'preview') {
-      menu.addItem((i) => i.setTitle(t('interface.menu.edit') || 'Edit').setIcon('pencil').onClick(() => { this.mode = this._lastEditMode || 'live'; this._applyMode(); }));
-      menu.addItem((i) => i.setTitle(t('interface.menu.toggle-source-mode') || 'Source mode').setIcon('code').onClick(() => { this.mode = 'source'; this._lastEditMode = 'source'; this._applyMode(); }));
-    } else {
-      menu.addItem((i) => i.setTitle(t('interface.menu.toggle-reading-view') || 'Reading view').setIcon('book-open')
-        .setChecked(this.mode === 'preview').onClick(() => this.toggleMode()));
-      if (this.mode === 'live') {
-        menu.addItem((i) => i.setTitle(t('interface.menu.toggle-source-mode') || 'Source mode').setIcon('code').onClick(() => this.toggleSourceLive()));
-      } else {
-        menu.addItem((i) => i.setTitle(t('plugins.editor-status.edit-live-preview') || 'Live Preview').setIcon('pencil').onClick(() => this.toggleSourceLive()));
-      }
-    }
-    menu.addSeparator();
-    menu.addItem((i) => i.setTitle(t('interface.menu.close') || 'Close').setIcon('x').onClick(() => (this.leaf ? this.leaf.detach() : null)));
-    menu.addItem((i) => i.setTitle('Duplicate current file').setIcon('copy').onClick(() => this._duplicateFile()));
-    menu.addSeparator();
-    menu.addItem((i) => i.setTitle(t('menu-items.inline-title') || 'Inline title').setChecked(this.app.settings.appSettings.showInlineTitle !== false).onClick(() => {
-      const next = !(this.app.settings.appSettings.showInlineTitle !== false);
-      this.app.settings.updateAppSettings({ showInlineTitle: next });
-      this._updateTitles();
-    }));
-    menu.addItem((i) => i.setTitle(t('menu-items.line-numbers') || 'Line numbers').setChecked(!!this.app.settings.appSettings.showLineNumber).onClick(() => {
-      const next = !app.settings.appSettings.showLineNumber;
-      this.app.settings.updateAppSettings({ showLineNumber: next });
-      this.editor.toggleLineNumbers(next);
-    }));
-    menu.showAtMouseEvent(ev);
-  }
-
-  async _duplicateFile() {
+  /** 原版 onSwitchView：Mod/中键建右侧叶子，目标模式取反，来源状态不变。 */
+  async onSwitchView(event) {
+    event?.preventDefault();
     if (!this.file) return;
-    const folder = this.app.vault.getFolderByPath(this.file.path.split('/').slice(0, -1).join('/') || '/');
-    const copy = await this.app.fileManager.copyFile(this.file, folder);
-    if (copy) this.app.workspace.openFile(copy, { newLeaf: 'tab' });
+    const state = { ...this.getState(), source: (this.mode === 'preview' ? this._lastEditMode : this.mode) === 'source', mode: this.mode === 'preview' ? (this._lastEditMode || 'live') : 'preview' };
+    if (await this.save() === false) return false;
+    const workspace = this.app.workspace;
+    const modified = event && ((IS_MAC ? event.metaKey : event.ctrlKey) || event.button === 1);
+    const leaf = modified ? workspace.createLeafBySplit(this.leaf, 'vertical') : this.leaf;
+    if (await leaf.setViewState({ type: 'markdown', state }) === false) return false;
+    workspace.setActiveLeaf(leaf, { focus: false });
+    return leaf;
   }
 
   async promptAddProperty() {
@@ -580,6 +542,7 @@ export class MarkdownView extends View {
    * 导出为 PDF 依赖原版导出链路，本项目未实现，故意缺失。
    */
   onPaneMenu(menu, source) {
+    super.onPaneMenu(menu, source);
     if (source !== 'tab-header' && source !== 'more-options') return;
     const editMode = this.mode === 'live' || this.mode === 'source';
     if (this.canToggleBacklinks()) menu.addItem((i) => i.setSection('pane')
@@ -589,7 +552,7 @@ export class MarkdownView extends View {
       .setTitle(t('interface.menu.toggle-reading-view') || 'Reading view')
       .setIcon('lucide-book-open')
       .setChecked(this.mode === 'preview')
-      .onClick(() => this.toggleMode()));
+      .onClick((event) => this.onSwitchView(event)));
     menu.addItem((i) => i.setSection('action')
       .setTitle(t('interface.menu.add-property') || 'Add property')
       .setIcon('lucide-plus-circle')

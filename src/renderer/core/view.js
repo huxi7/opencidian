@@ -1,11 +1,12 @@
 /**
- * [INPUT]: Events 提供事件；宿主提供 leaf 与视图根节点。
+ * [INPUT]: Events 提供事件；宿主提供 leaf 与视图根节点；view-pane-menu 提供文件面板菜单。
  * [OUTPUT]: 导出 View 生命周期基类与 ViewRegistry 注册表。
  * [POS]: 视图契约边界。插件登记扩展名，工作区按注册表分派文件。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 /* View base class + view registry. */
 import { Events } from './events.js';
+import { fillFilePaneMenu } from './view-pane-menu.js';
 
 export class View extends Events {
   constructor(leaf) {
@@ -29,7 +30,7 @@ export class View extends Events {
   async onOpen() {}
   async onClose() {}
   onResize() {}
-  onPaneMenu(menu, source) {}
+  onPaneMenu(menu, source) { if (this.file) fillFilePaneMenu(this, menu, source); }
 
   async load() {
     if (this._loaded) return;

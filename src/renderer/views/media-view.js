@@ -1,3 +1,9 @@
+/**
+ * [INPUT]: View 生命周期、文件资源URL与图标。
+ * [OUTPUT]: 导出 ImageView、VideoView、AudioView、PdfView。
+ * [POS]: 媒体正文视图。文件头与面板菜单继承View和通用视图头，不添加系统打开按钮。
+ * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
+ */
 /* Media views — image / audio / video / pdf. */
 import { View } from '../core/view.js';
 import { setIcon } from '../core/icons.js';

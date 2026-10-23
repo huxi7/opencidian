@@ -42,7 +42,7 @@ canvas.js: 画布输入、连线、缩放、重开，撤销/重做（键盘+按�
 canvas-edit.js: 画布文本卡片的内嵌 CM6 实时预览编辑器：挂载即 .cm-editor（无 textarea/预览层）、句柄写正文 → 节点数据与画布 JSON 落盘、实时预览装饰（标题/加粗）与卡片内布局（--file-margins 归零、无行宽上限）、Escape 与 Mod+Enter 退出、单击已聚焦卡片进编辑（原版 hg）、未聚焦（blocker 路径）与聚焦未编辑（正文内）两条拖拽路径、只读画布不可写且切只读立刻退出编辑、缩放断点卸载/重建编辑器、正文编辑进撤销栈、空卡片本地化占位、关闭视图释放编辑器实例与 DOM；活动编辑器（卡片聚焦即登记、editor:toggle-bold 包裹卡片选区、退出编辑回落中心笔记、笔记内 Mod+B 仍作用于笔记）。
 canvas-selection.js: 画布多选与批量操作。多选状态（单击单选只置聚焦、Shift+点击增删选、单选↔多选切换清理聚焦态、普通点击替换）、空白拖动框选（矩形挂 .canvas-selection、外扩 10px 定位、分组需完整包含、松手清除、Shift 异或）、多选包围盒（.mod-group-selection + 8 个 data-resize 手柄、并集外扩 10px）、拖动任一选中卡片整体位移并保持相对位置、Delete 删除与 Mod+Z 撤销/重做落盘、拖动即置顶、数据层按 z 升序写出节点、浮动工具条按钮与排布子菜单 13 项（真实点击驱动：对齐 6 向坐标断言、分布 2 向首尾不动、水平拉伸、网格排列）、从选中集合建组（几何外扩 20px）、拖组带动内部节点、分组恒为负 z、分组菜单提供编辑文字且无「取消分组」（原版无该命令，删组保留子节点）、Alt(mac)/Ctrl 拖动克隆整组、Mod+框选收尾弹建卡菜单并在关闭后收起矩形、只读画布隐藏非恒显按钮。
 canvas-ui.js: 画布视觉/样式层断言（192 项、浅深两套）：外壳与点阵、控件四组图标顺序与快捷键后缀、快速设置三态、分组负 z、标签 always/hover/never、md 卡正文 padding 与弹性留白、图片宽高比回写、损坏图/缺文件占位、着色卡 rgba(...,0.07)、边（双 path、箭头顶点、描边宽度、标签字号）、悬停手柄门控与连接点嵌位、只读、缩放断点、帮助弹窗 14 条、空态三行；右键/中键 5px 平移、macOS 先 contextmenu 后移动的关闭、Windows pointerup 后 contextmenu 抑制；分组背景文件/文件夹重命名、移动、删除后的 bgPath/getData/contentEl/JSON 生命周期；.canvas 文件卡渲染缩略图而非原始 JSON。
-view-header.js: 视图头 1.14.4（82 项、浅/深）：左导航钮/面包屑分隔与 aria、标题左对齐（桌面 --file-header-justify:start）、mod-fade 三态、聚焦底色与 mod-active 同步、←→ 可用性、头部模式钮真实指针命中与编辑/阅读双向切换；模式钮图标随模式更换（编辑视图 lucide-book-open / 阅读视图 lucide-edit-3）、aria-label 三行（状态句 + 动作句 + ⌘+单击在新标签页打开）、无 is-active、⌘+单击走新标签页打开且不改当前模式。
+view-header.js: 视图头 1.14.4（83 项、浅/深）：左导航钮/面包屑分隔与 aria、标题左对齐（桌面 --file-header-justify:start）、mod-fade 三态、聚焦底色与 mod-active 同步、←→ 可用性、头部模式钮真实指针命中与编辑/阅读双向切换；模式钮图标随模式更换（编辑视图 lucide-book-open / 阅读视图 lucide-edit-3）、aria-label 三行（状态句 + 动作句 + ⌘+单击在新标签页打开）、无 is-active、⌘+单击建立右侧叶子、目标反向模式且保留来源模式。
 dialogs.js: 弹窗复开、确认结果与选择器布局（43 项）；命令面板复杂项（标题进内容列、热键同行靠右，原版 mod-complex）。
 quick-switcher.js: 快速切换 1.14.4 全锁（130 项、浅/深）：prompt 几何/圆角/阴影/边框、六条指令栏、最近 10 项 MRU、文件/别名/未解析/附件/书签行结构、创建项与 Enter/Shift+Enter/Cmd+Enter、键盘全键位与 Tab 补全、附件/仅已创建/所有类型三开关。
 download-attachments.js: 外部附件下载。命令门控（md 可用 / txt 与图片等非 md 不可用）、画廊模态结构与命名、取消不落盘、部分勾选只下载勾选项、字节完整性、嵌入与 frontmatter 改写、Notice 计数与无附件提示。stub app.requestUrl，不访问真实网络。
@@ -90,7 +90,7 @@ probe-topbar.js / probe-canvas.js / probe-reading.js / probe-ui.js / probe-canva
 probe-canvas-drop: 画布拖入诊断探针（残留虚影体检）。模拟文件树拖入与卡片菜单纯点击两条路径，报告 .is-dummy 数量、accent 填充元素、画布内彩色框与卡片 DOM/几何；非断言锁，用于定位画布残影。
 
 bases.js: Bases P1。原版格式、嵌套筛选、排序、未知键保留与两种笔记嵌入，55 项。
-small-gaps.js: 底部反链、根 CSS、默认应用与原生半透明，49 项。
+small-gaps.js: 底部反链、根 CSS、默认应用头按钮缺席/文件菜单保留与原生半透明，50 项。
 canvas-export.js: 整窗分块导出。跨块连续、正文、缩放、隐私、取消与异常恢复，24 项。
 full.sh: 全量入口。定位仓库根并独占构建锁，参数原样传给 full.mjs。
 full.mjs: 枚举正式场景和链式阶段。--only 定向补跑并补齐读回前置；输出回执与汇总。
@@ -107,6 +107,8 @@ bases-rich-render.js: 净化 HTML、块 Markdown、嵌入/数学/图表与派生
 bases-rich-lifecycle.js: 挂起渲染时取消、稳定宿主、重绘及虚拟换窗释放，32 条。
 canvas-export-fidelity.js: 真实大图、密度、弹层视口、隐私裁切/遮挡/媒体与预算，30 条。
 window-save-race.js: 真实双窗竞争、恢复在途新输入、最后输入和损坏布局拒绝丢稿，35 条。
-sidebar-resize.js: 真实根边界、中心弹性、内部轴向比例、重建/恢复和取消释放。
 sidebar-transitions.js: 左右并行、快速反向、内容宽度锁、动画取消与重建的一致性，64 条。
+
+view-actions.js: 文件视图原生动作、默认应用头按钮缺席、通用菜单事件、模式目标与焦点，124 条。
+sidebar-resize.js: 真实根边界、中心弹性、内部轴向比例、重建/恢复和取消释放。
 [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md

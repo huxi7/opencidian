@@ -1,5 +1,5 @@
 /**
- * [INPUT]: 依赖 ./i18n.js 的 t；依赖 ./icons.js 的 setIcon；workspace 提供 app 命令层与文件树叶子；file-view-actions 提供文件动作。
+ * [INPUT]: 依赖 ./i18n.js 的 t；依赖 ./icons.js 的 setIcon；workspace 提供 app 命令层与文件树叶子；view-pane-menu 提供文件视图通用更多按钮。
  * [OUTPUT]: 导出 renderViewHeader / fillViewHeader / syncNavButtons。
  * [POS]: core/ 的视图头构造与填充层（原版 View 构造器，1.14.4 app.js:1236469）。
  *        三块：left（前后导航钮，命令层历史门控）+ title-container（父路径面包屑 + 标题，mod-fade 三态）+ actions。
@@ -7,7 +7,7 @@
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 import { t } from './i18n.js';
-import { addDefaultAppAction } from './file-view-actions.js';
+import { installViewMoreAction } from './view-pane-menu.js';
 import { setIcon } from './icons.js';
 
 /**
@@ -139,8 +139,12 @@ export function fillViewHeader(workspace, leaf) {
   if (leaf._updateTitleFade) leaf._updateTitleFade();
   const actions = leaf._viewActionsEl;
   if (actions) {
+    const activeElement = actions.ownerDocument?.activeElement;
+    const focused = activeElement && actions.contains?.(activeElement)
+      ? ['.mod-switch-view', '.mod-more-options'].find(selector => activeElement.matches(selector)) : null;
     actions.empty();
     view._fillViewActions && view._fillViewActions(actions);
-    addDefaultAppAction(workspace.app, view, actions);
+    if (view.file) installViewMoreAction(view, actions);
+    if (focused) actions.querySelector(focused)?.focus({ preventScroll: true });
   }
 }

@@ -732,3 +732,10 @@ P0根因：左右共用_sidebarAnim互相取消；正文未锁minWidth而重排�
 P1根因：root边界被当中心双栏，内部horizontal反被当宽度。新workspace-resize只改外侧栏，内部按轴保存dimension；serialize/deserialize/render统一比例。Node24、真实resize27通过，/tmp/opensidian-workspace-resize-unit.json、opensidian-sidebar-resize-final.log。首次ophQ8H发现CSS flex-basis:auto抵消比例，修成弹性百分比后通过；原失败曾留在临时目录。
 用户指定文件浏览器工具行左对齐；原版静态nav-buttons-container默认center，报告明确区分。顶部标签保持自然宽度，补原版no-drag。真实260/420/640拖宽和树滚动不移位：sidebar-chrome97+sidebar-shell61=158通过，/tmp/opensidian-sidebar-alignment-receipts.jsonl。未修改其它面板共享居中规则。
 改动边界：core/workspace{,-renderer,-serialize,-resize,-sidebar-transition}、styles/{explorer,workspace-sidebar}、file-explorer L3及对应新场景。GEB地图同步，最长源码文件≤800。完整回归和最终包在末节单列，不沿用先前7288条冒充本轮结果。
+
+## 视图头审查与菜单合流（2026-10-23）
+
+删除core/file-view-actions及两处默认应用按钮注入。原版文件菜单入口保留，没有新增用户不需要的命令。core/view-pane-menu共用原生button/竖三点，更多选项依次走onPaneMenu、file-menu、leaf-menu；Markdown、Canvas、Bases和媒体统一边界。
+Mod/中键模式动作先确认保存，再在右侧叶子打开相反模式；来源模式不变。复用源码/实时预览偏好，mousedown保护焦点。Canvas导出参与通用面板事件，不再自建单项孤立菜单。静态事实见_analysis/sidebar-114/VIEW-ACTIONS-FACTS.md。
+当时专项回执：view-actions124、view-header83、small-gaps50、canvas101、menu-family58，工作区VM29均通过；最终又复核view-actions124+VM29。原临时日志在18时续跑已失效，当前全量重新验证全部正式场景并保留新证据。最早失败来自书签夹具额外按钮和拆分后陈旧header引用，修正夹具后仍保留严格模式/事件/底色检查。
+L3与core/views/acceptance地图已同步。原生按钮结构、可聚焦、mousedown与auxclick有验收；没有声称真实系统键盘、叶子联动分组或原版逐像素对比已完成。
