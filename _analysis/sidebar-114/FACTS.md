@@ -11,3 +11,5 @@
 实现诊断：原实现用workspace._sidebarAnim单句柄。右侧收起时点左侧会取消右动画而不执行收起回调；collapsed已true但display仍可见。缺内容宽度锁则让正文在缩小容器内重新换行。
 
 本轮实现应让每个split拥有独立动画；同侧反向使用当前可见宽度；动画中重建DOM先结算旧动画，禁止迟到回调修改新容器。
+
+收起活动侧栏的焦点：原版collapse码点1547735调用setActiveLeaf(getMostRecentLeaf(rootSplit),{focus:true})。getMostRecentLeaf码点2930925按可见性和activeTime选择。当前实现优先最近仍可见的中心叶，排除已关闭和过时布局节点，恢复真实焦点及编辑命令宿主。

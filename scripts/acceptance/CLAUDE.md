@@ -52,7 +52,7 @@ editor.js: 模式、折叠、高亮、滚动与 LP 记号（列表圆点、有�
 file-explorer-multi.js: 文件树多选：Alt 切换/Shift 范围/空白清空、↑↓ 焦点、Delete 删除（逐项确认）、多选拖动载荷 items（type=files）、多选右键菜单（新建文件夹含选中项/移动/删除）。
 drag-drop.js: 文件树与标签拖拽（79 项、浅/深）：真实落盘的文件→文件夹/文件夹→文件夹/多选移动、同父 no-op、非法自嵌套拒绝、750ms 悬停展开、根容器移回仓库根；标签同组重排（模型+DOM+活动叶）、跨组搬叶子不重建、固定标签禁拖、workspace-drop-overlay 10px 落点（::before 内缩 3px/50% accent）、body.is-grabbing、ghost 清理、标签 200ms 开合补间、center/边缘 workspace-drop-overlay 几何与分割落点。
 editor-block-button.js: 块 widget（代码/数学/Mermaid）的 edit-block-button：默认隐藏、悬停显形、点击把光标放回源码。
-sidebar-chrome.js: 侧栏折叠/展开：折叠侧分隔条不穿入红绿灯区、toggle 迁移归属与 140ms FLIP 动画、幽灵清理；82 项计算样式锁——ribbon 收起底色（background-primary）、::before 解析色=titlebar-background、焦点联动变量链、mod-top 链、44px 内边距、标签 fillet 几何、展开还原；顶栏「+」「⌄」几何（外层 24×39、内层 span.clickable-icon 24×24、末标签盒距 8/字形距 12）与文件列表头（.nav-header 8px、五按钮图标顺序、gap 2px）。
+sidebar-chrome.js: 侧栏折叠/展开：折叠侧分隔条不穿入红绿灯区、toggle 迁移归属与 140ms FLIP 动画、幽灵清理；97 项计算样式与真实拖宽锁——ribbon 收起底色（background-primary）、::before 解析色=titlebar-background、焦点联动变量链、mod-top 链、44px 内边距、标签 fillet 几何、展开还原；顶栏「+」「⌄」几何（外层 24×39、内层 span.clickable-icon 24×24、末标签盒距 8/字形距 12）与文件列表头（.nav-header 8px、五按钮图标顺序、gap 2px）。
 editor-layout.js: 行宽布局（26 项）：sizer/contentContainer 结构、700px 居中、行内标题与正文同左缘、H1 段前 16px/行高 1.2、设置联动、阅读视图居中、折叠全关后开行号 gutter 正常挂载且绝对定位不占正文宽。
 editor-paste.js: 剪贴板图片粘贴（截图 File / HTML data URL）落盘与嵌入、文本粘贴不误伤、文件树根目录外部文件拖入。
 reading-menus.js: 阅读视图右键菜单：内部链接（新标签页/新标签组/重命名）、外链（复制链接/浏览器打开）、图片复制、笔记/音视频/PDF 嵌块菜单、未解析链接创建文件。
@@ -107,7 +107,7 @@ bases-rich-render.js: 净化 HTML、块 Markdown、嵌入/数学/图表与派生
 bases-rich-lifecycle.js: 挂起渲染时取消、稳定宿主、重绘及虚拟换窗释放，32 条。
 canvas-export-fidelity.js: 真实大图、密度、弹层视口、隐私裁切/遮挡/媒体与预算，30 条。
 window-save-race.js: 真实双窗竞争、恢复在途新输入、最后输入和损坏布局拒绝丢稿，35 条。
-sidebar-transitions.js: 左右并行、快速反向、内容宽度锁、动画取消与重建的一致性，64 条。
+sidebar-transitions.js: 左右并行、快速反向、内容宽度锁、动画取消、重建与焦点回归，76 条。
 
 view-actions.js: 文件视图原生动作、默认应用头按钮缺席、通用菜单事件、模式目标与焦点，124 条。
 sidebar-resize.js: 真实根边界、中心弹性、内部轴向比例、重建/恢复和取消释放。

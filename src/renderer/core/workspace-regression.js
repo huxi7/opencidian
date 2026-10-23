@@ -1,7 +1,7 @@
 /**
  * [INPUT]: Node 的 test/assert/fs/path/url/vm；读取工作区源码，模拟 DOM、扩展名注册表、视图与 IPC。
  * [OUTPUT]: 提供可独立运行的工作区逻辑回归，不进入 renderer 依赖图。
- * [POS]: 固定公开接口、叶子操作、隔离布局预检和链接路径转换的行为。
+ * [POS]: 固定公开接口、叶子操作、隔离布局预检、侧栏焦点与链接路径转换。
  * 只读源码，不启动 Electron，不读写仓库配置或真实笔记。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
@@ -624,4 +624,19 @@ test('隔离反序列化期间仍能访问原树，成功后保留堆叠与活�
   const active = await pending; await ws.postLayoutLoad(active);
   assert.equal(ws.activeLeaf.id, layout.active); assert.ok(ws.activeLeaf.parent.isStacked);
   assert.notEqual(ws._leafMap, map); assert.notEqual(ws._leafMap.get(leaf.id), leaf); assert.equal(ws.activeLeaf.workspace, ws);
+});
+
+
+test('收起活动侧栏返回最近中心叶，重新展开不夺回焦点', async () => {
+  const { workspace: ws, api, file, lifecycle } = await harness();
+  await ws.openFile(file('A.md')); const center = ws.activeLeaf;
+  center.view.editor = {};
+  const tabs = new api.WorkspaceTabs(ws); ws.rightSplit.insertChild(0, tabs);
+  const panel = ws.createLeafInTabGroup(tabs); await panel.setViewState({ type: 'outline' });
+  ws.render(); ws.setActiveLeaf(center, { focus: false }); ws.setActiveLeaf(panel, { focus: false });
+  assert.equal(ws.getActiveEditor(), null); lifecycle.length = 0;
+  ws.hideSidebar('right');
+  assert.equal(ws.activeLeaf, center); assert.equal(ws.getActiveEditor(), center.view);
+  assert.ok(lifecycle.some(entry => entry[0] === 'focus' && entry[1] === 'markdown'));
+  ws.showSidebar('right'); assert.equal(ws.activeLeaf, center);
 });

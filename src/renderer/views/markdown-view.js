@@ -1,6 +1,6 @@
 /**
  * [INPUT]: 依赖 window-save 的 CAS 保存与冲突保留；依赖 ../core/view.js 的 View 基类；依赖 ../core/i18n.js 的 t；依赖 ../core/keymap.js 的 IS_MAC；依赖 ../editor/editor.js 的 Editor 与 livePreviewExtension；依赖 ../markdown/reading.js 的 renderMarkdown/attachMarkdownInteractions；依赖 ../markdown/properties.js 的 renderProperties；依赖 BacklinkView 的文件绑定结果与 view-pane-menu 的原生动作按钮与更多菜单
- * [OUTPUT]: 导出 MarkdownView 类（三模式：source/live/preview），registerView 注册 'markdown'
+ * [OUTPUT]: 导出 MarkdownView 类（三模式与实际焦点恢复），registerView 注册 'markdown'
  * [POS]: views/ 的 Markdown 生命周期入口。行内标题挂在编辑器 .cm-sizer 内；行宽 class 挂视图元素。换文件与关闭前等待 CAS 保存；冲突保留编辑并拒绝切换；首次加载与布局恢复均同步模式 DOM；设置事件热重配编辑器。阅读正文交给 markdown/ 渲染；底部反链复用 BacklinkView 并绑定当前文件。重命名/换文件后由 _updateTitles 回填视图头标题与面包屑。视图头模式钮按原版 1.14.4：图标表示「点它会切到哪个视图」（编辑视图 lucide-book-open / 阅读视图 lucide-edit-3），aria-label 三行（状态句 + 动作句 + ⌘+单击在新标签页打开），模式切换后随 _applyMode 立即换图标与文案；Mod/中键创建右侧叶子并反转目标模式，阅读状态保留源码偏好。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
@@ -86,6 +86,14 @@ export class MarkdownView extends View {
     if (state.subpath) this._pendingScroll = { subpath: state.subpath };
     if (state.line !== undefined) this._pendingScroll = { line: state.line, ch: state.ch || 0 };
     this._applyPendingScroll();
+  }
+
+  onFocus() {
+    if (this._closed) return;
+    if (this.mode === 'preview') {
+      this.readingEl?.setAttribute('tabindex', '-1');
+      this.readingEl?.focus({ preventScroll: true });
+    } else this.editor?.focus();
   }
 
   async onOpen() {

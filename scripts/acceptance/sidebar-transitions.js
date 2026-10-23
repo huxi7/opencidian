@@ -77,5 +77,20 @@
   coherent('left', false, '布局恢复保持左栏展开');
   button('right').click(); await settled(); coherent('right', false, '恢复后仍可展开');
   check(document.querySelectorAll('.sidebar-toggle-button.mod-right').length === 1, '恢复和快速切换不留下右开关幽灵');
+  // 活动工具面板收起后，键盘命令不能继续指向隐藏视图。
+  for (const [side, type] of [['left', 'file-explorer'], ['right', 'outline']]) {
+    await set(side, false);
+    const center = ws.getLeavesOfType('markdown').find(leaf => leaf.view.file?.path === file.path);
+    ws.setActiveLeaf(center, { focus: true });
+    const panel = ws.getLeavesOfType(type)[0]; panel._tabHeaderEl.click();
+    check(ws.activeLeaf === panel, side + '侧栏标签真实获得活动状态');
+    button(side).click();
+    check(ws.activeLeaf === center, side + '侧栏收起立即回到最近中心文档');
+    check(ws.getActiveEditor() === center.view, side + '侧栏收起恢复编辑命令宿主');
+    check(app.commands.findCommand('workspace:close').checkCallback(true) === true, side + '侧栏收起后关闭文档命令可用');
+    check(center.view.editor.cm.dom.contains(document.activeElement), side + '侧栏收起后真实焦点回到编辑器');
+    await settled();
+    check(ws.activeLeaf === center && width(side) === 0, side + '侧栏动画结束保持文档焦点与隐藏态');
+  }
   return { pass: true, count: checks.length, checks };
 })()

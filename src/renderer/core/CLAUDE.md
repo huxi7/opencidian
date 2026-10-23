@@ -37,9 +37,9 @@ workspace-model.js: 分割树与叶子生命周期。尊重 setState/onClose 失
 window-chrome.js: macOS 红绿灯位置同步。按原版 updateStatus（app.js 1553478）从 --traffic-lights-offset-x/y 与 zoomFactor 计算：floor(offset*zoom/2-8)（x +2）；主窗 40px → (14,12)，设置 popout 32px → (10,8)。类变化（is-popout-modal）或缩放后必须重算。
 workspace-sidebar-chrome.js: 侧栏折叠态外观唯一出口（mod-top 落位、开关迁移、分隔条宽度/透明度、功能区 is-collapsed 底色）；不持有模型状态，只读写 DOM 与 toggle 缓存。
 workspace-renderer.js: 分别渲染文档标签和固定工具图标。稳定挂载底栏及左右开关，功能区支持鼠标与键盘。 叶子宿主是 .workspace-tab-container；标签头落位与堆叠排布由标签组的 updateTabDisplay 决定；非堆叠态 _syncTabsHeaders 调 tabs.syncHeaderOrder() 按 children 顺序重排标签头 DOM，模型顺序即视觉顺序；标签增删经 tab-animation.js 做 200ms 宽度/透明度补间（原版 updateTabDisplay），首次渲染跳过；view-header 委托 view-header.js。 标签栏「+」「⌄」按 1.14.4 结构：外层 div 定位、内层 span.clickable-icon 承按钮盒。 左右侧栏带 mod-primary/secondary；根级纵向手柄负右外边距覆盖 1px；折叠只挂 is-collapsed 类。侧栏 chrome 委托 workspace-sidebar-chrome.js。 侧栏开关迁移用原版 y() 的 FLIP（幽灵+偏移动画，140ms swing）。installWindowState 同步 is-maximized/is-fullscreen/--zoom-factor，并经 window-chrome 重算红绿灯；resize/focus/fullscreenchange 触发。
-view-header.js: 视图头构造与填充（原版 View 构造器，1.14.4 app.js:1236469）。三块：left 导航钮（←→，checkCallback 门控；空视图同样渲染）、title-container（父路径面包屑 span+“/”分隔，点击在文件树揭示、右键文件夹菜单；标题居中 + mod-fade 三态）、actions。fillViewHeader 同时同步导航禁用态与 actions 重绘。
+view-header.js: 视图头构造与填充（原版 View 构造器，1.14.4 app.js:1236469）。三块：left 导航钮（←→，checkCallback 门控；空视图同样渲染）、title-container（父路径面包屑 span+“/”分隔，点击在文件树揭示、右键文件夹菜单；标题左对齐 + mod-fade 三态）、actions。fillViewHeader 同时同步导航禁用态与 actions 重绘。
 workspace-interactions.js: 仅中心文档可关闭、新建、拆分或拖拽。侧栏图标不接入文档菜单。 标签落点按原版 getTabInsertLocation 求 index；落点用 workspace-drop-overlay 10px 竖条（::before 内缩 3px、50% accent）、body.is-grabbing、ghost 清理；跨组/分割移动委托 workspace.moveLeafToTabs；覆盖层边缘 max(尺寸/3,40)、center 为 10px 标签插入条。
-workspace-regression.js: 29 组内存 DOM 逻辑回归，含保存/切换/关闭拒绝与损坏布局预检。覆盖导航、分栏、恢复、固定入口与库栏身份；扩展名注册表覆盖 base 启停。VM 上下文提供 Element/Document/document 替身以装载 dom.js，标签动画与侧栏 chrome 用无动画 mock，拖拽落点测试补 .workspace-tabs 宿主语义。
+workspace-regression.js: 30 组内存 DOM 逻辑回归，含保存/切换/关闭拒绝与损坏布局预检。覆盖导航、分栏、恢复、固定入口与库栏身份；扩展名注册表覆盖 base 启停。VM 上下文提供 Element/Document/document 替身以装载 dom.js，标签动画与侧栏 chrome 用无动画 mock，拖拽落点测试补 .workspace-tabs 宿主语义。
 plugins.js: 核心插件宿主。启停写配置；卸载拒绝时保留命令、设置页及真实开关状态，不加载第三方。
 plugins-registry.js: corePluginModules 汇总表(id → 模块)。新增核心插件必须登记在此；已含数据库(bases)、出链(outgoing-link)、属性(properties)与录音机(audio-recorder)。对象顺序即功能区按钮顺序；1.14.4 顺序 switcher→graph→canvas→bases→daily→templates→command-palette。
 app-commands.js: 导航、设置与文档命令。文档弹出与移动委托 document-window；新窗口就绪后移除来源。关闭、固定标签操作只作用于中心文档。堆叠命令 workspace:toggle-stacked-tabs 作用于当前中心标签组，侧栏组拒绝执行。
@@ -60,6 +60,6 @@ window-save-conflict.js: 保存冲突恢复。读盘后复核文件与草稿；�
 workspace-close.js: 叶子关闭事务。布局先隔离校验和反序列化；同步视图同步关闭，异步等待，失败保留原树。
 view-pane-menu.js: 共用原生动作按钮、竖三点及 onPaneMenu/file-menu/leaf-menu 链；文件菜单保留原版系统项。
 workspace-resize.js: 根侧栏只改自身宽度，内部按轴拖动并保存比例；取消或重建释放全局监听。
-workspace-sidebar-transition.js: 每侧独立收展事务。锁内容宽度，同侧反向与 DOM 重建结算最新目标态。
+workspace-sidebar-transition.js: 每侧独立收展事务。锁内容宽度，收起活动侧栏回中心焦点，中断结算目标态。
 
 [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md

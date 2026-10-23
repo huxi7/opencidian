@@ -739,3 +739,9 @@ P1根因：root边界被当中心双栏，内部horizontal反被当宽度。新w
 Mod/中键模式动作先确认保存，再在右侧叶子打开相反模式；来源模式不变。复用源码/实时预览偏好，mousedown保护焦点。Canvas导出参与通用面板事件，不再自建单项孤立菜单。静态事实见_analysis/sidebar-114/VIEW-ACTIONS-FACTS.md。
 当时专项回执：view-actions124、view-header83、small-gaps50、canvas101、menu-family58，工作区VM29均通过；最终又复核view-actions124+VM29。原临时日志在18时续跑已失效，当前全量重新验证全部正式场景并保留新证据。最早失败来自书签夹具额外按钮和拆分后陈旧header引用，修正夹具后仍保留严格模式/事件/底色检查。
 L3与core/views/acceptance地图已同步。原生按钮结构、可聚焦、mousedown与auxclick有验收；没有声称真实系统键盘、叶子联动分组或原版逐像素对比已完成。
+
+## 收起活动侧栏后的实际焦点（2026-10-23）
+
+原版collapse要求迁移最近可见叶并focus:true。本实现此前只更新折叠DOM，活动视图可能仍是隐藏面板，编辑/关闭命令失效。sidebar-transition现排除关闭、过时与不可见标签，恢复最近中心叶；Markdown补onFocus，区分阅读容器和CodeMirror实际焦点。
+初次焦点回归7场景10次，9次通过、1次失败，376条完成回执；真实焦点断言抓到Markdown缺hook，失败保留verification/focus-regression。补齐后focus-final 7场景8次433条全部通过，含sidebar-transitions76、view-actions124、两主题view-header各83、编辑竞争20、布局31、生命周期10、焦点保护6。VM30通过。两个阶段分开保存，不把第一次失败写成通过。
+新增契约和GEB地图同步。当前源码在e3c7563全量87场景120次7521条通过之后补焦点；最终有效覆盖将用修后回执替换受影响项，不能声称最终代码又跑了一次连续全量。
