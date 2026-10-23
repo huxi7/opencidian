@@ -2,7 +2,7 @@
  * [INPUT]: 依赖 tokens.css 的颜色、间距变量；依赖 tree.css 的 .tree-item 体系；依赖 search.css 的面板/结果容器类。
  * [OUTPUT]: 提供出链面板（outgoing-link.js）与属性面板（properties.js）的样式。
  * [POS]: styles/ 的两个核心插件面板样式。出链段逐字移植原版 app.css 的 outgoing-link 段；
- *        all-properties/file-properties 取原版 data-type 规则，并补足只读列表与滚动容器。
+ *        工具栏与正文留白分离；属性列表承接原版内容留白，工具栏与文件树同起点。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 /* ==========================================================================
@@ -62,7 +62,7 @@
 /* --- 属性面板（原版 app.css：data-type=all-properties / file-properties） --- */
 .workspace-leaf-content[data-type='all-properties'] .view-content,
 .workspace-leaf-content[data-type='properties'] .view-content {
-  padding-top: var(--size-4-1);
+  padding: 0;
 }
 .workspace-leaf-content[data-type='file-properties'] .metadata-properties-heading {
   display: none;
@@ -78,7 +78,7 @@
 .all-properties-view .properties-list {
   flex: 1 1 auto;
   overflow-y: auto;
-  padding: var(--size-4-1) var(--size-4-2) max(var(--safe-area-inset-bottom), var(--size-4-8));
+  padding: var(--size-4-2) var(--size-4-2) max(var(--safe-area-inset-bottom), var(--size-4-8));
 }
 .properties-list .property-item {
   padding: var(--nav-item-padding);

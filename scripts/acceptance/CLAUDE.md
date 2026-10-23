@@ -10,6 +10,7 @@
 成员清单
 RESULTS.md: 本轮结果、证据目录与复跑方式。
 RECEIPTS.json: 上轮核心收口的原始与有效回执。
+TOOLBAR-GEOMETRY-RECEIPTS.json: 起点偏移补修；旧样式坐标失败、80组文件树实测对比、定向1038与新包冒烟逐条回执。
 TOOLBAR-RECEIPTS.json: 书签遗漏补修；旧样式真实失败、基线75、定向670与新包71逐条回执及哈希。
 SIDEBAR-RECEIPTS.json: 本轮侧栏全量、焦点补修及原失败；独立Node/VM和包验证，逐条checks与来源哈希。
 bases-entry.js: 数据库可见入口。功能区、空标签键盘、文件夹及根菜单创建真实文件，插件启停对称，重启读回。
@@ -54,7 +55,7 @@ editor.js: 模式、折叠、高亮、滚动与 LP 记号（列表圆点、有�
 file-explorer-multi.js: 文件树多选：Alt 切换/Shift 范围/空白清空、↑↓ 焦点、Delete 删除（逐项确认）、多选拖动载荷 items（type=files）、多选右键菜单（新建文件夹含选中项/移动/删除）。
 drag-drop.js: 文件树与标签拖拽（79 项、浅/深）：真实落盘的文件→文件夹/文件夹→文件夹/多选移动、同父 no-op、非法自嵌套拒绝、750ms 悬停展开、根容器移回仓库根；标签同组重排（模型+DOM+活动叶）、跨组搬叶子不重建、固定标签禁拖、workspace-drop-overlay 10px 落点（::before 内缩 3px/50% accent）、body.is-grabbing、ghost 清理、标签 200ms 开合补间、center/边缘 workspace-drop-overlay 几何与分割落点。
 editor-block-button.js: 块 widget（代码/数学/Mermaid）的 edit-block-button：默认隐藏、悬停显形、点击把光标放回源码。
-sidebar-toolbars.js: 五类导航面板在左右侧栏、明暗主题、260/420/640px真实拖宽与逐项收展后靠左；中心书签保留居中。
+sidebar-toolbars.js: 五类导航面板在左右侧栏、明暗主题、260/420/640px真实拖宽与逐项收展后靠左；中心书签保留居中；逐项比较文件树按钮及SVG起点、尺寸与步长。
 sidebar-chrome.js: 侧栏折叠/展开：折叠侧分隔条不穿入红绿灯区、toggle 迁移归属与 140ms FLIP 动画、幽灵清理；97 项计算样式与真实拖宽锁——ribbon 收起底色（background-primary）、::before 解析色=titlebar-background、焦点联动变量链、mod-top 链、44px 内边距、标签 fillet 几何、展开还原；顶栏「+」「⌄」几何（外层 24×39、内层 span.clickable-icon 24×24、末标签盒距 8/字形距 12）与文件列表头（.nav-header 8px、五按钮图标顺序、gap 2px）。
 editor-layout.js: 行宽布局（26 项）：sizer/contentContainer 结构、700px 居中、行内标题与正文同左缘、H1 段前 16px/行高 1.2、设置联动、阅读视图居中、折叠全关后开行号 gutter 正常挂载且绝对定位不占正文宽。
 editor-paste.js: 剪贴板图片粘贴（截图 File / HTML data URL）落盘与嵌入、文本粘贴不误伤、文件树根目录外部文件拖入。

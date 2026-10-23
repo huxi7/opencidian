@@ -1,6 +1,6 @@
 /**
- * [INPUT]: 隔离库、真实五类侧栏面板与根分隔条鼠标事件。
- * [OUTPUT]: 两侧、明暗主题、三种宽度及收展后的共享工具栏几何断言。
+ * [INPUT]: 隔离库、真实五类侧栏面板、图标矩形与根分隔条鼠标事件。
+ * [OUTPUT]: 两侧、明暗、拖宽和收展后的工具栏坐标；逐面板对照文件树。
  * [POS]: 侧栏工具栏统一对齐回归；中心书签验证样式作用域。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
@@ -25,6 +25,7 @@
     for (const type of types) panels[side].push(await ws.ensureSideLeaf(type, side, { reveal: false }));
   }
   const rowOf = leaf => leaf.view.contentEl.querySelector('.nav-buttons-container');
+  let fileTreeGeometry;
   const snapshot = (leaf, label) => {
     const row = rowOf(leaf);
     const button = row?.querySelector('.clickable-icon');
@@ -35,6 +36,23 @@
     const contentLeft = rect.left + parseFloat(style.borderLeftWidth) + parseFloat(style.paddingLeft);
     check(style.justifyContent === 'flex-start', label + '：共享工具栏靠左');
     check(Math.abs(first.left - contentLeft) < 1, label + '：首按钮贴工具栏内容左缘');
+    const origin = leaf.contentEl.getBoundingClientRect();
+    const icon = button.querySelector('svg').getBoundingClientRect();
+    const geometry = { x: first.left - origin.left, y: first.top - origin.top,
+      width: first.width, height: first.height, iconX: icon.left - origin.left,
+      iconY: icon.top - origin.top, iconWidth: icon.width, iconHeight: icon.height };
+    if (leaf.view.getViewType() === 'file-explorer') fileTreeGeometry = geometry;
+    check(!!fileTreeGeometry, label + '：文件树实测基准存在');
+    check(Math.abs(geometry.x - fileTreeGeometry.x) < 1 && Math.abs(geometry.y - fileTreeGeometry.y) < 1,
+      label + '：按钮起点与文件树一致 ' + JSON.stringify({ actual: geometry, fileTree: fileTreeGeometry }));
+    check(Math.abs(geometry.iconX - fileTreeGeometry.iconX) < 1 && Math.abs(geometry.iconY - fileTreeGeometry.iconY) < 1,
+      label + '：SVG起点与文件树一致');
+    check(geometry.width === fileTreeGeometry.width && geometry.height === fileTreeGeometry.height &&
+      geometry.iconWidth === fileTreeGeometry.iconWidth && geometry.iconHeight === fileTreeGeometry.iconHeight,
+      label + '：按钮和图标尺寸与文件树一致');
+    const buttons = [...row.querySelectorAll('.clickable-icon')];
+    if (buttons.length > 1) check(Math.abs(buttons[1].getBoundingClientRect().left - first.left - fileTreeGeometry.width - 2) < 1,
+      label + '：按钮步长与文件树一致');
     const split = ws._sideOf(leaf) === 'left' ? ws.leftSplit : ws.rightSplit;
     return first.left - split.containerEl.getBoundingClientRect().left;
   };

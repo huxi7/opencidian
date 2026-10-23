@@ -775,3 +775,10 @@ node --experimental-vm-modules src/renderer/core/workspace-regression.js
 - 新增sidebar-toolbars：旧样式书签260px真实失败；修后317条覆盖左右、明暗、三宽度和逐项收展。
 - 基线75；六场景定向670；重建目录包后冒烟71，均通过。未重跑完整88场景。
 - 逐条回执及原失败见TOOLBAR-RECEIPTS.json。目录包已更新，安装位置未替换。
+
+## 32. 工具栏坐标补修（2026-10-23）
+
+- 上轮只验各自行内靠左，遗漏书签头部叠加正文留白，实测比文件树右12px、下4px。
+- 正文留白归书签和属性列表；标签复用共享头部8px留白与2px间距。
+- sidebar-toolbars增至685条；80组按钮起点(8,8)、SVG(14,12)，逐面板与文件树一致。
+- 六场景定向1038条通过；基线75条。完整逐条数据见TOOLBAR-GEOMETRY-RECEIPTS.json。

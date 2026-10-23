@@ -775,3 +775,13 @@ README、AGENT-STATE、L1/L2/L3同步，源码与验收脚本≤800行。只更�
 包命令：with-lock内 `npm run dist:dir -- --publish never`，再 `node scripts/smoke-packaged.mjs --no-screenshot`；71条通过，exitCode=0。目录包已更新，已安装应用未替换。
 逐条回执、旧样式失败原文与哈希存TOOLBAR-RECEIPTS.json；原始输出位于上述verification目录。ASAR 87023583字节，SHA-256 `420f64d3d1833b7e9ad88a60d442d1812ceedb1d6624705f6aac0a1eb7f26947`。
 L3与L2、README和对齐事实已同步。未启动原版，未截图、未push。
+
+## 侧栏工具栏横纵起点补修（2026-10-23）
+
+上一轮只断言各自行内靠左，未对照文件树坐标。新断言在旧样式复现：书签按钮(20,12)、SVG(26,16)；文件树为(8,8)、(14,12)，右12px、下4px。
+原版QL将工具栏挂在正文留白外；app.js UTF-16偏移3252461/3533313/3767022及app.css9574、16593构成静态证据，详见ALIGNMENT-FACTS。书签和属性正文留白现归列表，标签头部共用8px留白与2px间距。
+基线命令：with-lock内build+canvas-dummy --no-screenshot，75条通过。定向命令：`sh scripts/acceptance/full.sh --only sidebar-toolbars,sidebar-chrome,bookmarks,core-views,search-views,sidebar-transitions --output _analysis/sidebar-114/verification/toolbars-geometry`。
+6场景1038条通过，其中sidebar-toolbars685条。80组左右/明暗/三宽度/收展实测，五类面板按钮均(8,8)、SVG均(14,12)，相对面板容器；起点、尺寸和步长均与文件树一致。
+with-lock内dist:dir -- --publish never及smoke-packaged.mjs --no-screenshot通过，包冒烟71条，exitCode=0。ASAR 87023801字节，SHA-256 `3742b6839011b0cb2f5a200d18ea6820b1468310d8044f5f7c6ee96f618a017f`。
+逐条断言、80组坐标、旧样式失败原文与哈希存TOOLBAR-GEOMETRY-RECEIPTS.json。此前317条未覆盖跨面板坐标，本轮685条替换该场景；没有声称重跑完整88场景。
+L3/L2、README、AGENT-STATE和事实清单已同步。目录包已更新，已安装应用未替换；未启动原版、未截图、未push。

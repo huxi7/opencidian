@@ -1,7 +1,7 @@
 /**
  * [INPUT]: 依赖 tokens、tree 与导航面板的 nav-header/nav-buttons-container DOM。
  * [OUTPUT]: 文件树、共享面板按钮行与全部侧栏工具栏左对齐样式。
- * [POS]: styles/ 的文件浏览器层。中心按钮行保留原版居中；全部侧栏面板共用左对齐策略。
+ * [POS]: styles/ 的文件浏览器层。中心按钮行保留原版居中；全部侧栏面板共用左对齐策略与工具栏留白。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 /* ==========================================================================
@@ -18,7 +18,8 @@
 
 /* 原版 1.14.4 app.css:9574-9593 | 面板按钮行。
    .nav-header 铺在内容顶部（文件浏览器/属性/反链面板），按钮行自身 0 内边距、gap 2px。 */
-.nav-header {
+.nav-header,
+.tag-pane-header {
   padding: var(--size-4-2);
   flex: 0 0 auto;
 }
@@ -47,8 +48,6 @@
   color: var(--icon-color-focused);
   background-color: var(--background-modifier-hover);
 }
-/* 未包在 .nav-header 内的旧结构（书签面板）沿用 4px/12px 内边距，避免回归 */
-.view-content > .nav-buttons-container { padding: var(--size-4-1) var(--size-4-3); }
 .nav-action-button { color: var(--text-muted); }
 /* 原版根节点子容器不缩进；缩进只作用于用户文件夹层级 */
 .nav-folder.mod-root > .nav-folder-children {

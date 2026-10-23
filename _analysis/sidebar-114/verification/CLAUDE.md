@@ -5,6 +5,7 @@
 原始输出目录不随目录包发布。缺失时按 RESULTS 中的命令复跑。
 
 成员清单
+toolbars-geometry/: 工具栏横纵坐标补修、80组跨面板实测、六场景1038条及目录包原始输出。
 toolbars-followup/: 全部侧栏工具栏补修的六场景、目录包及冒烟原始输出；逐条回执另存TOOLBAR-RECEIPTS.json。
 dist.log: 最终目录包构建日志。
 focus-final/: 本轮独立执行的场景输出、原始进程日志与汇总。

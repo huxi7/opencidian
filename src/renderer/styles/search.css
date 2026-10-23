@@ -1,6 +1,6 @@
 /**
  * [INPUT]: tokens 设计变量、tree.css 树基础与各面板 DOM。
- * [OUTPUT]: 搜索、反链、大纲与标签面板的布局规则，含虚拟列表占位块、命中行更多上下文按钮与搜索建议弹层。
+ * [OUTPUT]: 搜索、反链、大纲与标签面板布局；标签工具栏留白和间距复用 explorer。
  * [POS]: 树面板专属样式。搜索段按原版 app.css 17266-17687 对齐 search-row/结果卡片；
  *        虚拟列表用 .search-results-spacer 撑出总高（滚动条与总条目数成比例），
  *        .search-result-hover-button 是原版命中行上下的“显示更多上下文”按钮，
@@ -440,8 +440,6 @@ body:not(.is-phone) .workspace-leaf.mod-active .search-result-file-match.has-foc
 .tag-pane-header {
   display: flex;
   align-items: center;
-  gap: var(--size-2-2);
-  padding: var(--size-4-2) var(--size-4-3);
   flex: 0 0 auto;
 }
 .tag-pane-header input { flex: 1 1 auto; }

@@ -1,3 +1,9 @@
+/**
+ * [INPUT]: tokens、tree 与书签视图的固定工具栏及 bookmarks-tree。
+ * [OUTPUT]: 书签列表留白、滚动及文档收藏状态样式。
+ * [POS]: 书签样式层。正文留白归列表，工具栏复用 explorer 的统一起点。
+ * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
+ */
 /* ==========================================================================
    bookmarks.css — bookmarks pane + view header bookmark action
    The first block is ported verbatim from the original app.css (bookmarks
@@ -24,9 +30,10 @@
 
 /* --- bookmarks pane --- */
 .workspace-leaf-content[data-type=bookmarks] .view-content {
-  padding: var(--size-4-1) var(--size-4-3) var(--size-4-8);
+  padding: 0;
 }
 .bookmarks-tree {
+  padding: var(--size-4-1) var(--size-4-3) var(--size-4-8);
   flex: 1 1 auto;
   min-height: 0;
   overflow-y: auto;
