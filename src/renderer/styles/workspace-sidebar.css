@@ -1,6 +1,6 @@
 /**
  * [INPUT]: 依赖 tokens、base 与 layout；消费工作区侧栏 DOM。
- * [OUTPUT]: 侧栏图标标签、仓库底条、开关、背景与分隔线样式。
+ * [OUTPUT]: 侧栏图标标签、标签组禁止拖窗、仓库底条、开关、背景与分隔线样式。
  * [POS]: layout.css 顶部导入的侧栏模块。
  * 原版段逐字保留；适配段覆盖后加载的通用标签规则。
  * mod-sidedock 限定侧栏；workspace-root 只承载外层分割。
@@ -168,10 +168,11 @@ body:not(.is-mobile) .workspace-split.mod-left-split .workspace-sidedock-vault-p
   display: none;
 }
 
-/* 原版 app.css:6391-6437 | 侧栏图标标签与活动态 */
+/* 原版 app.css:7256-7303 | 侧栏图标标签与活动态 */
 /* Sidebar tabs */
 .mod-left-split .workspace-tab-header-container .workspace-tab-header-container-inner,
 .mod-right-split .workspace-tab-header-container .workspace-tab-header-container-inner {
+  -webkit-app-region: no-drag;
   padding: 1px 0 7px;
   margin: 6px 0 0 0;
   gap: 3px;

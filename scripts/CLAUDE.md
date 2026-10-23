@@ -23,4 +23,5 @@ render-cancel.test.mjs: 渲染取消单测。9 条覆盖结算、监听释放与
 vault-watch.test.mjs: 真实 Chokidar 22 条。扫描空档、身份、增删改与反复启停。
 dev-hooks.test.mjs: 双窗口协调 11 条。迟到、失败、超时和回执校验，不启动 Electron。
 
+workspace-resize.test.mjs: 尺寸拖动纯逻辑与事件单测。24 条覆盖根侧栏、分配、零位移、布局换代与资源清理。
 [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md

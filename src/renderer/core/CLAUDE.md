@@ -28,9 +28,9 @@ file-menu.js: 文件菜单补全层。文件可在同库独立窗口打开。app
 suggest.js: 文件与命令建议。输入位于结果前，选择结果与取消关闭分开结算。输入容器带 .search-input-clear-button(非空清空并触发 input，空则关闭)。键盘：上下、PageUp/PageDown(按实测行高整页跳跃)、Home/End、Enter/auxclick、macOS Ctrl+p/n；isComposing 抑制。空态文案 emptyStateText（默认 'No results found.'，子类覆盖），空查询可用 noRecentFilesText 单独文案。
 view.js: View 基类(load/onOpen/onClose/getState/setState/_rootEl 契约) + ViewRegistry。
 workspace-tab-move.js: 标签组搬移层。moveLeafToTabs 搬既有叶子与 DOM（同组重排/跨组移动都不重开视图），源组搬空交 _removeTabsNode 收敛；createTabsBySplit 只建目标分割与空标签组。
-workspace-serialize.js: 布局序列化层。serializeNode/getLayout 递归经 workspace.serializeNode，保留 installStackedSerialization 对 tabs 的 stacked 键装饰。
+workspace-serialize.js: 保存有限正 dimension 比例，根侧栏独立保存 size。布局序列化层。serializeNode/getLayout 递归经 workspace.serializeNode，保留 installStackedSerialization 对 tabs 的 stacked 键装饰。
 tab-animation.js: 标签开合动画层。animateTabIn 测量自然宽后从 0 宽/透明展开；animateTabOut 在旧位置留克隆收窄淡出后摘除；时长 200ms ease-in-out（原版 updateTabDisplay）。只做视觉，不改模型顺序。
-workspace.js: 布局装配、导航与序列化入口。文件分派委托 workspace-file-view。新文档进入中心，侧栏工具禁止用户关闭。恢复布局后按插件状态补齐入口。 moveLeafToTabs/createTabsBySplit 委托 workspace-tab-move.js，序列化委托 workspace-serialize.js。 侧栏收展：140ms 宽度补间（原版 DD=140ms+swing）、类切换替代重建 DOM（保住 toggle 以做 FLIP）、类切换后立即迁移开关并淡出边界分隔条。 活动编辑器（原版 activeEditor）：getActiveEditor 取登记项（画布卡片宿主，形状 { editor, file, containerEl }）否则回落活动叶子的编辑器视图；setActiveEditor 不登记 markdown 视图、unsetActiveEditor(无参或同项) 清空；切换活动叶子即清空登记。
+workspace.js: 布局装配、导航与序列化入口。文件分派委托 workspace-file-view。新文档进入中心，侧栏工具禁止用户关闭。恢复布局后按插件状态补齐入口。 moveLeafToTabs/createTabsBySplit 委托 workspace-tab-move.js，序列化委托 workspace-serialize.js。 侧栏收展委托独立事务：140ms 补间锁内容宽度，重建前结算；拖宽和 dimension 统一恢复。 活动编辑器（原版 activeEditor）：getActiveEditor 取登记项（画布卡片宿主，形状 { editor, file, containerEl }）否则回落活动叶子的编辑器视图；setActiveEditor 不登记 markdown 视图、unsetActiveEditor(无参或同项) 清空；切换活动叶子即清空登记。
 workspace-sidebar.js: 固定工具映射与关闭判定。恢复旧布局遗漏的入口，插件禁用才撤销对应工具。
 workspace-profile.js: 稳定的库名、帮助与设置入口。每次展开读取库注册表，菜单调用真实打开库 IPC。
 workspace-model.js: 分割树与叶子生命周期。尊重 setState/onClose 失败，根元素稳定，构造器身份唯一。
@@ -59,4 +59,6 @@ window-save.js: 文档保存协议。Markdown/Canvas 使用 CAS；窗口关闭�
 
 window-save-conflict.js: 保存冲突恢复。读盘后复核文件与草稿；确认载入磁盘，副本成功后才解除原草稿。
 workspace-close.js: 叶子关闭事务。布局先隔离校验和反序列化；同步视图同步关闭，异步等待，失败保留原树。
+workspace-resize.js: 根侧栏只改自身宽度，内部按轴拖动并保存比例；取消或重建释放全局监听。
+workspace-sidebar-transition.js: 每侧独立收展事务。锁内容宽度，同侧反向与 DOM 重建结算最新目标态。
 [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md

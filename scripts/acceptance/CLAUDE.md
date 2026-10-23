@@ -107,4 +107,6 @@ bases-rich-render.js: 净化 HTML、块 Markdown、嵌入/数学/图表与派生
 bases-rich-lifecycle.js: 挂起渲染时取消、稳定宿主、重绘及虚拟换窗释放，32 条。
 canvas-export-fidelity.js: 真实大图、密度、弹层视口、隐私裁切/遮挡/媒体与预算，30 条。
 window-save-race.js: 真实双窗竞争、恢复在途新输入、最后输入和损坏布局拒绝丢稿，35 条。
+sidebar-resize.js: 真实根边界、中心弹性、内部轴向比例、重建/恢复和取消释放。
+sidebar-transitions.js: 左右并行、快速反向、内容宽度锁、动画取消与重建的一致性，64 条。
 [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md

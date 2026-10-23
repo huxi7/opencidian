@@ -1,9 +1,9 @@
 /**
  * [INPUT]: 独立临时 vault 与 OBS_ACT eval 注入的应用实例。
- * [OUTPUT]: 侧栏折叠/展开的顶栏几何、FLIP 动画与顶栏配色断言（计算样式锁）；失败抛出异常。
+ * [OUTPUT]: 侧栏折叠/展开、真实边界拖宽、工具栏左对齐与滚动固定断言；失败抛出异常。
  * [POS]: sidebar-chrome 场景。钉住三件事：折叠侧分隔条不占位不穿红绿灯、toggle 迁移与 140ms FLIP、
  * 功能区/标签栏/左上角 44x40 由 --titlebar-background 同一变量驱动（收起无色块接缝）；
- * 并锁住功能区/侧栏 16px 图标与图标 140ms 透明度过渡。
+ * 并锁住功能区/侧栏 16px 图标、140ms 透明度过渡与标签组禁止拖窗。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 (async()=>{
@@ -40,6 +40,8 @@ const sideTabEl=sideTabIcon&&sideTabIcon.closest('.workspace-tab-header');
 check(!!sideTabEl&&Math.round(sideTabEl.getBoundingClientRect().width)===28,'侧栏标签宽 28px（原版图标 16 + 左右 6）');
 check(!!sideTabEl&&getComputedStyle(sideTabEl).borderRadius==='8px','侧栏标签圆角 = --tab-radius（macOS 8px）');
 check(!!sideTabEl&&sideTabEl.classList.contains('tappable'),'侧栏标签带 tappable 类（原版）');
+check(getComputedStyle(sideTabEl.closest('.workspace-tab-header-container-inner')).getPropertyValue('-webkit-app-region')==='no-drag',
+  '侧栏标签组禁止拖窗（原版 app.css:7258）');
 const toggleSvg=document.querySelector('.sidebar-toggle-button svg.svg-icon');
 check(!!toggleSvg&&Math.round(toggleSvg.getBoundingClientRect().width)===16,'侧栏开关图标 16px（--icon-m）');
 
@@ -173,9 +175,8 @@ check(feView._collapseAllBtn&&String(feView._collapseAllBtn.getAttribute('aria-l
 const navButtonsRect=navButtons().getBoundingClientRect();
 const navBtnEls=[...navButtons().querySelectorAll('.nav-action-button')];
 const firstBtnRect=navBtnEls[0].getBoundingClientRect();
-const lastBtnRect=navBtnEls[navBtnEls.length-1].getBoundingClientRect();
-check(Math.abs((firstBtnRect.left+lastBtnRect.right)/2-(navButtonsRect.left+navButtonsRect.right)/2)<1,
-  '文件列表头五按钮水平居中（原版 .nav-buttons-container justify-content:center）');
+check(getComputedStyle(navButtons()).justifyContent==='flex-start'&&Math.abs(firstBtnRect.left-navButtonsRect.left)<1,
+  '用户指定：文件浏览器工具栏左对齐（共享原版按钮行仍居中）');
 check(Math.round(navButtonsRect.width)===Math.round(navHeader().getBoundingClientRect().width-16),
   '按钮行占满 .nav-header 内容宽（原版 width:auto）');
 check(!feView.treeEl.querySelector('.nav-folder.mod-root'),'文件树不渲染根节点标题（原版桌面）');
@@ -185,6 +186,56 @@ if(firstRow){
   const treeRect=feView.container.getBoundingClientRect();
   check(Math.abs(rowRect.left-(treeRect.left+12))<1,'根级行左缘 = 容器 padding 12px');
   check(Math.abs(rowRect.top-(treeRect.top+4))<1,'根级行顶缘 = 容器 padding 4px（无根标题占位）');
+}
+
+// 通过真实根分隔条事件改变侧栏宽度；禁止直接改 split.size 或 CSS 冒充拖动。
+const sidebar=ws.leftSplit;
+const initialWidth=sidebar.containerEl.getBoundingClientRect().width;
+const firstTool=()=>navButtons().querySelector('.nav-action-button');
+const firstTab=()=>sidebar.containerEl.querySelector('.workspace-tab-header');
+const relativeLeft=el=>el.getBoundingClientRect().left-sidebar.containerEl.getBoundingClientRect().left;
+const toolLeft=relativeLeft(firstTool());
+const tabLeft=relativeLeft(firstTab());
+const dragSidebar=async width=>{
+  const handle=ws._dividerHandles.left;
+  const rect=handle.getBoundingClientRect();
+  const x=rect.left+rect.width/2, y=rect.top+Math.min(80,rect.height/2);
+  const delta=width-sidebar.containerEl.getBoundingClientRect().width;
+  handle.dispatchEvent(new MouseEvent('mousedown',{button:0,buttons:1,bubbles:true,cancelable:true,clientX:x,clientY:y}));
+  window.dispatchEvent(new MouseEvent('mousemove',{buttons:1,bubbles:true,clientX:x+delta,clientY:y}));
+  window.dispatchEvent(new MouseEvent('mouseup',{button:0,bubbles:true,clientX:x+delta,clientY:y}));
+  await wait(180);
+};
+for(const width of [260,420,640]){
+  await dragSidebar(width);
+  check(Math.abs(sidebar.containerEl.getBoundingClientRect().width-width)<1,'根分隔条真实拖动到 '+width+'px');
+  check(Math.abs(relativeLeft(firstTool())-toolLeft)<1,'侧栏 '+width+'px：工具栏相对左缘不漂移');
+  check(Math.abs(relativeLeft(firstTab())-tabLeft)<1,'侧栏 '+width+'px：顶部标签组相对左缘不漂移');
+}
+await dragSidebar(initialWidth);
+check(Math.abs(sidebar.containerEl.getBoundingClientRect().width-initialWidth)<1,'拖动后恢复侧栏原宽');
+
+// 真实文件树产生滚动；工具栏和标签组保留在树滚动容器之外。
+const fixturePath='SidebarAlignment-'+Date.now();
+const fixture=await app.vault.createFolder(fixturePath);
+try{
+  for(let i=0;i<70;i++) await app.vault.create(fixturePath+'/note-'+String(i).padStart(2,'0')+'.md','# alignment\n');
+  await wait(250);
+  const beforeTool=firstTool().getBoundingClientRect();
+  const beforeTab=firstTab().getBoundingClientRect();
+  check(feView.container.scrollHeight>feView.container.clientHeight,'真实七十篇笔记使文件树可滚动');
+  feView.container.scrollTop=feView.container.scrollHeight;
+  feView.container.dispatchEvent(new Event('scroll',{bubbles:true}));
+  await wait(100);
+  check(feView.container.scrollTop>0,'文件树实际滚动到非零位置');
+  const afterTool=firstTool().getBoundingClientRect();
+  const afterTab=firstTab().getBoundingClientRect();
+  check(Math.abs(afterTool.left-beforeTool.left)<1&&Math.abs(afterTool.top-beforeTool.top)<1,'文件树滚动后工具栏固定左上');
+  check(Math.abs(afterTab.left-beforeTab.left)<1&&Math.abs(afterTab.top-beforeTab.top)<1,'文件树滚动后顶部标签组位置不变');
+}finally{
+  feView.container.scrollTop=0;
+  await app.vault.delete(fixture,true);
+  await wait(180);
 }
 const visibleRibbon=[...document.querySelectorAll('.side-dock-ribbon-action')].filter((el)=>el.getBoundingClientRect().width>0);
 check(visibleRibbon.length>=7,'功能区至少七个可见动作（快速切换/图谱/白板/数据库/日记/模板/命令）');

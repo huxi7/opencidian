@@ -8,7 +8,8 @@
  * 非堆叠态 _syncTabsHeaders 按 children 顺序重排标签头 DOM，保证模型顺序即视觉顺序。
  * view-header 由 view-header.js 落三块（left 导航钮 / title-container 面包屑+标题 mod-fade / actions）；活动叶与活动标签组带 mod-active（焦点规则挂它）。
  * 左右侧栏带 mod-primary-split/mod-secondary-split（原版侧栏标签与库信息栏选择器）；根级纵向分隔条负右外边距覆盖 1px，不占中心区宽。
- * 侧栏折叠态外观委托 workspace-sidebar-chrome.js 的 updateSidebarChrome；本文件保留 re-export 兼容入口。折叠只挂 is-collapsed 类，不写 inline display:none。
+ * 拖宽委托 workspace-resize；dimension 控制内部比例，根侧栏只保存宽度。
+ * DOM 重建先结束拖宽和独立侧栏动画；侧栏外观委托 sidebar-chrome 的 updateSidebarChrome；本文件保留 re-export 兼容入口。折叠只挂 is-collapsed 类，不写 inline display:none。
  * mount 时装载 stacked 键的序列化装饰器（layout JSON 组装在 workspace.js）。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
@@ -18,6 +19,8 @@ import { createVaultProfile } from './workspace-profile.js';
 import { Desktop, ipcOn } from './ipc.js';
 import { setIcon } from './icons.js';
 import { updateSidebarChrome } from './workspace-sidebar-chrome.js';
+import { settleSidebarTransitions } from './workspace-sidebar-transition.js';
+import { createWorkspaceResizeHandle, cancelWorkspaceResize } from './workspace-resize.js';
 import { renderViewHeader, fillViewHeader, syncNavButtons } from './view-header.js';
 import { animateTabIn, animateTabOut } from './tab-animation.js';
 import { syncTrafficLightPosition } from './window-chrome.js';
@@ -116,6 +119,8 @@ function installWindowState() {
 }
 
 export function render(workspace) {
+  cancelWorkspaceResize(workspace);
+  settleSidebarTransitions(workspace);
   const rootEl = workspace._getRootEl();
   rootEl.empty();
   workspace._dividerHandles = {};   // 重建 DOM：旧引用作废
@@ -149,6 +154,10 @@ export function _getRootEl(workspace) {
   return workspace._rootEl;
 }
 
+function applyDimension(el, node) {
+  if (Number.isFinite(node.dimension) && node.dimension > 0) el.style.flex = `${node.dimension} 1 0%`;
+}
+
 export function _renderNode(workspace, node) {
   if (node instanceof WorkspaceSplit) {
     const el = createDiv('workspace-split');
@@ -157,6 +166,7 @@ export function _renderNode(workspace, node) {
     if (node.side === 'right') el.addClass('mod-right-split', 'mod-sidedock', 'mod-secondary-split');
     if (node.side === 'center') el.addClass('mod-root');
     node.containerEl = el;
+    if (!['left', 'right'].includes(node.side)) applyDimension(el, node);
     el._split = node;
     if (node.side && node.collapsed) {
       el.addClass('is-collapsed');   // 只挂类；inline display:none 会让 showSidebar 无法重新展开
@@ -183,13 +193,14 @@ export function _renderNode(workspace, node) {
     return workspace._renderTabs(node);
   }
   if (node instanceof WorkspaceLeaf) {
-    return workspace._renderLeaf(node);
+    const el = workspace._renderLeaf(node); applyDimension(el, node); return el;
   }
   return createDiv();
 }
 
 export function _renderTabs(workspace, tabs) {
   const el = createDiv('workspace-tabs');
+  applyDimension(el, tabs);
   el._tabs = tabs;
   tabs.containerEl = el;
   el.toggleClass('mod-stacked', !!tabs.isStacked);   // 原版：堆叠状态落在容器类上
@@ -486,62 +497,7 @@ export function _syncAllTabs(workspace) {
 }
 
 export function _createResizeHandle(workspace, split, childIndex, direction) {
-  const handle = createDiv('workspace-leaf-resize-handle');
-  handle.addClass(direction === 'vertical' ? 'mod-vertical' : 'mod-horizontal');
-  let startPos = 0, sizes = [];
-  const isSidebar = split === workspace.leftSplit || split === workspace.rightSplit;
-  const onMove = (ev) => {
-    if (isSidebar) {
-      const delta = ev.clientX - startPos;
-      const size = Math.max(180, Math.min(800, sizes[0] + (split === workspace.leftSplit ? delta : -delta)));
-      split.size = size;
-      if (split.containerEl) {
-        split.containerEl.style.flex = `0 0 ${size}px`;
-        split.containerEl.style.width = size + 'px';
-      }
-    } else {
-      const delta = direction === 'vertical' ? ev.clientX - startPos : ev.clientY - startPos;
-      const total = sizes[0] + sizes[1];
-      // 原版 resizeItemsByDiff：单项最小 200
-      const min = Math.min(200, Math.floor(total / 2));
-      const s0 = Math.max(min, Math.min(total - min, sizes[0] + delta));
-      const s1 = total - s0;
-      const c0 = split.children[childIndex], c1 = split.children[childIndex + 1];
-      if (c0) c0.size = s0;
-      if (c1) c1.size = s1;
-      const el0 = c0 && (c0.containerEl || c0._leafEl);
-      const el1 = c1 && (c1.containerEl || c1._leafEl);
-      if (el0) { el0.style.flex = `0 0 ${s0}px`; }
-      if (el1) { el1.style.flex = `0 0 ${s1}px`; }
-    }
-    workspace._updateLeafSizes();
-  };
-  const onUp = () => {
-    window.removeEventListener('mousemove', onMove);
-    window.removeEventListener('mouseup', onUp);
-    document.body.removeClass('is-resizing');
-    document.body.removeClass('is-grabbing');
-    if (!isSidebar && workspace.app && workspace.app.saveLayout) {
-      Promise.resolve(workspace.app.saveLayout()).catch(() => {}); // 中心分栏尺寸落库
-    }
-    workspace.trigger('layout-change');
-  };
-  handle.onmousedown = (ev) => {
-    ev.preventDefault();
-    startPos = direction === 'vertical' ? ev.clientX : ev.clientY;
-    const c0 = split.children[childIndex], c1 = split.children[childIndex + 1];
-    const el0 = c0 && (c0.containerEl || c0._leafEl);
-    const el1 = c1 && (c1.containerEl || c1._leafEl);
-    sizes = [
-      el0 ? (direction === 'vertical' ? el0.offsetWidth : el0.offsetHeight) : 300,
-      el1 ? (direction === 'vertical' ? el1.offsetWidth : el1.offsetHeight) : 300,
-    ];
-    document.body.addClass('is-resizing');
-    document.body.addClass('is-grabbing');
-    window.addEventListener('mousemove', onMove);
-    window.addEventListener('mouseup', onUp);
-  };
-  return handle;
+  return createWorkspaceResizeHandle(workspace, split, childIndex, direction);
 }
 
 export function _updateLeafSizes(workspace) {

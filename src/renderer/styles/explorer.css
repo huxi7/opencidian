@@ -1,3 +1,9 @@
+/**
+ * [INPUT]: 依赖 tokens、tree 与文件浏览器的 nav-header/nav-files-container DOM。
+ * [OUTPUT]: 文件树、共享面板按钮行与文件浏览器左对齐工具栏样式。
+ * [POS]: styles/ 的文件浏览器层。共享按钮行保留原版居中；文件浏览器按用户偏好左对齐。
+ * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
+ */
 /* ==========================================================================
    explorer.css — file explorer (.nav-* tree), shared by outline/tag panes
    ========================================================================== */
@@ -27,6 +33,10 @@
   flex-wrap: wrap;
   gap: var(--size-2-1);
   width: 100%;
+}
+/* 用户指定：文件浏览器工具栏固定左上；原版共享按钮行仍为居中。 */
+.mod-sidedock .file-explorer-view > .nav-header > .nav-buttons-container {
+  justify-content: flex-start;
 }
 .nav-buttons-container.has-separator {
   border-bottom: 1px solid var(--background-modifier-border);

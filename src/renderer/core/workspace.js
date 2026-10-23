@@ -1,6 +1,6 @@
 /**
  * [INPUT]: 依赖 Events、metadata/vault、视图注册表与桌面 IPC。
- * 依赖 workspace-file-view 的文件分派、workspace-model 的节点；委托 workspace-renderer、workspace-interactions 与 workspace-close。
+ * 依赖 workspace-file-view 的文件分派、workspace-model 的节点；委托 renderer、interactions、close 与 sidebar-transition。
  * [OUTPUT]: 导出 Workspace、WorkspaceItem、WorkspaceSplit、WorkspaceTabs、
  * WorkspaceLeaf 与 parseSubpath。保留既有方法签名和调用入口。
  * [POS]: 装配分割树与导航。侧栏工具固定，文档新标签始终进入中心。侧栏沿用最近中心文件，链接路径由 vault 转为文件。
@@ -13,6 +13,7 @@
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 import { Events } from './events.js';
+import { setSidebarCollapsed, settleSidebarTransitions } from './workspace-sidebar-transition.js';
 import { detachLeafGuarded, closeWorkspaceViews, prepareWorkspaceLayout } from './workspace-close.js';
 import { viewStateForFile } from './workspace-file-view.js';
 import { t } from './i18n.js';
@@ -446,58 +447,9 @@ export class Workspace extends Events {
     return leaf;
   }
 
-  showSidebar(side) {
-    const split = side === 'left' ? this.leftSplit : this.rightSplit;
-    if (!split.collapsed) return;
-    split.collapsed = false;
-    if (split.containerEl) split.containerEl.removeClass('is-sidedock-collapsed', 'is-collapsed');
-    workspaceRenderer.updateSidebarChrome(this);   // 迁移 toggle（FLIP 幽灵动画需要旧父容器仍在 DOM）
-    const target = Math.max(180, split.size || 300);
-    this._animateSidebar(split, 0, target, () => {
-      if (split.containerEl) {
-        split.containerEl.style.flex = `0 0 ${target}px`;
-        split.containerEl.style.width = target + 'px';
-      }
-      this._updateLeafSizes();
-      this.trigger('layout-change');
-    });
-  }
+  showSidebar(side) { return setSidebarCollapsed(this, side, false); }
 
-  hideSidebar(side) {
-    const split = side === 'left' ? this.leftSplit : this.rightSplit;
-    if (split.collapsed) return;
-    const from = split.containerEl ? split.containerEl.offsetWidth : (split.size || 300);
-    split.collapsed = true;
-    // 原版：类切换后立即迁移 toggle（FLIP 与宽度动画并行）并淡出分隔条
-    workspaceRenderer.updateSidebarChrome(this);
-    this._animateSidebar(split, from, 0, () => {
-      // 原版：宽度动画结束后 hide()（不改 DOM 结构）；我们用同语义的类，避免重建 DOM 丢掉 toggle
-      if (split.collapsed && split.containerEl) split.containerEl.addClass('is-sidedock-collapsed', 'is-collapsed');
-      this._updateLeafSizes();
-      this.trigger('layout-change');
-    });
-  }
-
-  /** 原版侧栏收展 140ms 宽度补间（--anim-motion-swing），结束后再落最终布局。 */
-  _animateSidebar(split, from, to, after) {
-    const el = split.containerEl;
-    if (this._sidebarAnim) {
-      try { this._sidebarAnim.cancel(); } catch (e) {}
-      this._sidebarAnim = null;
-    }
-    if (!el || typeof el.animate !== 'function') { after && after(); return; }
-    const anim = el.animate(
-      [{ flexBasis: from + 'px', width: from + 'px' }, { flexBasis: to + 'px', width: to + 'px' }],
-      { duration: 140, easing: 'cubic-bezier(0, 0.55, 0.45, 1)', fill: 'both' }  // 原版 DD：--anim-motion-swing
-    );
-    this._sidebarAnim = anim;
-    anim.onfinish = () => {
-      if (this._sidebarAnim !== anim) return;
-      this._sidebarAnim = null;
-      try { anim.cancel(); } catch (e) {}
-      after && after();
-    };
-  }
+  hideSidebar(side) { return setSidebarCollapsed(this, side, true); }
 
   toggleSidebar(side) {
     const split = side === 'left' ? this.leftSplit : this.rightSplit;
@@ -567,6 +519,7 @@ export class Workspace extends Events {
     if (data.type === 'leaf') {
       const leaf = new WorkspaceLeaf(this);
       if (data.id) leaf.id = data.id;
+      if (Number.isFinite(data.dimension) && data.dimension > 0) leaf.dimension = data.dimension;
       leaf._pendingState = data.state || { type: 'empty', state: {} };
       this._leafMap.set(leaf.id, leaf);
       return leaf;
@@ -574,6 +527,7 @@ export class Workspace extends Events {
     if (data.type === 'tabs') {
       const tabs = new WorkspaceTabs(this);
       if (data.id) tabs.id = data.id;
+      if (Number.isFinite(data.dimension) && data.dimension > 0) tabs.dimension = data.dimension;
       for (const child of data.children || []) {
         const node = await this.deserializeNode(child);
         if (node) tabs.addLeaf(node);
@@ -584,6 +538,7 @@ export class Workspace extends Events {
     if (data.type === 'split') {
       const split = new WorkspaceSplit(this, data.direction || 'vertical');
       if (data.id) split.id = data.id;
+      if (Number.isFinite(data.dimension) && data.dimension > 0) split.dimension = data.dimension;
       if (data.size) split.size = data.size;
       for (const child of data.children || []) {
         const node = await this.deserializeNode(child);
@@ -599,6 +554,7 @@ export class Workspace extends Events {
     let staged;
     try { staged = await prepareWorkspaceLayout(this, data, Workspace.prototype.deserializeNode); }
     catch (error) { new Notice('无法载入布局：' + error.message); return false; }
+    settleSidebarTransitions(this);
     if (await closeWorkspaceViews(this) === false) return false;
     this._leafMap = staged.leafMap; this.activeLeaf = null; this._lastActiveLeaves = [];
     this.centerSplit = this._replaceInRoot(this.centerSplit, staged.main); this.centerSplit.side = 'center';

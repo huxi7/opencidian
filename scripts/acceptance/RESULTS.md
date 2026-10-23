@@ -723,3 +723,12 @@ ASAR 87000452字节，SHA-256 `36eba075a6ed9d03ec0f725d3ba020413f880d5eb18038073
 
 README、AGENT-STATE、L1/L2/L3已回环；源码、验收脚本与本轮文档均≤800行。LICENSE内容不变，未配置remote或push。
 只更新 release/mac-arm64/OpenSidian.app 目录包，未更新旧DMG/ZIP或已安装应用，未签名、公证、安装、发布。未启动原版，未做截图像素1:1证明。升级须完整退出并重启OpenSidian；只⌘R无法替换主进程IPC。
+
+## 侧栏审查与交互收口（2026-10-23）
+
+13时专项的临时目录在18时续跑已清理，下列为当时回执记录；最终验收改存仓库verification目录并重新执行。
+基线2746ebe，工作区干净。with-lock内build+canvas-dummy --no-screenshot，75条通过，/tmp/opensidian-sidebar-baseline-1023.log。优先级与静态证据见_analysis/sidebar-114/AUDIT.md及三份专项FACTS；没有启动原版。
+P0根因：左右共用_sidebarAnim互相取消；正文未锁minWidth而重排。新workspace-sidebar-transition按split隔离，反向从当前宽度开始；完成、取消、DOM重建均落模型目标并释放内容锁。真实sidebar-transitions64条通过，/tmp/opensidian-sidebar-transitions-1023.log。
+P1根因：root边界被当中心双栏，内部horizontal反被当宽度。新workspace-resize只改外侧栏，内部按轴保存dimension；serialize/deserialize/render统一比例。Node24、真实resize27通过，/tmp/opensidian-workspace-resize-unit.json、opensidian-sidebar-resize-final.log。首次ophQ8H发现CSS flex-basis:auto抵消比例，修成弹性百分比后通过；原失败曾留在临时目录。
+用户指定文件浏览器工具行左对齐；原版静态nav-buttons-container默认center，报告明确区分。顶部标签保持自然宽度，补原版no-drag。真实260/420/640拖宽和树滚动不移位：sidebar-chrome97+sidebar-shell61=158通过，/tmp/opensidian-sidebar-alignment-receipts.jsonl。未修改其它面板共享居中规则。
+改动边界：core/workspace{,-renderer,-serialize,-resize,-sidebar-transition}、styles/{explorer,workspace-sidebar}、file-explorer L3及对应新场景。GEB地图同步，最长源码文件≤800。完整回归和最终包在末节单列，不沿用先前7288条冒充本轮结果。
