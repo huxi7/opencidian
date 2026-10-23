@@ -176,7 +176,7 @@ const navButtonsRect=navButtons().getBoundingClientRect();
 const navBtnEls=[...navButtons().querySelectorAll('.nav-action-button')];
 const firstBtnRect=navBtnEls[0].getBoundingClientRect();
 check(getComputedStyle(navButtons()).justifyContent==='flex-start'&&Math.abs(firstBtnRect.left-navButtonsRect.left)<1,
-  '用户指定：文件浏览器工具栏左对齐（共享原版按钮行仍居中）');
+  '用户指定：文件浏览器工具栏左对齐（全部侧栏共用规则）');
 check(Math.round(navButtonsRect.width)===Math.round(navHeader().getBoundingClientRect().width-16),
   '按钮行占满 .nav-header 内容宽（原版 width:auto）');
 check(!feView.treeEl.querySelector('.nav-folder.mod-root'),'文件树不渲染根节点标题（原版桌面）');

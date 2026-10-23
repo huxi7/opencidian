@@ -765,3 +765,13 @@ L3与core/views/acceptance地图已同步。原生按钮结构、可聚焦、mou
 ASAR 87023620字节，SHA-256 `0198b1bb32a5dbbb40eb089db0833cfc6ad3601ee223f71f2fb0a0607191bd3c`；应用1.14.4、Electron33.4.11、macOS arm64。包内LICENSE与仓库原文一致，真实启动退出码0，无截图。
 每项缺陷的事实、修复和测试见AUDIT与FACTS。没有启动原版，未做逐像素对照；原生按钮DOM/焦点验证不冒充真实系统键盘测试。当前“全通过”指有效覆盖；不能说焦点补修后重新连续全量全绿。
 README、AGENT-STATE、L1/L2/L3同步，源码与验收脚本≤800行。只更新release/mac-arm64/OpenSidian.app，未改已安装应用或旧DMG/ZIP，未签名、公证、发布；LICENSE不变，未配remote、未push。
+
+## 全部侧栏工具栏靠左补修（2026-10-23）
+
+此前选择器只覆盖文件树，遗漏书签、标签、反链与全部属性。现由 `.mod-sidedock .nav-buttons-container` 统一靠左；中心面板保留原版居中。原版默认居中事实不变，本轮执行用户指定行为。
+新增sidebar-toolbars在旧样式真实失败于书签260px；修后317条通过。覆盖五类面板、左右两侧、明暗主题、260/420/640px真实拖宽、标签切换及逐项收展，并验证中心书签未受影响。
+基线命令：with-lock内 `npm run build && node scripts/acceptance/run.mjs canvas-dummy --no-screenshot`，75条通过。
+定向命令：`sh scripts/acceptance/full.sh --only sidebar-toolbars,sidebar-chrome,bookmarks,core-views,search-views,sidebar-transitions --output _analysis/sidebar-114/verification/toolbars-followup`。6场景6次670条通过，未声称重跑完整88场景。
+包命令：with-lock内 `npm run dist:dir -- --publish never`，再 `node scripts/smoke-packaged.mjs --no-screenshot`；71条通过，exitCode=0。目录包已更新，已安装应用未替换。
+逐条回执、旧样式失败原文与哈希存TOOLBAR-RECEIPTS.json；原始输出位于上述verification目录。ASAR 87023583字节，SHA-256 `420f64d3d1833b7e9ad88a60d442d1812ceedb1d6624705f6aac0a1eb7f26947`。
+L3与L2、README和对齐事实已同步。未启动原版，未截图、未push。

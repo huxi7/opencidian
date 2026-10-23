@@ -14,10 +14,12 @@
 
 ## 用户指定行为
 
-文件浏览器工具栏固定在左上。此要求覆盖原版居中默认值。
+所有侧栏导航工具栏固定靠左。此要求覆盖原版居中默认值。
 
-覆盖范围限定为 `.mod-sidedock .file-explorer-view > .nav-header > .nav-buttons-container`。
-共享按钮行继续居中。反链、属性等面板不受本次覆盖影响。
+统一规则为 `.mod-sidedock .nav-buttons-container`。
+覆盖文件树、书签、标签、反链和全部属性。中心面板保留居中。
+2026-10-23 补修：此前只覆盖文件树，遗漏同类侧栏面板。
+新增 sidebar-toolbars 验证两侧、明暗、真实拖宽及逐项收展。
 
 顶部侧栏标签组继续使用原版自然宽度和末尾 spacer。
 补齐标签组的 `-webkit-app-region: no-drag`，避免间隙成为拖窗区。

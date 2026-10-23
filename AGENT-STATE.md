@@ -768,3 +768,10 @@ node --experimental-vm-modules src/renderer/core/workspace-regression.js
 - 13时临时目录在18时续跑已清理，重跑改存仓库内verification；不把丢失的临时日志当当前证据。原始日志本地保留，摘要和关键失败已入库。
 - 最终目录包release/mac-arm64/OpenSidian.app；ASAR 0198b1bb32a5dbbb40eb089db0833cfc6ad3601ee223f71f2fb0a0607191bd3c。旧安装和DMG/ZIP不自动更新，需退出当前应用并运行新目录包。
 - 未启动原版、未截图，未做原版运行态像素比较/真实系统键盘/叶子联动分组证明。未改LICENSE、remote或push。
+
+## 31. 全部侧栏工具栏靠左补修（2026-10-23）
+
+- 修正只覆盖文件树的选择器。书签、标签、反链、全部属性统一复用侧栏靠左规则。
+- 新增sidebar-toolbars：旧样式书签260px真实失败；修后317条覆盖左右、明暗、三宽度和逐项收展。
+- 基线75；六场景定向670；重建目录包后冒烟71，均通过。未重跑完整88场景。
+- 逐条回执及原失败见TOOLBAR-RECEIPTS.json。目录包已更新，安装位置未替换。

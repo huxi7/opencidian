@@ -3,7 +3,7 @@
  * [OUTPUT]: 导出 FileExplorerView 与插件注册（左侧栏 'file-explorer' 视图）
  * [POS]: plugins-core/ 的导航面板。DOM 逐字对齐原版：tree-item nav-folder > tree-item-self nav-folder-title.is-clickable > (tree-item-icon.collapse-icon[+right-triangle] + tree-item-inner nav-folder-title-content)。折叠状态同时写在 nav-folder 与 collapse-icon 上（原版 _L() 语义）。插件注册的扩展名加入可见文件。文件标题显示去扩展名 basename，非 md 文件追加 nav-file-tag。
  *        根级文件直接挂匿名容器，不渲染仓库名根标题（原版桌面无根节点标题行）；1.14.4 文件列表没有功能区按钮。
- *        面板头按原版 QL：.nav-header 是内容块第一个子块（固定在树上方，不随树滚动），按钮行宽 100%，侧栏内按用户指定左对齐；共享按钮行保持原版居中，排序菜单由 file-explorer-toolbar.js 建，本文件只持 _autoReveal/_allCollapsed 状态并调用 syncExplorerToolbar 渲染。
+ *        面板头按原版 QL：.nav-header 是内容块第一个子块（固定在树上方，不随树滚动），按钮行宽 100%，侧栏内按用户指定左对齐；中心面板按钮行保持原版居中，排序菜单由 file-explorer-toolbar.js 建，本文件只持 _autoReveal/_allCollapsed 状态并调用 syncExplorerToolbar 渲染。
  *        排序菜单按原版三分组（名称/修改时间/创建时间），组后各插分隔线；自动显示开启时才在 file-open / 活动叶切换时展开祖先并滚入视野。
  *        选择集与键盘由 FileTreeSelection 持有（Alt 切换 / Shift 范围 / 方向键 / Delete），本文件只提供 DOM 与动作（打开、折叠、重命名、删除、菜单）。
  *        拖动生命周期与落点全部委派 file-explorer-drag.js：幽灵、body.is-grabbing、选择集源态、750ms 展开、根落点。

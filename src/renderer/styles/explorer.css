@@ -1,7 +1,7 @@
 /**
- * [INPUT]: 依赖 tokens、tree 与文件浏览器的 nav-header/nav-files-container DOM。
- * [OUTPUT]: 文件树、共享面板按钮行与文件浏览器左对齐工具栏样式。
- * [POS]: styles/ 的文件浏览器层。共享按钮行保留原版居中；文件浏览器按用户偏好左对齐。
+ * [INPUT]: 依赖 tokens、tree 与导航面板的 nav-header/nav-buttons-container DOM。
+ * [OUTPUT]: 文件树、共享面板按钮行与全部侧栏工具栏左对齐样式。
+ * [POS]: styles/ 的文件浏览器层。中心按钮行保留原版居中；全部侧栏面板共用左对齐策略。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 /* ==========================================================================
@@ -34,8 +34,8 @@
   gap: var(--size-2-1);
   width: 100%;
 }
-/* 用户指定：文件浏览器工具栏固定左上；原版共享按钮行仍为居中。 */
-.mod-sidedock .file-explorer-view > .nav-header > .nav-buttons-container {
+/* 用户指定：所有侧栏导航工具栏靠左；中心面板保留原版居中。 */
+.mod-sidedock .nav-buttons-container {
   justify-content: flex-start;
 }
 .nav-buttons-container.has-separator {
