@@ -25,6 +25,8 @@ npm run dev        # 开发模式（watch + 自动重启）
 
 数据库入口：点击左侧功能区的列表布局图标「新建数据库」，或空标签页、文件夹右键菜单的「新建数据库」。打开已有数据库时，直接点击文件树中的 `.base` 文件。
 
+侧栏文件树工具按钮按本项目用户要求靠左，顶部工具标签保持自然宽度。文件视图头只保留视图动作和竖三点，默认应用入口放在文件菜单内。
+
 数据库顶部可切换视图、排序、分组、筛选、选择属性和搜索。表格单元格双击或按 Enter/F2 编辑；拖动列边界调整宽度。工具栏「新建」立即创建笔记，并打开就地编辑器。入口随设置 → 核心插件 → 数据库的开关启停。
 
 升级本轮代码后，请完整退出并重启 OpenSidian（源码运行用 `npm start`）。主进程新增了窗口与写盘 IPC，仅用 ⌘R 刷新不能加载它们。
@@ -52,9 +54,9 @@ node scripts/acceptance/run.mjs core-ribbon --no-screenshot
 node scripts/acceptance/run.mjs canvas --no-screenshot
 ```
 
-- 正式隔离 E2E 场景 **84 个**（不含 `probe-*` 诊断）。本轮有效覆盖 **117 次 / 7288 条断言**，包含定向补跑；完整执行的原始结果、失败与实际计数见 [验收报告](scripts/acceptance/RESULTS.md) 和 [逐条回执](scripts/acceptance/RECEIPTS.json)。运行器只操作带标记的临时库。
+- 正式隔离 E2E 场景 **87 个**（不含 `probe-*` 诊断）。本轮有效覆盖 **120 次 / 7533 条断言**，包含焦点补修；完整执行的原始结果、失败与实际计数见 [验收报告](scripts/acceptance/RESULTS.md) 和 [逐条回执](scripts/acceptance/SIDEBAR-RECEIPTS.json)。运行器只操作带标记的临时库。
 - E2E 在真实 Electron 内验证 DOM、事件、写盘与资源释放；Node/VM 逻辑检查单独计数。
-- 本轮工作区逻辑回归 **29/29**；另有真实 GC/DOM/事件/Worker 生命周期验收。公式与 CSV 单测 **273 + 11** 条通过，完整数字与验证边界见报告。
+- 本轮工作区逻辑回归 **30/30**；另有真实 GC/DOM/事件/Worker 生命周期验收。公式与 CSV 单测 **273 + 11** 条通过，完整数字与验证边界见报告。
 
 ## 打包分发
 
@@ -66,7 +68,7 @@ node scripts/smoke-packaged.mjs --no-screenshot  # ASAR 核对 + 隔离真实启
 ```
 
 - 当前为**未签名**构建（`electron-builder.yml` 里 `identity: null`）。macOS Gatekeeper 首次打开需右键 → 打开，或 `xattr -dr com.apple.quarantine /Applications/OpenSidian.app`。
-- 当前目录包：`release/mac-arm64/OpenSidian.app`，版本 **1.14.4**，打包冒烟 **39/39**；许可证原文随 ASAR 分发。本轮没有生成或更新 DMG/ZIP。
+- 当前目录包：`release/mac-arm64/OpenSidian.app`，版本 **1.14.4**，打包冒烟 **71/71**；许可证原文随 ASAR 分发。本轮没有生成或更新 DMG/ZIP。
 - 冒烟先核对身份、版本和当前构建哈希，拒绝启动陈旧包；回执后等待正常退出。超时明确失败，只清理自建进程组。
 - 应用图标由 `scripts/make-app-icon.py` 生成（原创几何设计），可自行替换 `build/icon.icns`。
 - 正式对外分发需 Apple 开发者证书：移除 `identity: null` 并配置签名/公证。

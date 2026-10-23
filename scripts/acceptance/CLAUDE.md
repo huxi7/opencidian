@@ -5,11 +5,12 @@
 运行器只允许带标记的临时库。日志错误使运行失败。
 正式场景返回 {pass,count,checks}，count 为正且等于 checks.length。
 全量入口固定 --no-screenshot，排除 probe-* 诊断脚本。
-当前 84 个正式场景。完整执行及定向补跑分别留存，最终有效覆盖见 RECEIPTS.json。
+当前 87 个正式场景。旧轮回执见 RECEIPTS.json，本轮侧栏回执见 SIDEBAR-RECEIPTS.json。
 
 成员清单
 RESULTS.md: 本轮结果、证据目录与复跑方式。
-RECEIPTS.json: 逐条有效覆盖、原始失败和补跑来源哈希；Node/VM 与 E2E 分开计数。
+RECEIPTS.json: 上轮核心收口的原始与有效回执。
+SIDEBAR-RECEIPTS.json: 本轮侧栏全量、焦点补修及原失败；独立Node/VM和包验证，逐条checks与来源哈希。
 bases-entry.js: 数据库可见入口。功能区、空标签键盘、文件夹及根菜单创建真实文件，插件启停对称，重启读回。
 properties-editing.js: 属性类型、侧栏编辑、剪贴板、首项与改名。54 条，verify 阶段重启读回 11 条。
 frontmatter-write.js: 多窗口真实属性写回。CAS 冲突、坏 YAML 原文、失败恢复与 CRLF 正文保留。

@@ -1,7 +1,7 @@
 /**
  * [INPUT]: release/ 下的 OpenSidian 可执行文件、隔离临时库与可选 --no-screenshot。
  * [OUTPUT]: {pass,count,checks}、运行日志与失败退出码；不生成截图。
- * [POS]: 打包产物的真实启动冒烟。先比对 ASAR 身份及当前代码，再校验编辑器、Bases、公式、CSV 和 SVG。
+ * [POS]: 打包产物的真实启动冒烟。先比对 ASAR 身份、当前代码及全部样式，再校验编辑器、Bases、公式、CSV 和 SVG。
  * 回执后必须自行正常退出；超时只终止自建进程组，不接触用户应用。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
@@ -35,6 +35,7 @@ try {
   preflight(digest(extractFile(archive, 'LICENSE')) === digest(fs.readFileSync(path.join(repository, 'LICENSE'))), '打包许可证与仓库原文一致');
   const files = fs.readdirSync(path.join(repository, 'src/main')).filter(name => name.endsWith('.js')).map(name => 'src/main/' + name);
   files.push('dist/renderer.js', 'dist/starter.js', 'dist/graph-sim-worker.js', 'src/renderer/index.html', 'src/renderer/starter.html');
+  files.push(...fs.readdirSync(path.join(repository, 'src/renderer/styles')).filter(name => name.endsWith('.css')).map(name => 'src/renderer/styles/' + name));
   for (const file of files) preflight(digest(extractFile(archive, file)) === digest(fs.readFileSync(path.join(repository, file))), '打包文件与当前构建一致：' + file);
 } catch (error) {
   console.log(JSON.stringify({ pass: false, count: preflightChecks.length, checks: preflightChecks, binary, failureReason: error.message, screenshot: null }));

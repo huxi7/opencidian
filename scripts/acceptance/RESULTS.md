@@ -745,3 +745,23 @@ L3与core/views/acceptance地图已同步。原生按钮结构、可聚焦、mou
 原版collapse要求迁移最近可见叶并focus:true。本实现此前只更新折叠DOM，活动视图可能仍是隐藏面板，编辑/关闭命令失效。sidebar-transition现排除关闭、过时与不可见标签，恢复最近中心叶；Markdown补onFocus，区分阅读容器和CodeMirror实际焦点。
 初次焦点回归7场景10次，9次通过、1次失败，376条完成回执；真实焦点断言抓到Markdown缺hook，失败保留verification/focus-regression。补齐后focus-final 7场景8次433条全部通过，含sidebar-transitions76、view-actions124、两主题view-header各83、编辑竞争20、布局31、生命周期10、焦点保护6。VM30通过。两个阶段分开保存，不把第一次失败写成通过。
 新增契约和GEB地图同步。当前源码在e3c7563全量87场景120次7521条通过之后补焦点；最终有效覆盖将用修后回执替换受影响项，不能声称最终代码又跑了一次连续全量。
+
+## 侧栏轮最终验收与目录包（2026-10-23）
+
+源码冻结f691569，原版静态对照和优先级清单已闭环。本轮不沿用已清理的13时临时日志；18时重跑原始输出位于_analysis/sidebar-114/verification，完整逐条数据已提交SIDEBAR-RECEIPTS.json。
+
+| 验证组 | 实际结果 |
+| --- | --- |
+| e3c7563完整回归 | 87场景/120次/7521条，0失败 |
+| 焦点初次定向 | 7场景/10次，9通过/1失败，376条完成回执 |
+| f691569修后定向 | 7场景/8次/433条，0失败 |
+| 最终有效覆盖 | 87场景/120次覆盖/7533条，全通过 |
+| 所列组实际执行 | 138次，含原失败1次，8330条完成回执 |
+| Node/工作区VM | 452条/30条，分别通过，不混入E2E |
+| 最终目录包 | 50项包内核对+20项运行+1项正常退出=71通过 |
+
+命令：full.sh --output _analysis/sidebar-114/verification/full-1800；焦点两组分别由 --only sidebar-transitions,sidebar-chrome,sidebar-resize,sidebar-shell,editor-race,layout-modals,lifecycle-memory 和 --only sidebar-transitions,view-actions,view-header,editor-race,layout-modals,lifecycle-memory,e2e-focus运行。full入口固定 --no-screenshot；工作区VM与9组Node脚本结果单列于回执。
+目录包：with-lock内 npm run dist:dir -- --publish never，再 node scripts/smoke-packaged.mjs --no-screenshot。构建和包JSON位于verification/dist.log及packaged.json。样式核对新增全部32个CSS，防止JS新而样式旧；71项不等同71项用户交互。
+ASAR 87023620字节，SHA-256 `0198b1bb32a5dbbb40eb089db0833cfc6ad3601ee223f71f2fb0a0607191bd3c`；应用1.14.4、Electron33.4.11、macOS arm64。包内LICENSE与仓库原文一致，真实启动退出码0，无截图。
+每项缺陷的事实、修复和测试见AUDIT与FACTS。没有启动原版，未做逐像素对照；原生按钮DOM/焦点验证不冒充真实系统键盘测试。当前“全通过”指有效覆盖；不能说焦点补修后重新连续全量全绿。
+README、AGENT-STATE、L1/L2/L3同步，源码与验收脚本≤800行。只更新release/mac-arm64/OpenSidian.app，未改已安装应用或旧DMG/ZIP，未签名、公证、发布；LICENSE不变，未配remote、未push。
