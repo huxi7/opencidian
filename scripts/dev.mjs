@@ -1,3 +1,9 @@
+/**
+ * [INPUT]: esbuild、child_process、Electron 与 renderer 入口。
+ * [OUTPUT]: 启动开发环境，增量 watch 编译 renderer/starter/graph-worker 并拉起 Electron。
+ * [POS]: 开发模式启动器。排除 Node 原生模块与 fsevents（.node 二进制）。
+ * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
+ */
 import { spawn } from 'child_process';
 import { fileURLToPath } from 'url';
 import path from 'path';
@@ -19,7 +25,8 @@ const common = {
   platform: 'browser',
   format: 'iife',
   target: 'chrome120',
-  external: NODE_BUILTINS,
+  // fsevents is a native module (chokidar optional dep) — never bundle .node files
+  external: [...NODE_BUILTINS, 'fsevents'],
   loader: { '.json': 'json' },
   define: { 'process.env.NODE_ENV': '"development"' },
   logLevel: 'info',
@@ -30,6 +37,7 @@ const common = {
 const targets = [
   { in: 'src/renderer/main.js', out: 'dist/renderer.js' },
   { in: 'src/renderer/starter.js', out: 'dist/starter.js' },
+  { in: 'src/renderer/plugins-core/graph-sim-worker.js', out: 'dist/graph-sim-worker.js' },
 ];
 
 for (const t of targets) {
