@@ -1,3 +1,9 @@
+/**
+ * [INPUT]: vault 文件树、事件、YAML 与 user-ignore 的路径规则判定器。
+ * [OUTPUT]: 导出 MetadataCache，提供正文索引、链接解析与 isUserIgnored。
+ * [POS]: 库元数据索引。忽略规则统一供数据库与导航消费者调用。
+ * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
+ */
 /*
  * Metadata cache — parses every markdown file and indexes links, embeds,
  * tags, headings, blocks and frontmatter. Powers backlinks, outgoing links,
@@ -5,6 +11,7 @@
  */
 import { Events } from './events.js';
 import { TFile, TFolder } from './vault.js';
+import { createUserIgnoreMatcher } from './user-ignore.js';
 
 const yaml = require('js-yaml');
 
@@ -19,6 +26,10 @@ export class MetadataCache extends Events {
   constructor(app) {
     super();
     this.app = app;
+    this._isUserIgnored = createUserIgnoreMatcher(() => {
+      const settings = this.app.settings?.appSettings || this.app.settings?.config || {};
+      return settings.userIgnoreFilters;
+    });
     this.caches = new Map();          // path -> cache
     this.resolvedLinks = {};          // sourcePath -> { destPath: count }
     this.unresolvedLinks = {};        // sourcePath -> { linktext: count }
@@ -28,6 +39,8 @@ export class MetadataCache extends Events {
     this._parseQueue = [];
     this._flushTimer = null;
   }
+
+  isUserIgnored(fileOrPath) { return this._isUserIgnored(fileOrPath); }
 
   async initialize() {
     const files = this.app.vault.getMarkdownFiles();

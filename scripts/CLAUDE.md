@@ -24,4 +24,6 @@ vault-watch.test.mjs: 真实 Chokidar 22 条。扫描空档、身份、增删改
 dev-hooks.test.mjs: 双窗口协调 11 条。迟到、失败、超时和回执校验，不启动 Electron。
 
 workspace-resize.test.mjs: 尺寸拖动纯逻辑与事件单测。24 条覆盖根侧栏、分配、零位移、布局换代与资源清理。
+user-ignore.test.mjs: 忽略规则22条单测。前缀、正则、损坏配置与原地修改即时生效。
+audit-storage.test.mjs: 隔离真盘回归。回收站保留、失败保护、移动索引与磁盘碰撞拒绝。
 [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md

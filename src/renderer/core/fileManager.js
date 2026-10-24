@@ -1,6 +1,6 @@
 /**
  * [INPUT]: 依赖 ./vault.js 的 TFile/TFolder/normalizePath/parentPathOf；依赖 ./i18n.js 的 t/tt；依赖 ./vault-utils.js 的 getUniquePath；依赖 ./notices.js 的 Notice；依赖 ./modals.js 的 Modal/confirmDialog；依赖 ./attachments-downloader.js 的 downloadAttachmentsForNote
- * 属性写回委托 frontmatter-write：坏 YAML 拒写，同库窗口使用 CAS 合并。
+ * 属性写回委托 frontmatter-write；删除按 system/local/none 分派，回收失败不永久删除。
  * [OUTPUT]: 导出 FileManager 类（新建/重命名/删除/移动/附件路径解析/内部链接更新/processFrontMatter/downloadAttachmentsForNote）
  * [POS]: core/ 的文件操作中枢，被 file-explorer、编辑器与命令层调用。重命名流程：先统计受影响链接数（links/files）→ 改磁盘名 → 按 alwaysUpdateLinks 静默更新或弹窗（总是更新/仅此一次/不做更新）→ 最后修 metadataCache；顺序不可颠倒。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
@@ -319,35 +319,11 @@ export class FileManager {
       const ok = await confirmDialog(this.app, title, `${file.name}\n\n${body}`, { cta: t('dialogue.button-delete') || 'Delete', warning: true });
       if (!ok) return false;
     }
-    const targetPath = force ? file.path : await this.getDeleteDestination(file);
-    if (targetPath) {
-      if (targetPath === file.path) {
-        await this.app.vault.delete(file, permanent);
-      } else {
-        try {
-          await this.app.vault.rename(file, targetPath);
-          await this.app.vault.delete(this.app.vault.getAbstractFileByPath(targetPath), true);
-        } catch (e) {
-          await this.app.vault.delete(file, true);
-        }
-      }
-    } else {
-      await this.app.vault.delete(file, true);
-    }
+    if (permanent) await this.app.vault.delete(file, true);
+    else await this.app.vault.trash(file, settings.trashOption !== 'local');
     this.app.metadataCache.onFileDelete(file);
     this.app.workspace.trigger('file-delete', file);
     return true;
-  }
-
-  async getDeleteDestination(file) {
-    const settings = this.app.settings.appSettings;
-    if (settings.trashOption === 'none' || settings.trashOption === 'permanent') return null;
-    if (settings.trashOption === 'system') return null; // vault.delete handles via shell.trash
-    // local .trash folder
-    const trashFolder = '.trash';
-    const ts = new Date();
-    const stamp = `${ts.getFullYear()}${String(ts.getMonth() + 1).padStart(2, '0')}${String(ts.getDate()).padStart(2, '0')}${String(ts.getHours()).padStart(2, '0')}${String(ts.getMinutes()).padStart(2, '0')}${String(ts.getSeconds()).padStart(2, '0')}`;
-    return normalizePath(`${trashFolder}/${stamp} ${file.name}`);
   }
 
   async trashFile(file) {

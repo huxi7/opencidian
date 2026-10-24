@@ -16,6 +16,7 @@ dist/ - esbuild 输出 (renderer.js, starter.js, graph-sim-worker.js)
 
 <config>
 AGENT-STATE.md - 项目事实、阶段记录与当前交接安排
+AGENT-STATE-20261023.md - 截至10月23日的完整历史交接归档
 README.md - 项目介绍、构建运行方式与兼容性说明
 package.json - 依赖与脚本 (build/watch/start/dev)
 electron-builder.yml - 目录包与分发配置；ASAR 包含运行文件和许可证原文
@@ -24,6 +25,8 @@ scripts/dev.mjs - 开发模式 (watch + electron 热重启)
 src/renderer/index.html - 主窗口 HTML，链接 styles/*.css 与 dist/renderer.js；画布和变量样式按序导入分片
 src/renderer/starter.html - 仓库选择窗口 HTML
 </config>
+
+当前全项目审查见 _analysis/project-audit-20261024/REPORT.md。
 
 <rules>
 1. 复刻原则：只依据观察到的行为与设计事实重建，不搬运原版专有代码。可复用的"事实型资产"：图标表、locale、CSS 设计变量 tokens、快捷键表。

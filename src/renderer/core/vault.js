@@ -1,8 +1,8 @@
 /**
  * [INPUT]: 依赖 ./events.js 的 Events；Node 内置 fs/path/chokidar/os；监听首次扫描与运行事件队列
  * 文件时间按原版 Ul 使用取整的 birthtimeMs/mtimeMs，ctime 不随属性编辑漂移。
- * [OUTPUT]: 导出 Vault、TFile、TFolder、TAbstractFile、FileSystemAdapter、isHiddenPath；watch 返回就绪 Promise，stopWatch 返回关闭 Promise
- * [POS]: core/ 的文件模型与磁盘适配层，全应用唯一文件真相源。监听 ready 前补齐扫描空档，事件按代次串行。首次扫描与文件监听均拒绝点开头路径段（原版 nu() 语义）——.obsidian 配置经适配器直读，不暴露给插件。
+ * [OUTPUT]: 导出 Vault、文件模型及磁盘适配器；trash 保留可恢复文件，创建使用排他写入。
+ * [POS]: core/ 的磁盘真相源。移动同步父子树；监听补齐扫描空档。隐藏配置仅经适配器读取。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 /* Vault + file system adapter. Mirrors Obsidian's Vault/TFile/TFolder model. */
@@ -97,8 +97,8 @@ export class FileSystemAdapter {
   }
   async read(p) { return fs.promises.readFile(this.toAbs(p), 'utf8'); }
   async readBinary(p) { return fs.promises.readFile(this.toAbs(p)); }
-  async write(p, data) { await fs.promises.mkdir(nodePath.dirname(this.toAbs(p)), { recursive: true }); await fs.promises.writeFile(this.toAbs(p), data, 'utf8'); }
-  async writeBinary(p, data) { await fs.promises.mkdir(nodePath.dirname(this.toAbs(p)), { recursive: true }); await fs.promises.writeFile(this.toAbs(p), data); }
+  async write(p, data, options = {}) { await fs.promises.mkdir(nodePath.dirname(this.toAbs(p)), { recursive: true }); await fs.promises.writeFile(this.toAbs(p), data, { encoding: 'utf8', flag: options.flag || 'w' }); }
+  async writeBinary(p, data, options = {}) { await fs.promises.mkdir(nodePath.dirname(this.toAbs(p)), { recursive: true }); await fs.promises.writeFile(this.toAbs(p), data, { flag: options.flag || 'w' }); }
   async append(p, data) { await fs.promises.appendFile(this.toAbs(p), data, 'utf8'); }
   async mkdir(p) { await fs.promises.mkdir(this.toAbs(p), { recursive: true }); }
   async remove(p) { await fs.promises.unlink(this.toAbs(p)); }
@@ -107,8 +107,16 @@ export class FileSystemAdapter {
     else await fs.promises.rmdir(this.toAbs(p));
   }
   async rename(from, to) {
-    await fs.promises.mkdir(nodePath.dirname(this.toAbs(to)), { recursive: true });
-    await fs.promises.rename(this.toAbs(from), this.toAbs(to));
+    const source = this.toAbs(from), destination = this.toAbs(to);
+    await fs.promises.mkdir(nodePath.dirname(destination), { recursive: true });
+    try {
+      const target = await fs.promises.lstat(destination), original = await fs.promises.lstat(source);
+      // macOS 大小写重命名指向同一目录项；独立磁盘目标一律拒绝覆盖。
+      if (source.toLowerCase() !== destination.toLowerCase() || target.ino !== original.ino || target.dev !== original.dev) {
+        const error = new Error('Destination file already exists.'); error.code = 'EEXIST'; throw error;
+      }
+    } catch (error) { if (error.code !== 'ENOENT') throw error; }
+    await fs.promises.rename(source, destination);
   }
   async copy(from, to) {
     await fs.promises.mkdir(nodePath.dirname(this.toAbs(to)), { recursive: true });
@@ -208,7 +216,8 @@ export class Vault extends Events {
   async create(path, data, options = {}) {
     path = normalizePath(path);
     if (this.all.has(path)) throw new Error('File already exists.');
-    await this.adapter.write(path, data);
+    // 内存索引晚于外部写入和其它窗口；排他创建由文件系统裁决。
+    await this.adapter.write(path, data, { flag: 'wx' });
     const file = new TFile(this, path);
     const st = await this.adapter.stat(path).catch(() => null);
     if (st) file.stat = { ctime: st.ctime, mtime: st.mtime, size: st.size };
@@ -223,8 +232,10 @@ export class Vault extends Events {
   async createBinary(path, data) {
     path = normalizePath(path);
     if (this.all.has(path)) throw new Error('File already exists.');
-    await this.adapter.writeBinary(path, data);
+    await this.adapter.writeBinary(path, data, { flag: 'wx' });
     const file = new TFile(this, path);
+    const stat = await this.adapter.stat(path).catch(() => null);
+    if (stat) file.stat = { ctime: stat.ctime, mtime: stat.mtime, size: stat.size };
     this.all.set(path, file);
     this.fileMap.set(path, file);
     const parent = this.getFolderByPath(parentPathOf(path));
@@ -264,17 +275,35 @@ export class Vault extends Events {
   }
 
   async delete(file, permanent = false) {
-    if (file instanceof TFolder && !file.isRoot()) {
-      await this.adapter.rmdir(file.path, true);
-    } else {
-      if (permanent) await this.adapter.remove(file.path);
-      else {
-        const ok = globalThis.__electronTrash ? await globalThis.__electronTrash(this.adapter.toAbs(file.path)) : false;
-        if (!ok) await this.adapter.remove(file.path);
-      }
-    }
+    if (!file || file === this.root) throw new Error('不能删除库根目录。');
+    if (!permanent) return this.trash(file, true);
+    if (file instanceof TFolder) await this.adapter.rmdir(file.path, true);
+    else await this.adapter.remove(file.path);
     this.removeFromMaps(file);
     this.trigger('delete', file);
+  }
+
+  async trash(file, system = true) {
+    if (!file || file === this.root) throw new Error('不能回收库根目录。');
+    // 同窗回收串行选择空闲名称；系统失败只降级本地回收，不永久删除。
+    const operation = (this._trashQueue || Promise.resolve()).catch(() => {}).then(async () => {
+      let recycled = false;
+      if (system && globalThis.__electronTrash) {
+        try { recycled = await globalThis.__electronTrash(this.adapter.toAbs(file.path)); } catch {}
+      }
+      if (!recycled) {
+        await this.adapter.mkdir('.trash');
+        const extension = file instanceof TFile && file.extension ? '.' + file.extension : '';
+        const basename = extension ? file.name.slice(0, -extension.length) : file.name;
+        let destination = '.trash/' + file.name, index = 1;
+        while (await this.adapter.exists(destination)) destination = '.trash/' + basename + ' ' + (++index) + extension;
+        await this.adapter.rename(file.path, destination);
+      }
+      this.removeFromMaps(file);
+      this.trigger('delete', file);
+    });
+    this._trashQueue = operation;
+    try { return await operation; } finally { if (this._trashQueue === operation) this._trashQueue = null; }
   }
 
   removeFromMaps(file) {
@@ -292,8 +321,14 @@ export class Vault extends Events {
 
   async rename(file, newPath) {
     newPath = normalizePath(newPath);
+    if (!file || file === this.root || !newPath) throw new Error('不能移动库根目录。');
     const oldPath = file.path;
+    if (newPath === oldPath) return;
+    if (file instanceof TFolder && newPath.startsWith(oldPath + '/')) throw new Error('不能将文件夹移入自身。');
     if (this.all.has(newPath)) throw new Error('Destination file already exists.');
+    const oldParent = this.getFolderByPath(parentPathOf(oldPath));
+    const newParent = this.getFolderByPath(parentPathOf(newPath));
+    if (!newParent) throw new Error('目标文件夹不存在。');
     await this.adapter.rename(oldPath, newPath);
 
     const update = (f, p) => {
@@ -315,7 +350,13 @@ export class Vault extends Events {
       for (const c of children) renameTree(c, prefix, newPrefix);
     };
     renameTree(file, oldPath, newPath);
-    for (const c of (file instanceof TFolder ? file.children : [])) void c;
+    if (oldParent !== newParent) {
+      const index = oldParent?.children.indexOf(file) ?? -1;
+      if (index >= 0) oldParent.children.splice(index, 1);
+      if (!newParent.children.includes(file)) newParent.children.push(file);
+    }
+    if (oldParent) this.sortFolder(oldParent);
+    this.sortFolder(newParent);
     this.trigger('rename', file, oldPath);
   }
 

@@ -5,10 +5,12 @@
 运行器只允许带标记的临时库。日志错误使运行失败。
 正式场景返回 {pass,count,checks}，count 为正且等于 checks.length。
 全量入口固定 --no-screenshot，排除 probe-* 诊断脚本。
-当前 88 个正式场景。旧轮回执见 RECEIPTS.json，本轮侧栏回执见 SIDEBAR-RECEIPTS.json。
+当前项目审查新增场景由full自动枚举。历史回执保留，当前结果以RESULTS为准。
 
 成员清单
 RESULTS.md: 本轮结果、证据目录与复跑方式。
+RESULTS-20261023.md: 截至10月23日的完整历史结果，不作为本轮当前通过证明。
+audit-storage.js: 真实磁盘回收站、移动索引与文件创建碰撞保护。
 RECEIPTS.json: 上轮核心收口的原始与有效回执。
 TOOLBAR-GEOMETRY-RECEIPTS.json: 起点偏移补修；旧样式坐标失败、80组文件树实测对比、定向1038与新包冒烟逐条回执。
 TOOLBAR-RECEIPTS.json: 书签遗漏补修；旧样式真实失败、基线75、定向670与新包71逐条回执及哈希。
@@ -40,7 +42,7 @@ modal-ui.js: 通用模态基座（21 项）：mod-dim 遮罩与 0.85 覆盖色�
 appearance.js: 外观页：主题 (Legacy)、主题管理弹窗（徽标/截图位/使用中）、字体三行子页面（当前字体列表/建议组/手输字体/缺失字体警示/立即落盘）、旧版主题真实生效（注入 themes/<x>.css 并带 data-css-theme）、主题色恢复默认。
 audio-recorder.js: 录音机插件验收。假 navigator.mediaDevices.getUserMedia 与 window.MediaRecorder 驱动：命令门、功能区切换 is-active、webm/m4a 扩展名与同秒重名序号、"Recording <时间戳>" 命名与嵌入链接、权限与设备错误映射（未连接麦克风/访问被拒绝/授权提示）、卸载释放与丢弃未完成录音、设置页开关与 core-plugins.json 持久化、重启读回。不接触真实麦克风。
 basic-plugins.js: 搜索、文件树、切换器、命令、标签、字数。
-bookmarks.js: 分组、重命名、打开与保存。
+bookmarks.js: 分组、重命名、打开与保存；搜索后实际图标，不接受无条件通过。
 canvas.js: 画布输入、连线、缩放、重开，撤销/重做（键盘+按钮+落盘）与文本卡片转换为文件（校验、几何继承、边改指、撤销恢复）；图片导出（命令可用性、面板菜单文案、导出弹窗四项设置与取消不落盘、确认后按倍率落盘并遵守 16284 长边与内存预算、renderCanvasImage 的 dataURL/maxSize 上限/倍率/视口范围/水印/隐私模式）；拖动对齐参考线（吸附到对齐值、出现 svg.canvas-snaps 参考线与圆点、松手清除、snapToObjects 关闭时不吸附）。
 canvas-edit.js: 画布文本卡片的内嵌 CM6 实时预览编辑器：挂载即 .cm-editor（无 textarea/预览层）、句柄写正文 → 节点数据与画布 JSON 落盘、实时预览装饰（标题/加粗）与卡片内布局（--file-margins 归零、无行宽上限）、Escape 与 Mod+Enter 退出、单击已聚焦卡片进编辑（原版 hg）、未聚焦（blocker 路径）与聚焦未编辑（正文内）两条拖拽路径、只读画布不可写且切只读立刻退出编辑、缩放断点卸载/重建编辑器、正文编辑进撤销栈、空卡片本地化占位、关闭视图释放编辑器实例与 DOM；活动编辑器（卡片聚焦即登记、editor:toggle-bold 包裹卡片选区、退出编辑回落中心笔记、笔记内 Mod+B 仍作用于笔记）。
 canvas-selection.js: 画布多选与批量操作。多选状态（单击单选只置聚焦、Shift+点击增删选、单选↔多选切换清理聚焦态、普通点击替换）、空白拖动框选（矩形挂 .canvas-selection、外扩 10px 定位、分组需完整包含、松手清除、Shift 异或）、多选包围盒（.mod-group-selection + 8 个 data-resize 手柄、并集外扩 10px）、拖动任一选中卡片整体位移并保持相对位置、Delete 删除与 Mod+Z 撤销/重做落盘、拖动即置顶、数据层按 z 升序写出节点、浮动工具条按钮与排布子菜单 13 项（真实点击驱动：对齐 6 向坐标断言、分布 2 向首尾不动、水平拉伸、网格排列）、从选中集合建组（几何外扩 20px）、拖组带动内部节点、分组恒为负 z、分组菜单提供编辑文字且无「取消分组」（原版无该命令，删组保留子节点）、Alt(mac)/Ctrl 拖动克隆整组、Mod+框选收尾弹建卡菜单并在关闭后收起矩形、只读画布隐藏非恒显按钮。
