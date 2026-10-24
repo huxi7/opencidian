@@ -1,6 +1,6 @@
 /**
  * [INPUT]: 依赖 window-save 的 CAS 保存与冲突保留；依赖 ../core/view.js 的 View 基类；依赖 ../core/i18n.js 的 t；依赖 ../core/keymap.js 的 IS_MAC；依赖 ../editor/editor.js 的 Editor 与 livePreviewExtension；依赖 ../markdown/reading.js 的 renderMarkdown/attachMarkdownInteractions；依赖 ../markdown/properties.js 的 renderProperties；依赖 BacklinkView 的文件绑定结果与 view-pane-menu 的原生动作按钮与更多菜单
- * [OUTPUT]: 导出 MarkdownView 类（三模式与实际焦点恢复）；读取失败保留正文，冷开失败路径独立序列化；registerView 注册 'markdown'
+ * [OUTPUT]: 导出 MarkdownView 类（三模式与实际焦点恢复）；子路径滚动统一解析标题与块引用（#Heading、#^block-id）并同步光标；读取失败保留正文，冷开失败路径独立序列化；registerView 注册 'markdown'
  * [POS]: views/ 的 Markdown 生命周期入口。行内标题挂在编辑器 .cm-sizer 内；行宽 class 挂视图元素。换文件与关闭前等待 CAS 保存；冲突保留编辑并拒绝切换；首次加载与布局恢复均同步模式 DOM；设置事件热重配编辑器。阅读正文交给 markdown/ 渲染；底部反链复用 BacklinkView 并绑定当前文件。重命名/换文件后由 _updateTitles 回填视图头标题与面包屑。视图头模式钮按原版 1.14.4：图标表示「点它会切到哪个视图」（编辑视图 lucide-book-open / 阅读视图 lucide-edit-3），aria-label 三行（状态句 + 动作句 + ⌘+单击在新标签页打开），模式切换后随 _applyMode 立即换图标与文案；Mod/中键创建右侧叶子并反转目标模式，阅读状态保留源码偏好。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
@@ -412,9 +412,9 @@ export class MarkdownView extends View {
       if (pending.subpath) {
         if (this.mode === 'preview') {
           const ok = scrollToSubpath(this.readingEl, pending.subpath);
-          if (!ok && this.editor) this._scrollEditorToHeadingText(pending.subpath);
+          if (!ok && this.editor) this._scrollEditorToSubpath(pending.subpath);
         } else if (this.editor) {
-          this._scrollEditorToHeadingText(pending.subpath);
+          this._scrollEditorToSubpath(pending.subpath);
         }
       } else if (pending.line !== undefined) {
         if (this.mode !== 'preview' && this.editor) {
@@ -431,15 +431,43 @@ export class MarkdownView extends View {
     });
   }
 
-  _scrollEditorToHeadingText(subpath) {
-    if (!this.file) return;
+  _scrollEditorToSubpath(subpath) {
+    if (!this.file || !this.editor || !subpath) return;
     const cache = this.app.metadataCache.getFileCache(this.file);
+    const str = String(subpath).trim();
+    // 1. 块引用：支持 #^id 或 ^id
+    if (str.startsWith('#^') || str.startsWith('^')) {
+      const blockId = str.replace(/^#?\^/, '');
+      const block = cache && cache.blocks && cache.blocks[blockId];
+      if (block && block.position) {
+        const line = block.position.start.line;
+        this.editor.scrollTo(line, 0);
+        if (this.editor.setCursor) this.editor.setCursor({ line, ch: 0 });
+        return;
+      }
+      const count = typeof this.editor.lineCount === 'function' ? this.editor.lineCount() : 0;
+      for (let i = 0; i < count; i++) {
+        const lineText = this.editor.getLine(i);
+        if (lineText && lineText.includes('^' + blockId)) {
+          this.editor.scrollTo(i, 0);
+          if (this.editor.setCursor) this.editor.setCursor({ line: i, ch: 0 });
+          return;
+        }
+      }
+      return;
+    }
+    // 2. 标题：支持 #Heading 或 Heading，支持多级 Heading#Subheading
     if (!cache || !cache.headings) return;
-    const target = subpath.replace(/^#/, '').trim().toLowerCase();
-    const h = cache.headings.find((x) => x.heading.toLowerCase() === target) ||
-      cache.headings.find((x) => x.heading.toLowerCase().includes(target));
-    if (h) {
-      this.editor.scrollTo(h.position.start.line, 0);
+    const cleanTarget = str.replace(/^#+/, '').trim().toLowerCase();
+    const parts = cleanTarget.split('#').map((p) => p.trim()).filter(Boolean);
+    const leafTarget = parts[parts.length - 1] || cleanTarget;
+    const h = cache.headings.find((x) => x.heading.toLowerCase() === leafTarget) ||
+      cache.headings.find((x) => x.heading.toLowerCase() === cleanTarget) ||
+      cache.headings.find((x) => x.heading.toLowerCase().includes(leafTarget));
+    if (h && h.position) {
+      const line = h.position.start.line;
+      this.editor.scrollTo(line, 0);
+      if (this.editor.setCursor) this.editor.setCursor({ line, ch: 0 });
     }
   }
 

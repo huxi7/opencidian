@@ -1,5 +1,5 @@
 /**
- * [INPUT]: 依赖 markdown-it、footnote/task-lists、Desktop、图标和 vault 路径；代码块委托 highlight.js，公式委托 math.js，图表委托 mermaid.js，取消等待委托 render-cancel.js；转义、frontmatter 剥离与图片尺寸语法来自 source-text.js；画布嵌入委托 views/canvas-minimap.js，数据库嵌入委托 plugins-core/bases-embed.js，保留宿主文件上下文。
+ * [INPUT]: 依赖 markdown-it、footnote/task-lists、Desktop、图标和 vault 路径；代码块委托 highlight.js，公式委托 math.js，图表委托 mermaid.js，取消等待委托 render-cancel.js；子路径滚动与块标记委托 reading-subpath.js；转义、frontmatter 剥离与图片尺寸语法来自 source-text.js；画布嵌入委托 views/canvas-minimap.js，数据库嵌入委托 plugins-core/bases-embed.js，保留宿主文件上下文。
  * [OUTPUT]: 导出 getMarkdownIt、renderMarkdown、attachMarkdownInteractions、stripFrontmatter、scrollToSubpath、resolvePath、resolveFileUrl 与 escapeHtml；渲染与交互支持可选 AbortSignal
  * [POS]: markdown/ 的阅读视图渲染器，被 markdown-view.js（阅读模式）与 live-preview.js（块级 widget 内嵌 HTML）共同调用。callout 渲染为 div.callout（原版 DOM 非 blockquote），标题行 softbreak 剥离且图标走 lucide- 原名（note=pencil，不走 pencil→edit-3 别名）。图片尺寸语法 `|300` / `|300x200` 由 source-text.js 解析，这里负责落成 img 的 width/height 与 .image-wrapper 结构；带尺寸的图片另外带 data-source-* 区间提示，图片右键交给 source-text.js 的 fillImageContextMenu。渲染后由 decorateReadingDom 补齐原版阅读 DOM：无序列表的 has-list-bullet/.list-bullet 圆点、任务项的 data-task/is-checked 与可点击复选框、脚注的 .footnote-link；笔记嵌块走原版 inline-embed 结构（标题 + 内容 + 右上角链接按钮），不可渲染附件走 .file-embed.mod-generic。.canvas 嵌入改走「画布嵌入」（原版 cte）：这里只放占位标记，容器与缩略图由 views/canvas-minimap.js 异步补齐；目标文件不存在时按原版落 .file-embed.mod-empty 提示。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
@@ -26,6 +26,8 @@ import {
 } from './source-text.js';
 import { missingCanvasNote, mountCanvasEmbed } from '../views/canvas-minimap.js';
 import { mountBaseEmbed } from '../plugins-core/bases-embed.js';
+import { scrollToSubpath, annotateBlocks } from './reading-subpath.js';
+export { scrollToSubpath } from './reading-subpath.js';
 
 const IMAGE_EXTS = ['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'bmp', 'avif'];
 const AUDIO_EXTS = ['mp3', 'wav', 'm4a', 'ogg', '3gp', 'flac', 'opus'];
@@ -563,6 +565,7 @@ export async function renderMarkdown(app, markdown, el, sourcePath, options = {}
     if (await waitForRender(mathematics, signal) === RENDER_ABORTED) return cancelled();
     if (signal?.aborted) return cancelled();
     annotateHeadings(el);
+    annotateBlocks(el);
     return { el };
   } finally { signal?.removeEventListener('abort', stop); }
 }
@@ -621,31 +624,6 @@ function annotateHeadings(el) {
     h.id = candidate;
     h.addClass('heading');
   }
-}
-
-export function scrollToSubpath(container, subpath) {
-  if (!subpath) return false;
-  const target = subpath.trim();
-  // block ref: ^id
-  if (target.startsWith('^')) {
-    const id = target.slice(1);
-    const el = container.querySelector(`[id="${cssEscape(id)}"]`) || container.querySelector(`[data-block-id="${cssEscape(id)}"]`);
-    if (el) { el.scrollIntoView({ block: 'center' }); return true; }
-  }
-  // heading: exact text match first, then slug-ish
-  const heading = Array.from(container.querySelectorAll('[data-heading]')).find((h) => h.getAttr('data-heading').toLowerCase() === target.toLowerCase())
-    || Array.from(container.querySelectorAll('[data-heading]')).find((h) => h.getAttr('data-heading').toLowerCase().includes(target.toLowerCase()));
-  if (heading) {
-    heading.scrollIntoView({ block: 'start' });
-    heading.addClass('is-flashing');
-    setTimeout(() => heading.removeClass('is-flashing'), 1500);
-    return true;
-  }
-  return false;
-}
-
-function cssEscape(s) {
-  return String(s).replace(/["\\]/g, '\\$&');
 }
 
 // ---------------------------------------------------------------------------

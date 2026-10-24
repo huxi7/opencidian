@@ -27,4 +27,5 @@ workspace-resize.test.mjs: 尺寸拖动纯逻辑与事件单测。24 条覆盖�
 user-ignore.test.mjs: 忽略规则22条单测。前缀、正则、损坏配置与原地修改即时生效。
 audit-storage.test.mjs: 隔离真盘回归。回收站保留、失败保护、移动索引与磁盘碰撞拒绝。
 audit-features.test.mjs: 隐式Base默认视图及首次写回。未知键、注释与坏类型保护。
+subpath-navigation.test.mjs: 子路径导航与块引用单测。17条覆盖段落块标记、前导锚点剥离与阅读/编辑定位。
 [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
