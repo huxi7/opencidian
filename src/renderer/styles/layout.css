@@ -49,8 +49,11 @@ body.is-hidden-frameless .workspace-tabs.mod-top-right-space .workspace-tab-head
 /* side-dock tabs show an icon only; the title text is hidden by default */
 .mod-left-split .workspace-tab-header-inner-title,
 .mod-right-split .workspace-tab-header-inner-title { display: var(--sidebar-tab-text-display); }
+.workspace-fake-target-overlay.is-in-sidebar .workspace-tab-header-inner-close-button,
 .mod-left-split .workspace-tab-header-inner-close-button,
-.mod-right-split .workspace-tab-header-inner-close-button { display: none; }
+.mod-right-split .workspace-tab-header-inner-close-button,
+.mod-primary-split .workspace-tab-header-inner-close-button,
+.mod-secondary-split .workspace-tab-header-inner-close-button { display: none !important; }
 /* 原版 1.14.4 app.css:6933-6957 | 内层：top 5px、负下边距 -outline-width，
    让标签脚印压住容器底边线；mod-root 非堆叠态用 overflow: clip + clip-margin
    给凹弧（-2*curve 外扩）留出绘制区，同时裁掉横向滚动溢出。 */
@@ -144,12 +147,14 @@ body.is-hidden-frameless .workspace-tabs.mod-top-right-space .workspace-tab-head
   .workspace-tab-header:hover .workspace-tab-header-inner-close-button { display: flex; color: var(--tab-text-color-focused); }
   .workspace-tab-header-inner-close-button:hover,
   .workspace-tab-header:hover .workspace-tab-header-inner-close-button:hover { color: var(--tab-text-color-focused-active-current); }
+  .workspace-tab-header:not(.is-active) .workspace-tab-header-inner-close-button:hover { background-color: transparent; }
   .workspace-tab-header.is-active .workspace-tab-header-inner-close-button:hover {
     color: var(--tab-text-color-focused-active-current);
     background-color: var(--background-modifier-hover);
   }
 }
 .workspace-tab-header.is-active .workspace-tab-header-inner-close-button { color: var(--tab-text-color-focused-active); }
+.mod-root .workspace-tab-header.mod-unknown { font-style: italic; }
 
 /* 原版 1.14.4 app.css:6962-6990 | 焦点态文字色与悬停态内层底色。
    悬停的标签只填充内层（--tab-inner-background-hover），不填标签本体。 */
@@ -479,6 +484,16 @@ body.is-focused .workspace-tab-header-container .workspace-tab-header.is-highlig
 .workspace-split.mod-right-split .view-header { display: none; }
 body:not(.show-view-header):not(.is-phone) .view-header { display: none; }
 .view-header.is-hidden { display: none; }
+.view-header.is-highlighted:after {
+  content: ' ';
+  position: absolute;
+  width: 100%;
+  height: 100%;
+  top: 0;
+  inset-inline-start: 0;
+  background-color: color-mix(in oklch, var(--interactive-accent) 50%, transparent);
+  pointer-events: none;
+}
 /* 原版 4588-4592 */
 .view-header-left {
   display: flex;
@@ -630,6 +645,7 @@ body:not(.is-fullscreen) .status-bar { padding-right: var(--size-4-2); }
 /* 原版 5536-5604：状态栏条目 */
 .status-bar-item {
   border-radius: var(--radius-s);
+  corner-shape: var(--corner-shape);
   display: inline-flex;
   align-items: center;
   padding: 3px var(--size-2-2);

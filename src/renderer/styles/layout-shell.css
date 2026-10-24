@@ -66,6 +66,60 @@ body.workspace {
 .titlebar-button { -webkit-app-region: no-drag; padding: var(--size-2-2) var(--size-2-3); display: inline-flex; align-items: center; }
 .titlebar-button:hover { background-color: var(--background-modifier-hover); }
 
+/* Windows / Linux 控制按钮垫底色，防标签或滚动文字穿透 */
+.is-hidden-frameless:not(.is-fullscreen) .titlebar-button-container.mod-right {
+  background-color: var(--titlebar-background);
+}
+.is-hidden-frameless:not(.is-fullscreen).is-focused .titlebar-button-container.mod-right {
+  background-color: var(--titlebar-background-focused);
+}
+
+/* Windows / Linux 标题栏控制区域防拖拽阻断层 */
+.is-hidden-frameless:not(.is-fullscreen):not(.mod-macos) .workspace-tabs.mod-top-left-space .workspace-tab-header-container:before {
+  -webkit-app-region: no-drag;
+  content: '';
+  height: 100%;
+  left: 0;
+  top: 0;
+  position: absolute;
+  width: var(--frame-left-space);
+}
+.is-hidden-frameless:not(.is-fullscreen):not(.mod-macos) .workspace-tabs.mod-top-right-space .workspace-tab-header-container:after {
+  -webkit-app-region: no-drag;
+  content: '';
+  height: 100%;
+  right: 0;
+  top: 0;
+  position: absolute;
+  width: var(--frame-right-space);
+}
+
+/* Windows / Linux 窗口按钮原版尺寸与关闭态红底白字 */
+.mod-linux .titlebar-button-container,
+.mod-windows .titlebar-button-container {
+  height: 100%;
+}
+.mod-linux .titlebar-button,
+.mod-windows .titlebar-button {
+  padding: 0 16px;
+  display: flex;
+  align-items: center;
+}
+@media (hover: hover) {
+  .mod-linux .titlebar-button.mod-close:hover,
+  .mod-windows .titlebar-button.mod-close:hover {
+    background-color: var(--background-modifier-error);
+  }
+  .mod-linux .titlebar-button.mod-close:hover .svg-icon,
+  .mod-windows .titlebar-button.mod-close:hover .svg-icon {
+    fill: white;
+    stroke: white;
+  }
+}
+.mod-macos .titlebar-button {
+  border-radius: var(--radius-s);
+}
+
 /* frameless macOS: traffic lights overlay the header row, no visible titlebar */
 body.is-frameless.is-hidden-frameless.mod-macos .titlebar { display: none; }
 body.is-frameless.is-hidden-frameless:not(.mod-macos) .titlebar { height: var(--header-height); background: transparent; border: none; pointer-events: none; }
@@ -85,9 +139,11 @@ body.is-frameless.is-hidden-frameless:not(.mod-macos) .titlebar-button-container
   gap: var(--size-4-1);
   border-right: var(--divider-width) solid var(--divider-color);
 }
+.workspace-ribbon.mod-primary,
 .workspace-ribbon.mod-left { margin-top: var(--header-height); }
 /* 原版 4402：左上角 44x40 用顶栏底色填满（焦点态随 --titlebar-background 联动）。
    收起侧栏只换 ribbon 底色（workspace-sidebar.css 的 is-collapsed），不是隐藏。 */
+.workspace-ribbon.mod-primary::before,
 .workspace-ribbon.mod-left::before {
   -webkit-app-region: drag;
   position: absolute;
