@@ -10,13 +10,14 @@
 
 /* ------------------------------------------------------------------- menu */
 .menu {
+  -webkit-app-region: no-drag;
   position: fixed;
   z-index: var(--layer-menu);
   display: flex;
   background-color: var(--menu-background);
   border: var(--menu-border-width) solid var(--menu-border-color);
   border-radius: var(--menu-radius);
-  corner-shape: var(--corner-shape);
+  corner-shape: var(--menu-corner-shape);
   box-shadow: var(--menu-shadow);
   padding: 0;
   min-width: 180px;
@@ -30,6 +31,7 @@
   -webkit-user-select: none;
   user-select: none;
 }
+.menu.mod-no-icon .menu-item-icon:first-child { display: none; }
 .menu-grabber { display: none; }
 .suggestion-bg { display: none; }
 .menu-scroll {
@@ -45,15 +47,21 @@
   gap: var(--size-4-2);
   padding: var(--size-4-1) var(--size-4-2);
   border-radius: var(--radius-s);
+  corner-shape: var(--corner-shape);
   cursor: var(--cursor, pointer);
+  font-size: var(--font-ui-small);
   color: var(--text-normal);
   white-space: nowrap;
 }
-/* 原版只给可选项铺悬停底；label 与 disabled 不响应。 */
+/* 原版只给可选项铺悬停底；label 与 disabled 不响应。兼容原生 .selected、.is-selected 与 :hover、.mobile-tap */
 .menu-item:not(.is-label):not(.is-disabled):hover,
-.menu-item:not(.is-label):not(.is-disabled).is-selected { background-color: var(--background-modifier-hover); }
+.menu-item:not(.is-label):not(.is-disabled).selected,
+.menu-item:not(.is-label):not(.is-disabled).is-selected,
+.menu-item:not(.is-label):not(.is-disabled).mobile-tap { background-color: var(--background-modifier-hover); }
 .menu-item.is-disabled { color: var(--text-faint); cursor: default; }
-.menu-item.is-warning:not(.is-disabled) { color: var(--text-error); }
+.menu-item.is-warning:not(.is-disabled),
+.menu-item.is-warning:not(.is-disabled).selected,
+.menu-item.is-warning:not(.is-disabled).is-selected { color: var(--text-error); }
 .menu-item.is-warning .menu-item-icon { color: var(--text-error); }
 .menu-item.mod-checked .menu-item-title { font-weight: var(--font-medium); }
 .menu-item.is-label {
@@ -69,17 +77,35 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  width: var(--icon-m);
-  height: var(--icon-m);
-  flex: 0 0 auto;
-  color: var(--icon-color);
+  flex: 0 1 auto;
+  color: var(--text-muted);
 }
-.menu-item-icon .svg-icon { width: var(--icon-s); height: var(--icon-s); }
+.menu-item-icon .svg-icon {
+  --icon-size: var(--icon-s);
+  --icon-stroke: var(--icon-s-stroke-width);
+  width: var(--icon-s);
+  height: var(--icon-s);
+}
+.menu-item.is-disabled .menu-item-icon { color: var(--text-faint); }
+.menu-item-icon.mod-submenu,
+.menu-item-icon .mod-submenu { color: var(--text-faint); }
 .menu-item-title {
-  flex: 1 1 auto;
+  flex: 1 0 0;
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
+}
+.menu.mod-tab-list .menu-item-title {
+  max-width: 300px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: bottom;
+}
+.menu-item-desc {
+  padding-top: var(--size-4-1);
+  color: var(--text-faint);
+  font-size: 0.8em;
 }
 .menu-item-chevron { display: flex; color: var(--text-faint); }
 .menu-item-chevron .svg-icon { width: var(--icon-s); height: var(--icon-s); }
@@ -93,6 +119,13 @@
 .menu-separator + .menu-separator { display: none; }
 
 /* ------------------------------------------------------------------ modal */
+body.is-frameless .modal { -webkit-app-region: no-drag; }
+body.is-frameless .modal-container { -webkit-app-region: initial; }
+.modal-container.is-being-dragged { pointer-events: none !important; }
+.modal-container.is-being-dragged .prompt,
+.modal-container.is-being-dragged .modal { pointer-events: none; opacity: 0.25; }
+.modal-container.is-being-dragged .modal-bg { opacity: 0 !important; }
+
 .modal-container {
   position: fixed;
   inset: 0;
@@ -126,6 +159,7 @@
   flex-direction: column;
   overflow: auto;
 }
+.modal.mod-narrow { max-width: var(--modal-max-width-narrow, 400px); }
 .modal-container.is-open .modal { opacity: 1; }
 .modal.is-hidden { opacity: 0; }
 .modal-close-button {
@@ -139,9 +173,14 @@
   border-radius: var(--radius-s);
   color: var(--text-muted);
   cursor: var(--cursor, pointer);
-  z-index: 2;
+  z-index: var(--layer-modal);
 }
+body.styled-scrollbars .modal-close-button,
+body.styled-scrollbars .modal-header-button { inset-inline-end: 12px; }
 .modal-close-button:hover { background-color: var(--background-modifier-hover); color: var(--text-normal); }
+.modal-close-button.mod-cta { color: var(--color-accent); }
+.modal-close-button.mod-start { inset-inline-end: unset; inset-inline-start: var(--size-2-3); }
+
 .modal-header { margin-bottom: 0.75em; height: var(--modal-header-height, auto); }
 .mod-sidebar-layout .modal-header { display: none; }
 .modal-title {
@@ -162,11 +201,36 @@
   display: flex;
   justify-content: flex-end;
   gap: var(--size-4-2);
-  margin-top: var(--size-4-2);
+  margin-top: 1.5em;
+  flex-wrap: wrap;
+  font-size: var(--font-ui-medium);
 }
+body:not(.is-mobile) .modal-button-container .mod-secondary { margin-inline-end: auto; }
+.modal-button-container .mod-checkbox { flex-grow: 1; display: flex; align-items: center; gap: var(--size-4-1); }
 .modal-container.mod-dim .modal-bg { background-color: var(--background-modifier-cover); }
 /* 原版 app.css 8107：dimBackground 默认 true → 模态大阴影（缺此规则则平扁、无投射感） */
 .modal-container.mod-dim .modal { box-shadow: var(--shadow-l); }
+
+/* 通用弹窗变体 */
+.modal.mod-sidebar-layout {
+  padding: 0;
+  width: var(--modal-width);
+  height: var(--modal-height);
+  max-width: var(--modal-max-width);
+  max-height: var(--modal-max-height);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+.modal.mod-sidebar-layout .modal-content { display: flex; }
+.modal.mod-scrollable-content { padding: 0; overflow: hidden; }
+.modal.mod-scrollable-content .modal-title { padding: var(--size-4-4) var(--size-4-4) 0 var(--size-4-4); }
+.modal.mod-scrollable-content .modal-content { padding: 0 var(--size-4-4) var(--size-4-4) var(--size-4-4); overflow: auto; }
+.modal.mod-scrollable-content .modal-button-container {
+  margin-top: 0;
+  border-top: var(--border-width) solid var(--background-modifier-border);
+  padding: var(--size-4-4);
+}
 
 /* --------------------------------------------------- 设置独立窗口（1.14.4 popout） */
 /* 原版 app.css 5968-5994：窗口内 body > .modal 铺满、去边框/圆角/阴影，关闭按钮隐藏 */
@@ -200,6 +264,27 @@ body.is-settings-window .status-bar { display: none; }
 
 /* prompt modal (also base for suggest modals) */
 .modal.mod-prompt, .modal:has(.prompt-input) { width: var(--prompt-width, 700px); max-width: var(--prompt-max-width, 1100px); }
+.prompt {
+  border: var(--prompt-border-width) solid var(--prompt-border-color);
+}
+
+.suggestion {
+  overflow-y: auto;
+  padding: var(--size-2-3);
+}
+.suggestion-container.mod-property-value .suggestion-item {
+  font-size: var(--font-ui-small);
+  padding: var(--size-2-3) var(--size-4-2);
+}
+.suggestion-container.mod-property-key .suggestion-item {
+  font-size: var(--font-ui-small);
+  padding: var(--size-2-3) var(--size-4-2) var(--size-2-3) var(--size-4-1);
+}
+.suggestion-item.mod-toggle .mod-checked {
+  --icon-size: var(--icon-xs);
+  --icon-stroke: var(--icon-xs-stroke-width);
+  order: 2;
+}
 
 /* 逐字移植原版 app.css 10193-10273：建议项。基础项为块级；只有 .mod-complex 才切行。 */
 .suggestion-item, .suggestion-empty { font-size: var(--font-ui-medium); margin-bottom: 1px; }
