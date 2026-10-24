@@ -20,3 +20,11 @@
 - 统一metadataCache.isUserIgnored供插件使用；user-ignore单测22条通过。
 - 原始失败与修后输出保存于verification/storage-*、node-user-ignore.json。
 - 重命名预检仍有外部进程在检查后写入的竞争间隙，未宣称原子排他重命名。
+
+## 文档加载与编辑命令
+
+读取/JSON校验成功才接管文件；失败保留来源，冷开只序列化失败路径而不授予保存权限。
+行交换执行真实正文事务；增量折叠按原版选区逐层执行。
+首轮8场景515条通过，其中audit-interface61；冷开布局补修后新版audit-interface65条通过。
+不能将分阶段补跑写成最终代码单次连续8场景通过，最终全量另列。
+原失败和修后输出位于verification/interface-*，含坏Canvas原文被覆盖、折叠与冷开布局复现。

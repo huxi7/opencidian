@@ -1,14 +1,14 @@
 /**
  * [INPUT]: 依赖 CM6 折叠状态、Markdown 语法树与缩进列计算。
- * [OUTPUT]: 导出 markdownEditing、foldingExtensions、unfoldDisabledFolds。
- * [POS]: editor/ 的折叠策略。标题与缩进独立开关，范围按文档缓存，过滤不属于设置策略的语法折叠。
+ * [OUTPUT]: 导出 markdownEditing、foldingExtensions、unfoldDisabledFolds、foldSelectionStep。
+ * [POS]: editor/ 的折叠策略。设置约束所有折叠入口；选区按内到外折叠、外到内展开，一次一层。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 import { countColumn, Prec, EditorState } from '@codemirror/state';
 import { keymap } from '@codemirror/view';
 import {
   foldService, foldNodeProp, foldGutter, foldKeymap, foldedRanges, unfoldEffect, foldEffect,
-  syntaxTree,
+  syntaxTree, foldable,
 } from '@codemirror/language';
 import { markdown, markdownLanguage, pasteURLAsLink } from '@codemirror/lang-markdown';
 import { languages } from '@codemirror/language-data';
@@ -129,4 +129,29 @@ export function unfoldDisabledFolds(state, heading, indent) {
     if (!range || range.from !== from || range.to !== to) effects.push(unfoldEffect.of({ from, to }));
   });
   return effects;
+}
+
+/** 原版foldMore/foldLess：每个选区只改变与其相交的一层，不触碰其他分支。 */
+export function foldSelectionStep(view, collapse) {
+  const { state } = view;
+  const ranges = [];
+  for (let number = 1; number <= state.doc.lines; number++) {
+    const line = state.doc.line(number);
+    const range = foldable(state, line.from, line.to);
+    if (range) ranges.push(range);
+  }
+  const folded = new Set();
+  foldedRanges(state).between(0, state.doc.length, from => folded.add(from));
+  const changes = new Map();
+  for (const selection of state.selection.ranges) {
+    const to = state.doc.lineAt(selection.to).to;
+    const candidates = ranges.filter(range => selection.from <= range.to && to >= range.from);
+    if (collapse) candidates.reverse();
+    const range = candidates.find(item => folded.has(item.from) !== collapse);
+    if (range) changes.set(range.from, range);
+  }
+  if (!changes.size) return false;
+  const effect = collapse ? foldEffect : unfoldEffect;
+  view.dispatch({ effects: [...changes.values()].map(range => effect.of(range)) });
+  return true;
 }

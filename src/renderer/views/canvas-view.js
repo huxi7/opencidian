@@ -10,7 +10,7 @@
  * [OUTPUT]: 导出 CanvasView 类（含 renderCanvasImage 渲染入口、generateHDImage 导出入口与 promptImageSavePath 保存对话框入口）
  * [POS]: views/ 画布类链的末端：View → CanvasViewport（视口）→ CanvasInteractions（交互）→ CanvasView（装配与调度）。持有 .canvas-wrapper DOM、节点/边集合、选择集合、JSON Canvas 读写。
  *        ResizeObserver 在挂载后更新视口。节点与边几何分层；数据防抖 500ms 写回，关闭时 flush。
- *        vault modify 的外部修改重载磁盘内容并保留视口；干净副本同步磁盘；脏副本保留编辑，CAS 冲突拒绝覆盖。
+ *        读取或JSON解析失败保留卡片与保存基线；冷开失败路径独立序列化，不授予保存权限。外部重载保留视口，CAS冲突拒绝覆盖。
  *        撤销/重做历史（上限 100）与写盘共用一个 requestSave；控件组含快速设置（对齐网格/对齐物体/只读）、缩放、撤销/重做与帮助弹窗。
  *        指针移动/离开经 onPointermove/onPointerleave 交给交互层命中测试（决定哪张卡片显手柄）；空画布占位第三行的修饰键按平台显示（macOS 为 ⌘）。
  *        promptLinkUrl 是链接卡片「更换网址」入口：复用 LinkSuggestModal 并预填当前 URL。
@@ -120,11 +120,11 @@ export class CanvasView extends CanvasInteractions {
 
   getViewType() { return 'canvas'; }
   getIcon() { return this.icon; }
-  getDisplayText() { return this.file ? this.file.basename : (t('plugins.canvas.name') || 'Canvas'); }
+  getDisplayText() { return this.file ? this.file.basename : (this._failedFilePath || t('plugins.canvas.name') || 'Canvas'); }
 
   getState() {
     return {
-      file: this.file ? this.file.path : undefined,
+      file: this.file ? this.file.path : this._failedFilePath,
       viewState: { x: this.x, y: this.y, zoom: this.zoom },
     };
   }
@@ -662,7 +662,7 @@ export class CanvasView extends CanvasInteractions {
       if (await this.save() === false) return false;
     }
     if (sequence !== this._loadSequence || this._closed) return false;
-    await this._applyFileFromDisk(path);
+    return this._applyFileFromDisk(path);
   }
 
   /** 外部修改：磁盘内容与已保存内容一致时视为自身写入的 watcher 回声，跳过重载。 */
@@ -681,6 +681,7 @@ export class CanvasView extends CanvasInteractions {
 
   /** 读取磁盘内容并重建节点/边；keepViewport 为真表示外部重载：保留视口与撤销历史。 */
   async _applyFileFromDisk(path, opts) {
+    const sequence = this._loadSequence;
     const keepViewport = !!(opts && opts.keepViewport);
     const file = this.app.vault.getFileByPath(path) || this.app.vault.getAbstractFileByPath(path);
     if (!file || file.extension !== 'canvas') {
@@ -688,14 +689,31 @@ export class CanvasView extends CanvasInteractions {
       this.renderMissingFile(path);
       return;
     }
-    this.file = file;
     let text = '';
-    try { text = opts?.text ?? await this.app.vault.cachedRead(file); } catch (e) { console.error(e); }
-    if (this.file !== file || this._closed) return false;
-    if (keepViewport && hasUnsavedWindowView(this)) return reportWindowSaveError(this, '文件已被另一个窗口修改，未保存的编辑已保留。', true);
     let data = null;
-    if (text && text.trim()) {
-      try { data = JSON.parse(text); } catch (e) { new Notice(t('plugins.canvas.msg-export-failed-empty-canvas') || 'Invalid canvas file'); }
+    try {
+      text = opts?.text ?? await this.app.vault.cachedRead(file);
+      if (text.trim()) {
+        data = JSON.parse(text);
+        if (!data || typeof data !== 'object' || Array.isArray(data)
+          || (data.nodes !== undefined && !Array.isArray(data.nodes))
+          || (data.edges !== undefined && !Array.isArray(data.edges))) throw new Error('白板必须包含节点和连线数组');
+      }
+    } catch (error) {
+      if (sequence !== this._loadSequence || this._closed) return false;
+      if (!this.file) this.renderMissingFile(path, '无法读取白板');
+      new Notice('无法读取白板：' + path + '\n' + error.message);
+      return false;
+    }
+    if (sequence !== this._loadSequence || this._closed) return false;
+    if (keepViewport && hasUnsavedWindowView(this)) return reportWindowSaveError(this, '文件已被另一个窗口修改，未保存的编辑已保留。', true);
+    if (!keepViewport && this.file && hasUnsavedWindowView(this) && await this.save() === false) return false;
+    if (sequence !== this._loadSequence || this._closed) return false;
+    this.file = file;
+    this._failedFilePath = undefined;
+    if (!this.contentEl.contains(this.wrapperEl)) {
+      this.contentEl.empty();
+      this.contentEl.append(this.wrapperEl);
     }
     // 初次装载/切换文件：清空内容与历史（原版 setViewData 初次装载走 view.clear）；
     // 外部重载：按 id 差量更新，保留视口与撤销历史（原版 setData → importData(prune)）。
@@ -715,10 +733,11 @@ export class CanvasView extends CanvasInteractions {
     this.app.workspace.trigger('canvas:file-loaded', this.file, this);
   }
 
-  renderMissingFile(path) {
+  renderMissingFile(path, title) {
+    if (path) this._failedFilePath = path;
     this.contentEl.empty();
     const state = this.contentEl.createDiv('empty-state');
-    state.createDiv('empty-state-title', (el) => el.setText(t('plugins.canvas.name') || 'Canvas'));
+    state.createDiv('empty-state-title', (el) => el.setText(title || t('plugins.canvas.name') || 'Canvas'));
     if (path) state.createDiv('empty-state-description', (el) => el.setText(path));
   }
 

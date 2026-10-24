@@ -1,6 +1,6 @@
 /**
  * [INPUT]: 依赖 window-save 的 CAS 保存与冲突保留；依赖 ../core/view.js 的 View 基类；依赖 ../core/i18n.js 的 t；依赖 ../core/keymap.js 的 IS_MAC；依赖 ../editor/editor.js 的 Editor 与 livePreviewExtension；依赖 ../markdown/reading.js 的 renderMarkdown/attachMarkdownInteractions；依赖 ../markdown/properties.js 的 renderProperties；依赖 BacklinkView 的文件绑定结果与 view-pane-menu 的原生动作按钮与更多菜单
- * [OUTPUT]: 导出 MarkdownView 类（三模式与实际焦点恢复），registerView 注册 'markdown'
+ * [OUTPUT]: 导出 MarkdownView 类（三模式与实际焦点恢复）；读取失败保留正文，冷开失败路径独立序列化；registerView 注册 'markdown'
  * [POS]: views/ 的 Markdown 生命周期入口。行内标题挂在编辑器 .cm-sizer 内；行宽 class 挂视图元素。换文件与关闭前等待 CAS 保存；冲突保留编辑并拒绝切换；首次加载与布局恢复均同步模式 DOM；设置事件热重配编辑器。阅读正文交给 markdown/ 渲染；底部反链复用 BacklinkView 并绑定当前文件。重命名/换文件后由 _updateTitles 回填视图头标题与面包屑。视图头模式钮按原版 1.14.4：图标表示「点它会切到哪个视图」（编辑视图 lucide-book-open / 阅读视图 lucide-edit-3），aria-label 三行（状态句 + 动作句 + ⌘+单击在新标签页打开），模式切换后随 _applyMode 立即换图标与文案；Mod/中键创建右侧叶子并反转目标模式，阅读状态保留源码偏好。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
@@ -49,7 +49,7 @@ export class MarkdownView extends View {
   getMode() { return this.mode; }
 
   getState() {
-    const state = { file: this.file ? this.file.path : undefined, mode: this.mode, backlinks: this.showBacklinks };
+    const state = { file: this.file ? this.file.path : this._failedFilePath, mode: this.mode, backlinks: this.showBacklinks };
     if (this.mode === 'preview') state.source = this._lastEditMode === 'source';
     if (this.editor && this.mode !== 'preview') {
       state.scroll = this.editor.getScrollInfo().top;
@@ -219,15 +219,25 @@ export class MarkdownView extends View {
       this._renderFilePathMissing(path);
       return;
     }
+    let text = '';
+    try { text = await this.app.vault.cachedRead(file); }
+    catch (error) {
+      if (sequence !== this._loadSequence || this._closed) return false;
+      if (!this.file) this._renderFilePathMissing(path, '无法读取文件');
+      new Notice('无法读取文件：' + path + '\n' + error.message);
+      return false;
+    }
+    if (sequence !== this._loadSequence || this._closed) return false;
+    // 目标读取期间仍可编辑来源文件；提交切换前保存这批迟到输入。
+    if (this.file && hasUnsavedWindowView(this) && await this.save() === false) return false;
+    if (sequence !== this._loadSequence || this._closed) return false;
     this.file = file;
+    this._failedFilePath = undefined;
     this._fileDeleted = false;
     if (!this.contentEl.contains(this.sourceEl)) {
       this.contentEl.empty();
       this.contentEl.append(this.sourceEl, this.readingEl);
     }
-    let text = '';
-    try { text = await this.app.vault.cachedRead(file); } catch (e) { console.error(e); }
-    if (sequence !== this._loadSequence || this.file !== file || this._closed) return false;
     this._loadedText = text; this._dirty = false; this._saveError = null; this._saveConflict = false;
     this._suppressChange = true;
     this.editor.sourcePath = file.path;
@@ -240,11 +250,12 @@ export class MarkdownView extends View {
     this._emitEditorChange();
   }
 
-  _renderFilePathMissing(path) {
+  _renderFilePathMissing(path, title) {
+    if (path) this._failedFilePath = path;
     if (this.leaf?.contentEl) this.leaf.contentEl.setAttr('data-type', 'markdown');
     this.contentEl.empty();
     const msg = this.contentEl.createDiv('empty-state');
-    msg.createDiv('empty-state-title', (el) => el.setText(this._fileDeleted ? 'File was deleted' : 'File not found'));
+    msg.createDiv('empty-state-title', (el) => el.setText(title || (this._fileDeleted ? 'File was deleted' : 'File not found')));
     if (path) msg.createDiv('empty-state-description', (el) => el.setText(path));
   }
 

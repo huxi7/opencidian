@@ -1,5 +1,5 @@
 /**
- * [INPUT]: 依赖 core/i18n.js 的 t；依赖 core/notices.js 的 Notice；依赖 core/ipc.js 的 Desktop；依赖 ./attachments.js 的 saveAttachment/pastedImageBaseName；依赖 @codemirror/language 的 toggleFold/foldAll/unfoldAll；经 app 使用 commands/fileManager/workspace/metadataCache。
+ * [INPUT]: 依赖 core/i18n.js 的 t；依赖 core/notices.js 的 Notice；依赖 core/ipc.js 的 Desktop；依赖 ./attachments.js 的 saveAttachment/pastedImageBaseName；依赖 folding 的单层折叠、@codemirror/language 的全部折叠与 @codemirror/commands 的选区换行；经 app 使用 commands/fileManager/workspace/metadataCache。
  * [OUTPUT]: 导出 registerEditorCommands(app)，注册全部 editor:* 与 markdown:* 命令。
  * [POS]: editor/ 的命令注册层，由 main.js 在 App 构造后调用。命令体只做编辑器级动作或薄转发：editor:download-attachments 门控活动文件为 md 后委托 fileManager.downloadAttachmentsForNote；attach-file 与 paste 的附件落盘共用 attachments.js。
  *        编辑器解析只有一处 getEditor(app)：先取 workspace.getActiveEditor()（画布卡片正文优先），回落活动叶子视图；宿主带 getMode 且为 preview 时拒绝。
@@ -10,7 +10,9 @@ import { t } from '../core/i18n.js';
 import { Notice } from '../core/notices.js';
 import { Desktop } from '../core/ipc.js';
 import { saveAttachment, pastedImageBaseName } from './attachments.js';
-import { toggleFold, foldAll, unfoldAll } from '@codemirror/language';
+import { foldAll, unfoldAll } from '@codemirror/language';
+import { moveLineUp, moveLineDown } from '@codemirror/commands';
+import { foldSelectionStep } from './folding.js';
 
 /** 编辑器解析入口：workspace.activeEditor 优先（画布卡片正文可被 editor:* 命令作用）。 */
 function getEditor(app) {
@@ -320,24 +322,9 @@ export function registerEditorCommands(app) {
     if (nextLine !== undefined && nextLine.trim() === '') editor.replaceRange('', { line: end, ch: 0 }, { line: end + 1, ch: 0 });
   });
 
-  editorCmd('editor:swap-line-up', 'Swap line up', (editor) => {
-    const r = editor.getSelection();
-    const line = r.anchor.line;
-    if (line === 0) return;
-    const other = editor.getLine(line - 1);
-    const cur = editor.getLine(line);
-    editor.replaceRange(other + '\n' + cur, { line: line - 1, ch: 0 }, { line, ch: cur.length });
-    editor.setCursor({ line: line - 1, ch: r.anchor.ch });
-  });
-  editorCmd('editor:swap-line-down', 'Swap line down', (editor) => {
-    const r = editor.getSelection();
-    const line = r.anchor.line;
-    if (line >= editor.lastLine()) return;
-    const other = editor.getLine(line + 1);
-    const cur = editor.getLine(line);
-    editor.replaceRange(cur + '\n' + other, { line, ch: 0 }, { line: line + 1, ch: other.length });
-    editor.setCursor({ line: line + 1, ch: r.anchor.ch });
-  });
+  // 复用CM6事务：整体移动选中的行，并保留正向/反向选区与撤销历史。
+  editorCmd('editor:swap-line-up', 'Swap line up', (editor) => moveLineUp(editor.cm));
+  editorCmd('editor:swap-line-down', 'Swap line down', (editor) => moveLineDown(editor.cm));
 
   editorCmd('editor:indent-list', 'Indent list', (editor) => {
     eachLine(editor, (line) => line.match(/^\s*(?:[-*+]|\d+[.)]|>)/) ? '  ' + line : null);
@@ -350,8 +337,8 @@ export function registerEditorCommands(app) {
     });
   });
 
-  editorCmd('editor:fold-less', 'Fold less', (editor) => { try { unfoldAll(editor.cm); } catch (e) {} });
-  editorCmd('editor:fold-more', 'Unfold more', (editor) => { try { toggleFold(editor.cm); } catch (e) {} });
+  editorCmd('editor:fold-less', 'Fold less', (editor) => foldSelectionStep(editor.cm, false));
+  editorCmd('editor:fold-more', 'Fold more', (editor) => foldSelectionStep(editor.cm, true));
   editorCmd('editor:fold-all', 'Fold all', (editor) => { try { foldAll(editor.cm); } catch (e) {} });
   editorCmd('editor:unfold-all', 'Unfold all', (editor) => { try { unfoldAll(editor.cm); } catch (e) {} });
 
