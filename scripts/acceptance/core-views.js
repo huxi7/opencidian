@@ -106,13 +106,13 @@
     const mentioner = await app.vault.create(`${folder}/Mentioner.md`, '这里提到了 Target Note 但没有链接。\n');
     await until(() => !!metadata.getCache(`${folder}/Mentioner.md`) &&
       (metadata.getCache(`${folder}/Mentioner.md`)._rawText || '').includes('Target Note'), '未链接提及 fixture 已索引');
-    await workspace.openFile(targetNote);
+    await workspace.openFile(mentioner);
     workspace.revealLeaf(outgoingLeaf);
     await until(() => outgoing._pane.querySelectorAll('.outgoing-links-header').length >= 2, '出链面板含 Unlinked mentions 分节');
     const unlinkedHeader = [...outgoing._pane.querySelectorAll('.outgoing-links-header')][1];
     unlinkedHeader.click();
     await wait(120);
-    check(outgoing._pane.textContent.includes('Mentioner'), '未链接提及列出 Mentioner');
+    check(outgoing._pane.textContent.includes('Target Note'), '未链接提及列出 Target Note');
     const unlinkedLinkBtn = outgoing._pane.querySelector('.backlink-unlinked-link-button');
     check(!!unlinkedLinkBtn, '未链接提及有 Link 按钮');
     unlinkedLinkBtn.click();

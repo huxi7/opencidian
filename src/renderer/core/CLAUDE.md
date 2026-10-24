@@ -11,7 +11,7 @@ i18n.js: setLanguage/detectLanguage(systemLocale)/t(带 {{var}} 与 _plural 处�
 icons.js: resolveIcon/createIcon/setIcon/getIconData/iconExists/getIconIds/addIcon/removeIcon。解析链逐字复刻原版 Zm()：lucide- 前缀 → 运行时图标 → 36 个自有图标(assets/icons-obsidian.json) → 152 条别名映射(assets/icon-aliases.json) → 1874 个 Lucide 图标(assets/icons.json)。
 ipc.js: IPC 与 Desktop 门面。文档窗口等待异步就绪，属性写回经跨窗口 CAS；半透明下发原生偏好。
 tooltip.js: 全局 tooltip 单例(叶子，仅用 DOM 助手)。导入即安装 body 级 pointerover/pointerout 委托(只认鼠标)与 pointerdown/滚动/blur/Escape 收起；文案取 aria-label(其次被暂存的 title)，data-tooltip-delay 默认 1000ms，data-tooltip-position 默认 bottom(放不下翻 mod-top)，data-tooltip-classes 追加类；补 Element.prototype.setTooltip/setTooltipGenerator。
-vault.js: 磁盘树与可等待监听。初次扫描后对账补空档，按代次串行事件；stopWatch 等待关闭并失效旧回调。时间使用取整 birthtimeMs/mtimeMs。文件 IO 走 Node fs；watch 用 chokidar。首次扫描与文件监听均拒绝点开头路径段。 创建使用 wx；移动同步父子树与排序。trash 系统失败降级本地，失败保留文件。
+vault.js: 磁盘树与可等待监听。初次扫描后对账补空档，按代次串行事件；stopWatch 等待关闭并失效旧回调。时间使用取整 birthtimeMs/mtimeMs。文件 IO 走 Node fs；watch 用 chokidar。首次扫描与文件监听均拒绝点开头路径段。创建使用 wx；重命名普通文件优先 link+unlink 确保原子排他，失败降级 lstat 排他；移动同步父子树与排序。trash 系统失败降级本地，失败保留文件。
 vault-utils.js: getUniquePath 等路径纯函数。
 metadata.js: MetadataCache。内存态：headings/links/embeds/tags/frontmatter；解析短链，向插件提供统一isUserIgnored。
 user-ignore.js: 路径前缀与/正则/忽略判定。配置值变化才重编译；空规则和坏正则不匹配。

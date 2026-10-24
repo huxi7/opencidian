@@ -1,8 +1,9 @@
 /**
- * [INPUT]: View 生命周期、workspace 当前文件、metadataCache 的 links/embeds/headings/blocks 与 DOM 图标。
+ * [INPUT]: View 生命周期、workspace 当前文件、metadataCache 的 links/embeds/headings/blocks、排除规则与 DOM 图标。
  * [OUTPUT]: 导出 OutgoingLinkView 与插件 create(app)（命令 outgoing-links:open / outgoing-links:open-for-current）。
  * [POS]: plugins-core/ 的出链面板（右栏视图 type outgoing-link）。逐条列出当前文件的已解析与未解析出链，
- *        点击打开目标；每行右键弹出原版链接菜单（buildLinkMenu + handleLinkContextMenu）；关闭时释放订阅与计时器。
+ *        并列出当前正文提及其它笔记但未链接的未链接提及（Unlinked mentions）；点击打开目标；Link 按钮生成内部链接；
+ *        每行右键弹出原版链接菜单（buildLinkMenu + handleLinkContextMenu）；关闭时释放订阅与计时器。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 /* Core plugin: outgoing-link — the "Outgoing links" sidebar pane. */
@@ -172,9 +173,9 @@ export class OutgoingLinkView extends View {
     if (file) this._renderUnlinked(pane, file);
   }
 
-  /** 原版出链面板同样包含 Unlinked mentions 分节（与反链面板共用组件）：上下文 + Link 按钮。 */
+  /** 原版出链面板 Unlinked mentions 分节：在当前正文中查找其它笔记的未链接提及。 */
   _renderUnlinked(pane, file) {
-    const unlinked = (this.app.metadataCache.getUnlinkedMentions(file) || []).slice(0, 50);
+    const unlinked = this._collectUnlinked(file);
     const header = pane.createDiv({ cls: 'tree-item-self is-clickable outgoing-links-header' });
     const collapseIcon = header.createSpan('tree-item-icon collapse-icon');
     setIcon(collapseIcon, 'right-triangle');
@@ -193,13 +194,14 @@ export class OutgoingLinkView extends View {
       return;
     }
     for (const entry of unlinked) {
-      const source = entry.file;
-      if (!source) continue;
-      const contexts = findUnlinkedContexts(this.app, source, entry.name);
+      const target = entry.file;
+      if (!target) continue;
+      const contexts = entry.contexts;
       const item = list.createDiv('tree-item search-result');
       const selfEl = item.createDiv('tree-item-self search-result-file-title is-clickable');
-      selfEl.createDiv({ cls: 'tree-item-inner', text: source.basename });
+      selfEl.createDiv({ cls: 'tree-item-inner', text: target.basename });
       selfEl.createDiv('tree-item-flair-outer').createSpan({ cls: 'tree-item-flair', text: String(contexts.length) });
+      selfEl.onclick = () => this.app.workspace.openFile(target);
       const matchList = item.createDiv('search-result-file-matches');
       for (const ctx of contexts.slice(0, 5)) {
         const match = matchList.createDiv('search-result-file-match');
@@ -210,16 +212,78 @@ export class OutgoingLinkView extends View {
         });
         linkBtn.onclick = async (ev) => {
           ev.stopPropagation();
-          const text = await this.app.vault.read(source);
-          const lines = text.split('\n');
-          lines[ctx.line] = lines[ctx.line].slice(0, ctx.start) + '[[' + file.basename + ']]' + lines[ctx.line].slice(ctx.end);
-          await this.app.vault.modify(source, lines.join('\n'));
-          this._render();
+          const currentText = await this.app.vault.read(file);
+          const currentLines = currentText.split('\n');
+          if (currentLines[ctx.line] !== undefined) {
+            const line = currentLines[ctx.line];
+            const linkStr = this.app.fileManager
+              ? this.app.fileManager.generateMarkdownLink(target, file.path, '', ctx.name !== target.basename ? ctx.name : undefined)
+              : '[[' + target.basename + ']]';
+            const idx = line.indexOf(ctx.name, ctx.start);
+            const at = idx >= 0 ? idx : line.indexOf(ctx.name);
+            if (at >= 0) {
+              currentLines[ctx.line] = line.slice(0, at) + linkStr + line.slice(at + ctx.name.length);
+              await this.app.vault.modify(file, currentLines.join('\n'));
+              this._render();
+            }
+          }
         };
-        match.onclick = () => this.app.workspace.openFile(source, { eState: { line: ctx.line } });
+        match.onclick = () => this.app.workspace.openFile(file, { eState: { line: ctx.line } });
       }
-      selfEl.onclick = () => this.app.workspace.openFile(source, { eState: { line: contexts[0] ? contexts[0].line : 0 } });
     }
+  }
+
+  _collectUnlinked(file) {
+    const cache = this.app.metadataCache.getFileCache(file);
+    const text = (cache && cache._rawText) || '';
+    if (!text) return [];
+    const lines = text.split('\n');
+    const mdFiles = this.app.vault.getMarkdownFiles ? this.app.vault.getMarkdownFiles() : [];
+    const resolved = this.app.metadataCache.resolvedLinks?.[file.path] || {};
+    const existingLinks = [...(cache?.links || []), ...(cache?.embeds || [])];
+    const frontmatterEnd = cache?.frontmatterPosition ? cache.frontmatterPosition.end.offset : 0;
+    const results = [];
+
+    for (const target of mdFiles) {
+      if (target === file || this.app.metadataCache.isUserIgnored(target.path)) continue;
+      if (resolved[target.path]) continue;
+      const names = [target.basename];
+      const targetCache = this.app.metadataCache.getFileCache(target);
+      const aliases = targetCache?.frontmatter?.aliases;
+      if (Array.isArray(aliases)) {
+        for (const a of aliases) if (a && typeof a === 'string') names.push(a);
+      }
+      let found = null;
+      for (const name of names) {
+        if (!name) continue;
+        const contexts = [];
+        let charOffset = 0;
+        for (let i = 0; i < lines.length && contexts.length < 50; i++) {
+          const line = lines[i];
+          let idx = line.indexOf(name);
+          while (idx >= 0) {
+            const matchStart = charOffset + idx;
+            const matchEnd = matchStart + name.length;
+            if (matchStart >= frontmatterEnd) {
+              const inLink = existingLinks.some(l => l.position && l.position.start.offset <= matchStart && l.position.end.offset >= matchEnd);
+              if (!inLink) {
+                contexts.push({ line: i, text: line, start: idx, end: idx + name.length, name });
+              }
+            }
+            idx = line.indexOf(name, idx + name.length);
+            if (contexts.length >= 50) break;
+          }
+          charOffset += line.length + 1;
+        }
+        if (contexts.length) {
+          found = { file: target, name, contexts };
+          break;
+        }
+      }
+      if (found) results.push(found);
+      if (results.length >= 50) break;
+    }
+    return results;
   }
 
   // --- 原版 a7()：图标按 标题/块/文件/未解析 变化，副文本显示链接路径或目标文件夹 ---

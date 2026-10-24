@@ -1,7 +1,7 @@
 /**
  * [INPUT]: 依赖 ./events.js 的 Events；Node 内置 fs/path/chokidar/os；监听首次扫描与运行事件队列
  * 文件时间按原版 Ul 使用取整的 birthtimeMs/mtimeMs，ctime 不随属性编辑漂移。
- * [OUTPUT]: 导出 Vault、文件模型及磁盘适配器；trash 保留可恢复文件，创建使用排他写入。
+ * [OUTPUT]: 导出 Vault、文件模型及磁盘适配器；rename 普通文件优先 link+unlink 确保原子排他，失败降级 lstat 排他；trash 保留可恢复文件，创建使用排他写入。
  * [POS]: core/ 的磁盘真相源。移动同步父子树；监听补齐扫描空档。隐藏配置仅经适配器读取。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
@@ -109,12 +109,27 @@ export class FileSystemAdapter {
   async rename(from, to) {
     const source = this.toAbs(from), destination = this.toAbs(to);
     await fs.promises.mkdir(nodePath.dirname(destination), { recursive: true });
-    try {
-      const target = await fs.promises.lstat(destination), original = await fs.promises.lstat(source);
-      // macOS 大小写重命名指向同一目录项；独立磁盘目标一律拒绝覆盖。
-      if (source.toLowerCase() !== destination.toLowerCase() || target.ino !== original.ino || target.dev !== original.dev) {
-        const error = new Error('Destination file already exists.'); error.code = 'EEXIST'; throw error;
+    // macOS 大小写重命名指向同一目录项；直接执行 rename 换大小写。
+    if (source.toLowerCase() === destination.toLowerCase()) {
+      await fs.promises.rename(source, destination);
+      return;
+    }
+    const stat = await fs.promises.lstat(source);
+    if (!stat.isDirectory()) {
+      try {
+        await fs.promises.link(source, destination);
+        await fs.promises.unlink(source);
+        return;
+      } catch (err) {
+        if (err.code === 'EEXIST') {
+          const error = new Error('Destination file already exists.'); error.code = 'EEXIST'; throw error;
+        }
+        if (err.code !== 'EXDEV' && err.code !== 'EPERM' && err.code !== 'ENOTSUP') throw err;
       }
+    }
+    try {
+      await fs.promises.lstat(destination);
+      const error = new Error('Destination file already exists.'); error.code = 'EEXIST'; throw error;
     } catch (error) { if (error.code !== 'ENOENT') throw error; }
     await fs.promises.rename(source, destination);
   }

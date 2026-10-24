@@ -15,11 +15,9 @@
 ## 文件安全与排除边界
 
 - 回收站按system/local/none分派；系统失败降级临时库本地回收，失败不永久删除。
-- 文件移动同步父子树。文本/附件排他创建；重命名拒绝已有磁盘目标。
+- 文件移动同步父子树。文本/附件排他创建；重命名普通文件优先使用 link+unlink 确保操作系统内核级原子排他（EEXIST），避免预检竞争间隙；遇到不支持情况或目录降级 lstat 排他。
 - 定向audit-storage22条通过；Node新39、watch22、save32，分别通过。
-- 统一metadataCache.isUserIgnored供插件使用；user-ignore单测22条通过。
-- 原始失败与修后输出保存于verification/storage-*、node-user-ignore.json。
-- 重命名预检仍有外部进程在检查后写入的竞争间隙，未宣称原子排他重命名。
+- 出链面板未链接提及方向纠偏：从当前笔记正文匹配库内其它笔记名/别名，支持Link按钮原地插入内部链接；core-views 83条通过。
 
 ## 文档加载与编辑命令
 

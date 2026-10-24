@@ -13,7 +13,7 @@ file-explorer-toolbar.js: 文件浏览器头部按钮行。按原版 QL.addNavBu
 command-palette.js: 命令面板与 terminal 功能区入口。启停对称注册和撤销。导出 settingTab（原版核心插件设置页“置顶命令”）：SettingGroup 标题行 + 加号打开命令选择器，置顶列表存 .obsidian/command-palette.json；面板无查询时置顶命令排在最近使用之前。
 switcher.js: 快速切换器（1.14.4 1:1）与 file-search 功能区入口。最近 10 项 MRU、文件/别名/未解析链接/书签四类建议、MetadataCache 统一忽略降权、20 项上限、创建项、六条指令栏、单实例模态；设置页三项开关写 .obsidian/switcher.json。复用 switcher:open，禁用时对称移除按钮和命令。
 backlink.js: 反链分节、上下文与筛选。导出文档底部反链设置页，组件可绑定宿主笔记。折叠跨重绘保留；关闭释放全部事件与计时器。状态栏反链计数按 resolvedLinks 汇总，点击展开右栏。
-outgoing-link.js: 出链面板视图(type outgoing-link)。逐条列出当前文件的已解析与未解析出链；图标按标题/块/文件/未解析切换，已解析出链的副文本显示目标文件夹，未解析出链带 is-unresolved 与“尚未创建”提示。仅 Links 分节（原版还有 Unlinked mentions，本实现未覆盖）；不自动创建窗格，由命令 outgoing-links:open / outgoing-links:open-for-current 打开；关闭释放订阅与计时器，禁用撤销视图与命令。
+outgoing-link.js: 出链面板视图(type outgoing-link)。逐条列出当前文件的已解析与未解析出链及未链接提及(Unlinked mentions)；图标按标题/块/文件/未解析切换，已解析出链的副文本显示目标文件夹，未解析出链带 is-unresolved 与“尚未创建”提示；未链接提及在当前正文中查找其它笔记的名称与别名，支持点击 Link 按钮写入内部链接。不自动创建窗格，由命令 outgoing-links:open / outgoing-links:open-for-current 打开；关闭释放订阅与计时器，禁用撤销视图与命令。
 outline.js: 按标题层级建立大纲。跳级归最近父标题，同名标题按行号跳转，关闭释放资源。
 tag-pane.js: 标签面板视图(type tag)。标签树/排序/嵌套开关。
 properties.js: 属性插件。全部属性忽略大小写聚合，提供类型菜单和四种排序；文件属性侧栏共用文档编辑器与库级类型。命令和状态栏对称启停。
