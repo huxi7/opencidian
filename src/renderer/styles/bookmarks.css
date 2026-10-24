@@ -43,3 +43,8 @@
 }
 /* row-end menu: the original bookmark rows have no hover “…” button —
    rename/remove/copy live in the right-click context menu. */
+
+/* 书签重命名/修改弹窗输入框撑满（app.css:16596-16598） */
+.modal.mod-bookmark .setting-item-control input {
+  width: 100%;
+}

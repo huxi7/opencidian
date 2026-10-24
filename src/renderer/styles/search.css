@@ -35,20 +35,22 @@
   align-items: center;
   flex: 0 0 auto;
 }
+.is-mobile .search-row > .clickable-icon {
+  width: var(--touch-size-s);
+  height: var(--touch-size-s);
+}
 .search-view > .search-info-container,
 .search-view > .search-params,
 .search-view > .search-results-info { flex: 0 0 auto; }
 .search-view > .search-result-container { flex: 1 0 0; }
-.search-row > .clickable-icon {
-  width: 28px;
-  height: 24px;
-  padding: var(--size-2-2) var(--size-2-3);
-  flex: 0 0 auto;
-}
 .global-search-input-container { flex-grow: 1; min-width: 0; }
-.workspace-leaf-content[data-type='search'] .search-input-container,
-.search-view .search-input-container { position: relative; border-radius: var(--search-input-radius); }
-.search-view .search-input-container:before {
+
+/* 全局通用搜索框（app.css:5897-5923, 17266-17326） */
+.search-input-container {
+  position: relative;
+  border-radius: var(--search-input-radius);
+}
+.search-input-container:before {
   top: calc((var(--input-height) - var(--search-icon-size)) / 2);
   inset-inline-start: var(--size-4-2);
   position: absolute;
@@ -61,15 +63,23 @@
   -webkit-mask-repeat: no-repeat;
   pointer-events: none;
 }
-.search-view .search-input-container input {
+.search-input-container input {
   display: block;
   width: 100%;
   padding-inline-start: calc(var(--search-icon-size) * 2 - 2px);
   border-radius: var(--search-input-radius);
   corner-shape: var(--search-input-corner-shape);
 }
-.search-view .global-search-input-container.search-input-container input:not(:placeholder-shown) { padding-inline-end: 62px; }
-.search-view .search-input-clear-button {
+.search-input-container input:placeholder-shown ~ .search-input-clear-button {
+  display: none;
+}
+.search-input-container input:not(:placeholder-shown) {
+  padding-inline-end: 28px;
+}
+.global-search-input-container.search-input-container input:not(:placeholder-shown) {
+  padding-inline-end: 62px;
+}
+.search-input-clear-button {
   position: absolute;
   background: transparent;
   border-radius: 50%;
@@ -89,7 +99,7 @@
   align-items: center;
   transition: color var(--anim-duration-fast) ease-in-out;
 }
-.search-view .search-input-clear-button:after {
+.search-input-clear-button:after {
   content: '';
   height: var(--search-clear-button-size);
   width: var(--search-clear-button-size);
@@ -98,10 +108,26 @@
   -webkit-mask-image: url("data:image/svg+xml,<svg viewBox=%270 0 12 12%27 fill=%27none%27 xmlns=%27http://www.w3.org/2000/svg%27%3E%3Cpath fill-rule=%27evenodd%27 clip-rule=%27evenodd%27 d=%27M6 12C9.31371 12 12 9.31371 12 6C12 2.68629 9.31371 0 6 0C2.68629 0 0 2.68629 0 6C0 9.31371 2.68629 12 6 12ZM3.8705 3.09766L6.00003 5.22718L8.12955 3.09766L8.9024 3.8705L6.77287 6.00003L8.9024 8.12955L8.12955 8.9024L6.00003 6.77287L3.8705 8.9024L3.09766 8.12955L5.22718 6.00003L3.09766 3.8705L3.8705 3.09766Z%27 fill=%27currentColor%27/></svg>");
   -webkit-mask-repeat: no-repeat;
 }
-.search-view .search-input-container input:placeholder-shown ~ .search-input-clear-button { display: none; }
-.search-view .search-input-clear-button:active { color: var(--text-normal); }
-@media (hover: hover) {
-  .search-view .search-input-clear-button:hover { color: var(--text-normal); }
+.search-input-clear-button:active,
+.search-input-clear-button:hover {
+  color: var(--text-normal);
+}
+
+/* 右装饰图标（大小写 Aa 等）（app.css:5897-5923） */
+.input-right-decorator {
+  position: absolute;
+  transform: translateY(-50%);
+  top: 50%;
+  inset-inline-end: var(--input-icon-inset, 8px);
+}
+.input-right-decorator.clickable-icon {
+  padding: var(--size-2-1) var(--size-2-2);
+}
+.input-right-decorator.clickable-icon.is-active {
+  background-color: transparent;
+}
+.search-input-container input:not(:placeholder-shown) ~ .input-right-decorator {
+  inset-inline-end: calc(var(--input-icon-inset, 8px) + 28px);
 }
 
 /* --------------------------------------------------------- search options */
@@ -119,6 +145,18 @@
 .search-params .setting-item.mod-toggle .setting-item-control { padding-top: 0; }
 .search-params .setting-item-name { font-size: var(--font-ui-small); }
 .search-params .setting-item-info { margin-inline-end: 0; }
+.search-params .setting-item.mod-slider {
+  flex-direction: column;
+}
+.search-params .setting-item.mod-slider > * {
+  width: 100%;
+}
+.search-params .setting-item.mod-slider .setting-item-info {
+  margin-inline-end: 0;
+}
+.search-params .setting-item.mod-slider .setting-item-control {
+  padding-top: var(--size-4-3);
+}
 
 .search-info-container {
   color: var(--text-muted);
@@ -250,6 +288,27 @@
 .search-result-file-matched-text {
   color: var(--text-normal);
   background-color: var(--highlight-background, var(--text-highlight-bg));
+}
+.search-info-more-matches {
+  color: var(--text-faint);
+}
+.search-result-file-match-replace-button {
+  display: none;
+  position: absolute;
+  height: auto;
+  bottom: 5px;
+  inset-inline-end: 24px;
+  padding: var(--size-4-1) var(--size-4-2);
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+}
+@media (hover: hover) {
+  .search-result-file-match:hover .search-result-file-match-replace-button {
+    display: block;
+  }
+  .search-result-file-match-replace-button:hover {
+    color: var(--text-normal);
+  }
 }
 /* 原版命中行上下的“显示更多上下文”按钮（app.css 17476） */
 .search-result-hover-button {

@@ -58,7 +58,7 @@
 }
 .tree-item-self.is-being-dragged-over {
   color: var(--nav-item-color-highlighted);
-  background: hsla(var(--interactive-accent-hsl), 0.1);
+  background: color-mix(in oklch, var(--interactive-accent) 10%, transparent);
 }
 .tree-item-self.is-being-dragged-over .collapse-icon {
   color: var(--nav-item-color-highlighted);
@@ -113,6 +113,9 @@ body:not(.is-grabbing) .tree-item-self.is-being-dragged:hover,
 .tree-item-self.is-being-dragged {
   color: var(--text-on-accent);
   background-color: var(--interactive-accent);
+}
+.tree-item-self.is-being-dragged .tree-item-flair {
+  color: var(--text-on-accent);
 }
 body:not(.is-grabbing) .tree-item-self.is-being-dragged:hover .tree-item-icon,
 .tree-item-self.is-being-dragged .tree-item-icon {
@@ -171,6 +174,7 @@ body:not(.is-phone) .nav-files-container:focus .tree-item-self.has-focus:focus-w
 .tree-item-inner {
   overflow: hidden;
   white-space: pre-wrap;
+  unicode-bidi: plaintext;
 }
 .tree-item-inner-text {
   overflow: hidden;
@@ -185,8 +189,25 @@ body:not(.is-phone) .nav-files-container:focus .tree-item-self.has-focus:focus-w
   margin-inline-start: var(--nav-item-children-margin-start, var(--nav-item-children-margin-left));
   border-inline-start: var(--nav-indentation-guide-width) solid var(--nav-indentation-guide-color);
 }
+/* 过滤隐藏规则（app.css:10889-10891） */
+.tree-item.is-filtered-out {
+  display: none;
+}
 /* JS-parity aid: our tree components hide children by toggling is-collapsed,
    the original hides them in JS animation code. Same visual result. */
 .tree-item.is-collapsed > .tree-item-children {
+  display: none;
+}
+/* 树节点间拖拽落点指示蓝线（app.css:10897-10907） */
+.drop-indicator {
+  position: absolute;
+  left: 0;
+  width: 100%;
+  height: 0;
+  border: 2px solid var(--interactive-accent);
+  pointer-events: none;
+  z-index: 10;
+}
+.drop-indicator:not(.is-active) {
   display: none;
 }

@@ -59,13 +59,19 @@
 .nav-files-container {
   flex: 1 1 auto;
   overflow-y: auto;
+  overflow-x: hidden;
   padding: var(--size-4-1) var(--size-4-3) var(--size-4-6) var(--size-4-3);
+  padding-bottom: max(var(--safe-area-inset-bottom), var(--size-4-6));
   scroll-padding-block: var(--size-4-2);
   overscroll-behavior: contain;
   -webkit-user-select: none;
   user-select: none;
   /* 容器为键盘导航持有 DOM 焦点；焦点指示由 .tree-item-self.has-focus 承担（原版无容器轮廓） */
   outline: none;
+}
+/* 非支持文件隐藏门控（app.css:16607-16609） */
+.nav-files-container:not(.show-unsupported) .is-unsupported {
+  display: none;
 }
 
 /* nav tree — the base structure comes from tree.css (.tree-item-self, .tree-item-icon,
@@ -83,13 +89,28 @@
 }
 .nav-folder.is-being-dragged-over {
   border-radius: var(--radius-s);
-  background: hsla(var(--interactive-accent-hsl), 0.1);
+  background: color-mix(in oklch, var(--interactive-accent) 10%, transparent);
 }
 .nav-folder.is-being-dragged-over > .nav-folder-title {
   color: var(--nav-item-color-highlighted);
 }
 .nav-folder.is-being-dragged-over > .nav-folder-title .collapse-icon {
   color: var(--nav-item-color-highlighted);
+}
+
+/* 文件树扩展名前缀图标（app.css:16610-16617, 8317-8323） */
+.nav-file-icon {
+  display: inline-flex;
+  align-items: center;
+  margin-inline-end: var(--size-2-3);
+  position: relative;
+  color: var(--icon-color);
+  opacity: var(--icon-opacity);
+  flex-shrink: 0;
+}
+.nav-file-icon .svg-icon {
+  --icon-size: var(--icon-s);
+  --icon-stroke: var(--icon-s-stroke-width);
 }
 
 .nav-file-tag {

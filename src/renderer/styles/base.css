@@ -176,7 +176,7 @@ body.styled-scrollbars ::-webkit-scrollbar-corner { background: transparent; }
 /* selection */
 ::selection { background-color: var(--text-selection); }
 
-/* 原版 3385-3417：拖拽幽灵 */
+/* 原版 3385-3417 / 3570-3640：拖拽幽灵集 */
 .drag-ghost {
   position: fixed;
   font-size: var(--font-ui-small);
@@ -193,6 +193,57 @@ body.styled-scrollbars ::-webkit-scrollbar-corner { background: transparent; }
 .drag-ghost.mod-leaf { display: flex; z-index: var(--layer-tooltip); }
 .drag-ghost-icon { margin-right: var(--size-2-3); position: relative; }
 .drag-ghost-icon .svg-icon { width: var(--icon-s); height: var(--icon-s); }
+.drag-ghost-self {
+  display: flex;
+}
+.drag-ghost-self > .svg-icon {
+  --icon-size: var(--icon-xs);
+  --icon-stroke: var(--icon-xs-stroke-width);
+  opacity: 0.7;
+  vertical-align: middle;
+  align-self: center;
+  margin-right: var(--size-2-2);
+  flex-shrink: 0;
+}
+.drag-ghost-self span {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.drag-ghost-action {
+  padding: var(--size-2-1) 0 0 0;
+  font-size: var(--font-ui-smaller);
+  opacity: 0.7;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.drag-reorder-ghost {
+  position: fixed;
+  border-radius: var(--radius-s);
+  corner-shape: var(--corner-shape);
+  z-index: var(--layer-dragged-item);
+  pointer-events: none;
+}
+.drag-reorder-ghost > .mod-dragged-item {
+  background-color: var(--drag-item-background);
+  box-shadow: var(--drag-item-shadow);
+}
+.drag-ghost-hidden {
+  visibility: hidden;
+  position: relative;
+}
+.drag-ghost-hidden:before {
+  content: ' ';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  visibility: visible;
+  border-radius: 5px;
+  background-color: color-mix(in oklch, var(--interactive-accent) 30%, transparent);
+}
 
 /* misc primitives */
 hr { border: none; border-top: 1px solid var(--divider-color); height: 0; margin: var(--size-4-3) 0; }
