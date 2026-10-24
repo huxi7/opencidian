@@ -187,12 +187,15 @@ body {
   --setting-group-heading-color: var(--text-normal);
   --setting-group-heading-size: var(--font-ui-medium);
   --setting-group-heading-weight: var(--font-semibold);
+  --setting-group-max-width: 700px;
   --setting-items-background: var(--background-primary-alt);
   --setting-items-padding-x: var(--size-4-5);
   --setting-items-padding-y: var(--size-4-5);
   --setting-items-radius: var(--radius-l);
   --setting-items-border-width: 0;
   --setting-items-border-color: var(--background-modifier-border);
+  --setting-items-divider-width: 1px;
+  --setting-items-divider-color: var(--background-modifier-border);
   --setting-item-name-color: var(--text-normal);
   --setting-item-name-size: var(--font-ui-small);
   --setting-item-name-weight: var(--font-normal);

@@ -325,3 +325,11 @@ input[type="color"]:focus::-webkit-color-swatch {
 select.mod-hidden {
   display: none;
 }
+
+/* macOS 原生下拉框镀层对齐 (app.css:5058-5063) */
+.mod-macos:not(.is-mobile) .mod-settings {
+  --dropdown-background: transparent;
+  --dropdown-background-hover: var(--interactive-hover);
+  --dropdown-icon-background: var(--interactive-normal);
+  --dropdown-text-align: end;
+}

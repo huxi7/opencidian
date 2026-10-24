@@ -47,6 +47,11 @@
   flex: 1;
   min-height: 0;
 }
+/* 滚动消隐羽化遮罩 (app.css:5161-5164) */
+body:not(.is-phone) .modal.mod-settings .vertical-tab-header .setting-search-results.is-scrolled,
+body:not(.is-phone) .modal.mod-settings .vertical-tab-header .vertical-tab-header-group-container.is-scrolled {
+  mask-image: var(--scroll-mask-small);
+}
 .setting-search-results {
   display: flex;
   flex-direction: column;
@@ -171,6 +176,11 @@ body:not(.is-phone) .horizontal-tab-nav-item.is-active,
 body:not(.is-phone) .vertical-tab-nav-item.is-active {
   background-color: var(--background-modifier-hover);
 }
+/* 键盘聚焦外框 (app.css:10455-10458) */
+.vertical-tab-nav-item:focus-visible {
+  box-shadow: 0 0 0 var(--input-border-width-focus) var(--background-modifier-border-focus);
+  outline: none;
+}
 /* 原版 1.14.4 app.css:10329-10357 | 设置页导航：只有 is-active 有底色，
    悬停不变；图标恒为 --text-muted（active 也不提亮）。 */
 .vertical-tab-nav-item {
@@ -192,7 +202,12 @@ body:not(.is-phone) .vertical-tab-nav-item.is-active {
   flex-grow: 1;
   overflow: hidden;
   text-overflow: ellipsis;
-  white-space: nowrap;
+  white-space: pre;
+}
+/* 社区插件列表不展示首图标 (app.css:10389-10392) */
+.setting-search-results[data-section="community-plugins"] .vertical-tab-nav-item-icon,
+.vertical-tab-header-group-items[data-section="community-plugins"] .vertical-tab-nav-item-icon {
+  display: none;
 }
 .horizontal-tab-content,
 .vertical-tab-content {
@@ -350,37 +365,62 @@ body:not(.is-phone) .vertical-tab-nav-item.is-active {
 .setting-item > *:last-child {
   margin-inline-end: 0;
 }
-.modal:not(.mod-settings) .setting-item:not(.setting-item-heading) {
+/* 条目键盘聚焦态内外指示框 (app.css:5278-5309) */
+.setting-item:focus-visible {
+  --setting-items-radius: var(--radius-s);
+  --setting-items-divider-width: 0;
+  outline: none;
+}
+.setting-item:focus-visible:after {
+  display: block;
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  box-shadow: inset 0 0 0 2px var(--background-modifier-border-focus);
+  width: 100%;
+  height: 100%;
+  border-radius: var(--radius-m);
+  corner-shape: var(--corner-shape);
+  user-select: none;
+  pointer-events: none;
+  z-index: 1;
+}
+
+.modal:not(.mod-settings) .setting-item:not(.setting-item-heading):where(:not(.setting-group *)) {
   padding: var(--size-4-4) 0;
   border-top: var(--border-width) solid var(--background-modifier-border);
   background-color: transparent;
   border-radius: 0;
   margin-bottom: 0;
 }
-.modal:not(.mod-settings) .setting-item:not(.setting-item-heading):first-child {
+.modal:not(.mod-settings) .setting-item:not(.setting-item-heading):where(:not(.setting-group *)):first-child {
   border-top: none;
   padding-top: 0;
 }
-.modal:not(.mod-settings) .setting-item:not(.setting-item-heading):last-child {
+.modal:not(.mod-settings) .setting-item:not(.setting-item-heading):where(:not(.setting-group *)):last-child {
   padding-bottom: 0;
 }
-@container (max-width: 340px) {
-  .setting-item:not(.mod-toggle):not(.setting-item-heading) {
+@container (max-width: 400px) {
+  .setting-item:not(:is(.mod-toggle, .mod-navigable, .mod-action, .setting-item-heading, .mod-list *)) {
     flex-direction: column;
   }
-  .setting-item:not(.mod-toggle):not(.setting-item-heading) .setting-item-info {
+  .setting-item:not(:is(.mod-toggle, .mod-navigable, .mod-action, .setting-item-heading, .mod-list *)) .setting-item-info {
     margin-inline-end: 0;
     align-self: flex-start;
   }
-  .setting-item:not(.mod-toggle):not(.setting-item-heading) .setting-item-control {
+  .setting-item:not(:is(.mod-toggle, .mod-navigable, .mod-action, .setting-item-heading, .mod-list *)) .setting-item-control {
     width: 100%;
     justify-content: flex-start;
   }
-  .setting-item:not(.mod-toggle):not(.setting-item-heading) .setting-item-control button:not(.clickable-icon),
-  .setting-item:not(.mod-toggle):not(.setting-item-heading) .setting-item-control input,
-  .setting-item:not(.mod-toggle):not(.setting-item-heading) .setting-item-control select {
+  .setting-item:not(:is(.mod-toggle, .mod-navigable, .mod-action, .setting-item-heading, .mod-list *)) .setting-item-control button:not(.clickable-icon),
+  .setting-item:not(:is(.mod-toggle, .mod-navigable, .mod-action, .setting-item-heading, .mod-list *)) .setting-item-control input,
+  .setting-item:not(:is(.mod-toggle, .mod-navigable, .mod-action, .setting-item-heading, .mod-list *)) .setting-item-control select {
     width: 100%;
     max-width: 100%;
+  }
+  .setting-item:not(:is(.mod-toggle, .mod-navigable, .mod-action, .setting-item-heading, .mod-list *)).is-invalid .setting-item-control {
+    max-width: unset;
   }
 }
 .setting-item.mod-cta {
@@ -498,6 +538,12 @@ body:not(.is-phone) .vertical-tab-nav-item.is-active {
 .setting-item-control select.dropdown {
   width: var(--dropdown-fitted-width, inherit);
 }
+.setting-item-control .combobox-button {
+  max-width: 250px;
+}
+.setting-item-control .clickable-icon {
+  padding: var(--size-2-2);
+}
 
 /* 原版 app.css：可导航行（mod-navigable）行尾值与箭头、行首图标、空态 */
 .setting-item.mod-navigable {
@@ -508,7 +554,50 @@ body:not(.is-phone) .vertical-tab-nav-item.is-active {
   max-width: 40%;
 }
 .setting-item.mod-action {
+  align-items: center;
   cursor: var(--cursor);
+}
+.setting-item.mod-action .setting-item-name {
+  color: var(--text-accent);
+}
+@media (hover: hover) {
+  .setting-item.mod-action:where(:not(.is-disabled)):hover {
+    background-color: var(--background-modifier-hover);
+  }
+}
+.setting-item.mod-action.is-disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+.setting-item.mod-add-item .setting-item-icon {
+  color: var(--text-accent);
+}
+
+.setting-item-status {
+  display: flex;
+  align-items: center;
+  --icon-size: var(--icon-s);
+  --icon-stroke: var(--icon-s-stroke-width);
+}
+.setting-item-status.mod-warning {
+  color: var(--text-warning);
+}
+
+.setting-item.is-invalid .setting-item-control {
+  flex-wrap: wrap;
+  max-width: 50%;
+  row-gap: var(--size-4-1);
+}
+.setting-item-error {
+  flex: 0 1 100%;
+  min-width: 0;
+  color: var(--text-warning);
+  font-size: var(--font-ui-smaller);
+  line-height: var(--line-height-tight);
+  text-align: end;
+}
+.setting-item-error:empty {
+  display: none;
 }
 .setting-item-value {
   color: var(--text-muted);
