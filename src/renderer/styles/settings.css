@@ -327,19 +327,6 @@ body:not(.is-phone) .vertical-tab-nav-item.is-active {
   --setting-items-padding-y: var(--size-4-2);
 }
 .setting-group.mod-no-icon .setting-item:not(.mod-add-item) .setting-item-icon { display: none; }
-body:not(.is-mobile) .setting-group.mod-list .checkbox-container {
-  width: var(--toggle-s-width);
-  height: calc(var(--toggle-s-thumb-height) + var(--toggle-s-border-width) * 2);
-}
-body:not(.is-mobile) .setting-group.mod-list .checkbox-container:after {
-  width: var(--toggle-s-thumb-width);
-  height: var(--toggle-s-thumb-height);
-  margin: var(--toggle-s-border-width) 0 0 0;
-  transform: translate3d(var(--toggle-s-border-width), 0, 0);
-}
-body:not(.is-mobile) .setting-group.mod-list .checkbox-container.is-enabled:after {
-  transform: translate3d(calc(var(--toggle-s-width) - var(--toggle-s-thumb-width) - var(--toggle-s-border-width)), 0, 0);
-}
 
 /* ---------------------------------------------------- setting items (app.css 4803) */
 .setting-item {

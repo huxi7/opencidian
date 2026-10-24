@@ -233,14 +233,26 @@ body {
   /* Sliders（原版 app.css:2738-2759） */
   --slider-thumb-border-width: 0.5px;
   --slider-thumb-border-color: var(--background-modifier-border-hover);
+  --slider-thumb-background: white;
+  --slider-thumb-background-hover: white;
   --slider-thumb-height: 18px;
   --slider-thumb-width: 18px;
+  --slider-thumb-height-active: var(--slider-thumb-height);
+  --slider-thumb-width-active: var(--slider-thumb-width);
   --slider-thumb-y: -6px;
+  --slider-thumb-y-active: var(--slider-thumb-y);
   --slider-thumb-radius: var(--slider-thumb-height);
+  --slider-thumb-shadow: 0 0px 2px 0px rgba(0, 0, 0, 0.1), 0 2px 6px 0px rgba(0, 0, 0, 0.1);
+  --slider-thumb-shadow-hover: var(--slider-thumb-shadow);
+  --slider-thumb-shadow-active: var(--slider-thumb-shadow);
+  --slider-thumb-shadow-focus: var(--slider-thumb-shadow-active), 0 0px 0px 2px var(--background-modifier-border-focus);
   --slider-s-thumb-size: 15px;
   --slider-s-thumb-position: -5px;
+  --slider-fill-background: var(--interactive-accent);
   --slider-track-background: var(--background-modifier-border-hover);
   --slider-track-height: 4px;
+  --slider-value-font-size: var(--font-ui-small);
+  --slider-value-font-weight: var(--input-font-weight);
   /* Status bar */
   --status-bar-background: var(--background-secondary);
   --status-bar-border-color: var(--divider-color);

@@ -213,11 +213,14 @@ body {
   --dropdown-background-blend-mode: hard-light, normal;
   --dropdown-background-position: var(--inset-end) var(--dropdown-icon-inset) top 50%, var(--inset-end) 0.15em top 50%, 0 0;
   --dropdown-background-size: var(--dropdown-icon-width) auto, 2em 2em, 100%;
+  --dropdown-icon-background: transparent;
   --dropdown-icon-width: 1em;
   --dropdown-icon-inset: 0.65em;
   --dropdown-padding: 0 var(--dropdown-padding-end) 0 var(--dropdown-padding-start);
   --dropdown-padding-start: 0.8em;
   --dropdown-padding-end: 2.4em;
+  --dropdown-text-align: start;
+  --dropdown-transition: none;
   /* Embeds */
   --embed-max-height: 4000px;
   --embed-canvas-max-height: 400px;
