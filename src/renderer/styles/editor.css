@@ -31,6 +31,12 @@
 }
 .inline-title:empty::before { content: attr(data-placeholder); color: var(--text-faint); }
 .inline-title[contenteditable="true"] { cursor: text; }
+/* 外观设置控制与嵌入隐藏（app.css:4674-4710） */
+body:not(.show-inline-title) .inline-title:not([data-level]) { display: none; }
+.hover-popover .inline-title,
+.inline-embed .inline-title { display: none; }
+.hover-popover.bases-new-item-popover .inline-title,
+.hover-popover .markdown-embed[data-type="heading"] .inline-title { display: block; }
 
 /* --------------------------------------------------------- source view */
 .markdown-source-view.mod-cm6 {
@@ -555,6 +561,16 @@ body.is-touch .markdown-source-view.mod-cm6 .cm-table-widget.has-focus .table-co
 .markdown-source-view.mod-cm6 .cm-table-widget.mod-selecting {
   -webkit-user-select: none;
   user-select: none;
+}
+.markdown-source-view.mod-cm6 .cm-table-widget.has-selection {
+  --text-selection: transparent;
+}
+.markdown-source-view.mod-cm6 .cm-table-widget.has-selection .cm-content {
+  caret-color: transparent;
+}
+.markdown-source-view.mod-cm6 .cm-table-widget.has-selection .cm-selectionLayer,
+.markdown-source-view.mod-cm6 .cm-table-widget.has-selection .cm-cursorLayer {
+  display: none;
 }
 /* 原位编辑：单元格内的 textarea 顶替渲染内容（原版单元格 CM 编辑器的简约替代） */
 .markdown-source-view.mod-cm6 .cm-table-widget .table-cell-wrapper.mod-editing > *:not(.table-cell-editor) {

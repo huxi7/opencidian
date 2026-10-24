@@ -406,7 +406,11 @@ input.metadata-property-key-input:focus {
 /* properties widget visibility: source view hides it unless live preview + show-properties */
 .markdown-source-view .metadata-container { display: none; }
 .markdown-source-view.is-live-preview.show-properties .metadata-container:not(.mod-error) { display: var(--metadata-display-editing); }
-.markdown-source-view.is-live-preview.show-properties .metadata-container[data-property-count="0"]:not(.mod-error) { display: none; }
+.markdown-preview-view.show-properties .metadata-container { display: var(--metadata-display-reading); }
+.markdown-source-view.is-live-preview.show-properties .metadata-container[data-property-count="0"]:not(.mod-error),
+.markdown-preview-view.show-properties .metadata-container[data-property-count="0"]:not(.mod-error) { display: none; }
+.inline-embed .markdown-source-view.is-live-preview.show-properties .metadata-container:not(.mod-error),
+.inline-embed .markdown-preview-view.show-properties .metadata-container:not(.mod-error) { display: none; }
 
 /* multi-select pills — ported from the original app.css */
 body {
