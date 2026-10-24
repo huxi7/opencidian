@@ -1,12 +1,13 @@
 /**
- * [INPUT]: js-yaml 读取数据库文本；表达式模块计算筛选；bases-context 提供属性，bases-values 定义真值与排序。
+ * [INPUT]: js-yaml 读取数据库文本；表达式计算筛选；上下文与值层定义属性、真值和排序；MetadataCache 排除笔记。
  * [OUTPUT]: 导出 BaseDocument、queryBase 与属性读取函数；查询供四类视图复用，按文件失效行上下文缓存。块式 YAML 局部写回，拒绝越界索引与原型键。
- * [POS]: Bases 数据边界。保留未知键和视图；流式或锚点冲突时保留值重写。
+ * [POS]: Bases 数据边界。缺失或空视图仅在内存补默认表格；首次视图编辑才写盘。流式根保留前导注释与文档头。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 import { compileExpression } from './bases-expression.js';
 import { createContext, propertyValue } from './bases-context.js';
 import { baseTruthy, compareBaseValues, safeKey } from './bases-values.js';
+import { t } from '../core/i18n.js';
 export { createContext, propertyValue } from './bases-context.js';
 const yaml = require('js-yaml');
 const object = value => value !== null && typeof value === 'object' && !Array.isArray(value);
@@ -16,7 +17,7 @@ export const EMPTY_BASE = 'views:\n  - type: table\n    name: Table\n';
 export class BaseDocument {
   constructor(source) {
     this.source = source;
-    this.data = yaml.load(source) || {};
+    this.data = yaml.load(source) ?? {};
     if (!object(this.data)) throw new Error('数据库必须是 YAML 对象');
     if (this.data.views != null && !Array.isArray(this.data.views)) throw new Error('views 必须是数组');
     if (this.data.formulas != null && !object(this.data.formulas)) throw new Error('formulas 必须是对象');
@@ -27,6 +28,9 @@ export class BaseDocument {
       if (!object(view) || typeof view.type !== 'string' || typeof view.name !== 'string' || !view.name) throw new Error('视图需要 type 与 name');
       compileFilter(view.filters);
     }
+    this.missingViews = !Object.hasOwn(this.data, 'views');
+    this.implicitViews = !this.data.views?.length;
+    if (this.implicitViews) this.data.views = [{ type: 'table', name: t('plugins.bases.label-default-view') }];
   }
   getView(name) { return name ? (this.data.views || []).find(view => view.name === name) : this.data.views?.[0]; }
   /** 普通块 YAML 原地替换；流式 YAML 只重写最近父区段，未知数据仍保留。 */
@@ -43,8 +47,17 @@ export class BaseDocument {
     const last = path.at(-1); safeKey(last);
     if (Array.isArray(owner) && (!Number.isInteger(last) || last < 0 || last >= owner.length)) throw Error('写入数组索引无效。');
     owner[last] = value;
+    // 整段或流式写回也不能把未操作的内存默认表格序列化。
+    if (path[0] !== 'views' && this.implicitViews) {
+      if (this.missingViews) delete next.views;
+      else next.views = yaml.load(this.source).views;
+    }
     const lines = this.source.split(/\r?\n/);
-    if (/^\s*\{/.test(this.source)) return new BaseDocument(dump(next) + '\n');
+    const prefix = flowRootPrefix(this.source);
+    if (prefix !== null) {
+      const newline = this.source.includes('\r\n') ? '\r\n' : '\n';
+      return new BaseDocument(prefix + dump(next).replace(/\n/g, newline) + newline);
+    }
     const range = findRange(lines, path, 0, lines.length, 0);
     let output;
     if (range) {
@@ -55,7 +68,7 @@ export class BaseDocument {
     } else {
       const top = path[0], topRange = findRange(lines, [top], 0, lines.length, 0);
       const replacement = dump({ [top]: next[top] });
-      if (topRange && (!topRange.insert || !Object.hasOwn(this.data, top))) { lines.splice(topRange.start, topRange.end - topRange.start, replacement); output = lines.join('\n'); }
+      if (topRange && (!topRange.insert || !Object.hasOwn(this.data, top) || (top === 'views' && this.missingViews))) { lines.splice(topRange.start, topRange.end - topRange.start, replacement); output = lines.join('\n'); }
       else if (Object.hasOwn(this.data, top)) output = dump(next) + '\n';
       else output = this.source.trimEnd() + '\n' + replacement + '\n';
     }
@@ -66,6 +79,18 @@ export class BaseDocument {
       throw error;
     }
   }
+}
+/** 只识别首个 YAML 实体；前导注释、指令和文档头留在原位。 */
+function flowRootPrefix(source) {
+  const newline = source.includes('\r\n') ? '\r\n' : '\n', lines = source.split(/\r?\n/);
+  let first = 0;
+  while (first < lines.length) {
+    const line = lines[first].trim();
+    if (line && !line.startsWith('#') && !line.startsWith('%') && !/^---(?:\s*#.*)?$/.test(line)) break;
+    first++;
+  }
+  if (!lines[first]?.trimStart().startsWith('{')) return null;
+  return lines.slice(0, first).join(newline) + (first ? newline : source.startsWith('\uFEFF') ? '\uFEFF' : '');
 }
 function findRange(lines, path, start, end, indent) {
   if (typeof path[0] === 'number') {
@@ -117,6 +142,7 @@ export function queryBase(app, document, view, sourceFile = null, cache = null) 
   const invalidateAll = reusable && relational && cache.dirty?.size > 0;
   let evaluated = 0;
   for (const file of app.vault.getMarkdownFiles()) {
+    if (app.metadataCache.isUserIgnored?.(file.path)) continue;
     alive.add(file.path);
     let entry = entries.get(file.path);
     if (!entry || entry.file !== file || invalidateAll || cache?.dirty?.has(file.path)) {

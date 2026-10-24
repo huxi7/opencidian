@@ -1,7 +1,7 @@
 /**
  * [INPUT]: 依赖 ../core/suggest.js 的 SuggestModal/renderHighlightedText；依赖 ../core/i18n.js 的 t；
  *          依赖 ../core/keymap.js 的 IS_MAC；依赖 ../core/icons.js 的 setIcon；依赖 ../core/tooltip.js 的 setTooltip；
- *          依赖 ../core/setting.js 的 SettingGroup；宿主提供 vault/workspace/metadataCache/fileManager。
+ *          依赖 ../core/setting.js 的 SettingGroup；宿主提供 vault/workspace/metadataCache/fileManager；忽略规则由 MetadataCache 共用。
  * [OUTPUT]: 导出 nameKey、QuickSwitcherModal、create(app)；实例暴露 openSwitcher/getOptions；模块导出 settingTab。
  * [POS]: 快速切换核心插件，逐字对齐 Obsidian 1.14.4 `switcher` 插件：
  *         最近 10 项、文件/别名/未解析链接/书签四类建议、basename 优先匹配与忽略降权、
@@ -163,20 +163,6 @@ function modEventMode(ev) {
   return 'tab';
 }
 
-/** 忽略规则：路径前缀或 /正则/，对齐原版 metadataCache.isUserIgnored。 */
-function compileIgnoreRules(app) {
-  const values = app.settings.appSettings.userIgnoreFilters || app.settings.config.userIgnoreFilters || [];
-  return values.flatMap((value) => {
-    const rule = String(value).trim();
-    if (!rule) return [];
-    try {
-      return [rule.length > 2 && rule.startsWith('/') && rule.endsWith('/')
-        ? new RegExp(rule.slice(1, -1), 'i')
-        : new RegExp('^' + rule.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i')];
-    } catch { return []; }
-  });
-}
-
 /* --------------------------------------------------------------------------
  * 快速切换模态（原版 oie）
  * ------------------------------------------------------------------------ */
@@ -195,7 +181,6 @@ export class QuickSwitcherModal extends SuggestModal {
     this.shouldShowAllTypes = !!this.options.showAllFileTypes;
     this.shouldShowNonFileBookmarks = true;
     this.context = 'view';
-    this._ignoreRules = null;
     this.setPlaceholder(t('plugins.quick-switcher.prompt-type-file-name'));
     this.setInstructions([
       { command: '↑↓', purpose: t('plugins.quick-switcher.instruction-navigate') },
@@ -215,8 +200,7 @@ export class QuickSwitcherModal extends SuggestModal {
 
   /* ---------------------------------------------------------------- 过滤 */
   isIgnored(path) {
-    if (!this._ignoreRules) this._ignoreRules = compileIgnoreRules(this.app);
-    return this._ignoreRules.some((rule) => rule.test(path));
+    return this.app.metadataCache.isUserIgnored(path);
   }
 
   _isExtensionRegistered(ext) {

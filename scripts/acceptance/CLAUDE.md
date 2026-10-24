@@ -11,6 +11,8 @@
 RESULTS.md: 本轮结果、证据目录与复跑方式。
 RESULTS-20261023.md: 截至10月23日的完整历史结果，不作为本轮当前通过证明。
 audit-storage.js: 真实磁盘回收站、移动索引与文件创建碰撞保护。
+audit-features.js: 合法空Base、忽略规则热更新与graph/修饰键书签真实打开。
+audit-background-tabs.js: 真实文件树点击、关系图书签与新建标签命令的后台标签路由与查重。
 audit-interface.js: 文档读取/坏JSON拒绝、行交换与逐层折叠命令。
 RECEIPTS.json: 上轮核心收口的原始与有效回执。
 TOOLBAR-GEOMETRY-RECEIPTS.json: 起点偏移补修；旧样式坐标失败、80组文件树实测对比、定向1038与新包冒烟逐条回执。

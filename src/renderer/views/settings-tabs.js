@@ -440,15 +440,19 @@ export class EditorTab extends SettingTab {
       .addToggle((tog) => tog.setValue(settings.autoConvertHtml !== false).onChange((v) => update({ autoConvertHtml: v }))));
     adv.addSetting((s) => s
       .setName(tt('setting.editor.option-vim-key-bindings', 'Vim 模式'))
-      .setDesc(tt('setting.editor.option-vim-key-bindings-description', '允许在编辑器中使用 Vim 模式。'))
+      .setDesc(tt('setting.editor.option-vim-key-bindings-description', '允许在编辑器中使用 Vim 模式。') + '（暂未实现，处于降级不可用状态）')
       .addToggle((tog) => tog.setValue(settings.vimMode === true).onChange((v) => {
-        if (this.passedVimTest || !v) { update({ vimMode: v }); return; }
+        if (this.passedVimTest || !v) {
+          update({ vimMode: v });
+          if (v) new Notice(tt('setting.editor.msg-vim-mode-enabled', '命令正确。开启 Vim 模式。') + '（暂未接入按键实现）');
+          return;
+        }
         tog.setValue(false); // 原版：弹窗期间开关回弹为关闭，验证通过后再开启
         new VimTestModal(app, (ok) => {
           if (ok) {
             this.passedVimTest = true;
             tog.setValue(true); // 已通过验证，onChange 走持久化分支
-            new Notice(tt('setting.editor.msg-vim-mode-enabled', '命令正确。开启 Vim 模式。'));
+            new Notice(tt('setting.editor.msg-vim-mode-enabled', '命令正确。开启 Vim 模式。') + '（暂未接入按键实现）');
           } else {
             new Notice(tt('setting.editor.msg-vim-mode-not-enabled', '命令错误。为保证你的使用体验，暂不开启 Vim 模式。'));
           }

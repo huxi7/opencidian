@@ -17,7 +17,7 @@ export function isModEvent(ev) {
   if (!ev) return false;
   if (ev instanceof MouseEvent && ev.button === 1) return 'tab';
   const mod = IS_MAC ? ev.metaKey : ev.ctrlKey;
-  if (!mod || (IS_MAC && ev.ctrlKey)) return false;
+  if (!mod) return false;
   if (!ev.altKey) return 'tab';
   return ev.shiftKey ? 'window' : 'split';
 }

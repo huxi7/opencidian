@@ -5,7 +5,7 @@
  * installStackedSerialization。
  * [POS]: 定义分割树节点与叶子视图生命周期。节点通过 workspace 调用宿主；setState/onClose 明确失败时保留旧视图。
  * 视图持有稳定 _rootEl；树重排只迁移根元素。
- * 标签组持有堆叠状态（原版 VD.isStacked）：状态变更只落类与刷新显示，DOM 由 workspace-renderer 建。
+ * 标签组持有堆叠状态和当前叶子。后台插入按身份保持可见项；DOM 由 workspace-renderer 建。
  * 模型不导入 Workspace，确保构造器身份唯一。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
@@ -56,11 +56,13 @@ export class WorkspaceTabs extends WorkspaceItem {
     this.isStacked = false;        // 原版 VD.isStacked，序列化键 stacked
   }
   get activeLeaf() { return this.children[this.currentTab] || null; }
-  addLeaf(leaf, index) {
+  addLeaf(leaf, index, active = true) {
+    const selected = this.activeLeaf;
     leaf.parent = this;
     if (index === undefined || index === null || index < 0 || index > this.children.length) this.children.push(leaf);
     else this.children.splice(index, 0, leaf);
-    this.currentTab = this.children.indexOf(leaf);
+    // 后台插入按叶子身份保留当前项，不能保留会随插入漂移的数字索引。
+    this.currentTab = this.children.indexOf(active || !selected ? leaf : selected);
   }
   removeLeaf(leaf) {
     const i = this.children.indexOf(leaf);

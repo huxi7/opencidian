@@ -11,7 +11,7 @@ file-explorer-selection.js: 文件树选择层。原版 a2 的 selectedDoms/focu
 file-explorer-multi.js: 文件树批量操作层。原版 x8.dragFiles 的多选拖动载荷（text/plain JSON type=files 增加 items，保留单项 path 供编辑器插入链接）、dragTitleFor 的单项幽灵标题（md 短名/其它全名/文件夹名）、onFileContextMenu 多选分支（新建文件夹含选中项 / 移动 N 项到… / 删除）、onDeleteSelectedFiles 顺序删除、f$ 移动、v$ 顶层项去重。
 file-explorer-toolbar.js: 文件浏览器头部按钮行。按原版 QL.addNavButton 建 .nav-header>.nav-buttons-container 与五个 clickable-icon.nav-action-button（新建笔记 lucide-edit / 新建文件夹 / 排序 / 自动显示 / 折叠-展开）；排序菜单三组各两项、组后分隔线并挂按钮（has-active-menu 守卫）；视觉由 syncExplorerToolbar 依视图状态渲染，本模块不持状态。
 command-palette.js: 命令面板与 terminal 功能区入口。启停对称注册和撤销。导出 settingTab（原版核心插件设置页“置顶命令”）：SettingGroup 标题行 + 加号打开命令选择器，置顶列表存 .obsidian/command-palette.json；面板无查询时置顶命令排在最近使用之前。
-switcher.js: 快速切换器（1.14.4 1:1）与 file-search 功能区入口。最近 10 项 MRU、文件/别名/未解析链接/书签四类建议、忽略降权、20 项上限、创建项、六条指令栏、单实例模态；设置页三项开关写 .obsidian/switcher.json。复用 switcher:open，禁用时对称移除按钮和命令。
+switcher.js: 快速切换器（1.14.4 1:1）与 file-search 功能区入口。最近 10 项 MRU、文件/别名/未解析链接/书签四类建议、MetadataCache 统一忽略降权、20 项上限、创建项、六条指令栏、单实例模态；设置页三项开关写 .obsidian/switcher.json。复用 switcher:open，禁用时对称移除按钮和命令。
 backlink.js: 反链分节、上下文与筛选。导出文档底部反链设置页，组件可绑定宿主笔记。折叠跨重绘保留；关闭释放全部事件与计时器。状态栏反链计数按 resolvedLinks 汇总，点击展开右栏。
 outgoing-link.js: 出链面板视图(type outgoing-link)。逐条列出当前文件的已解析与未解析出链；图标按标题/块/文件/未解析切换，已解析出链的副文本显示目标文件夹，未解析出链带 is-unresolved 与“尚未创建”提示。仅 Links 分节（原版还有 Unlinked mentions，本实现未覆盖）；不自动创建窗格，由命令 outgoing-links:open / outgoing-links:open-for-current 打开；关闭释放订阅与计时器，禁用撤销视图与命令。
 outline.js: 按标题层级建立大纲。跳级归最近父标题，同名标题按行号跳转，关闭释放资源。
@@ -28,7 +28,7 @@ editor-status.js: 状态栏视图状态图标与切换菜单(Reading/Source/Live
 page-preview.js: 内部链接悬停预览 popover。五类来源(editor/preview/search/tab-header/graph)可配置是否需按住 Mod（默认 search/editor/tab-header/graph 需 Mod，preview 不需要），未解析链接空态，设置写 page-preview.json。内容按原版嵌块结构 .markdown-embed > .markdown-embed-content > .markdown-preview-view（inline-title 文件名、32px padding、400px 限高内部滚动）；80ms --anim-motion-swing 淡入；内部滚动不关闭。DOM 链接未按 Mod 时只在悬停期间挂临时 keydown/mousemove 监听，按下 Mod 补弹，移出/输入普通字符/2s 无移动即拆除；全局 keydown/keyup 仅在等待或 popover 存在时挂载。hover-link 事件带 targetEl 时（搜索结果、DOM 链接）贴目标元素定位、指针移出即收起（移进浮层不算）；图谱来源无 targetEl，按原版必须按住 Mod 才弹，不提供「先悬停再按 Mod」补弹。插件持有 parent.hoverPopover 句柄供引擎撤销悬停。
 word-count.js: 状态栏字数统计(中英混排规则)；原版无点击弹窗。
 canvas.js: 注册画布视图、四个命令与新建功能区按钮。canvas:new-file 按白板设定里的「新白板位置」建空画布；canvas:export-as-image 仅在当前叶子是画布时可用（先弹设置弹窗：范围/缩放/水印/隐私，确认后渲染并弹保存对话框写 PNG，取消不落盘）；canvas:jump-to-group 仅在画布含分组时可用；canvas:convert-to-file 仅在单选文本卡片时可用。settingTab 导出白板设定页（新白板位置/文件夹、滚轮行为、默认 Mod 行为、卡片标签可见性、对齐网格/物体、缩放阈值），选项落 .obsidian/canvas.json 并即时灌回打开的视图。Mod 点击新标签并聚焦，禁用撤销按钮与注册。
-bookmarks.js: 持久化文件、目录、搜索与分组书签。目录改名同步子路径。
+bookmarks.js: 持久化文件、目录、搜索、分组及关系图书签。关系图选项深复制，打开恢复真实图谱。Mod/中键建立新标签并尊重聚焦偏好。目录改名同步子路径。
 daily-notes.js: 串行创建日期笔记与嵌套目录。模板变量及 createMarkdownNote 供其余笔记插件复用。
 templates.js: 模板功能区执行已有插入命令。展开变量、合并属性；属性函数供重组复用。
 note-composer.js: 提取或合并未保存文本。目标确认落盘后替换来源并重定向反链，遵循回收策略。
@@ -44,14 +44,14 @@ graph-quadtree.js: 力学空间索引。buildQuadtree/visitAfter；重合点存 
 graph-options.js: 默认选项和 graph.json 读写，供视图与引擎共用。
 graph-utils.js: 无状态颜色、插值、矩形与键盘常量。
 file-recovery.js: 文件恢复插件(原版默认启用)。快照范围为 md/canvas/base；间隔单位分钟(默认 5，0 表示每次变更即存)，旧 intervalSeconds 配置读取时按 60 秒=1 分钟迁移。快照落盘 .obsidian/.file-recovery/ 按天原子替换 JSON({路径:[{ts,data}]})；命令 file-recovery:open 打开快照弹窗(文件搜索+时间/大小列表+预览+恢复+复制+显示差异)；settingTab(间隔分钟/保留天数/查看/清空)。
-random-note.js: 漫游笔记插件。命令 random-note + ribbon(dice-glyph) 随机打开一篇 md；Mod 点击新标签页。
+random-note.js: 漫游笔记插件。共用 MetadataCache 排除规则。命令 random-note + ribbon(dice-glyph) 随机打开一篇 md；Mod 点击新标签页。
 zk-prefixer.js: 时间戳笔记插件(id zk-prefixer，文案键 plugins.unique-note-creator)。命令 zk-prefixer + ribbon(sheets-in-box)；getUniquePath 冲突按 分/时/日/周/月/年 递增；数据 .obsidian/zk-prefixer.json；settingTab(文件夹/模板/格式样例)。
 workspaces.js: 命名布局保存与恢复。尊重保存失败，统一由 Workspace 关闭旧视图，不重复清理。
 slides.js: 幻灯片插件。命令 slides:start 把当前 md 交给 SlidesPresentation(views/slides-presentation.js) 全窗口演示；不注册视图类型；包装层暴露 getPresentation()。原版 file-menu 菜单项因本项目无 file-menu 来源而省略。
 audio-recorder.js: 录音机插件(id audio-recorder，默认关闭)。命令 audio-recorder:start 与 audio-recorder:stop，checkCallback 按 recording 门控；功能区按钮 lucide-mic 切换开关，录音时加 is-active。扩展名 audio/mp4 可用时用 m4a，否则 webm/opus。命名 "Recording <YYYYMMDDHHmmss>"，经 editor/attachments.js 的 saveAttachment 落盘，并向活动 Markdown 视图插入嵌入链接。权限查询降级为 Permissions API 与 getUserMedia 错误映射，原版走 macOS systemPreferences。卸载停止录音并丢弃未完成条目。
 
 bases.js: 数据库入口。功能区、空标签和文件夹菜单共用新建；卸载预检草稿，失败保留入口。
-bases-model.js: YAML 边界。保留未知键，四类布局共用查询；按笔记失效缓存，拒绝危险路径。
+bases-model.js: YAML 边界。空视图在内存补默认表格，首次编辑才写盘。保留未知键；查询尊重库级排除。
 bases-expression.js: 安全 AST 求值。算符、惰性分支与原版 Null 传播共用白名单函数。
 bases-context.js: 行与宿主上下文。结果按行缓存，公式 AST 按文档共用。
 bases-formula-functions.js: 全局和实例函数。集中验证参数、类型与回调作用域。
@@ -59,7 +59,7 @@ bases-values.js: 日期、时长、链接与展示值。共用格式、相等、
 bases-values-file.js: 只读文件适配。路径解析回 TFile，聚合属性与引用。
 bases-values-render.js: 富值 DOM 门面。文件/标签经受控导航，HTML/Markdown 委托净化与生命周期模块。
 bases-csv.js: CSV 导出边界。转义遵循原版；保存重读查询，取消不写盘。
-bases-view.js: 数据库和嵌入共用控制器。最新文档事务与缓存、类型/文件订阅、富值释放和新建草稿共同受生命周期约束。
+bases-view.js: 数据库和嵌入共用控制器。设置变动刷新排除规则；事务、缓存、类型/文件订阅及草稿共同受生命周期约束。
 bases-embed.js: Markdown 嵌入入口。隔离文件视图生命周期。
 bases-layouts.js: 四类布局。表格编辑、列操作和行高共用值层；行与组两层窗口化，出窗释放富值。
 bases-grouping.js: 分组与汇总。标量使用 Map 索引，富值保持相等语义；自定义汇总复用公式引擎。

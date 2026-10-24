@@ -2,7 +2,7 @@
  * [INPUT]: 依赖 Events、metadata/vault、视图注册表与桌面 IPC。
  * 依赖 workspace-file-view 的文件分派、workspace-model 的节点；委托 renderer、interactions、close 与 sidebar-transition。
  * [OUTPUT]: 导出 Workspace、WorkspaceItem、WorkspaceSplit、WorkspaceTabs、
- * WorkspaceLeaf 与 parseSubpath。保留既有方法签名和调用入口。
+ * WorkspaceLeaf 与 parseSubpath。getLeaf 按聚焦偏好创建后台标签，显式激活由 setActiveLeaf 完成。
  * [POS]: 装配分割树与导航。侧栏工具固定，文档新标签始终进入中心。侧栏沿用最近中心文件，链接路径由 vault 转为文件。
  * moveLeafToTabs 是标签跨组/同组重排的唯一入口：搬既有叶子与 DOM，不重开视图；createTabsBySplit 只建空目标组。
  * loadLayout 先隔离验证布局，再确认保存、关闭与替换；失败保留原工作区。
@@ -148,17 +148,19 @@ export class Workspace extends Events {
     }
     if (newLeaf === 'tab') {
       const idx = tabs.children.indexOf(tabs.activeLeaf);
-      leaf = this.createLeafInTabGroup(tabs, idx + 1 >= tabs.children.length ? undefined : idx + 1);
+      leaf = this.createLeafInTabGroup(tabs, idx + 1 >= tabs.children.length ? undefined : idx + 1,
+        { active: this.app.settings.appSettings.focusNewTab !== false });
     } else {
-      leaf = this.createLeafInTabGroup(tabs);
+      leaf = this.createLeafInTabGroup(tabs, undefined,
+        { active: this.app.settings.appSettings.focusNewTab !== false });
     }
     return leaf;
   }
 
-  createLeafInTabGroup(tabs, index) {
+  createLeafInTabGroup(tabs, index, options = {}) {
     const leaf = new WorkspaceLeaf(this);
     this._leafMap.set(leaf.id, leaf);
-    tabs.addLeaf(leaf, index);
+    tabs.addLeaf(leaf, index, options.active !== false);
     if (tabs.containerEl && tabs.containerEl.isConnected) {
       // keep DOM in sync immediately
       const el = this._renderLeaf(leaf);
@@ -312,9 +314,6 @@ export class Workspace extends Events {
       await leaf.setViewState({ type: 'empty' });
       return leaf;
     }
-    let leaf = null;
-    if (!options.newLeaf) leaf = this.activeLeaf && this._sideOf(this.activeLeaf) === 'center' ? this.activeLeaf : this._firstLeafInCenter();
-    if (!leaf) leaf = this.getLeaf(options.newLeaf === 'split' ? 'split' : (options.newLeaf ? 'tab' : 'tab'));
     const state = this._getViewStateForFile(file);
     if (options.eState) state.state = { ...(state.state || {}), ...options.eState };
     // If same file already open in some center leaf, focus it (like "open in new tab" de-dupe)
@@ -324,12 +323,16 @@ export class Workspace extends Events {
         return st && st.file === file.path && this._sideOf(l) === 'center';
       });
       if (existing && options.newLeaf) {
-        this.revealLeaf(existing);
+        if (this.app.settings.appSettings.focusNewTab !== false) this.revealLeaf(existing);
         this._addLastOpenFile(file.path);
-        this.trigger('file-open', file);
+        if (this.activeLeaf === existing) this.trigger('file-open', file);
         return existing;
       }
     }
+    // 查重先于创建，复用已有文件时不留下未装载的空标签。
+    let leaf = null;
+    if (!options.newLeaf) leaf = this.activeLeaf && this._sideOf(this.activeLeaf) === 'center' ? this.activeLeaf : this._firstLeafInCenter();
+    if (!leaf) leaf = this.getLeaf(options.newLeaf === 'split' ? 'split' : 'tab');
     // 先激活再异步加载：避免加载较慢时，迟到的 setActiveLeaf 把用户随后切到的标签抢回来
     // （原版同样是"标签立即激活，内容随后加载"的语义）
     if (!options.newLeaf || this.app.settings.appSettings.focusNewTab === true) {
@@ -338,7 +341,7 @@ export class Workspace extends Events {
     if (await leaf.setViewState(state) === false) return leaf;
     this._addLastOpenFile(file.path);
     if (options.eState) leaf.view.setEphemeralState && leaf.view.setEphemeralState(options.eState);
-    this.trigger('file-open', file);
+    if (this.activeLeaf === leaf) this.trigger('file-open', file);
     return leaf;
   }
 

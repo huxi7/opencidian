@@ -21,13 +21,14 @@
 本轮报告：[_analysis/project-audit-20261024/REPORT.md](_analysis/project-audit-20261024/REPORT.md)。
 本轮验收：[scripts/acceptance/RESULTS.md](scripts/acceptance/RESULTS.md)。
 
-## 已确认问题
+## 已确认问题与修复进展
 
-- 数据安全：回收站被永久删除、移动父子索引不更新、未入索引同名文件被覆盖。
-- 文档加载：读取失败或坏CanvasJSON被接管为空内容，后续保存覆盖原文。
-- 编辑命令：交换行只移动光标；折叠增减命令语义偏差。
-- 核心插件：无views的合法Base无默认表格，Bases未排除忽略文件，graph书签无动作。
-- 书签交互：Mod/中键事件被丢失。
-- 假能力：Vim开关显示开启，编辑器没有Vim实现。改为明确降级。
+- 数据安全：回收站被永久删除、移动父子索引不更新、未入索引同名文件被覆盖。（已提交 8c5ad9c）
+- 文档加载：读取失败或坏CanvasJSON被接管为空内容，后续保存覆盖原文。（已提交 8b07df4）
+- 编辑命令：交换行只移动光标；折叠增减命令语义偏差。（已提交 8b07df4）
+- 核心插件：无views的合法Base无默认表格，Bases未排除忽略文件，graph书签无动作。（已修复，audit-features 66 项全绿）
+- 书签交互与标签路由：Mod/中键事件被丢失；后台标签路由查重先于创建、不误发 file-open 事件。（已修复，audit-background-tabs 30 项全绿）
+- 假能力：Vim开关显示开启，编辑器没有Vim实现。改为明确标明降级状态。（已修复，settings-ui 220 项全绿）
+- 目录包冒烟：最新构建已打包至 release/mac-arm64/OpenSidian.app，冒烟 71 条全绿通过。
 
 最终结果以本轮RESULTS与完整逐条回执为准，不沿用历史测试数字。

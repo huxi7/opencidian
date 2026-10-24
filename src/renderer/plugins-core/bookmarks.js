@@ -1,7 +1,8 @@
 /**
- * [INPUT]: 依赖 node 内置 fs/path（探测 .obsidian/bookmarks.json 是否存在）；依赖 ../core/events.js 的 Events；依赖 ../core/i18n.js 的 t；依赖 ../core/icons.js 的 setIcon；依赖 ../core/notices.js 的 Notice；依赖 ../core/vault.js 的 TFolder；依赖 ../views/bookmarks-view.js 的 BookmarksView
+ * [INPUT]: keymap 提供平台 Mod 判定；依赖 node 内置 fs/path（探测 .obsidian/bookmarks.json 是否存在）；依赖 ../core/events.js 的 Events；依赖 ../core/i18n.js 的 t；依赖 ../core/icons.js 的 setIcon；依赖 ../core/notices.js 的 Notice；依赖 ../core/vault.js 的 TFolder；依赖 ../views/bookmarks-view.js 的 BookmarksView
  * [OUTPUT]: 导出 nameKey、create(app)（插件实例：items/hasValidData/getItemTitle/openItem/removeItem/renameItem/createGroup/addItem/bookmarkCurrentView/on('changed')），注册 'bookmarks' 视图与 5 条命令（open/bookmark-current-view/unbookmark-current-view/bookmark-current-search/bookmark-current-heading）
- * [POS]: 文件视图均可收藏，目录改名同步子路径书签。plugins-core/ 的书签插件与数据层。数据 .obsidian/bookmarks.json（{items:[...]}，项形状对齐原版：file/folder/search/group），无数据时从 .obsidian/starred.json 迁移。视图只渲染，增删改与打开行为都在本文件；file 书签直接解析 vault 文件并带 subpath eState 打开（不走 openLinkText）。视图头部书签图标按原版 addAction 语义 prepend 注入，由 mod-bookmark/mod-bookmarked 类控制显隐（见 styles/bookmarks.css）。
+ * [POS]: 文件与全局关系图可收藏。graph 选项深复制为快照，打开经真实视图注册表恢复。目录改名同步子路径。
+ * 数据存 bookmarks.json，缺失时迁移 starred.json。视图只渲染；文件书签带 subpath 打开；头部动作经 mod-bookmark 显隐。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 /* Core plugin: bookmarks — bookmark files, folders, searches and groups. */
@@ -11,6 +12,8 @@ import { setIcon } from '../core/icons.js';
 import { Notice } from '../core/notices.js';
 import { TFolder } from '../core/vault.js';
 import { BookmarksView } from '../views/bookmarks-view.js';
+import { writeGraphOptions } from './graph-options.js';
+import { IS_MAC } from '../core/keymap.js';
 
 /* 渲染进程 nodeIntegration:true；同步探测数据文件存在性，区分"缺失"与"损坏"。 */
 const fs = require('fs');
@@ -223,12 +226,22 @@ class BookmarksPlugin extends Events {
   }
 
   /* ---------------------------------------------------------------- 打开 */
-  async openItem(item) {
+  async openItem(item, event) {
     if (!item) return;
+    const newTab = event?.button === 1 || !!(IS_MAC ? event?.metaKey : event?.ctrlKey);
     if (item.type === 'file') {
       const file = this.app.vault.getFileByPath(item.path);
       if (!file) return;
-      await this.app.workspace.openFile(file, item.subpath ? { eState: { subpath: item.subpath } } : {});
+      await this.app.workspace.openFile(file, { newLeaf: newTab ? 'always' : false, ...(item.subpath ? { eState: { subpath: item.subpath } } : {}) });
+    } else if (item.type === 'graph') {
+      if (!this.app.plugins.getInternalPlugin('graph')?.enabled) return;
+      const leaf = this.app.workspace.getLeaf(newTab ? 'tab' : false);
+      if (await leaf.setViewState({ type: 'graph', state: {} }) === false) return;
+      if (!leaf.view?.dataEngine) return;
+      const options = JSON.parse(JSON.stringify(item.options || {}));
+      leaf.view.dataEngine.setOptions(options);
+      writeGraphOptions(this.app, leaf.view.dataEngine.getOptions());
+      if (!newTab || this.app.settings.appSettings.focusNewTab) this.app.workspace.setActiveLeaf(leaf, { focus: true });
     } else if (item.type === 'folder') {
       this._revealFolder(item.path);
     } else if (item.type === 'search') {
@@ -283,6 +296,10 @@ class BookmarksPlugin extends Events {
     if (!view || !view.getViewType) return null;
     const type = view.getViewType();
     if (view.file) return { type: 'file', ctime: Date.now(), path: view.file.path };
+    if (type === 'graph' && view.dataEngine) return {
+      type: 'graph', ctime: Date.now(), title: t('plugins.bookmarks.label-untitled-graph'),
+      options: JSON.parse(JSON.stringify(view.dataEngine.getOptions())),
+    };
     if (type === 'search') {
       const query = this._getSearchQuery(view);
       return query ? { type: 'search', ctime: Date.now(), query } : null;

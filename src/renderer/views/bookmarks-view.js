@@ -1,6 +1,6 @@
 /**
  * [INPUT]: 依赖 ../core/view.js 的 View；依赖 ../core/i18n.js 的 t；依赖 ../core/icons.js 的 setIcon；依赖 ../core/menu.js 的 Menu；依赖 ../core/notices.js 的 Notice
- * [OUTPUT]: 导出 BookmarksView 类
+ * [OUTPUT]: 导出 BookmarksView 类；行点击与中键把真实事件交给插件选择目标标签。
  * [POS]: 空分组保持可见，活动项按文件路径匹配。views/ 的书签面板视图。由 plugins-core/bookmarks.js 注册为 'bookmarks' 视图类型并注入插件实例（setPlugin）。DOM 对齐原版：tree-item-self.bookmark 行 + tree-item-icon + tree-item-inner-text，分组可折叠（right-triangle），条目图标用 lucide-* 全名（folder 必须绕开别名表），视图头四钮（bookmark-plus/folder-plus/chevrons-down-up/search），行尾无“…”按钮（重命名/删除/复制路径只走右键菜单），点击文件打开、搜索钮展开 SearchComponent 过滤标题与路径。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
@@ -208,7 +208,11 @@ export class BookmarksView extends View {
     self.oncontextmenu = (ev) => { ev.preventDefault(); this._showItemMenu(ev, item, parentItem); };
     self.onclick = (ev) => {
       if (isGroup) this._toggleGroup(item, itemEl, self);
-      else plugin.openItem(item);
+      else if (ev.button === 0) plugin.openItem(item, ev);
+    };
+    self.onauxclick = ev => {
+      if (ev.button !== 1 || isGroup) return;
+      ev.preventDefault(); plugin.openItem(item, ev);
     };
     // 行内重命名入口（双击标题）
     titleEl.ondblclick = (ev) => { ev.stopPropagation(); this._startRename(item, self, titleEl); };

@@ -1,5 +1,5 @@
 /**
- * [INPUT]: View 生命周期、增量 queryBase、布局渲染器、工具栏、配置与新建浮层。
+ * [INPUT]: View 生命周期、增量 queryBase、布局、工具栏、配置与新建浮层；设置事件更新排除规则。
  * [OUTPUT]: 导出 BasesView、mountBaseEmbed 与可拒绝停用的插件同步函数。
  * save/setState/onClose 传播草稿保存失败；嵌入返回订阅释放函数。
  * [POS]: Bases 文件与嵌入共用控制器。持有视图选择、组折叠、行缓存与数据订阅；配置写入按最新文档和唯一视图名称定位。未知布局保留返回已支持视图的入口。
@@ -46,6 +46,7 @@ export class BasesController {
     const active = enabled && !this.suspended;
     if (active) this.queryCache.document = null;
     for (const ref of this.refs) ref.unregister?.(); this.refs = [];
+    this.settingsRef?.unregister(); this.settingsRef = null;
     this.typeRef?.unregister(); this.typeRef = null;
     clearTimeout(this.timer); ++this.sequence; this.enabled = active;
     if (!active) { this.disposeRender(); this.queryCache.entries?.clear(); this.queryCache.document = null; this.result = null; this.container.replaceChildren(); if (!enabled) this.warning('数据库核心插件已停用'); this.ready = Promise.resolve(); return; }
@@ -55,6 +56,7 @@ export class BasesController {
     };
     for (const event of ['create', 'modify', 'delete', 'rename']) this.refs.push(this.app.vault.on(event, schedule));
     this.refs.push(this.app.metadataCache.on('changed', schedule));
+    this.settingsRef = this.app.workspace.on('settings-changed', () => schedule());
     this.typeRef = this.app.workspace.on('properties-type-change', () => {
       const editing = !!this.container.querySelector('.bases-cell-editor');
       this.queryCache.document = null; this.render();
@@ -165,6 +167,7 @@ export class BasesController {
     this.closed = true; controllers.delete(this); ++this.sequence; clearTimeout(this.timer);
     this.typeRef?.unregister(); this.typeRef = null;
     for (const ref of this.refs) ref.unregister?.(); this.refs = [];
+    this.settingsRef?.unregister(); this.settingsRef = null;
     this.queryCache.entries?.clear(); this.queryCache.document = null; this.result = null; this.document = null; this.onViewChange = null;
     this.container.replaceChildren(); return true;
   }

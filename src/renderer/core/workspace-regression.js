@@ -1,7 +1,7 @@
 /**
  * [INPUT]: Node 的 test/assert/fs/path/url/vm；读取工作区源码，模拟 DOM、扩展名注册表、视图与 IPC。
  * [OUTPUT]: 提供可独立运行的工作区逻辑回归，不进入 renderer 依赖图。
- * [POS]: 固定公开接口、叶子操作、隔离布局预检、侧栏焦点与链接路径转换。
+ * [POS]: 固定叶子操作、后台可见项与查重数量、隔离布局、侧栏焦点与链接路径转换。
  * 只读源码，不启动 Electron，不读写仓库配置或真实笔记。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
@@ -306,8 +306,12 @@ test('新标签保留 focusNewTab、查重与 always 分支', async () => {
   assert.equal(ws.activeLeaf, leaf);
   assert.equal(leaf.view.getViewType(), 'graph');
   assert.deepEqual(plain(note.view.getEphemeralState()), { line: 4 });
+  assert.equal(leaf.parent.activeLeaf, leaf);
+  const beforeCount = ws._leafMap.size;
   assert.equal(await ws.openFile(file('A.md'), { newLeaf: true }), note);
-  assert.equal(ws.activeLeaf, note);
+  assert.equal(ws.activeLeaf, leaf);
+  assert.equal(leaf.parent.activeLeaf, leaf);
+  assert.equal(ws._leafMap.size, beforeCount);
   app.settings.appSettings.focusNewTab = true;
   const duplicate = await ws.openFile(file('A.md'), { newLeaf: 'always' });
   assert.notEqual(duplicate, note);

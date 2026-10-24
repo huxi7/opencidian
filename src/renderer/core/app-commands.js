@@ -2,7 +2,7 @@
  * [INPUT]: 命令注册、Workspace、WorkspaceTabs、设置宿主与桌面 IPC。
  * [OUTPUT]: 注册导航、设置、窗口及文档标签命令（含 workspace:toggle-stacked-tabs）。
  * [POS]: 用户命令层。关闭与固定标签命令只作用于中心文档；堆叠命令作用于当前中心标签组。
- * 文档独立窗口命令由 document-window 注册，转移等待新窗口就绪。
+ * 文档独立窗口命令由 document-window 注册；新建和恢复关闭标签显式激活目标叶子。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 /*
@@ -151,6 +151,7 @@ export function registerAppCommands(app) {
         } else {
           leaf = app.workspace.getLeaf('tab');
           leaf.setViewState({ type: entry.type, state: entry.state });
+          app.workspace.setActiveLeaf(leaf, { focus: true });
         }
       }
       return true;

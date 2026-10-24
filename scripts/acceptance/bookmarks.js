@@ -2,7 +2,7 @@
  * [INPUT]: 独立临时 vault 与 OBS_ACT eval 注入的应用实例。
  * [OUTPUT]: 返回验收断言结果；失败抛出异常，供运行器判定。
  * [POS]: bookmarks 场景。逐条锁定原版 1.14.4 的书签面板：条目图标（文件/标题/块/画布/文件夹/搜索/图谱）、
- *        分组折叠图标、视图头四钮、行尾没有原版不存在的“…”按钮、搜索按钮过滤、行内重命名与持久化。
+ *        分组折叠图标、视图头四钮、无行尾菜单、搜索后真实图标、行内重命名与持久化。
  *        仅由 run.mjs 在带标记的临时库执行。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
@@ -84,7 +84,7 @@ v._search.onChanged();
 await wait(260);
 const visibleTitles=[...v._treeEl.querySelectorAll('.tree-item-self.bookmark .tree-item-inner-text')].map(text);
 check(visibleTitles.length===1&&visibleTitles[0]==='文件夹书签','搜索只保留命中的书签:: '+visibleTitles.join('|'));
-check(!v._treeEl.querySelector('.lucide-folder')||true,'搜索后图标仍按类型渲染');
+check(iconClass('文件夹书签').includes('lucide-folder')&&!iconClass('文件夹书签').includes('folder-open'),'搜索后的文件夹书签仍渲染闭口文件夹图标');
 v._search.inputEl.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}));
 await wait(200);
 check(!v._searchBtn.classList.contains('is-active'),'Esc 收起搜索框');
