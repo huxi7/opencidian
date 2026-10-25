@@ -2,7 +2,7 @@
   "name": "opensidian",
   "productName": "OpenSidian",
   "version": "1.14.4",
-  "license": "AGPL-3.0",
+  "license": "AGPL-3.0-or-later",
   "description": "OpenSidian — an independent, open-source replication of the Obsidian desktop app",
   "main": "dist/main/main.js",
   "private": true,

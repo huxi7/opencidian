@@ -15,6 +15,7 @@ dist/ - 构建输出；包含 main/ 主进程 JS、渲染器和图谱 Worker。
 
 <config>
 README.md - 项目介绍、开发与打包入口、源码结构和兼容边界
+LICENSE - 标准 AGPL v3 全文；授权标识为 AGPL-3.0-or-later。
 package.json - 依赖、类型检查、构建和测试入口。
 tsconfig.json - 全量应用源码的类型检查配置。
 electron-builder.yml - 目录包与分发配置；ASAR 包含运行文件和许可证原文
@@ -38,6 +39,7 @@ extract-zip 的 yauzl 依赖固定为 3.4.0。
 7. 单文件 ≤800 行；超出即重构。
 8. 侧栏工具固定，文档标签属于中心。左下角库信息栏独立于标签树；功能区入口随所属插件启停。
 9. TypeScript 使用迁移兼容配置（strict:false）。全部应用源码必须通过 tsc，禁止整文件跳过类型检查。
+10. 项目名称统一为 OpenSidian。
 </rules>
 
 [PROTOCOL]: 变更时更新此头部，然后检查 src/CLAUDE.md 与本文件

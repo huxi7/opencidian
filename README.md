@@ -73,4 +73,6 @@ Electron 验收使用隔离的临时库，窗口不可见且不抢焦点。场�
 
 ## 许可证
 
-[AGPL-3.0](LICENSE)。第三方依赖与素材遵循各自的许可证。
+Copyright © 2026 OpenSidian contributors.
+
+[AGPL-3.0-or-later](LICENSE)。第三方依赖与素材遵循各自的许可证。
