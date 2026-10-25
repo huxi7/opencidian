@@ -2,7 +2,7 @@
 
 本地 Markdown 笔记应用。参考 Obsidian 桌面版 1.14.4 独立重建，直接打开 Obsidian 库。
 
-基于 Electron 与 CodeMirror 6，笔记以本地文件保存，支持 `.obsidian` 配置、`.canvas` 白板与 `.base` 数据库。
+使用 TypeScript 开发，基于 Electron 与 CodeMirror 6，笔记以本地文件保存，支持 `.obsidian` 配置、`.canvas` 白板与 `.base` 数据库。
 
 ## 功能
 
@@ -15,7 +15,7 @@
 
 ## 本地开发
 
-需要 Node.js 与 npm。
+需要 Node.js 22.18 或更新版本与 npm。
 
 ```sh
 git clone https://github.com/huxi7/opencidian.git
@@ -26,7 +26,7 @@ npm start
 
 首次启动时，选择已有的笔记文件夹，或新建一个库。`npm start` 会先构建再启动应用。
 
-开发时使用 `npm run dev` 启用增量构建。
+开发时使用 `npm run dev` 启用类型检查与增量构建。主进程变更后，重新启动开发命令。
 
 ## 打包
 
@@ -56,9 +56,8 @@ npm run dist       # 生成 DMG 与 ZIP
 ## 验收
 
 ```sh
-npm run build
-node --experimental-vm-modules src/renderer/core/workspace-regression.js
-sh scripts/acceptance/full.sh --output /tmp/opensidian-acceptance
+npm test                     # 类型检查、构建、Node 测试与工作区回归
+npm run test:acceptance       # 完整隔离 Electron 验收
 ```
 
 Electron 验收使用隔离的临时库，窗口不可见且不抢焦点。场景说明与已有记录见 [验收目录](scripts/acceptance/CLAUDE.md) 和 [验收记录](scripts/acceptance/RESULTS.md)。

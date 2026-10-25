@@ -30,9 +30,9 @@ globalThis.__resizeCreate = () => new Element();
 const checks = [], check = (message, action) => { action(); checks.push(message); };
 try {
   const outfile = path.join(temporary, 'resize.cjs');
-  await build({ stdin: { contents: `export * from './src/renderer/core/workspace-resize.js'; export * from './src/renderer/core/workspace-serialize.js'; export * from './src/renderer/core/workspace-model.js';`, resolveDir: root }, outfile, bundle: true, platform: 'node', format: 'cjs', logLevel: 'silent', plugins: [{ name: 'fake-dom', setup(builder) {
-    builder.onResolve({ filter: /\/(?:dom|workspace-sidebar-transition|workspace-model)\.js$/ }, args => ({ path: path.resolve(args.resolveDir, args.path), namespace: 'test' }));
-    builder.onLoad({ filter: /.*/, namespace: 'test' }, args => ({ contents: args.path.endsWith('/dom.js') ? 'export const createDiv=()=>globalThis.__resizeCreate();' : args.path.endsWith('/workspace-model.js') ? 'export class WorkspaceLeaf {} export class WorkspaceTabs {} export class WorkspaceSplit {}' : 'export function settleSidebarTransitions(){}', loader: 'js' }));
+  await build({ stdin: { contents: `export * from './src/renderer/core/workspace-resize.ts'; export * from './src/renderer/core/workspace-serialize.ts'; export * from './src/renderer/core/workspace-model.ts';`, resolveDir: root }, outfile, bundle: true, platform: 'node', format: 'cjs', logLevel: 'silent', plugins: [{ name: 'fake-dom', setup(builder) {
+    builder.onResolve({ filter: /\/(?:dom|workspace-sidebar-transition|workspace-model)\.(?:js|ts)$/ }, args => ({ path: path.resolve(args.resolveDir, args.path).replace(/\.js$/, '.ts'), namespace: 'test' }));
+    builder.onLoad({ filter: /.*/, namespace: 'test' }, args => ({ contents: /\/dom\.(?:js|ts)$/.test(args.path) ? 'export const createDiv=()=>globalThis.__resizeCreate();' : /\/workspace-model\.(?:js|ts)$/.test(args.path) ? 'export class WorkspaceLeaf {} export class WorkspaceTabs {} export class WorkspaceSplit {}' : 'export function settleSidebarTransitions(){}', loader: 'js' }));
   } }] });
   const { createWorkspaceResizeHandle: create, cancelWorkspaceResize: cancel, sidebarResizeTarget: target, computeWorkspaceResizeSizes: compute, serializeNode, WorkspaceLeaf, WorkspaceTabs, WorkspaceSplit } = createRequire(import.meta.url)(outfile);
   const left = { side: 'left', size: 300, containerEl: new Element(300) }, center = { side: 'center', containerEl: new Element(400) }, right = { side: 'right', size: 300, containerEl: new Element(300) };

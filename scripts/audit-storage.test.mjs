@@ -17,7 +17,7 @@ const reject = async (message, action) => { await assert.rejects(action); checks
 let vault;
 try {
   const outfile = path.join(temporary, 'storage.cjs');
-  await build({ stdin: { contents: "export * from './src/renderer/core/vault.js'; export * from './src/renderer/core/fileManager.js';", resolveDir: repository },
+  await build({ stdin: { contents: "export * from './src/renderer/core/vault.ts'; export * from './src/renderer/core/fileManager.ts';", resolveDir: repository },
     outfile, bundle: true, platform: 'node', format: 'cjs', packages: 'external', logLevel: 'silent', plugins: [{ name: 'isolate-unused-ui', setup(builder) {
       builder.onResolve({ filter: /(?:i18n|notices|modals|attachments-downloader|frontmatter-write)\.js$/ }, args => ({ path: args.path, namespace: 'test' }));
       builder.onLoad({ filter: /.*/, namespace: 'test' }, () => ({ contents: "export const t=()=>''; export const tt=(_k,f)=>f; export class Notice{} export class Modal{} export const confirmDialog=async()=>true; export const downloadAttachmentsForNote=()=>{}; export const processFrontMatter=()=>{};", loader: 'js' }));

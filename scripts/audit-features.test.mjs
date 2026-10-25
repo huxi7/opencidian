@@ -15,7 +15,7 @@ const temporary = fs.mkdtempSync(path.join(os.tmpdir(), 'opensidian-audit-featur
 const checks = [], check = (message, test) => { test(); checks.push(message); };
 try {
   const outfile = path.join(temporary, 'model.cjs');
-  await build({ stdin: { contents: `export * from './src/renderer/plugins-core/bases-model.js';`, resolveDir: root }, bundle: true, platform: 'node', format: 'cjs', outfile, logLevel: 'silent' });
+  await build({ stdin: { contents: `export * from './src/renderer/plugins-core/bases-model.ts';`, resolveDir: root }, bundle: true, platform: 'node', format: 'cjs', outfile, logLevel: 'silent' });
   const { BaseDocument, queryBase } = createRequire(import.meta.url)(outfile);
   for (const source of ['', '# untouched\n', 'future: {token: keep}\n', '# untouched\nfuture: {token: keep}\nviews: []\n', '{future: {token: keep}, views: []}']) {
     const doc = new BaseDocument(source);

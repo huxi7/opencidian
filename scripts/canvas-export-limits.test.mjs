@@ -5,7 +5,7 @@
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 import assert from 'node:assert/strict';
-import { MAX_SIZE, MAX_EXPORT_MEMORY, canvasPixelRatio, estimateCanvasExportBytes, assertCanvasExportBudget } from '../src/renderer/views/canvas-export-limits.js';
+import { MAX_SIZE, MAX_EXPORT_MEMORY, canvasPixelRatio, estimateCanvasExportBytes, assertCanvasExportBudget } from '../src/renderer/views/canvas-export-limits.ts';
 const checks = [];
 function check(message, fn) { fn(); checks.push(message); }
 check('长边与原版一致', () => assert.equal(MAX_SIZE, 16284));

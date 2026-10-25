@@ -244,6 +244,16 @@
     const indicators = [...markerDom.querySelectorAll('.cm-foldGutter .collapse-indicator')];
     assert(indicators.length > 0, 'LP fold indicators present');
     assert(indicators.some(el => !el.classList.contains('is-collapsed') && getComputedStyle(el).opacity === '0'), 'LP fold indicators hidden by default');
+    const originalText = preview.editor.getValue();
+    preview.editor.setValue('abcdef\nghijkl');
+    preview.editor.setSelections([
+      { anchor: { line: 0, ch: 1 }, head: { line: 0, ch: 3 } },
+      { anchor: { line: 1, ch: 1 }, head: { line: 1, ch: 3 } },
+    ]);
+    assert(preview.editor.listSelections().length === 2, 'Editor.setSelections preserves multiple ranges');
+    const ranges = preview.editor.cm.state.selection.ranges;
+    assert(ranges.map(range => preview.editor.cm.state.doc.sliceString(range.from, range.to)).join('|') === 'bc|hi', 'multiple selection ranges use CodeMirror positions');
+    preview.editor.setValue(originalText);
     return { role: 'editor', pass: true, count: checks.length, passed: true, checks, fixture };
   } finally {
     app.settings.updateAppSettings(saved);

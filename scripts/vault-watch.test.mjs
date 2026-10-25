@@ -17,7 +17,7 @@ const until = async (test, message) => { const end = Date.now() + 5000; while (!
 let vault;
 try {
   const outfile = path.join(temporary, 'vault.cjs');
-  await build({ entryPoints: [path.join(root, 'src/renderer/core/vault.js')], outfile, bundle: true, platform: 'node', format: 'cjs', packages: 'external', logLevel: 'silent' });
+  await build({ entryPoints: [path.join(root, 'src/renderer/core/vault.ts')], outfile, bundle: true, platform: 'node', format: 'cjs', packages: 'external', logLevel: 'silent' });
   const exports = {}, module = { exports };
   new Function('exports', 'require', 'module', fs.readFileSync(outfile, 'utf8'))(exports, createRequire(path.join(root, 'package.json')), module);
   const { Vault, FileSystemAdapter } = module.exports;

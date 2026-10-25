@@ -15,7 +15,7 @@ const root = path.resolve(import.meta.dirname, '..');
 const temporary = fs.mkdtempSync(path.join(os.tmpdir(), 'opensidian-csv-unit-'));
 try {
   const outfile = path.join(temporary, 'csv.cjs');
-  await build({ stdin: { contents: `export * from './src/renderer/plugins-core/bases-csv.js'; export * from './src/renderer/plugins-core/bases-values.js';`, resolveDir: root }, bundle: true, platform: 'node', format: 'cjs', outfile, logLevel: 'silent', plugins: [{ name: 'no-electron', setup(builder) {
+  await build({ stdin: { contents: `export * from './src/renderer/plugins-core/bases-csv.ts'; export * from './src/renderer/plugins-core/bases-values.ts';`, resolveDir: root }, bundle: true, platform: 'node', format: 'cjs', outfile, logLevel: 'silent', plugins: [{ name: 'no-electron', setup(builder) {
     builder.onResolve({ filter: /^electron$/ }, () => ({ path: 'electron', namespace: 'test' }));
     builder.onLoad({ filter: /.*/, namespace: 'test' }, () => ({ contents: 'exports.ipcRenderer = {};', loader: 'js' }));
   } }] });

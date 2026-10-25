@@ -5,11 +5,12 @@
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 import fs from 'node:fs';
+import { transformSync } from 'esbuild';
 import path from 'node:path';
 import vm from 'node:vm';
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
-const source = fs.readFileSync(path.resolve(import.meta.dirname, '../src/main/dev-hooks.js'), 'utf8');
+const source = transformSync(fs.readFileSync(path.resolve(import.meta.dirname, '../src/main/dev-hooks.ts'), 'utf8'), { loader: 'ts', format: 'cjs', target: 'node20' }).code;
 const checks = [], check = (message, action) => { action(); checks.push(message); };
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
 async function until(test) { const end = Date.now() + 500; while (!test()) { if (Date.now() > end) throw Error('test timeout'); await delay(1); } }

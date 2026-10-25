@@ -1,5 +1,5 @@
 /**
- * [INPUT]: 原始 i18n.js 函数说明、esbuild 与 Bases 纯数据模块。
+ * [INPUT]: 公开公式说明、esbuild 与 Bases 纯数据模块。
  * [OUTPUT]: 返回可复跑的 JSON {pass,count,checks}；逐键验证函数、空值、类型错误与日期。
  * [POS]: Bases P3 Node 单测。固定 UTC、时钟和随机源；不启动 Electron，不执行原版脚本。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
@@ -14,7 +14,7 @@ process.env.TZ = 'UTC';
 const root = path.resolve(import.meta.dirname, '..'), temporary = fs.mkdtempSync(path.join(os.tmpdir(), 'opensidian-formula-unit-'));
 try {
   const outfile = path.join(temporary, 'bases.cjs');
-  await build({ stdin: { contents: `export * from './src/renderer/plugins-core/bases-expression.js'; export * from './src/renderer/plugins-core/bases-values.js'; export * from './src/renderer/plugins-core/bases-context.js';`, resolveDir: root }, bundle: true, platform: 'node', format: 'cjs', outfile, logLevel: 'silent' });
+  await build({ stdin: { contents: `export * from './src/renderer/plugins-core/bases-ui-functions.ts'; export * from './src/renderer/plugins-core/bases-expression.ts'; export * from './src/renderer/plugins-core/bases-values.ts'; export * from './src/renderer/plugins-core/bases-context.ts';`, resolveDir: root }, bundle: true, platform: 'node', format: 'cjs', outfile, logLevel: 'silent' });
   const require = createRequire(import.meta.url), engine = require(outfile), { compileExpression, createContext, propertyValue, formatBaseValue, BaseDate, BaseLink, sortCompare } = engine;
   const files = Object.fromEntries(['Projects/Alpha.md', 'Projects/Beta.md', 'Host.md', 'Root.md'].map((name, index) => {
     const filename = name.split('/').pop(), dot = filename.lastIndexOf('.');
@@ -84,11 +84,8 @@ try {
     labelLinkLinksTo: ['link("Projects/Beta").linksTo(file("Projects/Beta"))', true], labelLinkAsFile: ['linked.asFile().name', 'Beta'],
     labelTagMatches: ['file.tags[0].matches("WORK")', true],
   };
-  const original = fs.readFileSync(path.join(root, '_analysis/obsidian-114/renderer/i18n.js'), 'utf8');
-  const factStart = original.indexOf('funcs:{', original.indexOf('formulas:{'));
-  const factText = original.slice(factStart, original.indexOf('}},', factStart) + 1);
-  const factKeys = [...factText.matchAll(/(label\w+):"/g)].map(match => match[1]);
-  check('函数表逐键覆盖原始 i18n.js', () => assert.deepEqual(Object.keys(cases).sort(), factKeys.sort()));
+  const factKeys = [...new Set(engine.BASE_FORMULA_DOCS.map(doc => doc.sourceKey))];
+  check('公开公式说明逐键覆盖测试用例', () => assert.deepEqual(Object.keys(cases).sort(), factKeys.sort()));
   for (const [label, [expression, expected]] of Object.entries(cases)) check(label, () => {
     const value = evaluate(expression);
     if (expected?.kind) assert.deepEqual({ kind: value.kind, value: value.value }, expected);

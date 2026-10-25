@@ -10,6 +10,10 @@ build/icon.iconset/
 
 # 逆向分析参考（从 /Applications/Obsidian.app 提取，可随时重新导出）
 _analysis/
+AGENT-STATE*.md
+
+# TypeScript 增量检查缓存
+*.tsbuildinfo
 
 # 日志与系统噪声
 *.log

@@ -118,7 +118,9 @@
     check(Number(canvasSaved === true) + Number(remoteCanvasSaved.saveResult === true) === 1, '画布两个真实窗口并发保存仅一个成功');
     check(canvasDisk.vendor.preserved && ['main canvas', 'remote canvas'].includes(canvasDisk.nodes[0].text), '画布CAS保持节点与未知字段完整');
     check(canvasSaved ? remoteCanvas.dirty && remoteCanvas.canvasData.nodes[0].text === 'remote canvas' : canvas._dirty && canvas.nodes.get('one').text === 'main canvas', '画布失败窗口保留完整未保存节点');
-    await discardMain(canvas); await probe(canvasId, { action: 'discard-local' });
+    await discardMain(canvas);
+    const discarded = await probe(canvasId, { action: 'discard-local' });
+    check(!discarded.dirty && JSON.stringify(discarded.canvasData.nodes) === JSON.stringify(canvasDisk.nodes), '画布冲突清理实际载入磁盘节点');
     canvas.nodes.get('one').setText('main normal'); stopTimer(canvas); check(await canvas.save(), '画布正常CAS保存成功');
     await until(async () => (await probe(canvasId)).canvasData.nodes[0].text === 'main normal', '画布主窗同步子窗');
     await probe(canvasId, { action: 'canvas-edit-pending', text: 'remote normal', hold: true }); await probe(canvasId, { action: 'save' });

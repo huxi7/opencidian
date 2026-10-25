@@ -2,84 +2,84 @@
 
 > L2 | 父级: /src/renderer/CLAUDE.md
 
-核心插件。每个文件导出一个模块对象 `{ nameKey?, create(app) }`；create 返回 `{ onload, onunload, registerCommands?, deregister? }`。插件 id 必须与 settings.corePlugins 的键一致，并登记到 core/plugins-registry.js。
+核心插件。每个文件导出一个模块对象 `{ nameKey?, create(app) }`；create 返回 `{ onload, onunload, registerCommands?, deregister? }`。插件 id 必须与 settings.corePlugins 的键一致，并登记到 core/plugins-registry.ts。
 
 成员清单
-file-explorer-drag.js: 文件树拖拽层。setupItemDrag 复刻 dragManager 的 drag-ghost-self 幽灵、body.is-grabbing、整个选择集 is-being-dragged 与多选载荷；setupFolderDrop 负责外部文件复制、库内项移动与 750ms 悬停展开；setupRootDrop 处理库根空白区（外部文件进根、库内项移回根）；importExternalFiles 经 getAvailableAttachmentPath 去重写入。
-file-explorer.js: 文件树视图(type file-explorer)。根级文件挂匿名容器（无仓库名标题行）；1.14.4 无功能区按钮。头部按钮行经 file-explorer-toolbar.js（.nav-header 内五按钮，侧栏内复用共享靠左规则）。排序/折叠/右键菜单/拖拽移动/inline 重命名/新建文件与文件夹命令。拖拽移动失败经 tt('plugins.file-explorer.msg-error-move-failed', …) 提示（locale 已有该键）。 系统外部文件拖入：文件夹标题/根区域复制进库（由 file-explorer-drag.js 经 getAvailableAttachmentPath 去重）。 拖拽生命周期委派 file-explorer-drag.js。多选：选择集/键盘/批量操作分别委派 file-explorer-selection.js 与 file-explorer-multi.js；容器 tabindex=0 持有 DOM 焦点，空白点击与右键清空选择，拖动载荷载入选择集，菜单对选择集生效。
-file-explorer-selection.js: 文件树选择层。原版 a2 的 selectedDoms/focusedItem/activeDom 三元组按 path 保存（每次重绘重建 DOM），Alt 切换选择、Shift 按可见顺序范围选择、点击已打开项只聚焦；键盘等价 initializeKeyboardNav（↑/↓/Shift/Mod、←/→、Enter=mac 重命名、Mod+Enter/Space 打开、F2、Delete 与 mac Mod+Backspace），Home/End 原版未注册故不实现。
-file-explorer-multi.js: 文件树批量操作层。原版 x8.dragFiles 的多选拖动载荷（text/plain JSON type=files 增加 items，保留单项 path 供编辑器插入链接）、dragTitleFor 的单项幽灵标题（md 短名/其它全名/文件夹名）、onFileContextMenu 多选分支（新建文件夹含选中项 / 移动 N 项到… / 删除）、onDeleteSelectedFiles 顺序删除、f$ 移动、v$ 顶层项去重。
-file-explorer-toolbar.js: 文件浏览器头部按钮行。按原版 QL.addNavButton 建 .nav-header>.nav-buttons-container 与五个 clickable-icon.nav-action-button（新建笔记 lucide-edit / 新建文件夹 / 排序 / 自动显示 / 折叠-展开）；排序菜单三组各两项、组后分隔线并挂按钮（has-active-menu 守卫）；视觉由 syncExplorerToolbar 依视图状态渲染，本模块不持状态。
-command-palette.js: 命令面板与 terminal 功能区入口。启停对称注册和撤销。导出 settingTab（原版核心插件设置页“置顶命令”）：SettingGroup 标题行 + 加号打开命令选择器，置顶列表存 .obsidian/command-palette.json；面板无查询时置顶命令排在最近使用之前。
-switcher.js: 快速切换器（1.14.4 1:1）与 file-search 功能区入口。最近 10 项 MRU、文件/别名/未解析链接/书签四类建议、MetadataCache 统一忽略降权、20 项上限、创建项、六条指令栏、单实例模态；设置页三项开关写 .obsidian/switcher.json。复用 switcher:open，禁用时对称移除按钮和命令。
-backlink.js: 反链分节、上下文与筛选。导出文档底部反链设置页，组件可绑定宿主笔记。折叠跨重绘保留；关闭释放全部事件与计时器。状态栏反链计数按 resolvedLinks 汇总，点击展开右栏。
-outgoing-link.js: 出链面板视图(type outgoing-link)。逐条列出当前文件的已解析与未解析出链及未链接提及(Unlinked mentions)；图标按标题/块/文件/未解析切换，已解析出链的副文本显示目标文件夹，未解析出链带 is-unresolved 与“尚未创建”提示；未链接提及在当前正文中查找其它笔记的名称与别名，支持点击 Link 按钮写入内部链接。不自动创建窗格，由命令 outgoing-links:open / outgoing-links:open-for-current 打开；关闭释放订阅与计时器，禁用撤销视图与命令。
-outline.js: 按标题层级建立大纲。跳级归最近父标题，同名标题按行号跳转，关闭释放资源。
-tag-pane.js: 标签面板视图(type tag)。标签树/排序/嵌套开关。
-properties.js: 属性插件。全部属性忽略大小写聚合，提供类型菜单和四种排序；文件属性侧栏共用文档编辑器与库级类型。命令和状态栏对称启停。
-global-search.js: 全局搜索视图(type search)。DOM 与 1.14.4 对齐（search-row/search-params/search-results-info/tree-item 分组），负责状态、排序、折叠、解释与键盘导航；结果列表的虚拟化与分组模型委托 search-results.js，查询与命中委托 search-query.js，复制结果弹窗委托 search-copy.js，输入框建议弹层委托 search-suggest.js，自身不再实现匹配。file-menu/editor-menu 事件按原版补「在文件夹中查找」（非根文件夹，action 段，lucide-folder-search，查询 path:"<目录>/"）与「查找 …」（选区，selection 段）。
-search-query.js: 查询门面。只转出 parseQuery/queryInfo（search-query-parse.js）与 createSearchDocument/searchDocument（search-query-match.js），保持旧导入路径可用。
-search-query-parse.js: 无 DOM 查询解析层。parseQuery 解析 file/path/tag/content、line/section/block/task/task-todo/task-done、match-case/ignore-case、属性 [key]/[key:value]、引号、OR、括号、否定、正则与大小写；queryInfo 供解释视图。
-search-query-match.js: 无 DOM 匹配层。createSearchDocument 按行/章节/块/任务切正文并建立属性表，searchDocument 返回字段/正文/属性命中与行上下文、评分与徽标。
-search-results.js: 结果列表内核。SearchVirtualList 只渲染视口内分组（上下占位块撑总高，滚动条与总条目成比例）、行高实测缓存与复用；SearchResults 负责分组模型、折叠态不参与键盘导航、命中行按段落边界扩展上下文、焦点与计数。标题与命中行的 mouseover 抛 workspace 的 hover-link（source=search，带目标元素与行号 state），供 page-preview 贴目标定位。
-search-copy.js: 复制搜索结果弹窗。只读取结果文件列表，按路径/内链/列表前缀三项选项生成文本并写系统剪贴板，不触发搜索或改写搜索状态。
-search-suggest.js: 搜索框建议弹层（对齐原版 k2/w2）。DOM 为 .suggestion-container.mod-search-suggestion > .suggestion > .suggestion-item.mod-complex.search-suggest-item，算子表逐字取原版 6 项（path:、file:、tag:、line:()、section:()、[property]）并带说明文案；含「搜索选项/搜索历史」组头与图标按钮（了解更多、清除历史）；历史存 localStorage 的 recent-searches（去重、最近在前、上限 20、搜索结束后 5s 防抖写入、清除即删键）；↑/↓/Home/End/Enter/Escape 与算子插入语义（替换当前词元、光标停在括号前）同原版；定位贴输入框底，宽 max(输入框宽, 300)。
-editor-status.js: 状态栏视图状态图标与切换菜单(Reading/Source/Live Preview，tooltip，mod-clickable)。
-page-preview.js: 内部链接悬停预览 popover。五类来源(editor/preview/search/tab-header/graph)可配置是否需按住 Mod（默认 search/editor/tab-header/graph 需 Mod，preview 不需要），未解析链接空态，设置写 page-preview.json。内容按原版嵌块结构 .markdown-embed > .markdown-embed-content > .markdown-preview-view（inline-title 文件名、32px padding、400px 限高内部滚动）；80ms --anim-motion-swing 淡入；内部滚动不关闭。DOM 链接未按 Mod 时只在悬停期间挂临时 keydown/mousemove 监听，按下 Mod 补弹，移出/输入普通字符/2s 无移动即拆除；全局 keydown/keyup 仅在等待或 popover 存在时挂载。hover-link 事件带 targetEl 时（搜索结果、DOM 链接）贴目标元素定位、指针移出即收起（移进浮层不算）；图谱来源无 targetEl，按原版必须按住 Mod 才弹，不提供「先悬停再按 Mod」补弹。插件持有 parent.hoverPopover 句柄供引擎撤销悬停。
-word-count.js: 状态栏字数统计(中英混排规则)；原版无点击弹窗。
-canvas.js: 注册画布视图、四个命令与新建功能区按钮。canvas:new-file 按白板设定里的「新白板位置」建空画布；canvas:export-as-image 仅在当前叶子是画布时可用（先弹设置弹窗：范围/缩放/水印/隐私，确认后渲染并弹保存对话框写 PNG，取消不落盘）；canvas:jump-to-group 仅在画布含分组时可用；canvas:convert-to-file 仅在单选文本卡片时可用。settingTab 导出白板设定页（新白板位置/文件夹、滚轮行为、默认 Mod 行为、卡片标签可见性、对齐网格/物体、缩放阈值），选项落 .obsidian/canvas.json 并即时灌回打开的视图。Mod 点击新标签并聚焦，禁用撤销按钮与注册。
-bookmarks.js: 持久化文件、目录、搜索、分组及关系图书签。关系图选项深复制，打开恢复真实图谱。Mod/中键建立新标签并尊重聚焦偏好。目录改名同步子路径。
-daily-notes.js: 串行创建日期笔记与嵌套目录。模板变量及 createMarkdownNote 供其余笔记插件复用。
-templates.js: 模板功能区执行已有插入命令。展开变量、合并属性；属性函数供重组复用。
-note-composer.js: 提取或合并未保存文本。目标确认落盘后替换来源并重定向反链，遵循回收策略。
-graph.js: 图谱视图、命令与功能区入口。普通点击复用中心，Mod 点击新标签并聚焦；禁用撤销按钮和命令。实现原版 onFileMenu：文件树上下文菜单里为 md 文件补「打开局部关系图」（view.linked 段，lucide-git-fork）。
-graph-engine.js: 协调查询、元数据变化、图谱选项、悬停预览与节点操作。悬停仅对文件/焦点/附件节点触发 hover-link 事件（载荷按原版五项，不带多余字段）；标签与未解析节点不预览。节点右键菜单按原版分节表（title/open/action/info/info.copy/view/view.linked/system/danger）+ view.linked 子菜单 + file-menu 事件联动。
-graph-controls.js: 筛选、颜色、显示与力学控件。变更交给引擎。颜色组顺序即优先色顺序，按住颜色圆点拖动重排；新建颜色组按原版以当前组序 ×40° 递增色相（追加行，不重建整表），组以检索式表达、无右键菜单。力参数滑杆区间与换算对齐原版（向心力 0-1、排斥力 0-20 连线力 0-1、连线距离 30-500），不带原版没有的动态提示与 CTA 按钮。
-graph-data.js: 根据 Vault 清单构图。计算局部邻域和孤立节点。
-graph-query.js: 文件、正文、路径与标签查询。供筛选及颜色组复用。
-graph-simulation.js: 图谱力学的线程门面（对外方法名与旧实现一致）。worker 后端按原版 sim.js 协议发消息：app:// 直载 Worker → fetch + Blob URL（原版 Rz 手法）→ 本地线程三级回退；worker 更换（直载失败或崩溃）时重发镜像状态。收到位置写 nodeById（尊重 fx/fy）后回调 onUpdate，SAB 用末尾 Uint32 版本守卫、transfer 的 ArrayBuffer 应用后清空。镜像 alpha 只跟随命令抬高（graph.js 直接写 alpha=0 冻结模拟）；worker 后端 finished = 静默 250ms 且 alphaTarget=0，tick() 为 no-op（localTicks 计主线程物理帧数）。
-graph-force.js: 力学内核（Worker 与本地回退共用同一份数学）。持节点表/连线/力参数与 alpha，提供原版 onmessage 语义的 setNodes/setLinks/forceNode/setForces/raiseAlpha/setAlphaTarget 与单帧 tick。默认 charge -1000、linkDistance 250、linkStrength 1、centerStrength .1、速度衰减 .6。
-graph-sim-worker.js: 力学 Worker 脚本（esbuild → dist/graph-sim-worker.js，iife）。60fps setTimeout 循环：alpha 衰减 → 物理 → 发布位置；SharedArrayBuffer + 末尾 Uint32 版本号自增（不可用则 transfer ArrayBuffer）；启动时发 ignore+shared 探测消息；无节点停摆，run 唤醒。
-graph-quadtree.js: 力学空间索引。buildQuadtree/visitAfter；重合点存 next 链；供 Barnes-Hut 斥力与半径碰撞共用同一棵树。
-graph-options.js: 默认选项和 graph.json 读写，供视图与引擎共用。
-graph-utils.js: 无状态颜色、插值、矩形与键盘常量。
-file-recovery.js: 文件恢复插件(原版默认启用)。快照范围为 md/canvas/base；间隔单位分钟(默认 5，0 表示每次变更即存)，旧 intervalSeconds 配置读取时按 60 秒=1 分钟迁移。快照落盘 .obsidian/.file-recovery/ 按天原子替换 JSON({路径:[{ts,data}]})；命令 file-recovery:open 打开快照弹窗(文件搜索+时间/大小列表+预览+恢复+复制+显示差异)；settingTab(间隔分钟/保留天数/查看/清空)。
-random-note.js: 漫游笔记插件。共用 MetadataCache 排除规则。命令 random-note + ribbon(dice-glyph) 随机打开一篇 md；Mod 点击新标签页。
-zk-prefixer.js: 时间戳笔记插件(id zk-prefixer，文案键 plugins.unique-note-creator)。命令 zk-prefixer + ribbon(sheets-in-box)；getUniquePath 冲突按 分/时/日/周/月/年 递增；数据 .obsidian/zk-prefixer.json；settingTab(文件夹/模板/格式样例)。
-workspaces.js: 命名布局保存与恢复。尊重保存失败，统一由 Workspace 关闭旧视图，不重复清理。
-slides.js: 幻灯片插件。命令 slides:start 把当前 md 交给 SlidesPresentation(views/slides-presentation.js) 全窗口演示；不注册视图类型；包装层暴露 getPresentation()。原版 file-menu 菜单项因本项目无 file-menu 来源而省略。
-audio-recorder.js: 录音机插件(id audio-recorder，默认关闭)。命令 audio-recorder:start 与 audio-recorder:stop，checkCallback 按 recording 门控；功能区按钮 lucide-mic 切换开关，录音时加 is-active。扩展名 audio/mp4 可用时用 m4a，否则 webm/opus。命名 "Recording <YYYYMMDDHHmmss>"，经 editor/attachments.js 的 saveAttachment 落盘，并向活动 Markdown 视图插入嵌入链接。权限查询降级为 Permissions API 与 getUserMedia 错误映射，原版走 macOS systemPreferences。卸载停止录音并丢弃未完成条目。
+file-explorer-drag.ts: 文件树拖拽层。setupItemDrag 复刻 dragManager 的 drag-ghost-self 幽灵、body.is-grabbing、整个选择集 is-being-dragged 与多选载荷；setupFolderDrop 负责外部文件复制、库内项移动与 750ms 悬停展开；setupRootDrop 处理库根空白区（外部文件进根、库内项移回根）；importExternalFiles 经 getAvailableAttachmentPath 去重写入。
+file-explorer.ts: 文件树视图(type file-explorer)。根级文件挂匿名容器（无仓库名标题行）；1.14.4 无功能区按钮。头部按钮行经 file-explorer-toolbar.ts（.nav-header 内五按钮，侧栏内复用共享靠左规则）。排序/折叠/右键菜单/拖拽移动/inline 重命名/新建文件与文件夹命令。拖拽移动失败经 tt('plugins.file-explorer.msg-error-move-failed', …) 提示（locale 已有该键）。 系统外部文件拖入：文件夹标题/根区域复制进库（由 file-explorer-drag.ts 经 getAvailableAttachmentPath 去重）。 拖拽生命周期委派 file-explorer-drag.ts。多选：选择集/键盘/批量操作分别委派 file-explorer-selection.ts 与 file-explorer-multi.ts；容器 tabindex=0 持有 DOM 焦点，空白点击与右键清空选择，拖动载荷载入选择集，菜单对选择集生效。
+file-explorer-selection.ts: 文件树选择层。原版 a2 的 selectedDoms/focusedItem/activeDom 三元组按 path 保存（每次重绘重建 DOM），Alt 切换选择、Shift 按可见顺序范围选择、点击已打开项只聚焦；键盘等价 initializeKeyboardNav（↑/↓/Shift/Mod、←/→、Enter=mac 重命名、Mod+Enter/Space 打开、F2、Delete 与 mac Mod+Backspace），Home/End 原版未注册故不实现。
+file-explorer-multi.ts: 文件树批量操作层。原版 x8.dragFiles 的多选拖动载荷（text/plain JSON type=files 增加 items，保留单项 path 供编辑器插入链接）、dragTitleFor 的单项幽灵标题（md 短名/其它全名/文件夹名）、onFileContextMenu 多选分支（新建文件夹含选中项 / 移动 N 项到… / 删除）、onDeleteSelectedFiles 顺序删除、f$ 移动、v$ 顶层项去重。
+file-explorer-toolbar.ts: 文件浏览器头部按钮行。按原版 QL.addNavButton 建 .nav-header>.nav-buttons-container 与五个 clickable-icon.nav-action-button（新建笔记 lucide-edit / 新建文件夹 / 排序 / 自动显示 / 折叠-展开）；排序菜单三组各两项、组后分隔线并挂按钮（has-active-menu 守卫）；视觉由 syncExplorerToolbar 依视图状态渲染，本模块不持状态。
+command-palette.ts: 命令面板与 terminal 功能区入口。启停对称注册和撤销。导出 settingTab（原版核心插件设置页“置顶命令”）：SettingGroup 标题行 + 加号打开命令选择器，置顶列表存 .obsidian/command-palette.json；面板无查询时置顶命令排在最近使用之前。
+switcher.ts: 快速切换器（1.14.4 1:1）与 file-search 功能区入口。最近 10 项 MRU、文件/别名/未解析链接/书签四类建议、MetadataCache 统一忽略降权、20 项上限、创建项、六条指令栏、单实例模态；设置页三项开关写 .obsidian/switcher.json。复用 switcher:open，禁用时对称移除按钮和命令。
+backlink.ts: 反链分节、上下文与筛选。导出文档底部反链设置页，组件可绑定宿主笔记。折叠跨重绘保留；关闭释放全部事件与计时器。状态栏反链计数按 resolvedLinks 汇总，点击展开右栏。
+outgoing-link.ts: 出链面板视图(type outgoing-link)。逐条列出当前文件的已解析与未解析出链及未链接提及(Unlinked mentions)；图标按标题/块/文件/未解析切换，已解析出链的副文本显示目标文件夹，未解析出链带 is-unresolved 与“尚未创建”提示；未链接提及在当前正文中查找其它笔记的名称与别名，支持点击 Link 按钮写入内部链接。不自动创建窗格，由命令 outgoing-links:open / outgoing-links:open-for-current 打开；关闭释放订阅与计时器，禁用撤销视图与命令。
+outline.ts: 按标题层级建立大纲。跳级归最近父标题，同名标题按行号跳转，关闭释放资源。
+tag-pane.ts: 标签面板视图(type tag)。标签树/排序/嵌套开关。
+properties.ts: 属性插件。全部属性忽略大小写聚合，提供类型菜单和四种排序；文件属性侧栏共用文档编辑器与库级类型。命令和状态栏对称启停。
+global-search.ts: 全局搜索视图(type search)。DOM 与 1.14.4 对齐（search-row/search-params/search-results-info/tree-item 分组），负责状态、排序、折叠、解释与键盘导航；结果列表的虚拟化与分组模型委托 search-results.ts，查询与命中委托 search-query.ts，复制结果弹窗委托 search-copy.ts，输入框建议弹层委托 search-suggest.ts，自身不再实现匹配。file-menu/editor-menu 事件按原版补「在文件夹中查找」（非根文件夹，action 段，lucide-folder-search，查询 path:"<目录>/"）与「查找 …」（选区，selection 段）。
+search-query.ts: 查询门面。只转出 parseQuery/queryInfo（search-query-parse.ts）与 createSearchDocument/searchDocument（search-query-match.ts），保持旧导入路径可用。
+search-query-parse.ts: 无 DOM 查询解析层。parseQuery 解析 file/path/tag/content、line/section/block/task/task-todo/task-done、match-case/ignore-case、属性 [key]/[key:value]、引号、OR、括号、否定、正则与大小写；queryInfo 供解释视图。
+search-query-match.ts: 无 DOM 匹配层。createSearchDocument 按行/章节/块/任务切正文并建立属性表，searchDocument 返回字段/正文/属性命中与行上下文、评分与徽标。
+search-results.ts: 结果列表内核。SearchVirtualList 只渲染视口内分组（上下占位块撑总高，滚动条与总条目成比例）、行高实测缓存与复用；SearchResults 负责分组模型、折叠态不参与键盘导航、命中行按段落边界扩展上下文、焦点与计数。标题与命中行的 mouseover 抛 workspace 的 hover-link（source=search，带目标元素与行号 state），供 page-preview 贴目标定位。
+search-copy.ts: 复制搜索结果弹窗。只读取结果文件列表，按路径/内链/列表前缀三项选项生成文本并写系统剪贴板，不触发搜索或改写搜索状态。
+search-suggest.ts: 搜索框建议弹层（对齐原版 k2/w2）。DOM 为 .suggestion-container.mod-search-suggestion > .suggestion > .suggestion-item.mod-complex.search-suggest-item，算子表逐字取原版 6 项（path:、file:、tag:、line:()、section:()、[property]）并带说明文案；含「搜索选项/搜索历史」组头与图标按钮（了解更多、清除历史）；历史存 localStorage 的 recent-searches（去重、最近在前、上限 20、搜索结束后 5s 防抖写入、清除即删键）；↑/↓/Home/End/Enter/Escape 与算子插入语义（替换当前词元、光标停在括号前）同原版；定位贴输入框底，宽 max(输入框宽, 300)。
+editor-status.ts: 状态栏视图状态图标与切换菜单(Reading/Source/Live Preview，tooltip，mod-clickable)。
+page-preview.ts: 内部链接悬停预览 popover。五类来源(editor/preview/search/tab-header/graph)可配置是否需按住 Mod（默认 search/editor/tab-header/graph 需 Mod，preview 不需要），未解析链接空态，设置写 page-preview.json。内容按原版嵌块结构 .markdown-embed > .markdown-embed-content > .markdown-preview-view（inline-title 文件名、32px padding、400px 限高内部滚动）；80ms --anim-motion-swing 淡入；内部滚动不关闭。DOM 链接未按 Mod 时只在悬停期间挂临时 keydown/mousemove 监听，按下 Mod 补弹，移出/输入普通字符/2s 无移动即拆除；全局 keydown/keyup 仅在等待或 popover 存在时挂载。hover-link 事件带 targetEl 时（搜索结果、DOM 链接）贴目标元素定位、指针移出即收起（移进浮层不算）；图谱来源无 targetEl，按原版必须按住 Mod 才弹，不提供「先悬停再按 Mod」补弹。插件持有 parent.hoverPopover 句柄供引擎撤销悬停。
+word-count.ts: 状态栏字数统计(中英混排规则)；原版无点击弹窗。
+canvas.ts: 注册画布视图、四个命令与新建功能区按钮。canvas:new-file 按白板设定里的「新白板位置」建空画布；canvas:export-as-image 仅在当前叶子是画布时可用（先弹设置弹窗：范围/缩放/水印/隐私，确认后渲染并弹保存对话框写 PNG，取消不落盘）；canvas:jump-to-group 仅在画布含分组时可用；canvas:convert-to-file 仅在单选文本卡片时可用。settingTab 导出白板设定页（新白板位置/文件夹、滚轮行为、默认 Mod 行为、卡片标签可见性、对齐网格/物体、缩放阈值），选项落 .obsidian/canvas.json 并即时灌回打开的视图。Mod 点击新标签并聚焦，禁用撤销按钮与注册。
+bookmarks.ts: 持久化文件、目录、搜索、分组及关系图书签。关系图选项深复制，打开恢复真实图谱。Mod/中键建立新标签并尊重聚焦偏好。目录改名同步子路径。
+daily-notes.ts: 串行创建日期笔记与嵌套目录。模板变量及 createMarkdownNote 供其余笔记插件复用。
+templates.ts: 模板功能区执行已有插入命令。展开变量、合并属性；属性函数供重组复用。
+note-composer.ts: 提取或合并未保存文本。目标确认落盘后替换来源并重定向反链，遵循回收策略。
+graph.ts: 图谱视图、命令与功能区入口。普通点击复用中心，Mod 点击新标签并聚焦；禁用撤销按钮和命令。实现原版 onFileMenu：文件树上下文菜单里为 md 文件补「打开局部关系图」（view.linked 段，lucide-git-fork）。
+graph-engine.ts: 协调查询、元数据变化、图谱选项、悬停预览与节点操作。悬停仅对文件/焦点/附件节点触发 hover-link 事件（载荷按原版五项，不带多余字段）；标签与未解析节点不预览。节点右键菜单按原版分节表（title/open/action/info/info.copy/view/view.linked/system/danger）+ view.linked 子菜单 + file-menu 事件联动。
+graph-controls.ts: 筛选、颜色、显示与力学控件。变更交给引擎。颜色组顺序即优先色顺序，按住颜色圆点拖动重排；新建颜色组按原版以当前组序 ×40° 递增色相（追加行，不重建整表），组以检索式表达、无右键菜单。力参数滑杆区间与换算对齐原版（向心力 0-1、排斥力 0-20 连线力 0-1、连线距离 30-500），不带原版没有的动态提示与 CTA 按钮。
+graph-data.ts: 根据 Vault 清单构图。计算局部邻域和孤立节点。
+graph-query.ts: 文件、正文、路径与标签查询。供筛选及颜色组复用。
+graph-simulation.ts: 图谱力学的线程门面（对外方法名与旧实现一致）。worker 后端按原版 sim.ts 协议发消息：app:// 直载 Worker → fetch + Blob URL（原版 Rz 手法）→ 本地线程三级回退；worker 更换（直载失败或崩溃）时重发镜像状态。收到位置写 nodeById（尊重 fx/fy）后回调 onUpdate，SAB 用末尾 Uint32 版本守卫、transfer 的 ArrayBuffer 应用后清空。镜像 alpha 只跟随命令抬高（graph.ts 直接写 alpha=0 冻结模拟）；worker 后端 finished = 静默 250ms 且 alphaTarget=0，tick() 为 no-op（localTicks 计主线程物理帧数）。
+graph-force.ts: 力学内核（Worker 与本地回退共用同一份数学）。持节点表/连线/力参数与 alpha，提供原版 onmessage 语义的 setNodes/setLinks/forceNode/setForces/raiseAlpha/setAlphaTarget 与单帧 tick。默认 charge -1000、linkDistance 250、linkStrength 1、centerStrength .1、速度衰减 .6。
+graph-sim-worker.ts: 力学 Worker 脚本（esbuild → dist/graph-sim-worker.ts，iife）。60fps setTimeout 循环：alpha 衰减 → 物理 → 发布位置；SharedArrayBuffer + 末尾 Uint32 版本号自增（不可用则 transfer ArrayBuffer）；启动时发 ignore+shared 探测消息；无节点停摆，run 唤醒。
+graph-quadtree.ts: 力学空间索引。buildQuadtree/visitAfter；重合点存 next 链；供 Barnes-Hut 斥力与半径碰撞共用同一棵树。
+graph-options.ts: 默认选项和 graph.json 读写，供视图与引擎共用。
+graph-utils.ts: 无状态颜色、插值、矩形与键盘常量。
+file-recovery.ts: 文件恢复插件(原版默认启用)。快照范围为 md/canvas/base；间隔单位分钟(默认 5，0 表示每次变更即存)，旧 intervalSeconds 配置读取时按 60 秒=1 分钟迁移。快照落盘 .obsidian/.file-recovery/ 按天原子替换 JSON({路径:[{ts,data}]})；命令 file-recovery:open 打开快照弹窗(文件搜索+时间/大小列表+预览+恢复+复制+显示差异)；settingTab(间隔分钟/保留天数/查看/清空)。
+random-note.ts: 漫游笔记插件。共用 MetadataCache 排除规则。命令 random-note + ribbon(dice-glyph) 随机打开一篇 md；Mod 点击新标签页。
+zk-prefixer.ts: 时间戳笔记插件(id zk-prefixer，文案键 plugins.unique-note-creator)。命令 zk-prefixer + ribbon(sheets-in-box)；getUniquePath 冲突按 分/时/日/周/月/年 递增；数据 .obsidian/zk-prefixer.json；settingTab(文件夹/模板/格式样例)。
+workspaces.ts: 命名布局保存与恢复。尊重保存失败，统一由 Workspace 关闭旧视图，不重复清理。
+slides.ts: 幻灯片插件。命令 slides:start 把当前 md 交给 SlidesPresentation(views/slides-presentation.ts) 全窗口演示；不注册视图类型；包装层暴露 getPresentation()。原版 file-menu 菜单项因本项目无 file-menu 来源而省略。
+audio-recorder.ts: 录音机插件(id audio-recorder，默认关闭)。命令 audio-recorder:start 与 audio-recorder:stop，checkCallback 按 recording 门控；功能区按钮 lucide-mic 切换开关，录音时加 is-active。扩展名 audio/mp4 可用时用 m4a，否则 webm/opus。命名 "Recording <YYYYMMDDHHmmss>"，经 editor/attachments.ts 的 saveAttachment 落盘，并向活动 Markdown 视图插入嵌入链接。权限查询降级为 Permissions API 与 getUserMedia 错误映射，原版走 macOS systemPreferences。卸载停止录音并丢弃未完成条目。
 
-bases.js: 数据库入口。功能区、空标签和文件夹菜单共用新建；卸载预检草稿，失败保留入口。
-bases-model.js: YAML 边界。空视图在内存补默认表格，首次编辑才写盘。保留未知键；查询尊重库级排除。
-bases-expression.js: 安全 AST 求值。算符、惰性分支与原版 Null 传播共用白名单函数。
-bases-context.js: 行与宿主上下文。结果按行缓存，公式 AST 按文档共用。
-bases-formula-functions.js: 全局和实例函数。集中验证参数、类型与回调作用域。
-bases-values.js: 日期、时长、链接与展示值。共用格式、相等、排序与真值语义。
-bases-values-file.js: 只读文件适配。路径解析回 TFile，聚合属性与引用。
-bases-values-render.js: 富值 DOM 门面。文件/标签经受控导航，HTML/Markdown 委托净化与生命周期模块。
-bases-csv.js: CSV 导出边界。转义遵循原版；保存重读查询，取消不写盘。
-bases-view.js: 数据库和嵌入共用控制器。设置变动刷新排除规则；事务、缓存、类型/文件订阅及草稿共同受生命周期约束。
-bases-embed.js: Markdown 嵌入入口。隔离文件视图生命周期。
-bases-layouts.js: 四类布局。表格编辑、列操作和行高共用值层；行与组两层窗口化，出窗释放富值。
-bases-grouping.js: 分组与汇总。标量使用 Map 索引，富值保持相等语义；自定义汇总复用公式引擎。
-bases-config.js: 视图配置。按操作写当前键，最新文档追加视图；改名选择仅由成功事务推进。
-bases-kanban.js: 看板写回。日期、链接、列表与空值复用属性边界；file.folder 移动真实文件，公式只读。
-bases-card-media.js: 卡片与看板封面。解析图片、链接、首项与颜色，统一尺寸。
-bases-styles.js: 数据库样式。原版 40px 工具栏、菜单和四档行高；虚拟占位与自然高度卡片共用主题变量。
+bases.ts: 数据库入口。功能区、空标签和文件夹菜单共用新建；卸载预检草稿，失败保留入口。
+bases-model.ts: YAML 边界。空视图在内存补默认表格，首次编辑才写盘。保留未知键；查询尊重库级排除。
+bases-expression.ts: 安全 AST 求值。算符、惰性分支与原版 Null 传播共用白名单函数。
+bases-context.ts: 行与宿主上下文。结果按行缓存，公式 AST 按文档共用。
+bases-formula-functions.ts: 全局和实例函数。集中验证参数、类型与回调作用域。
+bases-values.ts: 日期、时长、链接与展示值。共用格式、相等、排序与真值语义。
+bases-values-file.ts: 只读文件适配。路径解析回 TFile，聚合属性与引用。
+bases-values-render.ts: 富值 DOM 门面。文件/标签经受控导航，HTML/Markdown 委托净化与生命周期模块。
+bases-csv.ts: CSV 导出边界。转义遵循原版；保存重读查询，取消不写盘。
+bases-view.ts: 数据库和嵌入共用控制器。设置变动刷新排除规则；事务、缓存、类型/文件订阅及草稿共同受生命周期约束。
+bases-embed.ts: Markdown 嵌入入口。隔离文件视图生命周期。
+bases-layouts.ts: 四类布局。表格编辑、列操作和行高共用值层；行与组两层窗口化，出窗释放富值。
+bases-grouping.ts: 分组与汇总。标量使用 Map 索引，富值保持相等语义；自定义汇总复用公式引擎。
+bases-config.ts: 视图配置。按操作写当前键，最新文档追加视图；改名选择仅由成功事务推进。
+bases-kanban.ts: 看板写回。日期、链接、列表与空值复用属性边界；file.folder 移动真实文件，公式只读。
+bases-card-media.ts: 卡片与看板封面。解析图片、链接、首项与颜色，统一尺寸。
+bases-styles.ts: 数据库样式。原版 40px 工具栏、菜单和四档行高；虚拟占位与自然高度卡片共用主题变量。
 
-bases-edit-store.js: 数据库事务。按文件共用队列，最新文档按唯一名称定位视图；主进程 CAS 冲突重算。
-bases-edit-values.js: 属性编辑边界。复用库级类型，拒绝过时值与坏 YAML；文件夹移动委托 FileManager。
-bases-edit-cells.js: 单元格与列操作。编辑、保存、取消、列宽与列序共用控制器事务，释放全局拖动监听。
-bases-edit-groups.js: 空组创建。按真实属性类型转换组值，保留组序，不伪造笔记行。
-bases-edit-suggest.js: 属性候选。真实值、标签、文件、别名、标题、块和目录支持键盘与指针选择。
-bases-ui.js: 工具栏装配。视图、计数、排序、分组、筛选、属性、搜索与新建共用控制器。
-bases-ui-filters.js: 可视筛选树。嵌套 and/or/not 与公式共用 YAML 边界；库级类型决定数值/布尔标量。
-bases-ui-formula.js: 公式编辑。CodeMirror 补全、高亮、括号、历史和错误状态随浮层释放。
-bases-ui-functions.js: 原版公式签名和文案事实。78 个说明键提供补全和当前参数帮助，无原版运行依赖。
-bases-ui-new-item.js: 立即创建真实笔记与锚定编辑器。推导筛选/分组/模板属性；CAS 失败保草稿，销毁前真实另存。
-bases-ui-group-window.js: 组层窗口化。测量纵向组与横向看板列，旧组销毁子虚拟器及富值。
-bases-virtual.js: 行与网格窗口化。同范围复用 DOM，可变高度测量保留底部锚点，关闭释放观察器。
-bases-rich-render.js: HTML/Markdown 派生内容。独立 DOMPurify 净化；复用阅读器，派生任务只读。
-bases-rich-lifecycle.js: 富值资源所有权。弱引用观察器和 AbortSignal 取消迟到渲染，虚拟出窗及关闭释放子嵌入。
+bases-edit-store.ts: 数据库事务。按文件共用队列，最新文档按唯一名称定位视图；主进程 CAS 冲突重算。
+bases-edit-values.ts: 属性编辑边界。复用库级类型，拒绝过时值与坏 YAML；文件夹移动委托 FileManager。
+bases-edit-cells.ts: 单元格与列操作。编辑、保存、取消、列宽与列序共用控制器事务，释放全局拖动监听。
+bases-edit-groups.ts: 空组创建。按真实属性类型转换组值，保留组序，不伪造笔记行。
+bases-edit-suggest.ts: 属性候选。真实值、标签、文件、别名、标题、块和目录支持键盘与指针选择。
+bases-ui.ts: 工具栏装配。视图、计数、排序、分组、筛选、属性、搜索与新建共用控制器。
+bases-ui-filters.ts: 可视筛选树。嵌套 and/or/not 与公式共用 YAML 边界；库级类型决定数值/布尔标量。
+bases-ui-formula.ts: 公式编辑。CodeMirror 补全、高亮、括号、历史和错误状态随浮层释放。
+bases-ui-functions.ts: 原版公式签名和文案事实。78 个说明键提供补全和当前参数帮助，无原版运行依赖。
+bases-ui-new-item.ts: 立即创建真实笔记与锚定编辑器。推导筛选/分组/模板属性；CAS 失败保草稿，销毁前真实另存。
+bases-ui-group-window.ts: 组层窗口化。测量纵向组与横向看板列，旧组销毁子虚拟器及富值。
+bases-virtual.ts: 行与网格窗口化。同范围复用 DOM，可变高度测量保留底部锚点，关闭释放观察器。
+bases-rich-render.ts: HTML/Markdown 派生内容。独立 DOMPurify 净化；复用阅读器，派生任务只读。
+bases-rich-lifecycle.ts: 富值资源所有权。弱引用观察器和 AbortSignal 取消迟到渲染，虚拟出窗及关闭释放子嵌入。
 [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md

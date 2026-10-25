@@ -13,7 +13,7 @@ import { build } from 'esbuild';
 const temporary = fs.mkdtempSync(path.join(os.tmpdir(), 'opensidian-window-save-')), root = path.resolve(import.meta.dirname, '..');
 try {
   const outfile = path.join(temporary, 'save.cjs');
-  await build({ stdin: { contents: "export * from './src/renderer/core/window-save.js'; export * from './src/renderer/core/window-save-conflict.js';", resolveDir: root }, outfile, bundle: true, platform: 'node', format: 'cjs', logLevel: 'silent', plugins: [{ name: 'isolated-desktop', setup(builder) {
+  await build({ stdin: { contents: "export * from './src/renderer/core/window-save.ts'; export * from './src/renderer/core/window-save-conflict.ts';", resolveDir: root }, outfile, bundle: true, platform: 'node', format: 'cjs', logLevel: 'silent', plugins: [{ name: 'isolated-desktop', setup(builder) {
     builder.onResolve({ filter: /^electron$/ }, () => ({ path: 'electron', namespace: 'test' }));
     builder.onResolve({ filter: /notices\.js$/ }, () => ({ path: 'notices', namespace: 'test' }));
     builder.onLoad({ filter: /.*/, namespace: 'test' }, args => ({ contents: args.path === 'electron' ? 'exports.ipcRenderer={invoke:(...args)=>globalThis.__windowSaveInvoke(...args)};' : 'export class Notice { constructor(message){globalThis.__windowSaveNotices.push(message)} hide(){} }', loader: 'js' }));

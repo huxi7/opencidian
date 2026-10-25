@@ -2,18 +2,23 @@
 
 > L2 | 父级: /CLAUDE.md
 
-构建与开发脚本。esbuild 打包渲染进程两个入口；主进程不经打包直接 require。
+构建与开发脚本。TypeScript 先检查类型，再由 esbuild 生成主进程和渲染器 JS。
 
 成员清单
-build.mjs: esbuild build(bundle/iife/chrome120/node builtins external)；入口 src/renderer/main.js→dist/renderer.js、src/renderer/starter.js→dist/starter.js、src/renderer/plugins-core/graph-sim-worker.js→dist/graph-sim-worker.js（图谱力学 Worker）。--watch 进入增量模式。
-dev.mjs: 开发模式。watch + 启动 electron(热重启)。
+cdp-probe.mjs: 本地原版 CDP 只读探针，输出被忽略的分析目录；不参与构建和正式验收。
+build-config.mjs: 唯一构建配置源。主进程输出 CommonJS，渲染器和 Worker 输出浏览器包。
+type-contracts.test.mjs: 编译内存中的非法调用，验证 DOM 和原子写入类型没有退化。
+test-unit.mjs: 串行运行独立 Node 测试，验证回执并汇总失败。
+workspace-regression.mjs: 转译 TypeScript 后在隔离 VM 验证工作区状态和生命周期。
+build.mjs: 读取共用配置，编译主进程、主窗口、启动器和图谱 Worker；--watch 增量构建。
+dev.mjs: 开发模式。类型检查 watch + 增量编译 + 启动 Electron；主进程变更需重启命令。
 with-lock.sh: 构建/验收互斥锁。并行子代理共享 $TMPDIR/opensidian-build.lock，先到先得，超时 30 分钟退出码 75；用法 `sh scripts/with-lock.sh "<命令>"`。
 
-acceptance/: full.sh 是全量入口。真实 Electron 场景，隔离库与日志判定见 acceptance/CLAUDE.md。 子进程带 `E2E=1`：窗口不激活应用（accessory + showInactive + focusable:false）且整窗透明（opacity:0 + 忽略鼠标）——测试完全不可见、不抢焦点；带 `OBS_ACT` 的直连探针也自动进入 E2E（main.js 兜底）。
+acceptance/: full.sh 是全量入口。真实 Electron 场景，隔离库与日志判定见 acceptance/CLAUDE.md。 子进程带 `E2E=1`：窗口不激活应用（accessory + showInactive + focusable:false）且整窗透明（opacity:0 + 忽略鼠标）——测试完全不可见、不抢焦点；带 `OBS_ACT` 的直连探针也自动进入 E2E（main.ts 兜底）。
 make-app-icon.py: 生成应用图标（原创设计：地平线与曜日）→ build/icon.png 与 icon.icns（iconutil）。
 smoke-packaged.mjs: 打包产物冒烟。先核对 ASAR 身份、版本、许可证、当前代码与全部样式哈希，再跑真实启动/编辑器/Bases/公式/CSV/SVG；回执后必须自行退出且 exitCode=0。输出 {pass,count,checks}；--no-screenshot 不截图，超时只清理自身进程组。
 
-bases-formulas.test.mjs: Node 公式单测。固定 UTC、时钟与随机源，对照原始 78 个函数说明。
+bases-formulas.test.mjs: Node 公式单测。固定 UTC、时钟与随机源，对照公开公式说明，覆盖 78 个说明键。
 bases-csv.test.mjs: Node CSV 单测。检查转义、富值、取消与写盘失败边界，不启动 Electron。
 
 bases-editing.test.mjs: 数据库编辑单测。52 条覆盖视图身份、并发、类型、日期和属性写回。

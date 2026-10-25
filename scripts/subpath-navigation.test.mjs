@@ -83,7 +83,7 @@ class FakeElement {
 try {
   globalThis.Node = { TEXT_NODE: 3, ELEMENT_NODE: 1 };
   await build({
-    entryPoints: [path.resolve(import.meta.dirname, '../src/renderer/markdown/reading-subpath.js')],
+    entryPoints: [path.resolve(import.meta.dirname, '../src/renderer/markdown/reading-subpath.ts')],
     bundle: true, platform: 'node', format: 'cjs', outfile, logLevel: 'silent',
   });
   const { annotateBlocks, scrollToSubpath } = createRequire(import.meta.url)(outfile);

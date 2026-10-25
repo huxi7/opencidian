@@ -33,7 +33,7 @@ try {
   const metadata = JSON.parse(extractFile(archive, 'package.json').toString());
   preflight(metadata.name === 'opensidian' && metadata.productName === 'OpenSidian' && metadata.version === expectedVersion, 'ASAR 身份和版本与当前项目一致');
   preflight(digest(extractFile(archive, 'LICENSE')) === digest(fs.readFileSync(path.join(repository, 'LICENSE'))), '打包许可证与仓库原文一致');
-  const files = fs.readdirSync(path.join(repository, 'src/main')).filter(name => name.endsWith('.js')).map(name => 'src/main/' + name);
+  const files = fs.readdirSync(path.join(repository, 'dist/main')).filter(name => name.endsWith('.js')).map(name => 'dist/main/' + name);
   files.push('dist/renderer.js', 'dist/starter.js', 'dist/graph-sim-worker.js', 'src/renderer/index.html', 'src/renderer/starter.html');
   files.push(...fs.readdirSync(path.join(repository, 'src/renderer/styles')).filter(name => name.endsWith('.css')).map(name => 'src/renderer/styles/' + name));
   for (const file of files) preflight(digest(extractFile(archive, file)) === digest(fs.readFileSync(path.join(repository, file))), '打包文件与当前构建一致：' + file);

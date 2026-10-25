@@ -15,7 +15,7 @@ const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'opensidian-ignore-'));
 const outfile = path.join(directory, 'matcher.cjs');
 const checks = [];
 try {
-  await build({ entryPoints: [path.resolve(import.meta.dirname, '../src/renderer/core/user-ignore.js')],
+  await build({ entryPoints: [path.resolve(import.meta.dirname, '../src/renderer/core/user-ignore.ts')],
     bundle: true, platform: 'node', format: 'cjs', outfile, logLevel: 'silent' });
   const { createUserIgnoreMatcher } = createRequire(import.meta.url)(outfile);
   let filters = null;

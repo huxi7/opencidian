@@ -5,7 +5,7 @@
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 import assert from 'node:assert/strict';
-import { RENDER_ABORTED, waitForRender } from '../src/renderer/markdown/render-cancel.js';
+import { RENDER_ABORTED, waitForRender } from '../src/renderer/markdown/render-cancel.ts';
 const checks = [];
 const check = async (name, fn) => { await fn(); checks.push(name); };
 const deferred = () => { let resolve, reject; const promise = new Promise((a, b) => { resolve = a; reject = b; }); return { promise, resolve, reject }; };
