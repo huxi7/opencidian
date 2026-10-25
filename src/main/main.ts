@@ -1,5 +1,5 @@
 /**
- * [INPUT]: 依赖 electron 的 app/BrowserWindow/ipcMain/protocol/shell/dialog/session；Node 内置 fs/path；窗口材质、截图、文档窗口、原生菜单和原子写回由独立模块提供
+ * [INPUT]: 依赖 electron 的 app/BrowserWindow/ipcMain/protocol/shell/dialog/session；Node 内置 fs/path；窗口材质、截图、文档窗口、原生菜单和原子写回由独立模块提供；共享 IPC 契约约束请求数据
  * [OUTPUT]: 主进程全部 IPC handler（vault 注册表、文件读写、窗口控制、回收站、拼写检查词典/语言）、app:// 协议、devScreenshotHook（OBS_* 环境变量门控的调试钩子）、设置与文档独立窗口、原生菜单、跨窗口 CAS 与协议的装配
  * [POS]: 应用主进程入口。vault 注册表存于 userData/opensidian.json（启动时从旧产品名 "Obsidian Copy" 的 userData 迁移一次）；拼写检查自加词存 userData/spellcheck-words.json，语言选择存 opensidian.json 的 spellcheckLanguages。渲染进程经 renderer/core/ipc.js 调用此处 handler。原生菜单保留设置入口。dev-hooks 只在指定测试库窗口执行。E2E 回收降级库内回收站。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
@@ -13,7 +13,9 @@
  *  - native menus wired back to renderer commands through app.commands.executeCommandById
  *  - window bounds persistence, custom context menus, spellcheck, trash, print-to-pdf
  */
-import type { AppConfig } from '../contracts.js';
+import type { AppConfig, WindowBounds } from '../contracts.js';
+import { errorMessage, isRecord, type Timer } from './main-types';
+import type { RequestUrlOptions, PdfOptions } from '../ipc-contracts.js';
 import path from 'path';
 import os from 'os';
 import fs from 'fs';
@@ -28,7 +30,7 @@ import { registerWindowEffectsIpc } from './window-effects';
 import { registerCanvasCaptureIpc } from './canvas-capture';
 import { installAppMenu } from './app-menu';
 import { registerAppProtocol } from './app-protocol';
-import { app, BrowserWindow, protocol, ipcMain, Menu, shell, dialog, session, nativeTheme } from 'electron';
+import { app, BrowserWindow, protocol, ipcMain, Menu, shell, dialog, session, nativeTheme, screen, net } from 'electron';
 
 const APP_ROOT = path.join(__dirname, '..', '..');
 const RENDERER_DIR = path.join(APP_ROOT, 'src', 'renderer');
@@ -83,12 +85,12 @@ function configFile() {
 let config: AppConfig = {};
 function loadConfig() {
   try {
-    config = JSON.parse(fs.readFileSync(configFile(), 'utf8'));
-    if (!config || typeof config !== 'object') config = {};
+    const saved: unknown = JSON.parse(fs.readFileSync(configFile(), 'utf8'));
+    config = isRecord(saved) ? saved as AppConfig : {};
   } catch (e) {
     config = {};
   }
-  config.vaults = config.vaults || {};
+  if (!isRecord(config.vaults)) config.vaults = {};
   return config;
 }
 function saveConfig() {
@@ -116,7 +118,7 @@ function readSpellcheckWords() {
   return [];
 }
 
-function writeSpellcheckWords(words) {
+function writeSpellcheckWords(words: string[]) {
   try {
     fs.mkdirSync(DATA_DIR, { recursive: true });
     fs.writeFileSync(SPELLCHECK_DICT_FILE, JSON.stringify(words, null, 2));
@@ -125,7 +127,7 @@ function writeSpellcheckWords(words) {
   }
 }
 
-function addSpellcheckWord(word) {
+function addSpellcheckWord(word: unknown) {
   if (typeof word !== 'string' || !word) return;
   const words = readSpellcheckWords();
   if (words.includes(word)) return;
@@ -134,7 +136,7 @@ function addSpellcheckWord(word) {
   writeSpellcheckWords(words);
 }
 
-function removeSpellcheckWord(word) {
+function removeSpellcheckWord(word: string) {
   writeSpellcheckWords(readSpellcheckWords().filter((w) => w !== word));
 }
 
@@ -153,14 +155,14 @@ function applyAppIcon() {
   } catch (e) { /* 平台不支持时忽略 */ }
 }
 
-const VAULTS = config.vaults;
+const VAULTS = config.vaults || (config.vaults = {});
 
 function randomId() {
   return crypto.randomBytes(8).toString('hex');
 }
 
 // Remove known partition/state for a vault id (mirrors original behavior loosely)
-function removeVaultInternal(id) {
+function removeVaultInternal(id: string) {
   const dir = path.join(DATA_DIR, 'Partitions', `vault-${id}`);
   try { fs.rmSync(dir, { recursive: true, force: true }); } catch (e) {}
 }
@@ -169,14 +171,14 @@ function removeVaultInternal(id) {
 // Window management
 // ---------------------------------------------------------------------------
 const windows: Record<string, Electron.BrowserWindow> = {};      // vaultId -> BrowserWindow
-let starterWindow = null;
+let starterWindow: Electron.BrowserWindow | null = null;
 let quitting = false;
-let settingsWindows = null;   // 设置独立窗口管理器（setupSettingsWindows）
-let documentWindows = null;
-const customContextWindows = new Set();
+let settingsWindows: ReturnType<typeof setupSettingsWindows> | null = null;   // 设置独立窗口管理器（setupSettingsWindows）
+let documentWindows: ReturnType<typeof setupDocumentWindows> | null = null;
+const customContextWindows = new Set<number>();
 
-function getVaultConfig(id) {
-  let data = config['vault-' + id];
+function getVaultConfig(id: string): WindowBounds {
+  let data = config[`vault-${id}`];
   if (!data || typeof data !== 'object') {
     data = {
       x: undefined, y: undefined, width: 1150, height: 774,
@@ -185,8 +187,8 @@ function getVaultConfig(id) {
   }
   return data;
 }
-function saveVaultConfig(id, data) {
-  config['vault-' + id] = data;
+function saveVaultConfig(id: string, data: WindowBounds) {
+  config[`vault-${id}`] = data;
   saveConfig();
 }
 
@@ -201,7 +203,7 @@ function frameWindowOptions(): Electron.BrowserWindowConstructorOptions {
   return { frame: false, titleBarStyle: 'hidden', trafficLightPosition: { x: 14, y: 12 } };
 }
 
-function defaultWindowOptions(id): Electron.BrowserWindowConstructorOptions {
+function defaultWindowOptions(id: string): Electron.BrowserWindowConstructorOptions {
   const saved = getVaultConfig(id);
   const opts: Electron.BrowserWindowConstructorOptions = {
     width: 1150,
@@ -224,20 +226,21 @@ function defaultWindowOptions(id): Electron.BrowserWindowConstructorOptions {
   };
   if (typeof saved.width === 'number') opts.width = Math.max(saved.width, 400);
   if (typeof saved.height === 'number') opts.height = Math.max(saved.height, 300);
-  if (typeof saved.x === 'number' && typeof saved.y === 'number') {
+  const sx = saved.x, sy = saved.y, sw = opts.width || 1150, sh = opts.height || 774;
+  if (typeof sx === 'number' && typeof sy === 'number') {
     // only restore when the position is on a visible display
-    const displays = require('electron').screen.getAllDisplays();
+    const displays = screen.getAllDisplays();
     const visible = displays.some((d) => {
       const w = d.workArea;
-      return saved.x < w.x + w.width - 2 && saved.x + opts.width > w.x + 2 &&
-             saved.y < w.y + w.height - 2 && saved.y + opts.height > w.y + 2;
+      return sx < w.x + w.width - 2 && sx + sw > w.x + 2 &&
+             sy < w.y + w.height - 2 && sy + sh > w.y + 2;
     });
     if (visible) { opts.x = saved.x; opts.y = saved.y; }
   }
   return opts;
 }
 
-function secCtxWin(win) {
+function secCtxWin(win: Electron.BrowserWindow) {
   // 触摸板缩放锁：整页视觉缩放（捏合）必须不存在——Obsidian 的界面只走外观设置里的离散缩放级别。
   // "快速调整字体大小"（Ctrl+滚轮/捏合改字号，外观页可关）由渲染层 wheel 监听处理。
   try { win.webContents.setVisualZoomLevelLimits(1, 1).catch(() => {}); } catch (e) { /* ignore */ }
@@ -256,17 +259,17 @@ function secCtxWin(win) {
   });
 }
 
-function showNativeContextMenu(win, wc, params) {
+function showNativeContextMenu(win: Electron.BrowserWindow, wc: Electron.WebContents, params: Electron.ContextMenuParams) {
   if (E2E) return;
   const { editFlags, misspelledWord, dictionarySuggestions } = params;
   const selection = params.selectionText.trim();
   const hasSelection = selection.length > 0;
-  const template = [];
+  const template: Electron.MenuItemConstructorOptions[] = [];
   template.push({ label: 'Cut', role: 'cut', enabled: hasSelection },
                 { label: 'Copy', role: 'copy', enabled: hasSelection },
                 { label: 'Paste', role: 'paste', enabled: editFlags.canPaste });
   if (misspelledWord && misspelledWord.length > 0) {
-    const suggestions = [];
+    const suggestions: Electron.MenuItemConstructorOptions[] = [];
     const list = (dictionarySuggestions || []).slice(0, 5);
     if (list.length) {
       for (const s of list) suggestions.push({ label: s, click: () => wc.replaceMisspelling(s) });
@@ -284,15 +287,9 @@ function showNativeContextMenu(win, wc, params) {
 }
 
 // ---------------------------------------------------------------------------
-// Menus
-// ---------------------------------------------------------------------------
-// ---------------------------------------------------------------------------
-// app:// protocol
-// ---------------------------------------------------------------------------
-// ---------------------------------------------------------------------------
 // Window creation
 // ---------------------------------------------------------------------------
-function openVaultWindow(id, focus = true) {
+function openVaultWindow(id: string, focus = true) {
   if (windows[id]) {
     const w = windows[id];
     if (focus && !E2E) { if (w.isMinimized()) w.restore(); w.focus(); }
@@ -328,7 +325,7 @@ function openVaultWindow(id, focus = true) {
       saveVaultConfig(id, saved);
     } catch (e) {}
   };
-  let saveTimer;
+  let saveTimer: Timer | undefined;
   const debouncedSave = () => { clearTimeout(saveTimer); saveTimer = setTimeout(saveBounds, 150); };
   win.on('resize', debouncedSave);
   win.on('move', debouncedSave);
@@ -408,19 +405,19 @@ function openVaultStarter() {
 }
 
 // vault message (obsidian:// style actions) handed to renderer
-function sendVaultMessage(id, payload) {
+function sendVaultMessage(id: string, payload: unknown) {
   const win = openVaultWindow(id, false);
   const js = `(function(){ var w=window, o=${JSON.stringify(payload)}; if (typeof w.OBS_ACT === 'function') { w.OBS_ACT(o); } else { w.OBS_ACT = o; } })()`;
   if (win.loaded) win.webContents.executeJavaScript(js);
   else win.webContents.once('did-finish-load', () => win.webContents.executeJavaScript(js));
 }
 
-function openVaultPath(rawPath, create = false) {
+function openVaultPath(rawPath: unknown, create = false) {
   if (typeof rawPath !== 'string' || !rawPath) return 'folder not found';
   const p = path.resolve(rawPath);
   if (create) {
     if (fs.existsSync(p)) return 'Vault already exists';
-    try { fs.mkdirSync(p, { recursive: true }); } catch (e) { return e.toString(); }
+    try { fs.mkdirSync(p, { recursive: true }); } catch (e) { return String(e); }
   }
   if (!fs.existsSync(p)) return 'folder not found';
   for (const id in VAULTS) {
@@ -462,7 +459,7 @@ function setupIpc() {
   });
   ipcMain.on('insider-build', (e) => { e.returnValue = !!config.insider; });
   ipcMain.on('cli', (e) => { e.returnValue = !!config.cli; });
-  ipcMain.on('frame', (e, v) => { if (typeof v === 'string') { config.frame = v as AppConfig['frame']; } e.returnValue = config.frame; });
+  ipcMain.on('frame', (e, v: unknown) => { if (v === 'hidden' || v === 'custom' || v === 'native') { config.frame = v; } e.returnValue = config.frame; });
 
   ipcMain.on('vault', (e) => {
     const documentInfo = documentWindows?.infoFor(e.sender);
@@ -495,7 +492,7 @@ function setupIpc() {
       for (const id in VAULTS) {
         if (VAULTS[id].path === from) {
           if (windows[id]) { e.returnValue = 'EVAULTOPEN'; return; }
-          try { fs.renameSync(from, to); } catch (err) { e.returnValue = err.toString(); return; }
+          try { fs.renameSync(from, to); } catch (err) { e.returnValue = String(err); return; }
           e.returnValue = '';
           VAULTS[id].path = to; saveConfig();
           return;
@@ -548,7 +545,7 @@ function setupIpc() {
       e.returnValue = { current: null, active: [], available: [], locale: app.getLocale() };
     }
   });
-  ipcMain.on('spellcheck-languages-set', (e, languages) => {
+  ipcMain.on('spellcheck-languages-set', (e, languages: unknown) => {
     const custom = Array.isArray(languages) && languages.length
       ? [...new Set(languages.filter((l) => typeof l === 'string' && l))]
       : null;
@@ -577,17 +574,16 @@ function setupIpc() {
     if (win && typeof url === 'string') shell.openExternal(url);
   });
 
-  ipcMain.on('request-url', async (e, replyChannel, opts) => {
+  ipcMain.on('request-url', async (e, replyChannel: string, opts: RequestUrlOptions) => {
     try {
       const { url, method, contentType, body, headers } = opts;
-      const net = require('electron').net;
       const req = net.request({ url, method, redirect: 'follow' });
       if (contentType) req.setHeader('Content-Type', contentType);
       if (headers) for (const k in headers) { try { req.setHeader(k, headers[k]); } catch (err) {} }
       req.on('login', (authInfo, cb) => cb());
-      req.on('error', (err) => { e.reply(replyChannel, { error: err.message || String(err) }); });
+      req.on('error', (err) => { e.reply(replyChannel, { error: errorMessage(err) }); });
       req.on('response', (res) => {
-        const chunks = [];
+        const chunks: Buffer[] = [];
         res.on('data', (c) => chunks.push(c));
         res.on('end', () => {
           const buf = Buffer.concat(chunks);
@@ -602,11 +598,11 @@ function setupIpc() {
       else if (body instanceof ArrayBuffer) req.write(Buffer.from(new Uint8Array(body)));
       req.end();
     } catch (err) {
-      e.reply(replyChannel, { error: err.message || String(err) });
+      e.reply(replyChannel, { error: errorMessage(err) });
     }
   });
 
-  ipcMain.on('print-to-pdf', async (e, options) => {
+  ipcMain.on('print-to-pdf', async (e, options: PdfOptions) => {
     const wc = e.sender;
     try {
       const { filepath, open } = options;
@@ -630,19 +626,19 @@ function setupIpc() {
   ipcMain.on('update-menu-items', (e, items, refresh) => {});
   ipcMain.on('render-menu', (e) => {});
 
-  ipcMain.on('dialog-open', async (e, opts) => {
+  ipcMain.on('dialog-open', async (e, opts: Electron.OpenDialogOptions) => {
     const win = BrowserWindow.fromWebContents(e.sender);
-    const result = await dialog.showOpenDialog(win, opts);
+    const result = win ? await dialog.showOpenDialog(win, opts) : await dialog.showOpenDialog(opts);
     e.returnValue = result;
   });
-  ipcMain.on('dialog-save', async (e, opts) => {
+  ipcMain.on('dialog-save', async (e, opts: Electron.SaveDialogOptions) => {
     const win = BrowserWindow.fromWebContents(e.sender);
-    const result = await dialog.showSaveDialog(win, opts);
+    const result = win ? await dialog.showSaveDialog(win, opts) : await dialog.showSaveDialog(opts);
     e.returnValue = result;
   });
-  ipcMain.on('dialog-message', async (e, opts) => {
+  ipcMain.on('dialog-message', async (e, opts: Electron.MessageBoxOptions) => {
     const win = BrowserWindow.fromWebContents(e.sender);
-    const result = await dialog.showMessageBox(win, opts);
+    const result = win ? await dialog.showMessageBox(win, opts) : await dialog.showMessageBox(opts);
     e.returnValue = result;
   });
   ipcMain.on('window-minimize', (e) => { const w = BrowserWindow.fromWebContents(e.sender); if (w) w.minimize(); });
@@ -667,7 +663,7 @@ function setupIpc() {
     if (!iconPath) {
       delete config.customIcon;
       saveConfig();
-      try { if (IS_MAC && app.dock) app.dock.setIcon(null); } catch (err) {}
+      try { if (IS_MAC && app.dock) app.getFileIcon(path.resolve(process.execPath, '../../..')).then(icon => { if (!config.customIcon) app.dock?.setIcon(icon); }).catch(() => {}); } catch (err) {}
       e.returnValue = true;
       return;
     }
@@ -701,7 +697,8 @@ function setupIpc() {
   });
   ipcMain.handle('plugin-select-folder', async (e) => {
     const win = BrowserWindow.fromWebContents(e.sender);
-    const result = await dialog.showOpenDialog(win, { properties: ['openDirectory'] });
+    const opts: Electron.OpenDialogOptions = { properties: ['openDirectory'] };
+    const result = win ? await dialog.showOpenDialog(win, opts) : await dialog.showOpenDialog(opts);
     return result;
   });
 }
@@ -742,7 +739,7 @@ if (!gotLock) {
     settingsWindows = setupSettingsWindows({
       BrowserWindow,
       ipcMain,
-      screen: require('electron').screen,
+      screen,
       indexUrl,
       frameWindowOptions,
       isE2E: E2E,
@@ -753,7 +750,7 @@ if (!gotLock) {
       isChinese: () => String(app.getLocale()).toLowerCase().startsWith('zh'),
     });
     setupIpc();
-    registerVaultWriteIpc({ ipcMain, vaultPathForSender: sender => VAULTS[BrowserWindow.fromWebContents(sender)?.vaultId || settingsWindows.vaultIdFor(sender)]?.path });
+    registerVaultWriteIpc({ ipcMain, vaultPathForSender: sender => VAULTS[BrowserWindow.fromWebContents(sender)?.vaultId || settingsWindows?.vaultIdFor(sender) || '']?.path });
     registerNativeMenuIpc({ ipcMain, isE2E: E2E });
     documentWindows = setupDocumentWindows({ BrowserWindow, ipcMain, defaultWindowOptions, prepareWindow: secCtxWin,
       indexUrl, vaultPathForId: id => VAULTS[id]?.path, isE2E: E2E, isQuitting: () => quitting, cancelQuit: () => { quitting = false; documentWindows?.resetQuitSnapshot(); } });

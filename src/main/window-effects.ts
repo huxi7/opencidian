@@ -4,8 +4,9 @@
  * [POS]: 原生窗口外观边界。偏好由库外观配置持久化。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
-function registerWindowEffectsIpc({ ipcMain, BrowserWindow }) {
-  ipcMain.on('window-translucency', (event, enabled) => {
+import type { WindowIpcContext } from './main-types';
+function registerWindowEffectsIpc({ ipcMain, BrowserWindow }: WindowIpcContext) {
+  ipcMain.on('window-translucency', (event, enabled: boolean) => {
     if (process.platform !== 'darwin') return;
     const win = BrowserWindow.fromWebContents(event.sender);
     if (!win || win.isDestroyed()) return;

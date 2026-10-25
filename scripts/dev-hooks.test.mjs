@@ -1,16 +1,16 @@
 /**
- * [INPUT]: Node VM、事件替身与真实 dev-hooks 源码；受控主窗/启动器动作 Promise。
+ * [INPUT]: Node VM、事件替身与 esbuild 捆绑的 dev-hooks；受控双窗动作 Promise。
  * [OUTPUT]: 输出 {pass,count,checks}，验证双窗完成协调、失败和缺回执超时。
  * [POS]: 验收调度器单测。不启动 Electron，不依赖固定页面执行时长。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 import fs from 'node:fs';
-import { transformSync } from 'esbuild';
+import { buildSync } from 'esbuild';
 import path from 'node:path';
 import vm from 'node:vm';
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
-const source = transformSync(fs.readFileSync(path.resolve(import.meta.dirname, '../src/main/dev-hooks.ts'), 'utf8'), { loader: 'ts', format: 'cjs', target: 'node20' }).code;
+const source = buildSync({ entryPoints: [path.resolve(import.meta.dirname, '../src/main/dev-hooks.ts')], bundle: true, platform: 'node', format: 'cjs', target: 'node20', write: false, external: ['electron'] }).outputFiles[0].text;
 const checks = [], check = (message, action) => { action(); checks.push(message); };
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
 async function until(test) { const end = Date.now() + 500; while (!test()) { if (Date.now() > end) throw Error('test timeout'); await delay(1); } }

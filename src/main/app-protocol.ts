@@ -9,7 +9,7 @@ import fs from 'fs';
 import { protocol } from 'electron';
 const IS_MAC = process.platform === 'darwin';
 
-function registerAppProtocol({ SCHEME, APP_ORIGIN, FILE_ORIGIN, RENDERER_DIR, APP_ROOT, ASSETS_DIR }) {
+function registerAppProtocol({ SCHEME, APP_ORIGIN, FILE_ORIGIN, RENDERER_DIR, APP_ROOT, ASSETS_DIR }: { SCHEME: string; APP_ORIGIN: string; FILE_ORIGIN: string; RENDERER_DIR: string; APP_ROOT: string; ASSETS_DIR: string }) {
   protocol.handle(SCHEME, async (request) => {
     let url = request.url;
     // strip query/hash
@@ -74,12 +74,12 @@ function registerAppProtocol({ SCHEME, APP_ORIGIN, FILE_ORIGIN, RENDERER_DIR, AP
   });
 }
 
-function streamToWeb(nodeStream) {
+function streamToWeb(nodeStream: fs.ReadStream): ReadableStream<Uint8Array> {
   return new ReadableStream({
     start(controller) {
-      nodeStream.on('data', (chunk) => controller.enqueue(new Uint8Array(chunk)));
+      nodeStream.on('data', (chunk: Buffer | string) => controller.enqueue(new Uint8Array(typeof chunk === 'string' ? Buffer.from(chunk) : chunk)));
       nodeStream.on('end', () => controller.close());
-      nodeStream.on('error', (err) => controller.error(err));
+      nodeStream.on('error', (err: Error) => controller.error(err));
     },
     cancel() { nodeStream.destroy(); },
   });

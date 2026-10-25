@@ -1,5 +1,5 @@
 /**
- * [INPUT]: Electron 的 BrowserWindow/ipcMain/screen；main.js 注入的 frameWindowOptions/indexUrl/E2E/locale 查询
+ * [INPUT]: 共享设置窗口请求与 Electron BrowserWindow/ipcMain/screen；main.ts 注入的 frameWindowOptions/indexUrl/E2E/locale 查询
  * [OUTPUT]: setupSettingsWindows(ctx) → { vaultIdFor, closeFor, getSettingsWindow }
  * [POS]: 主进程的设置独立窗口管理器。每个 vault 至多一个窗口（原版：每个应用窗口各有自己的 popout），
  *        对齐 Obsidian 1.14.4 setWindowOpenHandler("about:blank"+"popup") 的 overrideBrowserWindowOptions：
@@ -9,18 +9,20 @@
  */
 import fs from 'fs';
 import path from 'path';
+import type { SettingsContext, SettingsEntry } from './main-types';
+import type { SettingsWindowOptions as SettingsPayload } from '../ipc-contracts.js';
 
-function setupSettingsWindows(ctx) {
+function setupSettingsWindows(ctx: SettingsContext) {
   const { BrowserWindow, ipcMain, screen, indexUrl, frameWindowOptions, isE2E, vaultPathForId, getVaultWindow, getVersion, isChinese } = ctx;
   /** vaultId → { id, win, pendingTabId } */
-  const windows = new Map();
+  const windows = new Map<string, SettingsEntry>();
 
-  const alive = (entry) => !!entry && !!entry.win && !entry.win.isDestroyed();
-  const entryForVault = (id) => {
+  const alive = (entry: SettingsEntry | null | undefined): entry is SettingsEntry => !!entry && !!entry.win && !entry.win.isDestroyed();
+  const entryForVault = (id: string | null | undefined) => {
     const entry = id ? windows.get(id) : null;
     return alive(entry) ? entry : null;
   };
-  const entryForSender = (sender) => {
+  const entryForSender = (sender: Electron.WebContents) => {
     for (const entry of windows.values()) {
       if (!alive(entry) || entry.win.webContents.isDestroyed()) continue;
       if (entry.win.webContents.id === sender.id) return entry;
@@ -28,7 +30,7 @@ function setupSettingsWindows(ctx) {
     return null;
   };
   /** 设置窗口自身发起 → 自己的 entry；主窗口发起 → 同 vault 的 entry。 */
-  const entryForEvent = (event) => {
+  const entryForEvent = (event: Electron.IpcMainEvent | Electron.IpcMainInvokeEvent) => {
     const own = entryForSender(event.sender);
     if (own) return own;
     const parent = BrowserWindow.fromWebContents(event.sender);
@@ -36,7 +38,7 @@ function setupSettingsWindows(ctx) {
   };
 
   /** 原版 getAppTitle(windowTitle) = "设置 - {库名} - {应用名 版本}"；页面加载前先给出同形态初始标题。 */
-  function defaultTitle(id) {
+  function defaultTitle(id: string) {
     const vaultPath = id ? vaultPathForId(id) : null;
     const name = vaultPath ? path.basename(vaultPath) : '';
     const version = getVersion ? getVersion() : '';
@@ -44,18 +46,19 @@ function setupSettingsWindows(ctx) {
       .filter(Boolean).join(' - ');
   }
 
-  function create(payload, parent, id) {
+  function create(payload: SettingsPayload, parent: Electron.BrowserWindow | null, id: string) {
     const width = Math.max(Number(payload.width) || 900, 300);
     const height = Math.max(Number(payload.height) || 700, 200);
     let x; let y;
     // 原版：坐标必须落在某个显示器才使用，否则相对主窗口居中（screenX + (outerWidth - w)/2）
-    if (typeof payload.x === 'number' && typeof payload.y === 'number') {
+    const px = payload.x, py = payload.y;
+    if (typeof px === 'number' && typeof py === 'number') {
       const visible = screen.getAllDisplays().some((d) => {
         const a = d.workArea;
-        return payload.x < a.x + a.width - 2 && payload.x + width > a.x + 2 &&
-               payload.y < a.y + a.height - 2 && payload.y + height > a.y + 2;
+        return px < a.x + a.width - 2 && px + width > a.x + 2 &&
+               py < a.y + a.height - 2 && py + height > a.y + 2;
       });
-      if (visible) { x = Math.round(payload.x); y = Math.round(payload.y); }
+      if (visible) { x = Math.round(px); y = Math.round(py); }
     }
     if (x === undefined || y === undefined) {
       const base = parent && !parent.isDestroyed() ? parent.getBounds() : null;
@@ -101,7 +104,7 @@ function setupSettingsWindows(ctx) {
     return entry;
   }
 
-  function open(payload, parent) {
+  function open(payload: SettingsPayload, parent: Electron.BrowserWindow | null) {
     payload = payload || {};
     const id = payload.vaultId || (parent && parent.vaultId);
     if (!id) return { ok: false };
@@ -118,7 +121,7 @@ function setupSettingsWindows(ctx) {
     return { ok: true, reused: false };
   }
 
-  ipcMain.on('settings-window-open', (e, payload) => {
+  ipcMain.on('settings-window-open', (e, payload: SettingsPayload) => {
     e.returnValue = open(payload || {}, BrowserWindow.fromWebContents(e.sender));
   });
 
@@ -130,7 +133,7 @@ function setupSettingsWindows(ctx) {
   });
 
   /** 开关切回应用内模态：关闭本窗口并在主窗口重开（原版 setting.close(); setting.open() 的跨窗口等价物）。 */
-  ipcMain.on('settings-window-toggle', (e, payload) => {
+  ipcMain.on('settings-window-toggle', (e, payload: SettingsPayload) => {
     const tabId = payload && payload.tabId;
     // 发起方通常是设置窗口自身；验收/命令路径也可能由主窗口发起，则回退到其 vaultId
     const senderEntry = entryForSender(e.sender);
@@ -178,7 +181,7 @@ function setupSettingsWindows(ctx) {
 
   /** 返回设置窗口内的 DOM 事实（验收探针）；窗口未开时 open:false。
    *  可选 action={action:'toggle-off'}：在窗口内点击「在新窗口中打开设置」开关，验证真实发送方路径。 */
-  ipcMain.handle('settings-window-probe', async (e, action) => {
+  ipcMain.handle('settings-window-probe', async (e, action: { action?: string } | undefined) => {
     const entry = entryForEvent(e);
     if (!alive(entry) || entry.win.webContents.isDestroyed()) return { open: false };
     if (action && action.action === 'toggle-off') {
@@ -230,7 +233,7 @@ function setupSettingsWindows(ctx) {
   });
 
   /** 截取设置窗口页面并写入 PNG（验收截图；主窗口截图仍由 dev-hooks 负责）。 */
-  ipcMain.handle('settings-window-capture', async (e, outPath) => {
+  ipcMain.handle('settings-window-capture', async (e, outPath: unknown) => {
     const entry = entryForEvent(e);
     if (!alive(entry) || entry.win.webContents.isDestroyed() || typeof outPath !== 'string' || !outPath) return { ok: false };
     try {
@@ -248,15 +251,15 @@ function setupSettingsWindows(ctx) {
   });
 
   return {
-    vaultIdFor(webContents) {
+    vaultIdFor(webContents: Electron.WebContents) {
       const entry = entryForSender(webContents);
       return entry ? entry.id : null;
     },
-    closeFor(id) {
+    closeFor(id: string) {
       const entry = entryForVault(id);
       if (entry) entry.win.close();
     },
-    getSettingsWindow(id) {
+    getSettingsWindow(id: string) {
       const entry = entryForVault(id);
       return entry ? entry.win : null;
     },

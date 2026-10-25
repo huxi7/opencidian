@@ -1,10 +1,20 @@
 /**
- * [INPUT]: 文件扩展名、编辑偏好与视图注册表。
+ * [INPUT]: 文件路径与扩展名、编辑偏好与视图扩展名注册表；不依赖 App 实现。
  * [OUTPUT]: 导出 viewStateForFile，生成文件视图状态。
  * [POS]: 工作区文件分派边界。插件扩展名由注册表决定。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
-export function viewStateForFile(app: App, file) {
+interface FileViewHost {
+  settings: { appSettings: { livePreview?: boolean; defaultViewMode?: string } };
+  viewRegistry: { getTypeByExtension(extension: string): string | null | undefined };
+}
+interface ViewFile { path: string; extension?: string; }
+export type FileViewState =
+  | { type: 'markdown'; state: { file: string; mode: 'preview' | 'live' | 'source' } }
+  | { type: string; state: { file: string } }
+  | { type: 'empty'; state: Record<string, never> };
+
+export function viewStateForFile(app: FileViewHost, file: ViewFile): FileViewState {
     const ext = (file.extension || '').toLowerCase();
     if (ext === 'md') {
       const settings = app.settings.appSettings;

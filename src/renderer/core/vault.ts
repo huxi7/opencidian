@@ -1,7 +1,8 @@
 /**
- * [INPUT]: 依赖 ./events.js 的 Events；Node 内置 fs/path/chokidar/os；监听首次扫描与运行事件队列
+ * [INPUT]: 依赖 ./events.js 的 Events；Node fs/path 与 Chokidar；监听首次扫描与运行事件队列
  * 文件时间按原版 Ul 使用取整的 birthtimeMs/mtimeMs，ctime 不随属性编辑漂移。
- * [OUTPUT]: 导出 Vault、文件模型及磁盘适配器；rename 普通文件优先 link+unlink 确保原子排他，失败降级 lstat 排他；trash 保留可恢复文件，创建使用排他写入。
+ * [OUTPUT]: 导出严格文件树、VaultEvents 事件表及磁盘适配器；watch 返回就绪结果。
+ * rename 使用排他目标；trash 保留可恢复文件；复制仅按文件格式读取一次。
  * [POS]: core/ 的磁盘真相源。移动同步父子树；监听补齐扫描空档。隐藏配置仅经适配器读取。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
@@ -9,31 +10,54 @@
 import { Events } from './events.js';
 import type { FileStat } from '../../contracts.js';
 
-const fs = require('fs');
-const nodePath = require('path');
-const chokidar = require('chokidar');
-const os = require('os');
+const fs: typeof import('node:fs') = require('fs');
+const nodePath: typeof import('node:path') = require('path');
+const chokidar: typeof import('chokidar') = require('chokidar');
+interface VaultRuntime {
+  __fileToken?: string;
+  __electronTrash?: (absolutePath: string) => Promise<boolean>;
+}
+const runtime: typeof globalThis & VaultRuntime = globalThis;
+interface WriteOptions { flag?: string; }
+type BinaryData = NodeJS.ArrayBufferView;
+type WatchEvent = 'add' | 'addDir' | 'change' | 'unlink' | 'unlinkDir';
+export type VaultEntry = TFile | TFolder;
+export interface VaultEvents {
+  resolved: [];
+  initialized: [];
+  create: [file: VaultEntry];
+  modify: [file: TFile];
+  delete: [file: VaultEntry];
+  rename: [file: VaultEntry, oldPath: string];
+  'watch-error': [error: unknown];
+}
+function errorCode(error: unknown): string | undefined {
+  return error !== null && typeof error === 'object' && 'code' in error && typeof error.code === 'string' ? error.code : undefined;
+}
+function destinationExists(): Error & { code: string } {
+  return Object.assign(new Error('Destination file already exists.'), { code: 'EEXIST' });
+}
 
-export const TAbstractFile = class {
-  declare vault: Vault;
-  declare path: string;
-  declare name: string;
+export class TAbstractFile {
+  vault: Vault;
+  path: string;
+  name: string;
 
   constructor(vault: Vault, path: string) {
     this.vault = vault;
     this.path = path;
-    this.name = path.split('/').pop();
+    this.name = path.split('/').pop() || '';
   }
-  get parent() {
+  get parent(): TFolder {
     const parentPath = this.path.split('/').slice(0, -1).join('/');
-    return this.vault.getAbstractFileByPath(parentPath) || this.vault.getRoot();
+    return this.vault.getFolderByPath(parentPath) || this.vault.getRoot();
   }
 };
 
 export class TFile extends TAbstractFile {
-  declare extension: string;
-  declare basename: string;
-  declare stat: FileStat;
+  extension: string;
+  basename: string;
+  stat: FileStat;
 
   constructor(vault: Vault, path: string) {
     super(vault, path);
@@ -50,8 +74,8 @@ export class TFile extends TAbstractFile {
 }
 
 export class TFolder extends TAbstractFile {
-  declare children: any[];
-  declare isRoot: () => boolean;
+  children: VaultEntry[];
+  isRoot: () => boolean;
 
   constructor(vault: Vault, path: string) {
     super(vault, path);
@@ -63,7 +87,7 @@ export class TFolder extends TAbstractFile {
 // original nu(): a path is hidden when any of its segments starts with "."
 // Hidden paths never enter the vault tree — the explorer, search and graph
 // never see them. (.obsidian config is read directly through the adapter.)
-export function isHiddenPath(path) {
+export function isHiddenPath(path: string) {
   for (let p = path; p; p = p.includes('/') ? p.slice(0, p.lastIndexOf('/')) : '') {
     const seg = p.split('/').pop();
     if (seg && seg.startsWith('.')) return true;
@@ -75,30 +99,30 @@ export function isHiddenPath(path) {
 // Node fs adapter (async API used by the vault)
 // ---------------------------------------------------------------------------
 export class FileSystemAdapter {
-  declare basePath: any;
-  declare watcher: any;
+  basePath: string;
+  watcher: import('chokidar').FSWatcher | null;
 
-  constructor(basePath) {
+  constructor(basePath: string) {
     this.basePath = basePath;
     this.watcher = null;
   }
   getName() { return nodePath.basename(this.basePath); }
   getBasePath() { return this.basePath; }
-  toAbs(p) {
+  toAbs(p: string) {
     if (!p || p === '/') return this.basePath;
     return nodePath.join(this.basePath, p);
   }
-  toRel(abs) {
+  toRel(abs: string) {
     let rel = nodePath.relative(this.basePath, abs);
     return rel.split(nodePath.sep).join('/');
   }
-  async exists(p) { try { await fs.promises.access(this.toAbs(p)); return true; } catch (e) { return false; } }
-  existsSync(p) { return fs.existsSync(this.toAbs(p)); }
-  async stat(p) {
+  async exists(p: string) { try { await fs.promises.access(this.toAbs(p)); return true; } catch (e) { return false; } }
+  existsSync(p: string) { return fs.existsSync(this.toAbs(p)); }
+  async stat(p: string) {
     const s = await fs.promises.stat(this.toAbs(p));
     return { type: s.isDirectory() ? 'folder' : 'file', ctime: Math.round(s.birthtimeMs), mtime: Math.round(s.mtimeMs), size: s.size };
   }
-  async list(p) {
+  async list(p: string) {
     const dir = this.toAbs(p);
     const entries = await fs.promises.readdir(dir, { withFileTypes: true });
     const files = [];
@@ -110,18 +134,18 @@ export class FileSystemAdapter {
     }
     return { files, folders };
   }
-  async read(p) { return fs.promises.readFile(this.toAbs(p), 'utf8'); }
-  async readBinary(p) { return fs.promises.readFile(this.toAbs(p)); }
-  async write(p, data, options: Record<string, any> = {}) { await fs.promises.mkdir(nodePath.dirname(this.toAbs(p)), { recursive: true }); await fs.promises.writeFile(this.toAbs(p), data, { encoding: 'utf8', flag: options.flag || 'w' }); }
-  async writeBinary(p, data, options: Record<string, any> = {}) { await fs.promises.mkdir(nodePath.dirname(this.toAbs(p)), { recursive: true }); await fs.promises.writeFile(this.toAbs(p), data, { flag: options.flag || 'w' }); }
-  async append(p, data) { await fs.promises.appendFile(this.toAbs(p), data, 'utf8'); }
-  async mkdir(p) { await fs.promises.mkdir(this.toAbs(p), { recursive: true }); }
-  async remove(p) { await fs.promises.unlink(this.toAbs(p)); }
-  async rmdir(p, recursive) {
+  async read(p: string) { return fs.promises.readFile(this.toAbs(p), 'utf8'); }
+  async readBinary(p: string) { return fs.promises.readFile(this.toAbs(p)); }
+  async write(p: string, data: string, options: WriteOptions = {}) { await fs.promises.mkdir(nodePath.dirname(this.toAbs(p)), { recursive: true }); await fs.promises.writeFile(this.toAbs(p), data, { encoding: 'utf8', flag: options.flag || 'w' }); }
+  async writeBinary(p: string, data: BinaryData, options: WriteOptions = {}) { await fs.promises.mkdir(nodePath.dirname(this.toAbs(p)), { recursive: true }); await fs.promises.writeFile(this.toAbs(p), data, { flag: options.flag || 'w' }); }
+  async append(p: string, data: string) { await fs.promises.appendFile(this.toAbs(p), data, 'utf8'); }
+  async mkdir(p: string) { await fs.promises.mkdir(this.toAbs(p), { recursive: true }); }
+  async remove(p: string) { await fs.promises.unlink(this.toAbs(p)); }
+  async rmdir(p: string, recursive: boolean) {
     if (recursive) await fs.promises.rm(this.toAbs(p), { recursive: true, force: true });
     else await fs.promises.rmdir(this.toAbs(p));
   }
-  async rename(from, to) {
+  async rename(from: string, to: string) {
     const source = this.toAbs(from), destination = this.toAbs(to);
     await fs.promises.mkdir(nodePath.dirname(destination), { recursive: true });
     // macOS 大小写重命名指向同一目录项；直接执行 rename 换大小写。
@@ -136,41 +160,39 @@ export class FileSystemAdapter {
         await fs.promises.unlink(source);
         return;
       } catch (err) {
-        if (err.code === 'EEXIST') {
-          const error = new Error('Destination file already exists.'); error.code = 'EEXIST'; throw error;
-        }
-        if (err.code !== 'EXDEV' && err.code !== 'EPERM' && err.code !== 'ENOTSUP') throw err;
+        if (errorCode(err) === 'EEXIST') throw destinationExists();
+        if (!['EXDEV', 'EPERM', 'ENOTSUP'].includes(errorCode(err) || '')) throw err;
       }
     }
     try {
       await fs.promises.lstat(destination);
-      const error = new Error('Destination file already exists.'); error.code = 'EEXIST'; throw error;
-    } catch (error) { if (error.code !== 'ENOENT') throw error; }
+      throw destinationExists();
+    } catch (error) { if (errorCode(error) !== 'ENOENT') throw error; }
     await fs.promises.rename(source, destination);
   }
-  async copy(from, to) {
+  async copy(from: string, to: string) {
     await fs.promises.mkdir(nodePath.dirname(this.toAbs(to)), { recursive: true });
     await fs.promises.copyFile(this.toAbs(from), this.toAbs(to));
   }
-  getResourcePath(p) { return `app://` + (globalThis.__fileToken || 'file') + '/' + this.toAbs(p).replace(/^\//, ''); }
+  getResourcePath(p: string) { return `app://` + (runtime.__fileToken || 'file') + '/' + this.toAbs(p).replace(/^\//, ''); }
 }
 
 // ---------------------------------------------------------------------------
 // Vault
 // ---------------------------------------------------------------------------
-export class Vault extends Events {
-  declare adapter: any;
-  declare root: TFolder;
-  declare all: any;
-  declare fileMap: any;
-  declare _initialized: boolean;
-  declare _trashQueue: any;
-  declare _watchGeneration: any;
-  declare watcher: import('chokidar').FSWatcher | null | undefined;
-  declare _watchReady: Promise<any> | null | undefined;
-  declare _watchCancel: (() => void) | null | undefined;
+export class Vault extends Events<VaultEvents> {
+  adapter: FileSystemAdapter;
+  root: TFolder;
+  all: Map<string, VaultEntry>;
+  fileMap: Map<string, TFile>;
+  _initialized: boolean;
+  _trashQueue: Promise<void> | null = null;
+  _watchGeneration = 0;
+  watcher: import('chokidar').FSWatcher | null = null;
+  _watchReady: Promise<boolean> | null = null;
+  _watchCancel: (() => void) | null = null;
 
-  constructor(adapter) {
+  constructor(adapter: FileSystemAdapter) {
     super();
     this.adapter = adapter;
     this.root = new TFolder(this, '/');
@@ -191,7 +213,7 @@ export class Vault extends Events {
     if (this._initialized) this.trigger('initialized');
   }
 
-  async recurseLoad(folder) {
+  async recurseLoad(folder: TFolder) {
     const listing = await this.adapter.list(folder.path).catch(() => ({ files: [], folders: [] }));
     for (const f of listing.folders) {
       if (isHiddenPath(f)) continue;
@@ -214,7 +236,7 @@ export class Vault extends Events {
     this.sortFolder(folder);
   }
 
-  sortFolder(folder) {
+  sortFolder(folder: TFolder) {
     folder.children.sort((a, b) => {
       const aFolder = a instanceof TFolder;
       const bFolder = b instanceof TFolder;
@@ -227,17 +249,17 @@ export class Vault extends Events {
   getName() { return this.adapter.getName(); }
   getBasePath() { return this.adapter.getBasePath(); }
 
-  getAbstractFileByPath(path) {
+  getAbstractFileByPath(path: string) {
     if (path === '/' || path === '') return this.root;
     return this.all.get(normalizePath(path)) || null;
   }
 
-  getFileByPath(path) {
+  getFileByPath(path: string) {
     const f = this.getAbstractFileByPath(path);
     return f instanceof TFile ? f : null;
   }
 
-  getFolderByPath(path) {
+  getFolderByPath(path: string) {
     const f = this.getAbstractFileByPath(path);
     return f instanceof TFolder ? f : null;
   }
@@ -250,11 +272,11 @@ export class Vault extends Events {
 
   getFiles() { return Array.from(this.fileMap.values()); }
 
-  async read(file) { return this.adapter.read(file.path); }
-  async cachedRead(file) { return this.read(file); }
-  async readBinary(file) { return this.adapter.readBinary(file.path); }
+  async read(file: TFile) { return this.adapter.read(file.path); }
+  async cachedRead(file: TFile) { return this.read(file); }
+  async readBinary(file: TFile) { return this.adapter.readBinary(file.path); }
 
-  async create(path, data, options: Record<string, any> = {}) {
+  async create(path: string, data: string, options: WriteOptions = {}) {
     path = normalizePath(path);
     if (this.all.has(path)) throw new Error('File already exists.');
     // 内存索引晚于外部写入和其它窗口；排他创建由文件系统裁决。
@@ -270,7 +292,7 @@ export class Vault extends Events {
     return file;
   }
 
-  async createBinary(path, data) {
+  async createBinary(path: string, data: BinaryData) {
     path = normalizePath(path);
     if (this.all.has(path)) throw new Error('File already exists.');
     await this.adapter.writeBinary(path, data, { flag: 'wx' });
@@ -285,7 +307,7 @@ export class Vault extends Events {
     return file;
   }
 
-  async createFolder(path) {
+  async createFolder(path: string) {
     path = normalizePath(path);
     if (this.all.has(path)) throw new Error('Folder already exists.');
     await this.adapter.mkdir(path);
@@ -297,25 +319,25 @@ export class Vault extends Events {
     return folder;
   }
 
-  async modify(file, data) {
+  async modify(file: TFile, data: string) {
     await this.adapter.write(file.path, data);
     try { const st = await this.adapter.stat(file.path); file.stat = { ctime: st.ctime, mtime: st.mtime, size: st.size }; } catch (e) {}
     this.trigger('modify', file);
     return file;
   }
 
-  async modifyBinary(file, data) {
+  async modifyBinary(file: TFile, data: BinaryData) {
     await this.adapter.writeBinary(file.path, data);
     this.trigger('modify', file);
     return file;
   }
 
-  async append(file, data) {
+  async append(file: TFile, data: string) {
     await this.adapter.append(file.path, data);
     this.trigger('modify', file);
   }
 
-  async delete(file, permanent = false) {
+  async delete(file: VaultEntry, permanent = false) {
     if (!file || file === this.root) throw new Error('不能删除库根目录。');
     if (!permanent) return this.trash(file, true);
     if (file instanceof TFolder) await this.adapter.rmdir(file.path, true);
@@ -324,13 +346,13 @@ export class Vault extends Events {
     this.trigger('delete', file);
   }
 
-  async trash(file, system = true) {
+  async trash(file: VaultEntry, system = true) {
     if (!file || file === this.root) throw new Error('不能回收库根目录。');
     // 同窗回收串行选择空闲名称；系统失败只降级本地回收，不永久删除。
     const operation = (this._trashQueue || Promise.resolve()).catch(() => {}).then(async () => {
       let recycled = false;
-      if (system && globalThis.__electronTrash) {
-        try { recycled = await globalThis.__electronTrash(this.adapter.toAbs(file.path)); } catch {}
+      if (system && runtime.__electronTrash) {
+        try { recycled = await runtime.__electronTrash(this.adapter.toAbs(file.path)); } catch {}
       }
       if (!recycled) {
         await this.adapter.mkdir('.trash');
@@ -347,7 +369,7 @@ export class Vault extends Events {
     try { return await operation; } finally { if (this._trashQueue === operation) this._trashQueue = null; }
   }
 
-  removeFromMaps(file) {
+  removeFromMaps(file: VaultEntry) {
     if (file instanceof TFolder) {
       for (const child of [...file.children]) this.removeFromMaps(child);
     }
@@ -360,7 +382,7 @@ export class Vault extends Events {
     }
   }
 
-  async rename(file, newPath) {
+  async rename(file: VaultEntry, newPath: string) {
     newPath = normalizePath(newPath);
     if (!file || file === this.root || !newPath) throw new Error('不能移动库根目录。');
     const oldPath = file.path;
@@ -372,11 +394,11 @@ export class Vault extends Events {
     if (!newParent) throw new Error('目标文件夹不存在。');
     await this.adapter.rename(oldPath, newPath);
 
-    const update = (f, p) => {
+    const update = (f: VaultEntry, p: string) => {
       this.all.delete(f.path);
       if (f instanceof TFile) this.fileMap.delete(f.path);
       f.path = p;
-      f.name = p.split('/').pop();
+      f.name = p.split('/').pop() || '';
       this.all.set(p, f);
       if (f instanceof TFile) {
         const dot = f.name.lastIndexOf('.');
@@ -385,7 +407,7 @@ export class Vault extends Events {
         this.fileMap.set(p, f);
       }
     };
-    const renameTree = (f, prefix, newPrefix) => {
+    const renameTree = (f: VaultEntry, prefix: string, newPrefix: string): void => {
       const children = f instanceof TFolder ? [...f.children] : [];
       update(f, newPrefix + f.path.slice(prefix.length));
       for (const c of children) renameTree(c, prefix, newPrefix);
@@ -393,7 +415,7 @@ export class Vault extends Events {
     renameTree(file, oldPath, newPath);
     if (oldParent !== newParent) {
       const index = oldParent?.children.indexOf(file) ?? -1;
-      if (index >= 0) oldParent.children.splice(index, 1);
+      if (oldParent && index >= 0) oldParent.children.splice(index, 1);
       if (!newParent.children.includes(file)) newParent.children.push(file);
     }
     if (oldParent) this.sortFolder(oldParent);
@@ -401,7 +423,7 @@ export class Vault extends Events {
     this.trigger('rename', file, oldPath);
   }
 
-  async copy(file, newPath) {
+  async copy(file: VaultEntry, newPath: string): Promise<void> {
     newPath = normalizePath(newPath);
     if (file instanceof TFolder) {
       await this.createFolder(newPath);
@@ -409,15 +431,14 @@ export class Vault extends Events {
         await this.copy(child, newPath + '/' + child.name);
       }
     } else {
-      const data = await this.readBinary(file);
       if (file.extension === 'md') await this.create(newPath, await this.read(file));
-      else await this.createBinary(newPath, data);
+      else await this.createBinary(newPath, await this.readBinary(file));
     }
   }
 
   // 首次事件与扫描模型对账；ready 只有在初始队列完成后才返回。
-  watch() {
-    if (this.watcher) return this._watchReady;
+  watch(): Promise<boolean> {
+    if (this.watcher && this._watchReady) return this._watchReady;
     this._watchCancel?.();
     const generation = this._watchGeneration = (this._watchGeneration || 0) + 1;
     const watcher = this.watcher = chokidar.watch(this.adapter.getBasePath(), {
@@ -426,18 +447,18 @@ export class Vault extends Events {
       ignored: p => isHiddenPath(this.adapter.toRel(p)) || nodePath.basename(p) === 'node_modules',
     });
     const current = () => this.watcher === watcher && this._watchGeneration === generation;
-    const visible = rel => rel && rel !== '/' && !rel.startsWith('../') && rel !== '..' && !isHiddenPath(rel);
-    const remove = rel => { const file = this.all.get(rel); if (file) { this.removeFromMaps(file); this.trigger('delete', file); } };
-    const update = async (event, rel) => {
+    const visible = (rel: string) => rel && rel !== '/' && !rel.startsWith('../') && rel !== '..' && !isHiddenPath(rel);
+    const remove = (rel: string) => { const file = this.all.get(rel); if (file) { this.removeFromMaps(file); this.trigger('delete', file); } };
+    const update = async (event: WatchEvent, rel: string): Promise<VaultEntry | null> => {
       if (!current() || !visible(rel)) return null;
       if (event === 'unlink' || event === 'unlinkDir') { remove(rel); return null; }
       let stat;
       try { stat = await this.adapter.stat(rel); }
-      catch (error) { if (error.code === 'ENOENT' || error.code === 'ENOTDIR') { if (current()) remove(rel); return null; } throw error; }
+      catch (error) { if (errorCode(error) === 'ENOENT' || errorCode(error) === 'ENOTDIR') { if (current()) remove(rel); return null; } throw error; }
       if (!current()) return null;
       let existing = this.all.get(rel);
       const folder = stat.type === 'folder';
-      if (existing && folder !== (existing instanceof TFolder)) { remove(rel); existing = null; }
+      if (existing && folder !== (existing instanceof TFolder)) { remove(rel); existing = undefined; }
       if (!existing) {
         // 初始事件通常父目录在先；运行期缺父目录时先补齐真实父目录。
         const parentPath = parentPathOf(rel);
@@ -446,8 +467,8 @@ export class Vault extends Events {
         existing = this.all.get(rel);
         if (!existing) {
           existing = folder ? new TFolder(this, rel) : new TFile(this, rel);
-          if (!folder) existing.stat = { ctime: stat.ctime, mtime: stat.mtime, size: stat.size };
-          this.all.set(rel, existing); if (!folder) this.fileMap.set(rel, existing);
+          if (existing instanceof TFile) existing.stat = { ctime: stat.ctime, mtime: stat.mtime, size: stat.size };
+          this.all.set(rel, existing); if (existing instanceof TFile) this.fileMap.set(rel, existing);
           const parent = this.getFolderByPath(parentPath);
           if (parent && !parent.children.includes(existing)) { parent.children.push(existing); this.sortFolder(parent); }
           this.trigger('create', existing); return existing;
@@ -460,27 +481,29 @@ export class Vault extends Events {
       }
       return existing;
     };
-    let queue = Promise.resolve(), settled = false;
-    let resolveReady, rejectReady;
-    const ready = this._watchReady = new Promise((resolve, reject) => { resolveReady = resolve; rejectReady = reject; });
+    let queue: Promise<unknown> = Promise.resolve();
+    let settled = false;
+    let resolveReady!: (ready: boolean) => void;
+    let rejectReady!: (error: unknown) => void;
+    const ready = this._watchReady = new Promise<boolean>((resolve, reject) => { resolveReady = resolve; rejectReady = reject; });
     // 保留返回给调用方的拒绝，同时避免旧调用方未等待时产生未捕获 Promise。
     ready.catch(() => {});
     this._watchCancel = () => { if (!settled) { settled = true; resolveReady(false); } };
-    const fail = error => {
+    const fail = (error: unknown) => {
       if (!current()) return;
       if (!settled) { settled = true; rejectReady(error); }
       else this.trigger('watch-error', error);
     };
-    const enqueue = action => { queue = queue.then(() => current() ? action() : null).catch(fail); return queue; };
+    const enqueue = (action: () => unknown | Promise<unknown>) => { queue = queue.then(() => current() ? action() : null).catch(fail); return queue; };
     watcher.on('all', (event, absolute) => enqueue(() => update(event, this.adapter.toRel(absolute))));
     watcher.on('error', fail);
     watcher.once('ready', () => enqueue(async () => {
       const seen = new Set(['/']);
-      const scan = async folder => {
+      const scan = async (folder: string): Promise<void> => {
         if (!current()) return;
         let listing;
         try { listing = await this.adapter.list(folder); }
-        catch (error) { if (error.code === 'ENOENT' || error.code === 'ENOTDIR') return; throw error; }
+        catch (error) { if (errorCode(error) === 'ENOENT' || errorCode(error) === 'ENOTDIR') return; throw error; }
         for (const path of listing.folders) {
           if (!visible(path) || nodePath.basename(path) === 'node_modules') continue;
           if (await update('addDir', path)) { seen.add(path); await scan(path); }
@@ -504,7 +527,7 @@ export class Vault extends Events {
 
 }
 
-export function normalizePath(path) {
+export function normalizePath(path: string) {
   if (!path) return '/';
   path = String(path).replace(/\\/g, '/');
   const parts = [];
@@ -516,12 +539,12 @@ export function normalizePath(path) {
   return parts.join('/');
 }
 
-export function parentPathOf(path) {
+export function parentPathOf(path: string) {
   const norm = normalizePath(path);
   const idx = norm.lastIndexOf('/');
   return idx <= 0 ? '/' : norm.slice(0, idx);
 }
 
-export function isDotPath(path) {
+export function isDotPath(path: string) {
   return path.split('/').some((p) => p.startsWith('.'));
 }

@@ -18,6 +18,8 @@ README.md - 项目介绍、开发与打包入口、源码结构和兼容边界
 LICENSE - 标准 AGPL v3 全文；授权标识为 AGPL-3.0-or-later。
 package.json - 依赖、类型检查、构建和测试入口。
 tsconfig.json - 全量应用源码的类型检查配置。
+tsconfig.strict.json - 主进程、IPC、事件、库文件和纯布局边界的严格检查。
+.gitattributes - 将第三方 MathJax 资源标记为 vendored。
 electron-builder.yml - 目录包与分发配置；ASAR 包含运行文件和许可证原文
 scripts/build.mjs - 将主进程与渲染器 TypeScript 编译至 dist/。
 scripts/dev.mjs - 开发模式，监听类型检查和编译；主进程变更后重启命令。
@@ -38,7 +40,7 @@ extract-zip 的 yauzl 依赖固定为 3.4.0。
 6. 插件 id 与 .obsidian/core-plugins.json 一致 (file-explorer, global-search, switcher...)。
 7. 单文件 ≤800 行；超出即重构。
 8. 侧栏工具固定，文档标签属于中心。左下角库信息栏独立于标签树；功能区入口随所属插件启停。
-9. TypeScript 使用迁移兼容配置（strict:false）。全部应用源码必须通过 tsc，禁止整文件跳过类型检查。
+9. 全量源码通过兼容检查。主进程、IPC、事件、库文件和纯布局边界另过 strict:true；npm run typecheck 执行两道检查。界面余下模块继续迁移，禁止整文件跳过类型检查。
 10. 项目名称统一为 OpenSidian。
 </rules>
 

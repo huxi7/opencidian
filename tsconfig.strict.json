@@ -1,0 +1,14 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": { "strict": true },
+  "include": [
+    "src/contracts.ts",
+    "src/ipc-contracts.ts",
+    "src/main/**/*.ts",
+    "src/renderer/core/ipc.ts",
+    "src/renderer/core/events.ts",
+    "src/renderer/core/vault.ts",
+    "src/renderer/core/workspace-layout.ts",
+    "src/renderer/core/workspace-file-view.ts"
+  ]
+}

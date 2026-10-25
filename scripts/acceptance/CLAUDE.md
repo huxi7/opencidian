@@ -8,7 +8,7 @@
 当前项目审查新增场景由full自动枚举。历史回执保留，当前结果以RESULTS为准。
 
 成员清单
-RESULTS.md: TypeScript 迁移结果、验证边界与复跑方式。
+RESULTS.md: 严格类型范围、最终补验、目录包结果与复跑方式。
 RESULTS-20261023.md: 截至10月23日的完整历史结果，不作为本轮当前通过证明。
 audit-storage.js: 真实磁盘回收站、移动索引与文件创建碰撞保护。
 audit-features.js: 合法空Base、忽略规则热更新与graph/修饰键书签真实打开。

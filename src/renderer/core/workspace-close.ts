@@ -1,12 +1,16 @@
 /**
- * [INPUT]: 工作区叶子、视图 save/onClose、未绑定反序列化器与布局树维护入口。
+ * [INPUT]: 工作区叶子、视图 save/onClose、未绑定反序列化器；workspace-layout 校验持久化协议。
  * [OUTPUT]: 导出隔离布局准备、detachLeafGuarded 与 closeWorkspaceViews；同步视图同步摘除，异步视图等待保存结果。
  * [POS]: 标签和批量布局关闭边界。明确失败保留叶子，布局替换先在隔离树验证，再确认全部视图可保存。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 import { Notice } from './notices.js';
-const rejected = error => { new Notice('无法关闭文档：' + error.message); return false; };
-function releaseView(view) {
+import { assertWorkspaceLayout } from './workspace-layout.js';
+const rejected = (error: unknown): false => {
+  new Notice('无法关闭文档：' + (error instanceof Error ? error.message : String(error)));
+  return false;
+};
+function releaseView(view: { _children?: unknown[] } | null | undefined): void {
   for (const dispose of view?._children || []) if (typeof dispose === 'function') dispose();
   if (view) view._children = [];
 }
@@ -58,29 +62,8 @@ export async function closeWorkspaceViews(workspace) {
 }
 
 
-export async function prepareWorkspaceLayout(workspace, data, deserialize) {
-  const ids = new Set();
-  const validate = node => {
-    if (!node || typeof node !== 'object' || Array.isArray(node) || !['leaf', 'tabs', 'split'].includes(node.type)) throw Error('布局节点无效');
-    if (node.id != null) {
-      if (typeof node.id !== 'string' || !node.id || ids.has(node.id)) throw Error('布局节点 ID 无效或重复');
-      ids.add(node.id);
-    }
-    if (node.type === 'leaf') {
-      if (node.state != null && (typeof node.state !== 'object' || Array.isArray(node.state))) throw Error('文档状态无效');
-      return;
-    }
-    if (!Array.isArray(node.children)) throw Error('布局子节点必须是数组');
-    if (node.type === 'tabs' && node.currentTab != null && !Number.isInteger(node.currentTab)) throw Error('活动标签索引无效');
-    if (node.type === 'tabs' && node.children.some(child => child?.type !== 'leaf')) throw Error('标签组只能包含文档');
-    if (node.type === 'split' && node.direction != null && !['horizontal', 'vertical'].includes(node.direction)) throw Error('分栏方向无效');
-    node.children.forEach(validate);
-  };
-  if (!data || typeof data !== 'object' || Array.isArray(data)) throw Error('布局必须是对象');
-  if (data.lastOpenFiles != null && (!Array.isArray(data.lastOpenFiles) || data.lastOpenFiles.some(file => typeof file !== 'string'))) throw Error('最近文件列表无效');
-  if (data.active != null && typeof data.active !== 'string') throw Error('活动文档 ID 无效');
-  for (const key of ['leftWidth', 'rightWidth']) if (data[key] != null && (!Number.isFinite(data[key]) || data[key] <= 0)) throw Error('侧栏尺寸无效');
-  for (const key of ['main', 'left', 'right']) { if (data[key]?.type !== 'split') throw Error('布局缺少主分栏或侧栏'); validate(data[key]); }
+export async function prepareWorkspaceLayout(workspace, data: unknown, deserialize) {
+  assertWorkspaceLayout(data);
   // 反序列化只写隔离索引，不让无效布局触碰当前树或视图。
   const staged = Object.create(workspace); staged._leafMap = new Map();
   staged.deserializeNode = async nodeData => {

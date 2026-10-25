@@ -10,9 +10,10 @@ declare global {
     interface BrowserWindow {
       vaultId?: string;
       loaded?: boolean;
-      _opensidianVibrancy?: boolean;
+      _opensidianVibrancy?: 'sidebar' | null;
       setTrafficLightPosition?: (position: { x: number; y: number }) => void;
     }
     interface IpcMainEvent { args?: unknown[]; }
+    interface MenuItem { triggeredByAccelerator?: boolean; }
   }
 }

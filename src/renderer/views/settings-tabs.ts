@@ -364,7 +364,10 @@ export class EditorTab extends SettingTab {
         try { return new Intl.DisplayNames([getLanguage()], { type: 'language' }).of(lang) || lang; } catch (e) { return lang; }
       };
       const renderLanguages = () => {
-        const info = (() => { try { return Desktop.spellcheckLanguages() || {}; } catch (e) { return {}; } })();
+        const info = (() => {
+          try { return Desktop.spellcheckLanguages(); }
+          catch { return { available: [], active: [], current: null, locale: '' }; }
+        })();
         const available = Array.isArray(info.available) ? info.available : [];
         const active = Array.isArray(info.active) ? info.active : [];
         const custom = Array.isArray(info.current) ? [...info.current] : null;

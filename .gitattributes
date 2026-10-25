@@ -1,0 +1,2 @@
+# 第三方离线资源不计入仓库自有代码语言统计。
+assets/mathjax/** linguist-vendored

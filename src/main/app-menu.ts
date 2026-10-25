@@ -8,16 +8,16 @@ import { app, BrowserWindow, Menu, shell, dialog } from 'electron';
 const IS_MAC = process.platform === 'darwin';
 const IS_DEV = !app.isPackaged;
 
-function installAppMenu(openVaultStarter) {
-function executeCommandJS(id) {
+function installAppMenu(openVaultStarter: () => void) {
+function executeCommandJS(id: string) {
   return `(function(){ try { if (window.app && app.commands) return app.commands.executeCommandById(${JSON.stringify(id)}); } catch(e) { console.error(e); } })()`;
 }
 
 function buildAppMenu() {
-  const isAppWindow = (w) => w instanceof BrowserWindow;
-  function cmd(id) {
+  const isAppWindow = (w: Electron.BaseWindow | undefined): w is Electron.BrowserWindow => w instanceof BrowserWindow;
+  function cmd(id: string): Electron.MenuItemConstructorOptions {
     return {
-      click: (menuItem, win: Electron.BrowserWindow) => {
+      click: (menuItem: Electron.MenuItem, win: Electron.BaseWindow | undefined) => {
         const target = isAppWindow(win) ? win : BrowserWindow.getFocusedWindow();
         if (!target) return;
         if (menuItem.triggeredByAccelerator === false) return;
@@ -31,15 +31,15 @@ function buildAppMenu() {
       submenu: [
         {
           label: 'About OpenSidian',
-          click: async (mi, win: Electron.BrowserWindow) => {
+          click: async (mi: Electron.MenuItem, win: Electron.BaseWindow | undefined) => {
             const detail = `Version ${app.getVersion()} — independent open-source replication of Obsidian 1.14.4\nElectron ${process.versions.electron} · Node ${process.versions.node}`;
-            await dialog.showMessageBox(win instanceof BrowserWindow ? win : undefined, {
-              message: 'OpenSidian', detail,
-            });
+            const options = { message: 'OpenSidian', detail };
+            if (win) await dialog.showMessageBox(win, options);
+            else await dialog.showMessageBox(options);
           },
         },
         { type: 'separator' as const },
-        { label: 'Settings…', accelerator: 'CommandOrControl+,', click: (item, win: Electron.BrowserWindow) => {
+        { label: 'Settings…', accelerator: 'CommandOrControl+,', click: (item: Electron.MenuItem, win: Electron.BaseWindow | undefined) => {
           const target = win instanceof BrowserWindow ? win : BrowserWindow.getFocusedWindow();
           if (target) target.webContents.executeJavaScript(executeCommandJS('app:open-settings'));
         } },
@@ -67,7 +67,7 @@ function buildAppMenu() {
       submenu: [
         { role: 'undo' as const }, { role: 'redo' as const }, { type: 'separator' as const },
         { role: 'cut' as const }, { role: 'copy' as const }, { role: 'paste' as const },
-        { label: 'Paste as text', accelerator: IS_MAC ? 'Cmd+Shift+V' : 'Shift+CommandOrControl+V', click: (mi, win: Electron.BrowserWindow) => { if (win) win.webContents.pasteAndMatchStyle(); } },
+        { label: 'Paste as text', accelerator: IS_MAC ? 'Cmd+Shift+V' : 'Shift+CommandOrControl+V', click: (mi: Electron.MenuItem, win: Electron.BaseWindow | undefined) => { if (win instanceof BrowserWindow) win.webContents.pasteAndMatchStyle(); } },
         { role: 'delete' as const }, { role: 'selectAll' as const },
       ],
     },
@@ -75,9 +75,9 @@ function buildAppMenu() {
       label: '&View',
       submenu: [
         ...(IS_DEV ? [{ role: 'reload' as const }] : []),
-        { label: 'Actual Size', accelerator: 'CommandOrControl+0', click: (mi, win: Electron.BrowserWindow) => { if (win) win.webContents.setZoomLevel(0); } },
-        { label: 'Zoom In', accelerator: 'CommandOrControl+=', click: (mi, win: Electron.BrowserWindow) => { if (win) win.webContents.setZoomLevel(Math.min(5, win.webContents.getZoomLevel() + 0.5)); } },
-        { label: 'Zoom Out', accelerator: 'CommandOrControl+-', click: (mi, win: Electron.BrowserWindow) => { if (win) win.webContents.setZoomLevel(Math.max(-3, win.webContents.getZoomLevel() - 0.5)); } },
+        { label: 'Actual Size', accelerator: 'CommandOrControl+0', click: (mi: Electron.MenuItem, win: Electron.BaseWindow | undefined) => { if (win instanceof BrowserWindow) win.webContents.setZoomLevel(0); } },
+        { label: 'Zoom In', accelerator: 'CommandOrControl+=', click: (mi: Electron.MenuItem, win: Electron.BaseWindow | undefined) => { if (win instanceof BrowserWindow) win.webContents.setZoomLevel(Math.min(5, win.webContents.getZoomLevel() + 0.5)); } },
+        { label: 'Zoom Out', accelerator: 'CommandOrControl+-', click: (mi: Electron.MenuItem, win: Electron.BaseWindow | undefined) => { if (win instanceof BrowserWindow) win.webContents.setZoomLevel(Math.max(-3, win.webContents.getZoomLevel() - 0.5)); } },
         { type: 'separator' as const },
         ...(IS_DEV ? [{ role: 'forceReload' as const, accelerator: '' }] : []),
         { role: 'toggleDevTools' as const },
@@ -91,8 +91,8 @@ function buildAppMenu() {
         { role: 'minimize' as const, accelerator: IS_MAC ? 'CommandOrControl+M' : '' },
         ...(IS_MAC ? [{ role: 'zoom' as const }] : []),
         { type: 'separator' as const },
-        { id: 'window-always-on-top', checked: false, enabled: true, type: 'checkbox' as const, label: 'Always on Top', click: (mi, win: Electron.BrowserWindow) => {
-          if (!win) return;
+        { id: 'window-always-on-top', checked: false, enabled: true, type: 'checkbox' as const, label: 'Always on Top', click: (mi: Electron.MenuItem, win: Electron.BaseWindow | undefined) => {
+          if (!(win instanceof BrowserWindow)) return;
           win.setAlwaysOnTop(!win.isAlwaysOnTop());
         } },
         { role: 'front' as const },

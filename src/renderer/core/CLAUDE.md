@@ -8,12 +8,12 @@
 update-check.ts: 配置更新源后检查版本，仅提示和打开下载页。
 dom-types.d.ts: DOM 工厂、元素扩展与窗口全局入口的类型边界。
 dom.ts: Element/Document 原型的 createEl/setText/addClass 等助手(安装即生效)，并导出 createEl/createDiv/createSpan。
-events.ts: Events 基类(on/off/once/trigger/offref) + debounce(带 run/cancel)/sleep。
+events.ts: 泛型事件表与订阅释放。无原型字典接受任意名称；防抖保留参数与宿主类型，结算后释放引用。未声明事件表的旧宿主保留动态兼容边界。
 i18n.ts: setLanguage/detectLanguage(systemLocale)/t(带 {{var}} 与 _plural 处理)/tt(key,fallback,vars)(设置界面兜底)/getNouns(连字符 key)。
 icons.ts: resolveIcon/createIcon/setIcon/getIconData/iconExists/getIconIds/addIcon/removeIcon。解析链逐字复刻原版 Zm()：lucide- 前缀 → 运行时图标 → 36 个自有图标(assets/icons-obsidian.json) → 152 条别名映射(assets/icon-aliases.json) → 1874 个 Lucide 图标(assets/icons.json)。
-ipc.ts: IPC 与 Desktop 门面。文档窗口等待异步就绪，属性写回经跨窗口 CAS；半透明下发原生偏好。
+ipc.ts: 按共享通道表校验参数元组和回执。Desktop 门面保留同步与异步区别，不接受拼错通道。文档窗口等待就绪，属性写回经跨窗口 CAS。
 tooltip.ts: 全局 tooltip 单例(叶子，仅用 DOM 助手)。导入即安装 body 级 pointerover/pointerout 委托(只认鼠标)与 pointerdown/滚动/blur/Escape 收起；文案取 aria-label(其次被暂存的 title)，data-tooltip-delay 默认 1000ms，data-tooltip-position 默认 bottom(放不下翻 mod-top)，data-tooltip-classes 追加类；补 Element.prototype.setTooltip/setTooltipGenerator。
-vault.ts: 磁盘树与可等待监听。初次扫描后对账补空档，按代次串行事件；stopWatch 等待关闭并失效旧回调。时间使用取整 birthtimeMs/mtimeMs。文件 IO 走 Node fs；watch 用 chokidar。首次扫描与文件监听均拒绝点开头路径段。创建使用 wx；重命名普通文件优先 link+unlink 确保原子排他，失败降级 lstat 排他；移动同步父子树与排序。trash 系统失败降级本地，失败保留文件。
+vault.ts: 磁盘树与可等待监听。初次扫描后对账补空档，按代次串行事件；stopWatch 等待关闭并失效旧回调。时间使用取整 birthtimeMs/mtimeMs。文件 IO 走 Node fs；watch 用 chokidar。首次扫描与文件监听均拒绝点开头路径段。创建使用 wx；重命名普通文件优先 link+unlink 确保原子排他，失败降级 lstat 排他；移动同步父子树与排序。trash 系统失败降级本地，失败保留文件。 文件树使用 TFile/TFolder 联合，VaultEvents 校验七类事件，监听返回 Promise<boolean>；复制按格式只读取一次。
 vault-utils.ts: getUniquePath 等路径纯函数。
 metadata.ts: MetadataCache。内存态：headings/links/embeds/tags/frontmatter；解析短链，向插件提供统一isUserIgnored。
 user-ignore.ts: 路径前缀与/正则/忽略判定。配置值变化才重编译；空规则和坏正则不匹配。
@@ -47,7 +47,8 @@ plugins-registry.ts: corePluginModules 汇总表(id → 模块)。新增核心�
 app-commands.ts: 导航、设置与文档命令。新建和恢复关闭标签显式激活目标。文档弹出与移动委托 document-window；新窗口就绪后移除来源。关闭、固定标签操作只作用于中心文档。堆叠命令 workspace:toggle-stacked-tabs 作用于当前中心标签组，侧栏组拒绝执行。
 app.ts: App 装配。文档窗口只加载来源视图，跳过主布局持久化及启动打开行为。监听库根 CSS；外观偏好驱动原生半透明。新建与修改均进入元数据解析。initialize 顺序：bootTime → language(须最先，界面模块构造前) → 非 macOS 加 body.styled-scrollbars → vault 身份 → settings → vault+watch → metadata/fileManager/hotkeyManager/plugins → workspace.mount → 插件加载 → _loadWorkspace → _applyTheme → settings 'change' 监听 → Ctrl+滚轮/捏合字号监听（仅外观「快速调整字体大小」开启时改字号，默认关；ctrl+wheel 恒 preventDefault，配合主进程 setVisualZoomLevelLimits(1,1) 锁死整页视觉缩放）→ _runOpeningBehavior。_applyTheme 应用 theme/accent/字体/--indent-size/根字号并调 _applyCustomCss(注入主题与启用的 snippets：现代主题 themes/<x>/theme.css，回退旧版主题 themes/<x>.css，与原版 getThemePath 同规则；style 元素带 data-css-theme)。ipcOn('context-menu') 保存主进程菜单参数并唤醒 _contextParamWaiters（编辑器右键菜单取拼写建议/剪贴板状态）。OBS_ACT 调试钩子支持 open/open-settings/exec(命令)。设置窗口以 app.isSettingsWindow(URL #settings-window) 分流：只跳过看门狗/后台索引/布局加载，其余照常装配。新库默认右栏收起；body 补 obsidian-app/show-inline-title。
 
-workspace-file-view.ts: 文件视图分派。Markdown 读取编辑偏好，插件扩展名读取视图注册表。
+workspace-file-view.ts: 严格类型的文件视图分派。仅依赖偏好和注册表窄接口，不依赖 App 实现。
+workspace-layout.ts: 未信任布局的迭代校验边界。叶子、标签组和分栏使用判别联合；拒绝祖先循环与坏比例，保留无 ID 共享节点。
 
 custom-css.ts: 库根 obsidian.css 兼容层。按开关注入，监听创建、修改和删除。
 
@@ -59,7 +60,7 @@ frontmatter-write.ts: 属性写回事务。坏 YAML 拒写，按文件串行，�
 window-save.ts: 文档保存协议。Markdown/Canvas 使用 CAS；窗口关闭检查 Markdown/Canvas/Bases，失败保留输入。
 
 window-save-conflict.ts: 保存冲突恢复。读盘后复核文件与草稿；确认载入磁盘，副本成功后才解除原草稿。
-workspace-close.ts: 叶子关闭事务。布局先隔离校验和反序列化；同步视图同步关闭，异步等待，失败保留原树。
+workspace-close.ts: 叶子关闭事务。布局先隔离校验和反序列化；同步视图同步关闭，异步等待，失败保留原树。 布局先交 workspace-layout 校验；关闭异常为 unknown，拒绝关闭时保留草稿。
 view-pane-menu.ts: 共用原生动作按钮、竖三点及 onPaneMenu/file-menu/leaf-menu 链；文件菜单保留原版系统项。
 workspace-resize.ts: 根侧栏只改自身宽度，内部按轴拖动并保存比例；取消或重建释放全局监听。
 workspace-sidebar-transition.ts: 每侧独立收展事务。锁内容宽度，收起活动侧栏回中心焦点，中断结算目标态。

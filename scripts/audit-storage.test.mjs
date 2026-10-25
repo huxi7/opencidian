@@ -1,12 +1,13 @@
 /**
- * [INPUT]: Node 临时磁盘、真实 Vault/FileManager 与隔离系统回收站替身。
- * [OUTPUT]: 输出 {pass,count,checks}，验证回收站、移动树与创建碰撞。
+ * [INPUT]: Node 临时磁盘、真实 Vault/FileManager、跨 VM 错误与系统回收站替身。
+ * [OUTPUT]: 验证回收站、移动树、跨域错误、创建碰撞与单次读取复制。
  * [POS]: 文件数据安全回归。系统回收站仅替换边界，不接触用户文件。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import vm from 'node:vm';
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
 import { build } from 'esbuild';
@@ -78,6 +79,23 @@ try {
   check('文件夹移动同时更新父目录结构', () => assert.ok(!a.children.includes(subtree) && b.children.includes(subtree) && subtree.parent === b));
   check('文件夹移动保留子身份并更新完整路径', () => assert.ok(subtree.children[0] === child && child.path === 'B/Renamed/Child.md' && child.parent === subtree));
   check('旧目录映射全部消失', () => assert.ok(!vault.getFolderByPath('A/Sub') && !vault.getFileByPath('A/Sub/Child.md')));
+  const foreignMissing = vm.runInNewContext("Object.assign(new Error('foreign missing target'), { code: 'ENOENT' })");
+  check('跨VM文件错误具有ENOENT但不属于本域Error', () => assert.ok(foreignMissing.code === 'ENOENT' && !(foreignMissing instanceof Error)));
+  const foreignFolder = await vault.createFolder('ForeignSource');
+  await vault.create('ForeignSource/Child.md', 'foreign realm retained');
+  const originalLstat = fs.promises.lstat;
+  fs.promises.lstat = async (...args) => {
+    if (args[0] === disk('ForeignDestination')) throw foreignMissing;
+    return originalLstat(...args);
+  };
+  try { await vault.rename(foreignFolder, 'ForeignDestination'); }
+  finally { fs.promises.lstat = originalLstat; }
+  check('跨VM的ENOENT允许目录移动并保留子文件与索引', () => {
+    assert.equal(fs.readFileSync(disk('ForeignDestination/Child.md'), 'utf8'), 'foreign realm retained');
+    assert.equal(vault.getFolderByPath('ForeignSource'), null);
+    assert.equal(vault.getFolderByPath('ForeignDestination'), foreignFolder);
+    assert.ok(vault.getFileByPath('ForeignDestination/Child.md'));
+  });
   await reject('拒绝把目录移动到自身子目录', () => vault.rename(subtree, 'B/Renamed/Nested'));
   check('拒绝后磁盘与模型均保持原样', () => assert.ok(fs.existsSync(disk('B/Renamed/Child.md')) && vault.getFolderByPath('B/Renamed') === subtree));
   fs.writeFileSync(disk('rename-target.md'), 'external rename target');
@@ -96,6 +114,18 @@ try {
   check('创建胜出内容与唯一模型相符', () => assert.ok(vault.getFileByPath('race.md') === winner && ['first', 'second'].includes(fs.readFileSync(disk('race.md'), 'utf8')) && vault.getRoot().children.filter(file => file.path === 'race.md').length === 1));
   const binary = await vault.createBinary('stats.bin', Buffer.from([1, 2, 3, 4]));
   check('新附件立即具有实际文件stat', () => assert.ok(binary.stat.size === 4 && binary.stat.mtime > 0));
+  const originalRead = vault.adapter.read.bind(vault.adapter), originalReadBinary = vault.adapter.readBinary.bind(vault.adapter);
+  let textReads = 0, binaryReads = 0;
+  vault.adapter.read = async file => { textReads++; return originalRead(file); };
+  vault.adapter.readBinary = async file => { binaryReads++; return originalReadBinary(file); };
+  await vault.copy(winner, 'copied.md');
+  check('复制Markdown只读取一次正文，不预读二进制', () => assert.ok(textReads === 1 && binaryReads === 0));
+  check('复制Markdown保持原始内容', () => assert.equal(fs.readFileSync(disk('copied.md'), 'utf8'), fs.readFileSync(disk('race.md'), 'utf8')));
+  await vault.copy(binary, 'copied.bin');
+  check('复制附件只读一次二进制并保持原始字节', () => {
+    assert.ok(textReads === 1 && binaryReads === 1);
+    assert.deepEqual(fs.readFileSync(disk('copied.bin')), Buffer.from([1, 2, 3, 4]));
+  });
   console.log(JSON.stringify({ pass: true, count: checks.length, checks }));
 } catch (error) { console.log(JSON.stringify({ pass: false, count: checks.length, checks, error: error.message })); process.exitCode = 1; }
 finally { await vault?.stopWatch(); delete globalThis.__electronTrash; fs.rmSync(temporary, { recursive: true, force: true }); }

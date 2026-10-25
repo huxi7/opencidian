@@ -53,6 +53,10 @@ npm run dist       # 生成 DMG 与 ZIP
 
 技术栈与模块边界见 [架构地图](CLAUDE.md)。
 
+应用源码全部使用 TypeScript。`dist/` 是编译生成的 JavaScript，不纳入 Git；构建工具与验收脚本保留 JavaScript，`assets/mathjax/` 是第三方离线资源。
+
+主进程、IPC、库文件与布局校验已启用严格类型检查，随构建执行。其余界面模块按模块继续收紧。
+
 ## 验收
 
 ```sh

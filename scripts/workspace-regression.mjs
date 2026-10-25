@@ -1,7 +1,7 @@
 /**
  * [INPUT]: esbuild 与 Node 的 test/assert/fs/path/url/vm；转译工作区 TS 源码，模拟 DOM、扩展名注册表、视图与 IPC。
  * [OUTPUT]: 提供可独立运行的工作区逻辑回归，不进入 renderer 依赖图。
- * [POS]: 固定叶子操作、后台可见项与查重数量、隔离布局、侧栏焦点与链接路径转换。
+ * [POS]: 固定叶子操作、后台可见项与查重数量、布局协议与隔离恢复、侧栏焦点与链接路径转换。
  * 只读源码，不启动 Electron，不读写仓库配置或真实笔记。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
@@ -620,6 +620,55 @@ test('布局节点ID重复时在关闭旧视图前拒绝', async () => {
   layout.left.id = layout.main.id; lifecycle.length = 0;
   assert.equal(await ws.loadLayout(layout), false); assert.equal(ws._leafMap, map); assert.ok(leaf.parent);
   assert.equal(lifecycle.filter(([event]) => event === 'close').length, 0);
+});
+
+test('循环布局在保存前拒绝并保留当前视图', async () => {
+  const { workspace: ws, leaf, lifecycle, notices } = await harness();
+  const original = plain(ws.getLayout()), map = ws._leafMap, view = leaf.view;
+  const layout = plain(original); layout.main.children.push(layout.main); lifecycle.length = 0;
+  assert.equal(await ws.loadLayout(layout), false);
+  assert.ok(notices.some(message => message.includes('循环')));
+  assert.equal(ws._leafMap, map); assert.equal(leaf.view, view);
+  assert.deepEqual(plain(ws.getLayout()), original);
+  assert.equal(lifecycle.filter(([event]) => event === 'save' || event === 'close').length, 0);
+});
+
+test('关闭抛出非Error值仍返回失败并保留草稿', async () => {
+  const { workspace: ws, leaf, notices } = await harness(); const view = leaf.view, map = ws._leafMap;
+  view.onClose = () => { throw null; };
+  assert.equal(leaf.detach(), false); assert.equal(leaf.view, view); assert.equal(ws._leafMap, map);
+  assert.equal(leaf._closed, false); assert.ok(leaf.parent);
+  view.onClose = async () => { throw 'draft unavailable'; };
+  assert.equal(await leaf.detach(), false); assert.equal(leaf.view, view); assert.ok(leaf.parent);
+  assert.ok(notices.some(message => message.includes('draft unavailable')));
+});
+
+test('布局拒绝非数值比例与非布尔显示状态', async () => {
+  const { workspace: ws, lifecycle } = await harness();
+  const original = plain(ws.getLayout()), map = ws._leafMap;
+  const invalid = [
+    { ...original, leftCollapsed: 'false' },
+    { ...original, main: { ...original.main, dimension: '50' } },
+    { ...original, main: { ...original.main, size: Infinity } },
+    { ...original, main: { ...original.main, children: [{ type: 'tabs', stacked: 'false', children: [] }] } },
+  ];
+  for (const layout of invalid) {
+    lifecycle.length = 0; assert.equal(await ws.loadLayout(layout), false);
+    assert.equal(ws._leafMap, map); assert.deepEqual(plain(ws.getLayout()), original);
+    assert.equal(lifecycle.filter(([event]) => event === 'save' || event === 'close').length, 0);
+  }
+});
+
+test('无ID共享节点分别反序列化，不误判为循环', async () => {
+  const { workspace: ws } = await harness(); const layout = plain(ws.getLayout());
+  const shared = { type: 'leaf', state: { type: 'empty', state: {} } };
+  layout.main.children = [{ type: 'tabs', children: [shared, shared] }];
+  const active = await ws.loadLayout(layout); assert.notEqual(active, false);
+  await ws.postLayoutLoad(active);
+  const tabs = ws.centerSplit.children[0];
+  assert.equal(tabs.children.length, 2);
+  assert.notEqual(tabs.children[0], tabs.children[1]);
+  assert.notEqual(tabs.children[0].id, tabs.children[1].id);
 });
 
 test('隔离反序列化期间仍能访问原树，成功后保留堆叠与活动叶子', async () => {

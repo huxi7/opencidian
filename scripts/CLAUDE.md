@@ -7,11 +7,12 @@
 成员清单
 cdp-probe.mjs: 本地原版 CDP 只读探针，输出被忽略的分析目录；不参与构建和正式验收。
 build-config.mjs: 唯一构建配置源。主进程输出 CommonJS，渲染器和 Worker 输出浏览器包。
-type-contracts.test.mjs: 编译内存中的非法调用，验证 DOM 和原子写入类型没有退化。
+type-contracts.test.mjs: 在严格配置编译正反例，验证 IPC、文件树、事件、布局、DOM 和原子写入契约。
+events.test.mjs: 原型名称、once 重入和防抖 run/cancel/resetTimer 的确定性回归。
 test-unit.mjs: 串行运行独立 Node 测试，验证回执并汇总失败。
-workspace-regression.mjs: 转译 TypeScript 后在隔离 VM 验证工作区状态和生命周期。
+workspace-regression.mjs: 隔离 VM 验证工作区状态、生命周期、循环布局拒绝与异常关闭保留。
 build.mjs: 读取共用配置，编译主进程、主窗口、启动器和图谱 Worker；--watch 增量构建。
-dev.mjs: 开发模式。类型检查 watch + 增量编译 + 启动 Electron；主进程变更需重启命令。
+dev.mjs: 开发模式。兼容与严格检查同时 watch，增量编译后启动 Electron；退出释放两组检查器。主进程变更需重启命令。
 with-lock.sh: 构建/验收互斥锁。并行子代理共享 $TMPDIR/opensidian-build.lock，先到先得，超时 30 分钟退出码 75；用法 `sh scripts/with-lock.sh "<命令>"`。
 
 acceptance/: full.sh 是全量入口。真实 Electron 场景，隔离库与日志判定见 acceptance/CLAUDE.md。 子进程带 `E2E=1`：窗口不激活应用（accessory + showInactive + focusable:false）且整窗透明（opacity:0 + 忽略鼠标）——测试完全不可见、不抢焦点；带 `OBS_ACT` 的直连探针也自动进入 E2E（main.ts 兜底）。
@@ -27,10 +28,11 @@ canvas-export-limits.test.mjs: 导出预算单测。18 条覆盖密度、取整�
 render-cancel.test.mjs: 渲染取消单测。9 条覆盖结算、监听释放与迟到结果。
 vault-watch.test.mjs: 真实 Chokidar 22 条。扫描空档、身份、增删改与反复启停。
 dev-hooks.test.mjs: 双窗口协调 11 条。迟到、失败、超时和回执校验，不启动 Electron。
+main-boundaries.test.mjs: 主进程边界14条。真盘 CAS 并发、库外路径拒绝与原生菜单监听释放。
 
 workspace-resize.test.mjs: 尺寸拖动纯逻辑与事件单测。24 条覆盖根侧栏、分配、零位移、布局换代与资源清理。
 user-ignore.test.mjs: 忽略规则22条单测。前缀、正则、损坏配置与原地修改即时生效。
-audit-storage.test.mjs: 隔离真盘回归。回收站保留、失败保护、移动索引与磁盘碰撞拒绝。
+audit-storage.test.mjs: 隔离真盘回归。回收站保留、失败保护、移动索引与磁盘碰撞拒绝；复制保持字节且只读取一次；跨 VM 错误按 code 字段识别。
 audit-features.test.mjs: 隐式Base默认视图及首次写回。未知键、注释与坏类型保护。
 subpath-navigation.test.mjs: 子路径导航与块引用单测。17条覆盖段落块标记、前导锚点剥离与阅读/编辑定位。
 [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
