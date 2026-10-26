@@ -1,7 +1,7 @@
 /**
  * [INPUT]: 全量严格配置、TypeScript 编译器及 IPC、工作区、编辑器和数据契约。
  * [OUTPUT]: 验证合法调用被接受，非法通道、文件和事件参数被拒绝。
- * [POS]: 类型契约回归；虚拟源码只存在内存，不执行应用代码。
+ * [POS]: 类型契约回归；虚拟源码使用编译器的正斜杠路径，不执行应用代码。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 import ts from 'typescript';
@@ -10,7 +10,7 @@ import fs from 'node:fs';
 import assert from 'node:assert/strict';
 const root = process.cwd();
 const config = ts.parseJsonConfigFileContent(ts.readConfigFile('tsconfig.json', ts.sys.readFile).config, ts.sys, root);
-const filename = path.join(root, 'src', '__type_contract_probe__.ts');
+const filename = path.join(root, 'src', '__type_contract_probe__.ts').replaceAll('\\', '/');
 const imports = [
   "import type { VaultWriteRequest, VaultWriteResult } from './contracts.js';",
   "import { createEl } from './renderer/core/dom.js';",
@@ -68,7 +68,9 @@ host.getSourceFile = (file, version, ...args) => file === filename
   ? ts.createSourceFile(file, source, version, true)
   : readSource(file, version, ...args);
 const program = ts.createProgram([...config.fileNames, filename], config.options, host);
-const errors = program.getSemanticDiagnostics(program.getSourceFile(filename));
+const probe = program.getSourceFile(filename);
+assert.equal(probe?.text, source, '编译器必须读取内存中的类型正反例');
+const errors = program.getSemanticDiagnostics(probe);
 const lines = new Set(errors.map(error => error.file.getLineAndCharacterOfPosition(error.start).line));
 const checks = [];
 assert.equal(config.options.strict, true, '全应用必须启用严格检查');

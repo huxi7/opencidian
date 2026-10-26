@@ -14,7 +14,7 @@ canvas-data.test.mjs: 画布 JSON、坏文件切换、块引用回退与演示�
 graph-simulation.test.mjs: 图谱 Worker 回执回归。固定零坐标、坏缓冲区、代次与销毁边界。
 cdp-probe.mjs: 本地原版 CDP 只读探针，输出被忽略的分析目录；不参与构建和正式验收。
 build-config.mjs: 唯一构建配置源。主进程输出 CommonJS，渲染器和 Worker 输出浏览器包。
-type-contracts.test.mjs: 编译正反例，验证 IPC、事件、布局、编辑器与画布契约；防止显式 any 和检查豁免回归。
+type-contracts.test.mjs: 用跨平台虚拟路径编译正反例，验证 IPC、事件、布局、编辑器与画布契约；防止显式 any 和检查豁免回归。
 events.test.mjs: 原型名称、once 重入和防抖 run/cancel/resetTimer 的确定性回归。
 test-unit.mjs: 串行运行独立 Node 测试，验证回执并汇总失败。
 workspace-regression.mjs: 隔离 VM 验证工作区状态、生命周期、循环布局拒绝与异常关闭保留。
@@ -37,7 +37,7 @@ vault-watch.test.mjs: 真实 Chokidar 22 条。扫描空档、身份、增删改
 dev-hooks.test.mjs: 双窗口协调 11 条。迟到、失败、超时和回执校验，不启动 Electron。
 main-boundaries.test.mjs: 主进程边界14条。真盘 CAS 并发、库外路径拒绝与原生菜单监听释放。
 
-workspace-resize.test.mjs: 尺寸拖动纯逻辑与事件单测。24 条覆盖根侧栏、分配、零位移、布局换代与资源清理。
+workspace-resize.test.mjs: 测试替身路径跨平台归一化。24 条覆盖根侧栏、分配、零位移、布局换代与资源清理。
 user-ignore.test.mjs: 忽略规则22条单测。前缀、正则、损坏配置与原地修改即时生效。
 audit-storage.test.mjs: 隔离真盘回归。回收站保留、失败保护、移动索引与磁盘碰撞拒绝；复制保持字节且只读取一次；跨 VM 错误按 code 字段识别。
 audit-features.test.mjs: 隐式Base默认视图及首次写回。未知键、注释与坏类型保护。

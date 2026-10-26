@@ -1,7 +1,7 @@
 /**
  * [INPUT]: Node 断言、真实尺寸分配模块、序列化模块与受控 DOM/窗口事件。
  * [OUTPUT]: 输出 {pass,count,checks}，验证侧栏目标、分配守恒、比例与监听释放。
- * [POS]: 工作区拖宽确定性单测。不启动 Electron，不访问真实库。
+ * [POS]: 工作区拖宽确定性单测。测试替身路径跨平台归一化；不启动 Electron。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 import fs from 'node:fs';
@@ -31,7 +31,7 @@ const checks = [], check = (message, action) => { action(); checks.push(message)
 try {
   const outfile = path.join(temporary, 'resize.cjs');
   await build({ stdin: { contents: `export * from './src/renderer/core/workspace-resize.ts'; export * from './src/renderer/core/workspace-serialize.ts'; export * from './src/renderer/core/workspace-model.ts';`, resolveDir: root }, outfile, bundle: true, platform: 'node', format: 'cjs', logLevel: 'silent', plugins: [{ name: 'fake-dom', setup(builder) {
-    builder.onResolve({ filter: /\/(?:dom|workspace-sidebar-transition|workspace-model)\.(?:js|ts)$/ }, args => ({ path: path.resolve(args.resolveDir, args.path).replace(/\.js$/, '.ts'), namespace: 'test' }));
+    builder.onResolve({ filter: /\/(?:dom|workspace-sidebar-transition|workspace-model)\.(?:js|ts)$/ }, args => ({ path: path.resolve(args.resolveDir, args.path).replace(/\.js$/, '.ts').replaceAll('\\', '/'), namespace: 'test' }));
     builder.onLoad({ filter: /.*/, namespace: 'test' }, args => ({ contents: /\/dom\.(?:js|ts)$/.test(args.path) ? 'export const createDiv=()=>globalThis.__resizeCreate();' : /\/workspace-model\.(?:js|ts)$/.test(args.path) ? 'export class WorkspaceLeaf {} export class WorkspaceTabs {} export class WorkspaceSplit {}' : 'export function settleSidebarTransitions(){}', loader: 'js' }));
   } }] });
   const { createWorkspaceResizeHandle: create, cancelWorkspaceResize: cancel, sidebarResizeTarget: target, computeWorkspaceResizeSizes: compute, serializeNode, WorkspaceLeaf, WorkspaceTabs, WorkspaceSplit } = createRequire(import.meta.url)(outfile);
