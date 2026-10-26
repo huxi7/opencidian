@@ -5,6 +5,7 @@
 Electron 主进程。按运行入口与开发验收分离：窗口生命周期、IPC 通道与库注册表。全部主进程文件纳入 strict 类型检查。同库文档窗口通过独立布局和原子写回协作。资源协议和原生菜单委托独立模块。渲染进程通过 `window.app.commands.executeCommandById` 接收菜单命令。
 
 成员清单
+app-version.ts: 应用版本唯一出口。安装包读取注入元数据，开发态显示 dev。
 main-types.ts: 窗口工厂、状态条目与关闭上下文；统一错误文本和对象校验，请求协议复用共享 IPC 类型。
 electron-types.d.ts: 应用附加窗口状态与同步 IPC 参数的类型声明。
 main.ts: 应用主进程装配。要点：`DATA_DIR=userData`（应用名 OpenSidian）保存 vault 注册表(opensidian.json，首次启动从旧 "Obsidian Copy" 目录迁移)；`APP_ORIGIN=app://opensidian.app/` 服务 src/renderer 与 dist/；`FILE_ORIGIN=app://<16hex>/` 流式读取任意 vault 文件(支持 Range)；`openVaultPath()` 打开/新建 vault；`windows[id]` 映射 vault 窗口；`frameWindowOptions()` 按 opensidian.json 的 frame 键选 hidden/custom/native 边框；`setWindowOpenHandler` 把 about:blank popup 交给 settings-window.ts（设置独立窗口）；disable-gpu 读写(启动时 app.disableHardwareAcceleration)；locale ipc(app.getLocale)；env 钩子 `OBS_VAULT_PATH`(直开 vault)/`OBS_SCREENSHOT`(截图自检)/`OBS_ACT`(调试动作：open/open-settings/exec/eval)；starter 窗口在 E2E 下 focusable=false/opacity=0/backgroundThrottling=false；系统回收返回失败，由 Vault 降级库内回收站。
@@ -20,7 +21,7 @@ dev-hooks.ts: OBS_* 门控动作、探针与截图。主窗先等装配，退出
 
 原生 macOS 菜单保留 Settings 入口，直接分派 app:open-settings。
 
-app-menu.ts: 原生菜单装配。菜单命令交给活动渲染器；仓库入口由主进程注入。
+app-menu.ts: 原生菜单装配。关于窗口读取应用自身版本，不沿用参考产品版本。菜单命令交给活动渲染器；仓库入口由主进程注入。
 app-protocol.ts: app:// 资源协议。分派应用与库文件，支持 Range 与取消释放流；声明 SVG 媒体类型。
 window-effects.ts: 原生半透明窗口 IPC。macOS 按发送方窗口切换 sidebar 材质。
 canvas-capture.ts: 整窗画布截图 IPC。只捕获发送方窗口内指定矩形。

@@ -1,5 +1,5 @@
 /**
- * [INPUT]: release/ 下的 OpenSidian 可执行文件、隔离临时库与可选 --no-screenshot。
+ * [INPUT]: 三平台目录包、标签版本、隔离临时库与可选 --no-screenshot。
  * [OUTPUT]: {pass,count,checks}、运行日志与失败退出码；不生成截图。
  * [POS]: 打包产物的真实启动冒烟。先比对 ASAR 身份、当前代码及全部样式，再校验编辑器、Bases、公式、CSV 和 SVG。
  * 回执后必须自行正常退出；超时只终止自建进程组，不接触用户应用。
@@ -12,20 +12,22 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
 import { createHash } from 'node:crypto';
+import { packageVersion, packagedPaths } from './release-config.mjs';
 
 const repository = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const args = process.argv.slice(2);
 if (args.some(arg => arg.startsWith('--') && arg !== '--no-screenshot')) throw new Error('只支持 --no-screenshot');
 const positional = args.filter(arg => !arg.startsWith('--'));
 if (positional.length > 1) throw new Error('只接受一个打包可执行文件路径');
-const binary = path.resolve(repository, positional[0] || `release/mac-${process.arch}/OpenSidian.app/Contents/MacOS/OpenSidian`);
-if (!/^OpenSidian(?:\.exe)?$/.test(path.basename(binary))) throw new Error('只允许启动 OpenSidian 打包产物');
+const defaults = packagedPaths(repository);
+const binary = path.resolve(repository, positional[0] || defaults.binary);
+if (!/^opensidian(?:\.exe)?$/i.test(path.basename(binary))) throw new Error('只允许启动 OpenSidian 打包产物');
 if (!fs.existsSync(binary)) throw new Error('打包可执行文件不存在：' + binary);
-const expectedVersion = JSON.parse(fs.readFileSync(path.join(repository, 'package.json'), 'utf8')).version;
+const expectedVersion = packageVersion();
 const expectedElectron = JSON.parse(fs.readFileSync(path.join(repository, 'node_modules/electron/package.json'), 'utf8')).version;
 const require = createRequire(import.meta.url);
 const { extractFile } = require('@electron/asar');
-const archive = path.resolve(path.dirname(binary), '../Resources/app.asar');
+const archive = process.platform === 'darwin' ? path.resolve(path.dirname(binary), '../Resources/app.asar') : path.join(path.dirname(binary), 'resources/app.asar');
 const preflightChecks = [];
 const preflight = (value, label) => { if (!value) throw Error(label); preflightChecks.push(label); };
 const digest = bytes => createHash('sha256').update(bytes).digest('hex');
@@ -100,7 +102,9 @@ for (const key of Object.keys(env)) if (key.startsWith('OBS_')) delete env[key];
 delete env.ELECTRON_RUN_AS_NODE;
 Object.assign(env, { E2E: '1', OBS_ALLOW_MULTI: '1', OBS_VAULT_PATH: vault, OBS_SCREENSHOT_EXIT: '1', OBS_ACT: JSON.stringify({ action: 'eval', js }) });
 const started = Date.now();
-const child = spawn(binary, ['--user-data-dir=' + path.join(vault, '.electron-user-data')], {
+const launchArgs = ['--user-data-dir=' + path.join(vault, '.electron-user-data')];
+if (process.env.CI && process.platform === 'linux') launchArgs.push('--no-sandbox');
+const child = spawn(binary, launchArgs, {
   env, cwd: repository, detached: process.platform !== 'win32', stdio: ['ignore', 'pipe', 'pipe'],
 });
 let log = '', result = null, failureReason = '', stopRequested = false, forceTimer, exitTimer;

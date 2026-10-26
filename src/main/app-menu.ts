@@ -1,10 +1,11 @@
 /**
- * [INPUT]: Electron 菜单与窗口 API；主入口提供打开仓库函数。
+ * [INPUT]: Electron 菜单与窗口 API、app-version；主入口提供打开仓库函数。
  * [OUTPUT]: 导出 installAppMenu，安装原生菜单。
  * [POS]: 主进程菜单边界。命令交给活动渲染器执行。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 import { app, BrowserWindow, Menu, shell, dialog } from 'electron';
+import { getAppVersion } from './app-version';
 const IS_MAC = process.platform === 'darwin';
 const IS_DEV = !app.isPackaged;
 
@@ -32,7 +33,7 @@ function buildAppMenu() {
         {
           label: 'About OpenSidian',
           click: async (mi: Electron.MenuItem, win: Electron.BaseWindow | undefined) => {
-            const detail = `Version ${app.getVersion()} — independent open-source replication of Obsidian 1.14.4\nElectron ${process.versions.electron} · Node ${process.versions.node}`;
+            const detail = `Version ${getAppVersion()} — independent open-source replication of Obsidian\nElectron ${process.versions.electron} · Node ${process.versions.node}`;
             const options = { message: 'OpenSidian', detail };
             if (win) await dialog.showMessageBox(win, options);
             else await dialog.showMessageBox(options);

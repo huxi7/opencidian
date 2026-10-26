@@ -1,0 +1,99 @@
+# [INPUT]: vX.Y.Z 标签或手动验证、当前源码与内置 GITHUB_TOKEN。
+# [OUTPUT]: macOS ARM64、Windows x64、Linux x64 安装包及 SHA256SUMS。
+# [POS]: 标签版本注入安装包；三端全过才公开草稿，不使用 Actions 产物存储。
+# [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
+name: Desktop release
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: desktop-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  prepare:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    outputs:
+      matrix: ${{ steps.prepare.outputs.matrix }}
+      release: ${{ steps.prepare.outputs.release }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: '24'
+      - id: prepare
+        run: node scripts/release.mjs prepare
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ github.ref_name }}
+  build:
+    needs: prepare
+    name: Build (${{ matrix.target }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    permissions:
+      contents: write
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJson(needs.prepare.outputs.matrix) }}
+    env:
+      RELEASE_TAG: ${{ needs.prepare.outputs.release == 'true' && github.ref_name || '' }}
+      CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      - name: Typecheck, build and test
+        run: npm test
+      - name: Build installer
+        run: npm run dist
+      - name: Verify packaged application
+        if: runner.os != 'Linux'
+        run: node scripts/smoke-packaged.mjs --no-screenshot
+      - name: Verify Linux application in virtual display
+        if: runner.os == 'Linux'
+        run: xvfb-run -a node scripts/smoke-packaged.mjs --no-screenshot
+      - name: Verify source is unchanged
+        run: git diff --exit-code
+      - name: Upload verified installer to draft
+        if: needs.prepare.outputs.release == 'true'
+        run: node scripts/release.mjs upload ${{ matrix.target }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+  publish:
+    needs: [prepare, build]
+    if: needs.prepare.outputs.release == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: '24'
+      - name: Publish complete release
+        run: node scripts/release.mjs publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ github.ref_name }}

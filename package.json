@@ -1,7 +1,6 @@
 {
   "name": "opensidian",
   "productName": "OpenSidian",
-  "version": "1.14.4",
   "license": "AGPL-3.0-or-later",
   "description": "OpenSidian — an independent, open-source replication of the Obsidian desktop app",
   "main": "dist/main/main.js",
@@ -11,8 +10,8 @@
     "watch": "node scripts/build.mjs --watch",
     "start": "npm run build && electron .",
     "dev": "npm run typecheck && node scripts/dev.mjs",
-    "dist": "npm run build && electron-builder --mac",
-    "dist:dir": "npm run build && electron-builder --mac dir",
+    "dist": "npm run build && node scripts/package.mjs",
+    "dist:dir": "npm run build && node scripts/package.mjs --dir",
     "typecheck": "tsc --noEmit",
     "test:unit": "node scripts/test-unit.mjs",
     "test:workspace": "node --experimental-vm-modules scripts/workspace-regression.mjs",

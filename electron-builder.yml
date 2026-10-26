@@ -1,5 +1,5 @@
 # [INPUT]: package.json、dist/、src/、assets/ 与许可证原文。
-# [OUTPUT]: release/ 下的目录包与分发产物。
+# [OUTPUT]: release/ 下的 macOS DMG、Windows EXE 与 Linux AppImage。
 # [POS]: 打包边界配置；ASAR 包含运行文件和许可证。
 # [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
 appId: app.opensidian
@@ -30,7 +30,23 @@ mac:
   identity: null
   target:
     - dmg
-    - zip
+  artifactName: opensidian-macos-${arch}.${ext}
+
+win:
+  target: nsis
+  artifactName: opensidian-windows-${arch}.${ext}
+
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+
+linux:
+  target: AppImage
+  icon: build/icon.png
+  category: Office
+  executableName: opensidian
+  artifactName: opensidian-linux-${arch}.${ext}
 
 dmg:
   title: OpenSidian

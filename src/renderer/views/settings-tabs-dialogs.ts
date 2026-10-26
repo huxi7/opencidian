@@ -18,13 +18,13 @@ import { SettingsHost } from './settings-view.js';
 const fs = require('fs');
 const nodePath = require('path');
 
-// 版本单一事实源：主进程 version 通道（1.14.4）。渲染层不再写死版本号。
+// 版本只取自主进程；开发模式不使用参考产品版本。
 export const VERSION = (() => {
   try {
     const value = Desktop.version();
-    return typeof value === 'string' && value ? value : '1.14.4';
+    return typeof value === 'string' && value ? value : 'dev';
   } catch (e) {
-    return '1.14.4';
+    return 'dev';
   }
 })();
 

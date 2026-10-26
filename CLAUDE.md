@@ -5,6 +5,7 @@ OpenSidian 是 Obsidian 桌面版 1.14.4 的独立开源复刻（1:1 目标）�
 TypeScript 6.0.2 + Electron 33 + esbuild + CodeMirror 6 + markdown-it + DOMPurify + MathJax 3.2.2 CHTML + 原生 CSS 变量主题
 
 <directory>
+.github/ - 三平台发布流水线 (workflows/)
 src/ - 全部源码 (2 子目录)
   main/ - Electron 主进程：窗口、app:// 协议、IPC、原生菜单、同库文档窗口与原子写回；dev-hooks 承接验收
   renderer/ - 渲染进程：应用主体 (7 子目录: core, editor, markdown, views, plugins-core, styles, locales)
@@ -16,11 +17,13 @@ dist/ - 构建输出；包含 main/ 主进程 JS、渲染器和图谱 Worker。
 <config>
 README.md - 项目介绍、开发与打包入口、源码结构和兼容边界
 LICENSE - 标准 AGPL v3 全文；授权标识为 AGPL-3.0-or-later。
-package.json - 依赖、类型检查、构建和测试入口。
+package.json - 依赖与开发入口；不保存发布版本，打包时从标签注入。
 tsconfig.json - 全量应用源码的严格类型检查配置。
 .gitattributes - 将第三方 MathJax 资源标记为 vendored。
-electron-builder.yml - 目录包与分发配置；ASAR 包含运行文件和许可证原文
+electron-builder.yml - 三平台目录包与安装包；ASAR 包含运行文件和许可证原文
 scripts/build.mjs - 将主进程与渲染器 TypeScript 编译至 dist/。
+scripts/package.mjs - 当前平台打包；版本从标签注入，开发包用 0.0.0-dev。
+scripts/release.mjs - 草稿直传、SHA-256 校验与三平台完整发布。
 scripts/dev.mjs - 开发模式，监听类型检查和编译；主进程变更后重启命令。
 src/renderer/index.html - 主窗口 HTML，链接 styles/*.css 与 dist/renderer.js；画布和变量样式按序导入分片
 src/renderer/starter.html - 仓库选择窗口 HTML
