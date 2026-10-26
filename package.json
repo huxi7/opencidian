@@ -1,7 +1,7 @@
 {
   "name": "opensidian",
   "productName": "OpenSidian",
-  "license": "AGPL-3.0-or-later",
+  "license": "AGPL-3.0",
   "description": "OpenSidian — an independent, open-source replication of the Obsidian desktop app",
   "main": "dist/main/main.js",
   "private": true,

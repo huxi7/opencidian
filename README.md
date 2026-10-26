@@ -74,4 +74,4 @@ npm run dist                 # 为当前系统生成安装包
 
 ## 许可证
 
-[AGPL-3.0-or-later](LICENSE)。第三方依赖与素材遵循各自的许可证。
+[AGPL-3.0](LICENSE)。第三方依赖与素材遵循各自的许可证。

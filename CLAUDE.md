@@ -16,7 +16,7 @@ dist/ - 构建输出；包含 main/ 主进程 JS、渲染器和图谱 Worker。
 
 <config>
 README.md - 项目介绍、开发与打包入口、源码结构和兼容边界
-LICENSE - 标准 AGPL v3 全文；授权标识为 AGPL-3.0-or-later。
+LICENSE - 标准 AGPL v3 全文；授权标识为 AGPL-3.0。
 package.json - 依赖与开发入口；不保存发布版本，打包时从标签注入。
 tsconfig.json - 全量应用源码的严格类型检查配置。
 .gitattributes - 将第三方 MathJax 资源标记为 vendored。
