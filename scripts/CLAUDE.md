@@ -7,9 +7,9 @@
 成员清单
 RELEASING.md: 标签版本、三平台范围、发布步骤与失败恢复。
 release-config.mjs: 平台清单、文件名映射、标签版本与附件校验。AppImage 的 x86_64 映射为下载名 x64。
-package.mjs: 当前平台安装包入口。版本只注入打包元数据，禁止隐式发布。
+package.mjs: 当前平台安装包入口。版本只注入打包元数据，禁止隐式发布；打包前核验图标摘要。
 release.mjs: 从列表定位草稿。锁定标签源码，统一下载名，上传并比对摘要；三端齐备后公开。
-release.test.mjs: 标签、附件完整性、源码与工具提交隔离、运行时版本回归。
+release.test.mjs: 标签、候选版本隔离、附件完整性、源码与工具提交隔离、运行时版本回归。
 release-transaction.test.mjs: 隔离 GitHub 与 Git 替身，验证草稿查询、文件名映射、旧标签重试和公开保护。
 canvas-data.test.mjs: 画布 JSON、坏文件切换、块引用回退与演示关闭回归，不启动 Electron。
 graph-simulation.test.mjs: 图谱 Worker 回执回归。固定零坐标、坏缓冲区、代次与销毁边界。
@@ -24,8 +24,11 @@ dev.mjs: 开发模式。全量严格检查与增量编译共用一套配置；�
 with-lock.sh: 构建/验收互斥锁。并行子代理共享 $TMPDIR/opensidian-build.lock，先到先得，超时 30 分钟退出码 75；用法 `sh scripts/with-lock.sh "<命令>"`。
 
 acceptance/: full.sh 是全量入口。真实 Electron 场景，隔离库与日志判定见 acceptance/CLAUDE.md。 子进程带 `E2E=1`：窗口不激活应用（accessory + showInactive + focusable:false）且整窗透明（opacity:0 + 忽略鼠标）——测试完全不可见、不抢焦点；带 `OBS_ACT` 的直连探针也自动进入 E2E（main.ts 兜底）。
-make-app-icon.py: 生成应用图标（原创设计：地平线与曜日）→ build/icon.png 与 icon.icns（iconutil）。
-smoke-packaged.mjs: 三平台目录包冒烟。ASAR 路径按系统归一化；版本从标签解析，Linux CI 使用虚拟显示。先核对身份、版本、许可证、当前代码与全部样式哈希，再跑真实启动/编辑器/Bases/公式/CSV/SVG；回执后必须自行退出且 exitCode=0。输出 {pass,count,checks}；--no-screenshot 不截图，超时只清理自身进程组。
+make-app-icon.py: 从最终 PNG 母版导出三平台图标。--check 校验全部尺寸、透明度、像素与摘要。
+icon-requirements.txt: 固定 Pillow 与 pefile 版本；仅供导出和安装包验收。
+app-icons.test.mjs: 默认图标、自定义回退、全部窗口和 Dock 的隔离回归。
+verify-packaged-icons.py: 解包 DMG、NSIS 与 AppImage，核验内嵌图标和应用归档。
+smoke-packaged.mjs: 三平台目录包冒烟。ASAR 路径按系统归一化；版本从标签解析，Linux CI 使用虚拟显示。先核对身份、版本、许可证、图标、当前代码与全部样式哈希，再跑真实启动/编辑器/Bases/公式/CSV/SVG；回执后必须自行退出且 exitCode=0。输出 {pass,count,checks}；--no-screenshot 不截图，超时只清理自身进程组。
 
 bases-formulas.test.mjs: Node 公式单测。固定 UTC、时钟与随机源，对照公开公式说明，覆盖 78 个说明键。
 bases-csv.test.mjs: Node CSV 单测。检查转义、富值、取消与写盘失败边界，不启动 Electron。

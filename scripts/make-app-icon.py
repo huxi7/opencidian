@@ -1,95 +1,75 @@
 #!/usr/bin/env python3
-"""生成 OpenSidian 应用图标（原创几何设计：地平线与曜日）。
+"""[INPUT]: assets/app-icon.png 的最终 RGBA 母版与 build/icon.svg 设计稿。
+[OUTPUT]: build/icon.png、icon.ico、icon.icns 与 SHA-256 清单。
+[POS]: 图标唯一导出入口。保留母版圆角，不重绘图案或叠加蒙版。
+[PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
 
-输出 build/icon.png（1024）与 build/icon.icns（iconutil 打包的 iconset）。
-用法：python3 scripts/make-app-icon.py
+安装依赖：python3 -m pip install -r scripts/icon-requirements.txt
+导出：python3 scripts/make-app-icon.py；只校验：追加 --check。
+SVG 保留可编辑设计稿；批准后的 PNG 是跨平台像素事实源。
 """
-import os
-import shutil
-import subprocess
-import sys
+import argparse
+import hashlib
+import json
+from pathlib import Path
+from PIL import Image, ImageChops
 
-from PIL import Image, ImageDraw
-
-ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-BUILD = os.path.join(ROOT, 'build')
-SIZE = 1024
-MARGIN = 64
-RADIUS = 200
-
-
-def lerp(a, b, t):
-    return tuple(round(a[i] + (b[i] - a[i]) * t) for i in range(3))
+ROOT = Path(__file__).resolve().parents[1]
+BUILD = ROOT / 'build'
+MASTER = ROOT / 'assets/app-icon.png'
+ICO_SIZES = [16, 24, 32, 48, 64, 128, 256]
+FILES = ['assets/app-icon.png', 'build/icon.svg', 'build/icon.png',
+         'build/icon.ico', 'build/icon.icns']
+MANIFEST = BUILD / 'icons.sha256.json'
 
 
-def make_icon():
-    img = Image.new('RGBA', (SIZE, SIZE), (0, 0, 0, 0))
-    draw = ImageDraw.Draw(img)
-
-    # 圆角矩形底：竖向深靛渐变
-    top, bottom = (54, 60, 86), (30, 34, 50)
-    rect = Image.new('RGBA', (SIZE, SIZE), (0, 0, 0, 0))
-    rd = ImageDraw.Draw(rect)
-    for y in range(SIZE):
-        rd.line([(0, y), (SIZE, y)], fill=lerp(top, bottom, y / SIZE) + (255,))
-    mask = Image.new('L', (SIZE, SIZE), 0)
-    ImageDraw.Draw(mask).rounded_rectangle([MARGIN, MARGIN, SIZE - MARGIN, SIZE - MARGIN], radius=RADIUS, fill=255)
-    img.paste(rect, (0, 0), mask)
-
-    # 曜日：位于地平线之上，琥珀渐变
-    horizon = 596
-    sun_r = 190
-    sun = Image.new('RGBA', (SIZE, SIZE), (0, 0, 0, 0))
-    sd = ImageDraw.Draw(sun)
-    for r in range(sun_r, 0, -1):
-        t = r / sun_r
-        color = lerp((250, 205, 96), (232, 150, 58), t)
-        sd.ellipse([512 - r, horizon - r, 512 + r, horizon + r], fill=color + (255,))
-    img.paste(sun, (0, 0), mask)  # 裁剪到圆角底内
-
-    # 光线：两条细弧
-    glow = Image.new('RGBA', (SIZE, SIZE), (0, 0, 0, 0))
-    gd = ImageDraw.Draw(glow)
-    gd.arc([512 - 300, horizon - 300, 512 + 300, horizon + 300], start=200, end=340, fill=(250, 205, 96, 90), width=16)
-    img.alpha_composite(glow)
-
-    # 地平线
-    draw.rounded_rectangle([512 - 300, horizon - 14, 512 + 300, horizon + 14], radius=14, fill=(240, 242, 248, 235))
-
-    # 星点
-    for (x, y, r, a) in [(300, 300, 12, 210), (742, 252, 9, 180), (688, 372, 7, 150)]:
-        draw.ellipse([x - r, y - r, x + r, y + r], fill=(226, 232, 240, a))
-
-    return img
+def check_image(image, expected=None):
+    image = image.convert('RGBA')
+    w, h = image.size
+    assert w == h, '图标必须为正方形'
+    alpha = image.getchannel('A')
+    assert all(alpha.getpixel(p) == 0 for p in [(0, 0), (w-1, 0), (0, h-1), (w-1, h-1)]), '四角必须透明'
+    assert alpha.getpixel((w//2, h//2)) == 255, '图标中心必须不透明'
+    assert any(0 < value < 255 for value in alpha.getdata()), '边缘必须含抗锯齿透明度'
+    if expected is not None:
+        # 比较全部通道；不能让透明通道掩盖 RGB 差异。
+        assert not any(ImageChops.difference(image, expected).getextrema()[i][1] for i in range(4)), '图标像素偏离母版'
 
 
-def build_iconset(icon):
-    iconset = os.path.join(BUILD, 'icon.iconset')
-    if os.path.isdir(iconset):
-        shutil.rmtree(iconset)
-    os.makedirs(iconset)
-    plan = [
-        (16, 'icon_16x16.png'), (32, 'icon_16x16@2x.png'),
-        (32, 'icon_32x32.png'), (64, 'icon_32x32@2x.png'),
-        (128, 'icon_128x128.png'), (256, 'icon_128x128@2x.png'),
-        (256, 'icon_256x256.png'), (512, 'icon_256x256@2x.png'),
-        (512, 'icon_512x512.png'), (1024, 'icon_512x512@2x.png'),
-    ]
-    for size, name in plan:
-        icon.resize((size, size), Image.LANCZOS).save(os.path.join(iconset, name))
-    return iconset
+def hashes():
+    return {name: hashlib.sha256((ROOT / name).read_bytes()).hexdigest() for name in FILES}
+
+
+def verify(master):
+    assert (BUILD / 'icon.png').read_bytes() == MASTER.read_bytes(), 'PNG 必须逐字节保留母版'
+    check_image(Image.open(BUILD / 'icon.png'), master)
+    ico = Image.open(BUILD / 'icon.ico')
+    assert ico.ico.sizes() == {(size, size) for size in ICO_SIZES}, 'ICO 尺寸不完整'
+    for size in ICO_SIZES:
+        check_image(ico.ico.getimage((size, size)), master.resize((size, size), Image.Resampling.LANCZOS))
+    icns = Image.open(BUILD / 'icon.icns')
+    sizes = icns.info['sizes']
+    assert {w * scale for w, h, scale in sizes} >= {32, 64, 128, 256, 512, 1024}, 'ICNS 尺寸不完整'
+    for size in sizes:
+        frame = icns.icns.getimage(size).convert('RGBA')
+        check_image(frame, master.resize(frame.size, Image.Resampling.BICUBIC))
+    assert json.loads(MANIFEST.read_text()) == hashes(), '图标摘要清单过时'
+    print(json.dumps({'pass': True, 'ico': ICO_SIZES, 'icns': sizes, 'sha256': hashes()}, ensure_ascii=False))
 
 
 def main():
-    os.makedirs(BUILD, exist_ok=True)
-    icon = make_icon()
-    icon.save(os.path.join(BUILD, 'icon.png'))
-    iconset = build_iconset(icon)
-    if sys.platform == 'darwin':
-        out = os.path.join(BUILD, 'icon.icns')
-        subprocess.run(['iconutil', '-c', 'icns', iconset, '-o', out], check=True)
-        print('icon.icns ->', out)
-    print('icon.png ->', os.path.join(BUILD, 'icon.png'))
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--check', action='store_true')
+    args = parser.parse_args()
+    master = Image.open(MASTER)
+    assert master.mode == 'RGBA' and master.size == (1024, 1024), '母版必须为 1024px RGBA'
+    check_image(master)
+    if not args.check:
+        (BUILD / 'icon.png').write_bytes(MASTER.read_bytes())
+        master.save(BUILD / 'icon.ico', format='ICO', sizes=[(size, size) for size in ICO_SIZES])
+        master.save(BUILD / 'icon.icns', format='ICNS')
+        MANIFEST.write_text(json.dumps(hashes(), indent=2) + '\n')
+    verify(master)
 
 
 if __name__ == '__main__':

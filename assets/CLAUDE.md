@@ -4,6 +4,7 @@
 图标与字体保留原资源格式，业务代码不在此目录。
 
 成员清单
+app-icon.png: 最终 1024px RGBA 母版。窗口与 Dock 直接读取；导出脚本从此生成平台格式。
 icons.json: Lucide 图标数据。
 icons-obsidian.json: 原版自有图标路径数据。
 icon-aliases.json: 图标名称别名映射。

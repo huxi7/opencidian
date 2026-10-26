@@ -1,6 +1,6 @@
 /**
  * [INPUT]: 发布目标、标签、附件元数据与 Electron 版本接口替身。
- * [OUTPUT]: 标签注入、源码与工具分离、完整性闸门和运行时版本的回归回执。
+ * [OUTPUT]: 标签注入、候选版本隔离、源码与工具分离、完整性闸门和运行时版本的回归回执。
  * [POS]: 发布纯逻辑测试；不请求 GitHub，不创建标签或安装包。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
@@ -64,7 +64,15 @@ check('构建源码与发布工具分别锁定提交', () => {
     assert.equal(steps[1].with['persist-credentials'], false);
     assert.ok(steps.some(step => step.run?.startsWith('node _analysis/release-tools/scripts/release.mjs ')));
   }
-  assert.equal(workflow.jobs.build.env.RELEASE_TAG, '${{ needs.prepare.outputs.tag }}');
+  assert.equal(workflow.jobs.build.env.RELEASE_TAG, '${{ needs.prepare.outputs.tag || inputs.validation_tag }}');
+});
+check('候选版本不进入发布事务', () => {
+  assert.equal(workflow.on.workflow_dispatch.inputs.validation_tag.default, '');
+  assert.equal(workflow.on.workflow_dispatch.inputs.validation_tag.type, 'string');
+  assert(!JSON.stringify(workflow.jobs.prepare).includes('validation_tag'));
+  assert(!JSON.stringify(workflow.jobs.publish).includes('validation_tag'));
+  const upload = workflow.jobs.build.steps.find(step => step.name === 'Upload verified installer to draft');
+  assert.equal(upload.if, "needs.prepare.outputs.release == 'true'");
 });
 check('旧标签重试也验证当前发布工具', () => {
   const step = workflow.jobs.build.steps.find(step => step.name === 'Verify release tools');

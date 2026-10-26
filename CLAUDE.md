@@ -10,7 +10,8 @@ src/ - 全部源码 (2 子目录)
   main/ - Electron 主进程：窗口、app:// 协议、IPC、原生菜单、同库文档窗口与原子写回；dev-hooks 承接验收
   renderer/ - 渲染进程：应用主体 (7 子目录: core, editor, markdown, views, plugins-core, styles, locales)
 scripts/ - esbuild 构建与隔离 Electron 验收 (acceptance/)
-assets/ - 图标表、字体与官方 MathJax 离线资源
+assets/ - 应用图标母版、图标表、字体与官方 MathJax 离线资源
+build/ - 三平台最终图标、矢量设计稿与摘要门禁
 dist/ - 构建输出；包含 main/ 主进程 JS、渲染器和图谱 Worker。
 </directory>
 

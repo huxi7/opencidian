@@ -24,9 +24,10 @@ git push origin v1.0.1
 
 1. 校验标签与构建提交，创建草稿 Release。
 2. macOS ARM64、Windows x64 和 Linux x64 分别运行测试与打包。
-3. 启动各平台目录包，校验版本、文件哈希与实际笔记操作。
-4. 上传安装包到草稿，并比对 GitHub SHA-256 与本地文件。
-5. 三平台全过后生成 SHA256SUMS，附件齐备才公开。
+3. 校验图标尺寸、透明度与母版像素；解包安装包核验内嵌图标。
+4. 启动各平台目录包，校验版本、文件哈希与实际笔记操作。
+5. 上传安装包到草稿，并比对 GitHub SHA-256 与本地文件。
+6. 三平台全过后生成 SHA256SUMS，附件齐备才公开。
 
 安装包分别为 DMG、NSIS EXE 和 AppImage。
 AppImage 打包名使用 x86_64；上传时统一为下载名 x64。
@@ -60,6 +61,25 @@ gh workflow run release.yml --ref main -f release_tag=v1.0.0
 
 GitHub Actions 中手动运行 Desktop release。
 release_tag 留空只测试与打包，不创建 Release 或上传附件。
+已公开版本的源码更新，可只验证相同版本的候选包：
+
+```sh
+gh workflow run release.yml --ref main -f validation_tag=v1.0.0
+```
+
+validation_tag 只向候选包注入版本。
+它不移动标签、不上传附件，也不改变公开 Release。
+公开版本保护仍生效；需要重发时先明确解决保护策略。
+
+图标母版为 assets/app-icon.png；build/icon.svg 保留设计稿。
+用以下命令导出或校验，禁止恢复旧绘图算法：
+
+```sh
+python3 -m pip install -r scripts/icon-requirements.txt
+python3 scripts/make-app-icon.py
+python3 scripts/make-app-icon.py --check
+```
+
 各系统还可本地运行：
 
 ```sh
@@ -67,6 +87,7 @@ npm ci
 npm test
 npm run dist
 node scripts/smoke-packaged.mjs --no-screenshot
+python3 scripts/verify-packaged-icons.py
 ```
 
 Linux 无桌面会话时，通过 xvfb-run 执行冒烟脚本。

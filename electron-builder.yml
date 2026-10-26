@@ -1,4 +1,4 @@
-# [INPUT]: package.json、dist/、src/、assets/ 与许可证原文。
+# [INPUT]: package.json、dist/、src/、assets/、build/icon.* 与许可证原文。
 # [OUTPUT]: release/ 下的 macOS DMG、Windows EXE 与 Linux AppImage。
 # [POS]: 打包边界配置；ASAR 包含运行文件和许可证。
 # [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
@@ -33,10 +33,14 @@ mac:
   artifactName: opensidian-macos-${arch}.${ext}
 
 win:
+  icon: build/icon.ico
   target: nsis
   artifactName: opensidian-windows-${arch}.${ext}
 
 nsis:
+  installerIcon: build/icon.ico
+  uninstallerIcon: build/icon.ico
+  installerHeaderIcon: build/icon.ico
   oneClick: false
   perMachine: false
   allowToChangeInstallationDirectory: true
@@ -49,4 +53,5 @@ linux:
   artifactName: opensidian-linux-${arch}.${ext}
 
 dmg:
+  icon: build/icon.icns
   title: OpenSidian

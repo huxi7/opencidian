@@ -1,5 +1,5 @@
 /**
- * [INPUT]: 依赖 electron 的 app/BrowserWindow/ipcMain/protocol/shell/dialog/session；Node 内置 fs/path；app-version 提供应用版本；窗口材质、截图、文档窗口、原生菜单和原子写回由独立模块提供；共享 IPC 契约约束请求数据
+ * [INPUT]: 依赖 electron 的 app/BrowserWindow/ipcMain/protocol/shell/dialog/session；Node 内置 fs/path；assets/app-icon.png 提供默认应用图标；app-version 提供应用版本；窗口材质、截图、文档窗口、原生菜单和原子写回由独立模块提供；共享 IPC 契约约束请求数据
  * [OUTPUT]: 主进程全部 IPC handler（vault 注册表、文件读写、窗口控制、回收站、拼写检查词典/语言）、app:// 协议、devScreenshotHook（OBS_* 环境变量门控的调试钩子）、设置与文档独立窗口、原生菜单、跨窗口 CAS 与协议的装配
  * [POS]: 应用主进程入口。vault 注册表存于 userData/opensidian.json（启动时从旧产品名 "Obsidian Copy" 的 userData 迁移一次）；拼写检查自加词存 userData/spellcheck-words.json，语言选择存 opensidian.json 的 spellcheckLanguages。渲染进程经 renderer/core/ipc.js 调用此处 handler。原生菜单保留设置入口。dev-hooks 只在指定测试库窗口执行。E2E 回收降级库内回收站。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
@@ -148,11 +148,10 @@ function customIconPath() {
   return (typeof p === 'string' && fs.existsSync(p)) ? p : null;
 }
 function applyAppIcon() {
-  const p = customIconPath();
-  if (!p) return;
+  const p = customIconPath() || path.join(ASSETS_DIR, 'app-icon.png');
   try {
     if (IS_MAC && app.dock) app.dock.setIcon(p);
-    else for (const w of Object.values(windows)) { try { w.setIcon(p); } catch (e) {} }
+    else for (const w of BrowserWindow.getAllWindows()) { try { w.setIcon(p); } catch (e) {} }
   } catch (e) { /* 平台不支持时忽略 */ }
 }
 
@@ -194,14 +193,15 @@ function saveVaultConfig(id: string, data: WindowBounds) {
 }
 
 /**
- * 窗口边框样式（appearance 高级设置，obsidian.json 的 frame 键）：
+ * 共用窗口外观：默认/自定义图标与边框（opensidian.json 的 frame 键）：
  * hidden=隐藏边框（默认）| custom=OpenSidian 风格（内嵌红绿灯）| native=原生边框
  */
 function frameWindowOptions(): Electron.BrowserWindowConstructorOptions {
+  const icon = customIconPath() || path.join(ASSETS_DIR, 'app-icon.png');
   const frame = config.frame || 'hidden';
-  if (frame === 'native') return { frame: true, titleBarStyle: 'default' };
-  if (frame === 'custom') return { frame: false, titleBarStyle: 'hiddenInset', trafficLightPosition: { x: 12, y: 12 } };
-  return { frame: false, titleBarStyle: 'hidden', trafficLightPosition: { x: 14, y: 12 } };
+  if (frame === 'native') return { icon, frame: true, titleBarStyle: 'default' };
+  if (frame === 'custom') return { icon, frame: false, titleBarStyle: 'hiddenInset', trafficLightPosition: { x: 12, y: 12 } };
+  return { icon, frame: false, titleBarStyle: 'hidden', trafficLightPosition: { x: 14, y: 12 } };
 }
 
 function defaultWindowOptions(id: string): Electron.BrowserWindowConstructorOptions {
@@ -302,7 +302,6 @@ function openVaultWindow(id: string, focus = true) {
     try { win.setIgnoreMouseEvents(true, { forward: true }); } catch (e) { /* ignore */ }
     try { win.setOpacity(0); } catch (e) { /* ignore */ }
   }
-  if (!IS_MAC) { const icon = customIconPath(); if (icon) { try { win.setIcon(icon); } catch (e) {} } }
   windows[id] = win;
   win.vaultId = id;
 
@@ -664,7 +663,7 @@ function setupIpc() {
     if (!iconPath) {
       delete config.customIcon;
       saveConfig();
-      try { if (IS_MAC && app.dock) app.getFileIcon(path.resolve(process.execPath, '../../..')).then(icon => { if (!config.customIcon) app.dock?.setIcon(icon); }).catch(() => {}); } catch (err) {}
+      applyAppIcon();
       e.returnValue = true;
       return;
     }

@@ -1,11 +1,19 @@
 /**
- * [INPUT]: 当前系统、可选 --dir、版本标签与 electron-builder 配置。
+ * [INPUT]: 当前系统、可选 --dir、版本标签、图标摘要与 electron-builder 配置。
  * [OUTPUT]: 当前系统的目录包或安装包，版本只写入打包元数据。
  * [POS]: 唯一打包入口。不修改 package.json，不主动上传产物。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
+import fs from 'node:fs';
+import { createHash } from 'node:crypto';
 import { build, Platform, Arch } from 'electron-builder';
 import { packageVersion } from './release-config.mjs';
+// ---- 图标门禁：阻止旧生成器或意外替换进入安装包 ----
+const icons = JSON.parse(fs.readFileSync(new URL('../build/icons.sha256.json', import.meta.url), 'utf8'));
+for (const [file, expected] of Object.entries(icons)) {
+  const actual = createHash('sha256').update(fs.readFileSync(new URL('../' + file, import.meta.url))).digest('hex');
+  if (actual !== expected) throw Error('图标摘要不一致，请运行 scripts/make-app-icon.py：' + file);
+}
 const args = process.argv.slice(2);
 if (args.some(arg => arg !== '--dir')) throw Error('只支持 --dir');
 const arch = process.arch === 'arm64' ? Arch.arm64 : Arch.x64;
