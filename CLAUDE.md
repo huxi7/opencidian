@@ -23,7 +23,7 @@ tsconfig.json - 全量应用源码的严格类型检查配置。
 electron-builder.yml - 三平台目录包与安装包；ASAR 包含运行文件和许可证原文
 scripts/build.mjs - 将主进程与渲染器 TypeScript 编译至 dist/。
 scripts/package.mjs - 当前平台打包；版本从标签注入，开发包用 0.0.0-dev。
-scripts/release.mjs - 草稿直传、SHA-256 校验与三平台完整发布。
+scripts/release.mjs - 锁定标签源码；草稿直传、SHA-256 校验与三平台完整发布。
 scripts/dev.mjs - 开发模式，监听类型检查和编译；主进程变更后重启命令。
 src/renderer/index.html - 主窗口 HTML，链接 styles/*.css 与 dist/renderer.js；画布和变量样式按序导入分片
 src/renderer/starter.html - 仓库选择窗口 HTML

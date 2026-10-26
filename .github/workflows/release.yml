@@ -1,16 +1,22 @@
-# [INPUT]: vX.Y.Z 标签或手动验证、当前源码与内置 GITHUB_TOKEN。
+# [INPUT]: vX.Y.Z 标签、手动验证或旧标签重试；内置 GITHUB_TOKEN。
 # [OUTPUT]: macOS ARM64、Windows x64、Linux x64 安装包及 SHA256SUMS。
-# [POS]: 标签版本注入安装包；三端全过才公开草稿，不使用 Actions 产物存储。
+# [POS]: 源码锁定标签提交，发布工具锁定工作流提交；三端全过才公开草稿。
 # [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
 name: Desktop release
 on:
   push:
     tags: ['v*']
   workflow_dispatch:
+    inputs:
+      release_tag:
+        description: '重试未公开的标签（如 v1.0.0）；留空只验证'
+        required: false
+        type: string
+        default: ''
 permissions:
   contents: read
 concurrency:
-  group: desktop-${{ github.ref }}
+  group: desktop-${{ inputs.release_tag || github.ref_name }}
   cancel-in-progress: false
 jobs:
   prepare:
@@ -21,6 +27,8 @@ jobs:
     outputs:
       matrix: ${{ steps.prepare.outputs.matrix }}
       release: ${{ steps.prepare.outputs.release }}
+      tag: ${{ steps.prepare.outputs.tag }}
+      commit: ${{ steps.prepare.outputs.commit }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
@@ -34,7 +42,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
-          RELEASE_TAG: ${{ github.ref_name }}
+          RELEASE_TAG: ${{ inputs.release_tag || (github.event_name == 'push' && github.ref_type == 'tag' && github.ref_name) || '' }}
   build:
     needs: prepare
     name: Build (${{ matrix.target }})
@@ -46,18 +54,28 @@ jobs:
       fail-fast: false
       matrix: ${{ fromJson(needs.prepare.outputs.matrix) }}
     env:
-      RELEASE_TAG: ${{ needs.prepare.outputs.release == 'true' && github.ref_name || '' }}
+      RELEASE_TAG: ${{ needs.prepare.outputs.tag }}
       CSC_IDENTITY_AUTO_DISCOVERY: 'false'
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
+          ref: ${{ needs.prepare.outputs.commit }}
           fetch-depth: 0
+          persist-credentials: false
+      - name: Checkout release tools
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ github.sha }}
+          path: _analysis/release-tools
           persist-credentials: false
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
           node-version: '24'
           cache: npm
       - run: npm ci
+      - name: Verify release tools
+        working-directory: _analysis/release-tools
+        run: node scripts/release.test.mjs && node scripts/release-transaction.test.mjs
       - name: Typecheck, build and test
         run: npm test
       - name: Build installer
@@ -72,7 +90,7 @@ jobs:
         run: git diff --exit-code
       - name: Upload verified installer to draft
         if: needs.prepare.outputs.release == 'true'
-        run: node scripts/release.mjs upload ${{ matrix.target }}
+        run: node _analysis/release-tools/scripts/release.mjs upload ${{ matrix.target }}
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
@@ -86,14 +104,21 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
+          ref: ${{ needs.prepare.outputs.commit }}
           fetch-depth: 0
+          persist-credentials: false
+      - name: Checkout release tools
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ github.sha }}
+          path: _analysis/release-tools
           persist-credentials: false
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
           node-version: '24'
       - name: Publish complete release
-        run: node scripts/release.mjs publish
+        run: node _analysis/release-tools/scripts/release.mjs publish
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
-          RELEASE_TAG: ${{ github.ref_name }}
+          RELEASE_TAG: ${{ needs.prepare.outputs.tag }}

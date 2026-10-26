@@ -8,8 +8,9 @@
 RELEASING.md: 标签版本、三平台范围、发布步骤与失败恢复。
 release-config.mjs: 平台清单、标签版本、目录包路径与附件校验，供 CI 和本地打包共用。
 package.mjs: 当前平台安装包入口。版本只注入打包元数据，禁止隐式发布。
-release.mjs: 读取远端标签说明，上传草稿并比对摘要；三端齐备后公开。
-release.test.mjs: 标签、附件完整性、工作流权限边界与运行时版本回归。
+release.mjs: 从列表定位草稿。锁定标签源码，上传并比对摘要；三端齐备后公开。
+release.test.mjs: 标签、附件完整性、源码与工具提交隔离、运行时版本回归。
+release-transaction.test.mjs: 隔离 GitHub 与 Git 替身，验证草稿查询、旧标签重试和公开保护。
 canvas-data.test.mjs: 画布 JSON、坏文件切换、块引用回退与演示关闭回归，不启动 Electron。
 graph-simulation.test.mjs: 图谱 Worker 回执回归。固定零坐标、坏缓冲区、代次与销毁边界。
 cdp-probe.mjs: 本地原版 CDP 只读探针，输出被忽略的分析目录；不参与构建和正式验收。

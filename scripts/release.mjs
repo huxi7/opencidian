@@ -1,7 +1,7 @@
 /**
- * [INPUT]: GitHub 事件、远端标签、打包文件与内置 GITHUB_TOKEN。
+ * [INPUT]: GitHub 事件、发布标签、打包文件与内置 GITHUB_TOKEN。
  * [OUTPUT]: 三平台安装包和 SHA256SUMS；完整草稿才转为公开版本。
- * [POS]: 发布事务。只写当前版本草稿，不覆盖已公开的 Release。
+ * [POS]: 发布事务。按列表读取草稿，锁定标签源码；允许新工具重试旧标签，不覆盖公开版本。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 import fs from 'node:fs';
@@ -15,24 +15,32 @@ const tag = process.env.RELEASE_TAG;
 const repo = process.env.GH_REPO;
 const gh = args => execFileSync('gh', args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'inherit'] }).trim();
 const api = (endpoint, ...args) => JSON.parse(gh(['api', `repos/${repo}/${endpoint}`, ...args]));
-const release = () => api(`releases/tags/${tag}`);
+const findRelease = () => JSON.parse(gh(['api', `repos/${repo}/releases`, '--paginate', '--slurp'])).flat().find(item => item.tag_name === tag);
+const release = () => {
+  const found = findRelease();
+  if (!found) throw Error('未找到该标签的 Release');
+  return api(`releases/${found.id}`);
+};
 const output = (name, value) => fs.appendFileSync(process.env.GITHUB_OUTPUT, `${name}=${value}\n`);
 function requireDraft(value) { if (!value.draft) throw Error('不修改已经公开的 Release'); }
+const revision = ref => execFileSync('git', ['rev-parse', '--verify', ref], { encoding: 'utf8' }).trim();
+const taggedCommit = () => revision(`refs/tags/${tag}^{commit}`);
 function verifyCommit() {
-  const commit = execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim();
-  const tagged = execFileSync('git', ['rev-parse', `${tag}^{commit}`], { encoding: 'utf8' }).trim();
-  if (commit !== tagged) throw Error('构建提交与标签不一致');
+  if (revision('HEAD') !== taggedCommit()) throw Error('构建提交与标签不一致');
 }
 
 if (command === 'prepare') {
   output('matrix', JSON.stringify({ include: RELEASE_TARGETS }));
-  const publishing = process.env.GITHUB_EVENT_NAME === 'push' && process.env.GITHUB_REF_TYPE === 'tag';
+  const publishing = (process.env.GITHUB_EVENT_NAME === 'push' && process.env.GITHUB_REF_TYPE === 'tag') ||
+    (process.env.GITHUB_EVENT_NAME === 'workflow_dispatch' && Boolean(tag));
+  if (publishing) versionFromTag(tag);
   output('release', String(publishing));
+  output('tag', publishing ? tag : '');
   if (publishing) {
-    versionFromTag(tag);
-    verifyCommit();
+    if (process.env.GITHUB_EVENT_NAME === 'push') verifyCommit();
+    output('commit', taggedCommit());
     const refs = api(`git/ref/tags/${tag}`);
-    const existing = JSON.parse(gh(['api', `repos/${repo}/releases`, '--paginate', '--slurp'])).flat().find(item => item.tag_name === tag);
+    const existing = findRelease();
     if (existing && !existing.draft) throw Error('该版本已公开，请使用新标签');
     const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'opensidian-notes-'));
     try {
@@ -43,7 +51,7 @@ if (command === 'prepare') {
       if (existing) gh(['release', 'edit', tag, '--notes-file', file]);
       else gh(['release', 'create', tag, '--verify-tag', '--draft', '--title', `OpenSidian ${tag}`, '--notes-file', file]);
     } finally { fs.rmSync(directory, { recursive: true, force: true }); }
-  }
+  } else output('commit', revision('HEAD'));
 } else if (command === 'upload') {
   versionFromTag(tag);
   verifyCommit();
@@ -74,6 +82,8 @@ if (command === 'prepare') {
     const checked = release();
     requireDraft(checked);
     verifyAssets(checked.assets, true);
+    const checksum = checked.assets.find(item => item.name === 'SHA256SUMS');
+    if (checksum.digest !== 'sha256:' + createHash('sha256').update(text).digest('hex') || checksum.size !== Buffer.byteLength(text)) throw Error('远端校验和文件不一致');
     gh(['release', 'edit', tag, '--draft=false', '--latest']);
     const published = release();
     if (published.draft) throw Error('Release 尚未公开');

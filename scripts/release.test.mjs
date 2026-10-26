@@ -1,6 +1,6 @@
 /**
  * [INPUT]: 发布目标、标签、附件元数据与 Electron 版本接口替身。
- * [OUTPUT]: 标签注入、完整性闸门和运行时版本的回归回执。
+ * [OUTPUT]: 标签注入、源码与工具分离、完整性闸门和运行时版本的回归回执。
  * [POS]: 发布纯逻辑测试；不请求 GitHub，不创建标签或安装包。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
@@ -42,7 +42,29 @@ check('最终公开包含 SHA256SUMS', () => verifyAssets([...assets, { ...asset
 const workflow = yaml.load(fs.readFileSync('.github/workflows/release.yml', 'utf8'));
 check('标签触发与手动验证均已配置', () => {
   assert.deepEqual(workflow.on.push.tags, ['v*']);
-  assert.ok(Object.hasOwn(workflow.on, 'workflow_dispatch'));
+  assert.equal(workflow.on.workflow_dispatch.inputs.release_tag.default, '');
+  assert.equal(workflow.on.workflow_dispatch.inputs.release_tag.type, 'string');
+});
+check('手动重试与标签触发共用版本锁', () => {
+  assert.equal(workflow.concurrency.group, 'desktop-${{ inputs.release_tag || github.ref_name }}');
+  assert.equal(workflow.concurrency['cancel-in-progress'], false);
+});
+check('构建源码与发布工具分别锁定提交', () => {
+  for (const name of ['build', 'publish']) {
+    const steps = workflow.jobs[name].steps;
+    assert.equal(steps[0].with.ref, '${{ needs.prepare.outputs.commit }}');
+    assert.equal(steps[1].with.ref, '${{ github.sha }}');
+    assert.equal(steps[1].with.path, '_analysis/release-tools');
+    assert.equal(steps[0].with['persist-credentials'], false);
+    assert.equal(steps[1].with['persist-credentials'], false);
+    assert.ok(steps.some(step => step.run?.startsWith('node _analysis/release-tools/scripts/release.mjs ')));
+  }
+  assert.equal(workflow.jobs.build.env.RELEASE_TAG, '${{ needs.prepare.outputs.tag }}');
+});
+check('旧标签重试也验证当前发布工具', () => {
+  const step = workflow.jobs.build.steps.find(step => step.name === 'Verify release tools');
+  assert.equal(step['working-directory'], '_analysis/release-tools');
+  assert.equal(step.run, 'node scripts/release.test.mjs && node scripts/release-transaction.test.mjs');
 });
 check('发布必须等待全部平台', () => {
   assert.deepEqual(workflow.jobs.publish.needs, ['prepare', 'build']);
