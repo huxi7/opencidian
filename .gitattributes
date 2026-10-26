@@ -1,2 +1,5 @@
 # 第三方离线资源不计入仓库自有代码语言统计。
 assets/mathjax/** linguist-vendored
+
+# 图标摘要覆盖最终 SVG 字节；Windows 检出也必须保留 LF。
+build/icon.svg text eol=lf

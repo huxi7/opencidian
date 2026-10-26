@@ -1,6 +1,7 @@
 /**
  * [INPUT]: 依赖 ../core/i18n.js 的 tt/getLanguage/setLanguage；依赖 ../core/setting.js 的 SettingGroup/SettingTab；依赖 ../core/notices.js 的 Notice；依赖 ../core/ipc.js 的 Desktop/ipcSync；依赖 ../core/update-check.js 的 checkForUpdates；依赖 ../core/icons.js 的 setIcon；依赖 ./settings-tabs-dialogs.js 的 VERSION/StartupTimeModal/VimTestModal/AddExcludedFilterModal/SpellcheckDictModal/trackSliderFill/isRegexFilterValue/FilePathSuggest/FolderPathSuggest
  * [OUTPUT]: 导出 AboutTab、EditorTab、FileTab 三个内置页签类
+ * 关于页复用本仓库更新检查；自动检查开关同步 checkUpdates 与旧本机偏好。
  * [POS]: views/ 的内置设置页签（选项组）。逐字对齐原版 O7/nte/lte 的 display()：关于（版本/检查更新/语言/高级+启动耗时弹窗/硬件加速）、编辑器（行为+拼写检查词典/语言+Vim 验证）、文件与链接（打开行为/新建位置/附件/链接/回收站/忽略文件子页面/重建缓存）。文案走 tt() 兜底，配置写 app.settings.updateAppSettings（app.json）与 updateAppearance（appearance.json）；拼写检查词典/语言经 Desktop IPC 读写主进程。硬件加速不落库：由主进程 disable-gpu 通道持有，改动后显示“重新启动应用”。默认编辑模式行按原版带 aliases（live-preview/source），供设置侧栏全局搜索匹配。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
@@ -9,7 +10,7 @@ import { tt, getLanguage, setLanguage } from '../core/i18n.js';
 import { ButtonComponent, Setting, SettingGroup, SettingTab, SliderComponent } from '../core/setting.js';
 import { Notice } from '../core/notices.js';
 import { Desktop, ipcSync } from '../core/ipc.js';
-import { checkForUpdates, compareVersions } from '../core/update-check.js';
+import { checkForUpdates, isAutomaticUpdateCheckEnabled, RELEASES_URL } from '../core/update-check.js';
 import { setIcon } from '../core/icons.js';
 import {
   VERSION,
@@ -62,7 +63,7 @@ export class AboutTab extends SettingTab {
       s.descEl.createEl('br');
       s.descEl.createEl('a', {
         text: tt('setting.about.label-read-changelog', '阅读更新日志'),
-        attr: { href: 'https://obsidian.md/changelog', target: '_blank', rel: 'noopener' },
+        attr: { href: RELEASES_URL, target: '_blank', rel: 'noopener' },
       });
       s.addButton((b) => {
         b.setButtonText(tt('setting.about.button-check-for-updates', '检查更新'));
@@ -93,7 +94,7 @@ export class AboutTab extends SettingTab {
       s.descEl.createEl('br');
       s.descEl.createEl('a', {
         text: tt('interface.button-learn-more', '了解更多'),
-        attr: { href: 'https://help.obsidian.md/updates', target: '_blank', rel: 'noopener' },
+        attr: { href: RELEASES_URL, target: '_blank', rel: 'noopener' },
       });
       s.addButton((b) => b
         .setButtonText(tt('dialogue.button-download', '下载'))
@@ -102,9 +103,10 @@ export class AboutTab extends SettingTab {
     });
 
     group.addSetting((s) => s
-      .setName(tt('setting.about.option-auto-update', '自动更新'))
-      .setDesc(tt('setting.about.option-auto-update-description', '关闭后 OpenSidian 将不会自动更新。'))
-      .addToggle((tog) => tog.setValue(localStorage.getItem('disable-update') !== '1').onChange((v) => {
+      .setName(tt('setting.about.option-auto-update', '自动检查更新'))
+      .setDesc(tt('setting.about.option-auto-update-description', '启动时检查新版本，发现更新后提示下载安装包，不会自动安装。'))
+      .addToggle((tog) => tog.setValue(isAutomaticUpdateCheckEnabled(app)).onChange((v) => {
+        app.settings.updateAppSettings({ checkUpdates: v });
         try {
           if (v) localStorage.removeItem('disable-update');
           else localStorage.setItem('disable-update', '1');
@@ -206,37 +208,15 @@ export class AboutTab extends SettingTab {
 
   /**
    * 渲染层版本比较：复用 core/update-check.js 的抓取与解析，版本基准取本应用 VERSION。
-   * 结果：{ hasUpdate, version, url }；无更新源/检查失败时弹出提示并返回 hasUpdate=false。
+   * 通知只由检查器生成，避免关于页和检查器重复提示。
    */
   async runUpdateCheck() {
     // 以 VERSION 为比较基准：用一个继承 app 的轻量代理覆盖 getVersion，
     // 复用 core/update-check.js 的抓取与解析，不重复实现更新源协议。
     const proxy = Object.create(this.app);
     proxy.getVersion = () => VERSION;
-    const result = await checkForUpdates(proxy, { silent: true });
-    if (result.status === 'no-feed') {
-      new Notice(tt('interface.update.no-feed', '尚未配置更新源：在设置文件中填写 updateFeed（GitHub Releases API 或静态 JSON 地址）。'), 6000);
-      return { hasUpdate: false, version: '', url: '' };
-    }
-    if (result.status === 'error') {
-      new Notice(tt('interface.update.check-failed', '无法检查更新，请检查网络或更新源地址。'), 6000);
-      return { hasUpdate: false, version: '', url: '' };
-    }
-    const latest = String(result.version || '');
-    const hasUpdate = !!latest && compareVersions(latest, VERSION) > 0;
-    if (hasUpdate) {
-      const notice = new Notice(tt('interface.update.available', '发现新版本 {{version}}（当前 {{current}}）', {
-        version: latest, current: VERSION,
-      }), 12000);
-      if (result.url && notice.addButton) {
-        notice.addButton(tt('setting.appearance.button-update', '更新'), () => {
-          try { Desktop.openExternal(result.url); } catch (e) { console.error(e); }
-        });
-      }
-    } else {
-      new Notice(tt('interface.update.latest', '已是最新版本（{{current}}）。', { current: VERSION }), 4000);
-    }
-    return { hasUpdate, version: latest, url: result.url || '' };
+    const result = await checkForUpdates(proxy);
+    return { hasUpdate: result.status === 'update', version: result.version || '', url: result.url || '' };
   }
 }
 

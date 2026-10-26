@@ -3,6 +3,7 @@
 > L2 | 父级: /src/renderer/CLAUDE.md
 
 内置视图。视图必须遵守 core/view.ts 契约：构造只存 leaf，DOM 在 onOpen 建立到 this.contentEl(=view._rootEl)。
+关于页的更新通知只由 core/update-check 生成。开关写 checkUpdates 并同步旧本机偏好；下载与日志指向本仓库。
 
 成员清单
 canvas-data.ts: 外部 JSON 校验入口。保留可选字段和未知扩展，拒绝错类型与非有限几何。

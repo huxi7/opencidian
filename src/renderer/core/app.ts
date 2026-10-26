@@ -3,6 +3,7 @@
  * 关闭前等待视图保存，失败保留输入；设置窗口不写主布局。
  * [OUTPUT]: 导出 App，装配启动、外观、事件与布局保存。
  * 插件宿主在构造期可查询空注册表；initialize 才激活插件。
+ * 正式主窗口延迟检查更新；开发与验收不自动联网，执行时读取最新开关。
  * 文档独立窗口只加载来源视图，跳过主布局读写与启动打开行为。
  * [POS]: 应用组合根。新建和修改进入元数据解析，启动修复固定侧栏入口。isSettingsWindow（1.14.4 设置独立窗口）只跳过看门狗/后台索引/布局加载，其余状态照常装配。
  *        新库默认只展开左栏（右栏反链/大纲收起）；body 补 obsidian-app 与 show-inline-title，不再挂 body.is-folding。
@@ -25,7 +26,7 @@ import { Keymap, HotkeyManager } from './keymap.js';
 import { Settings } from './settings.js';
 import { Desktop, ipcOn, ipcSync, ipcSend } from './ipc.js';
 import { applyVaultCss, watchVaultCss } from './custom-css.js';
-import { checkForUpdates } from './update-check.js';
+import { checkForUpdates, isAutomaticUpdateCheckEnabled } from './update-check.js';
 import { detectLanguage, setLanguage, t, getNouns } from './i18n.js';
 import { Notice } from './notices.js';
 import { flushWindowViews } from './window-save.js';
@@ -224,10 +225,10 @@ export class App extends Events<AppEvents> {
       if (next !== current) this.settings.updateAppearance({ baseFontSize: next });
     }, { passive: false });
 
-    // 后台检查更新：仅在配置了 updateFeed 且未显式关闭时联网；失败静默（打包分发用）
-    if (this.settings.appSettings.updateFeed && this.settings.appSettings.checkUpdates !== false) {
+    // 只由正式主窗口检查；延迟期间关闭开关也须生效。
+    if (!Desktop.isDev() && !process.env.E2E && !this.isSettingsWindow && !this.isDocumentWindow) {
       setTimeout(() => {
-        try { checkForUpdates(this, { silent: true }).catch(() => {}); } catch (e) { /* ignore */ }
+        if (isAutomaticUpdateCheckEnabled(this)) checkForUpdates(this, { silent: true }).catch(() => {});
       }, 5000);
     }
 

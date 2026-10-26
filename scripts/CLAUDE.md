@@ -18,6 +18,7 @@ build-config.mjs: 唯一构建配置源。主进程输出 CommonJS，渲染器�
 type-contracts.test.mjs: 用跨平台虚拟路径编译正反例，验证 IPC、事件、布局、编辑器与画布契约；防止显式 any 和检查豁免回归。
 events.test.mjs: 原型名称、once 重入和防抖 run/cancel/resetTimer 的确定性回归。
 test-unit.mjs: 串行运行独立 Node 测试，验证回执并汇总失败。
+update-check.test.mjs: 隔离更新检查回归。默认源、覆盖源、GitHub 下载地址、开关、限流与单次通知。
 workspace-regression.mjs: 隔离 VM 验证工作区状态、生命周期、循环布局拒绝与异常关闭保留。
 build.mjs: 读取共用配置，编译主进程、主窗口、启动器和图谱 Worker；--watch 增量构建。
 dev.mjs: 开发模式。全量严格检查与增量编译共用一套配置；退出释放检查器。主进程变更需重启命令。
@@ -27,7 +28,7 @@ acceptance/: full.sh 是全量入口。真实 Electron 场景，隔离库与日�
 make-app-icon.py: 从最终 PNG 母版导出三平台图标。--check 校验全部尺寸、透明度、像素与摘要。
 icon-requirements.txt: 固定 Pillow 与 pefile 版本；仅供导出和安装包验收。
 app-icons.test.mjs: 默认图标、自定义回退、全部窗口和 Dock 的隔离回归。
-verify-packaged-icons.py: 解包 DMG、NSIS 与 AppImage，核验内嵌图标和应用归档。
+verify-packaged-icons.py: 解包 DMG、NSIS 与 AppImage，核验内嵌图标、卸载程序和应用归档。
 smoke-packaged.mjs: 三平台目录包冒烟。ASAR 路径按系统归一化；版本从标签解析，Linux CI 使用虚拟显示。先核对身份、版本、许可证、图标、当前代码与全部样式哈希，再跑真实启动/编辑器/Bases/公式/CSV/SVG；回执后必须自行退出且 exitCode=0。输出 {pass,count,checks}；--no-screenshot 不截图，超时只清理自身进程组。
 
 bases-formulas.test.mjs: Node 公式单测。固定 UTC、时钟与随机源，对照公开公式说明，覆盖 78 个说明键。

@@ -15,6 +15,6 @@ markdown/ - 阅读视图渲染 (见 markdown/CLAUDE.md)
 views/ - 内置视图 (见 views/CLAUDE.md)
 plugins-core/ - 核心插件 (见 plugins-core/CLAUDE.md)
 styles/ - 全部 CSS (见 styles/CLAUDE.md)
-locales/ - 从原版提取的 locale-en.json / locale-zh.json，key 命名唯一权威来源；补齐 1.14.4 看板文案。
+locales/ - 中英文词条，沿用兼容键名；补齐看板与本应用更新检查文案（见 locales/CLAUDE.md）。
 
 [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md

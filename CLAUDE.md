@@ -20,7 +20,7 @@ README.md - 项目介绍、开发与打包入口、源码结构和兼容边界
 LICENSE - 标准 AGPL v3 全文；授权标识为 AGPL-3.0。
 package.json - 依赖与开发入口；不保存发布版本，打包时从标签注入。
 tsconfig.json - 全量应用源码的严格类型检查配置。
-.gitattributes - 将第三方 MathJax 资源标记为 vendored。
+.gitattributes - 标记 MathJax 为 vendored；固定图标 SVG 的 LF 换行。
 electron-builder.yml - 三平台目录包与安装包；ASAR 包含运行文件和许可证原文
 scripts/build.mjs - 将主进程与渲染器 TypeScript 编译至 dist/。
 scripts/package.mjs - 当前平台打包；版本从标签注入，开发包用 0.0.0-dev。

@@ -107,7 +107,7 @@ def verify_windows(temp):
     run([seven, 'x', archives[0], '-o' + str(unpacked), '-y'])
     verify_pe(unpacked / 'OpenSidian.exe')
     same_file(unpacked / 'resources/app.asar', ROOT / 'release/win-unpacked/resources/app.asar')
-    uninstallers = list((temp / 'nsis').rglob('*uninstaller*.exe'))
+    uninstallers = [file for file in (temp / 'nsis').rglob('*.exe') if file.name.lower().startswith('uninstall')]
     check(bool(uninstallers), 'NSIS 包含卸载程序')
     for uninstaller in uninstallers:
         verify_pe(uninstaller)
@@ -135,4 +135,4 @@ if __name__ == '__main__':
         installer = platform(Path(folder))
         print(json.dumps({'pass': True, 'count': len(CHECKS), 'checks': CHECKS,
                           'installer': installer.name,
-                          'sha256': hashlib.sha256(installer.read_bytes()).hexdigest()}, ensure_ascii=False))
+                          'sha256': hashlib.sha256(installer.read_bytes()).hexdigest()}, ensure_ascii=True))

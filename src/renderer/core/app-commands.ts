@@ -259,7 +259,7 @@ export function registerAppCommands(app: App) {
     },
   });
 
-  // 检查更新（只提示 + 打开下载页；配置 updateFeed 后才联网）
+  // 手动检查始终可用；默认使用本仓库更新源，只提示并打开下载页。
   add({
     id: 'app:check-updates',
     name: t('setting.appearance.button-check-for-updates') || 'Check for updates',

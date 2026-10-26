@@ -54,7 +54,7 @@ def verify(master):
         frame = icns.icns.getimage(size).convert('RGBA')
         check_image(frame, master.resize(frame.size, Image.Resampling.BICUBIC))
     assert json.loads(MANIFEST.read_text()) == hashes(), '图标摘要清单过时'
-    print(json.dumps({'pass': True, 'ico': ICO_SIZES, 'icns': sizes, 'sha256': hashes()}, ensure_ascii=False))
+    print(json.dumps({'pass': True, 'ico': ICO_SIZES, 'icns': sizes, 'sha256': hashes()}, ensure_ascii=True))
 
 
 def main():

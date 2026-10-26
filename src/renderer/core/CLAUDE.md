@@ -3,13 +3,14 @@
 > L2 | 父级: /src/renderer/CLAUDE.md
 
 应用内核。依赖方向：dom/events/i18n/icons/ipc/tooltip 为叶子；vault/settings 之上是 metadata/fileManager；workspace/app 为装配层；plugins 提供宿主与 obsidian API shim。
+App 仅在正式主窗口延迟检查更新，执行时读取最新开关。开发、验收和附属窗口不自动联网。
 
 成员清单
 metadata-types.ts: 元数据共享契约。正文位置、链接与属性值供解析器和查询模块共用。
 settings-types.ts: 配置边界。已知偏好保持具体类型，未知扩展值保留为 unknown。
 workspace-types.ts: 标签拖拽会话与功能区动作协议。鼠标和键盘共用修饰键。
 workspace-events.ts: 工作区事件表与悬停预览协议。名称绑定参数元组，发布和订阅共用。
-update-check.ts: 配置更新源后检查版本，仅提示和打开下载页。
+update-check.ts: 默认检查本仓库 GitHub Releases，非空 updateFeed 覆盖默认源。仅提示和打开下载页；共用后台开关判定，兼容旧本机偏好。
 dom-types.d.ts: DOM 工厂、元素扩展与窗口全局入口的类型边界。
 dom.ts: Element/Document 原型的 createEl/setText/addClass 等助手(安装即生效)，并导出 createEl/createDiv/createSpan。
 events.ts: 泛型事件表与订阅释放。无原型字典接受任意名称；防抖保留参数与宿主类型，结算后释放引用。未声明事件表的载荷为 unknown；工作区使用独立事件表。

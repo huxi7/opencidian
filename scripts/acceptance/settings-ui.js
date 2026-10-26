@@ -408,10 +408,12 @@ check(!!rebuildRow.querySelector('a[href*="help.obsidian.md"]'),'重建缓存描
 app.setting.openTabById('about');await wait(150);
 const aboutTab=app.setting.activeTab.containerEl;
 check(!!aboutTab&&aboutTab.isConnected,'关于页打开');
-const versionRow=rowByName(aboutTab,/版本 1\.|Version 1\./);
+const versionRow=rowByName(aboutTab,/^(版本|Version) /);
+const currentVersion=require('electron').ipcRenderer.sendSync('version');
 check(!!versionRow,'版本行存在');
+check(versionRow.textContent.includes(currentVersion),'版本行使用当前应用版本');
 check(/安装程序版本|Installer version/.test(versionRow.textContent||''),'版本行显示安装程序版本');
-check([...versionRow.querySelectorAll('a')].some(a=>/changelog/i.test(a.href||'')),'版本行有更新日志链接');
+check([...versionRow.querySelectorAll('a')].some(a=>a.href==='https://github.com/huxi7/opencidian/releases'),'版本行有本仓库更新日志链接');
 const checkBtn=[...versionRow.querySelectorAll('button')].find((b)=>/检查更新|Check for updates/.test(text(b)));
 check(!!checkBtn,'版本行有检查更新按钮');
 check(!checkBtn.classList.contains('mod-cta'),'检查更新按钮不是 CTA（原版普通按钮）');
@@ -440,7 +442,7 @@ const updateRowShown=rowByName(app.setting.activeTab.containerEl,/^可以更新$
 check(!!updateRowShown&&updateRowShown.style.display!=='none','可以更新行在发现新版本后显示');
 check(!!updateRowShown.querySelector('button'),'可以更新行有下载按钮');
 // 已是最新
-app.requestUrl=async()=>({status:200,body:JSON.stringify({version:'1.0.0',url:'https://example.invalid/download'})});
+app.requestUrl=async()=>({status:200,body:JSON.stringify({version:currentVersion,url:'https://example.invalid/download'})});
 checkBtn.click();await wait(700);
 const latestNotices=[...document.querySelectorAll('.notice-message')].map(text);
 check(latestNotices.some((t)=>/已是最新版本/.test(t)),'版本一致时提示已是最新版本 :: '+JSON.stringify(latestNotices));
