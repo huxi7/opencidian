@@ -9,19 +9,20 @@
 /* Full-window slides presentation host — mirrors the original M9 overlay. */
 import { setIcon } from '../core/icons.js';
 import { isModalOpen } from '../core/modals.js';
+import { TFile } from '../core/vault.js';
 import { renderMarkdown, stripFrontmatter, getMarkdownIt } from '../markdown/reading.js';
 
 /**
  * 把 markdown 正文按主题分隔线（---）切成页。
  * 用 markdown-it 的 hr 令牌取行号，避免误切 setext 标题与代码块内的 ---。
  */
-export function splitSlides(text) {
+export function splitSlides(text: string) {
   if (!text) return [];
-  let breaks = [];
+  let breaks: number[] = [];
   try {
     const tokens = getMarkdownIt().parse(text, {});
     breaks = tokens.filter((tk) => tk.type === 'hr' && tk.level === 0 && tk.map)
-      .map((tk) => tk.map[0]).sort((a, b) => a - b);
+      .map((tk) => tk.map![0]).sort((a: number, b: number) => a - b);
   } catch (e) { breaks = []; }
   const lines = text.split('\n');
   const pages = [];
@@ -38,19 +39,19 @@ export function splitSlides(text) {
 
 export class SlidesPresentation {
   declare app: App;
-  declare onDestroy: any;
-  declare file: any;
-  declare containerEl: any;
-  declare slidesEl: any;
-  declare deckEl: any;
-  declare progressEl: any;
-  declare pages: any[];
+  declare onDestroy: ((presentation: SlidesPresentation) => void) | null;
+  declare file: TFile | null;
+  declare containerEl: HTMLDivElement | null;
+  declare slidesEl: HTMLDivElement | null;
+  declare deckEl: HTMLDivElement | null;
+  declare progressEl: HTMLDivElement | null;
+  declare pages: HTMLElement[];
   declare current: number;
-  declare _onKeyDown: any;
+  declare _onKeyDown: ((event: KeyboardEvent) => void) | null;
   declare _renderVersion: number;
   declare _destroyed: boolean;
 
-  constructor(app: App, onDestroy) {
+  constructor(app: App, onDestroy: ((presentation: SlidesPresentation) => void) | null) {
     this.app = app;
     this.onDestroy = onDestroy || null;
     this.file = null;
@@ -66,7 +67,7 @@ export class SlidesPresentation {
   }
 
   /** 读取文件并建立覆盖层；构造后调用一次。重复调用先销毁旧容器。 */
-  async openFile(file) {
+  async openFile(file: TFile) {
     this.destroy();
     this._destroyed = false;
     this.file = file;
@@ -87,6 +88,7 @@ export class SlidesPresentation {
     this.progressEl.setAttr('aria-live', 'polite');
     const closeBtn = containerEl.createDiv('slides-close-btn');
     setIcon(closeBtn, 'lucide-x-square');
+    closeBtn.addEventListener('click', () => this.destroy());
     closeBtn.setAttr('aria-label', 'Close');
     this.deckEl.addEventListener('click', (ev) => this._onDeckClick(ev));
     this._onKeyDown = (ev) => this._handleKey(ev);
@@ -96,7 +98,7 @@ export class SlidesPresentation {
 
   /* ------------------------------------------------------------ 键盘/点击 */
 
-  _handleKey(ev) {
+  _handleKey(ev: KeyboardEvent) {
     if (this._destroyed || ev.defaultPrevented) return;
     // 有弹窗时让弹窗处理按键（Esc 先关弹窗）
     if (isModalOpen() || ev.isComposing || ev.metaKey || ev.ctrlKey || ev.altKey) return;
@@ -109,7 +111,7 @@ export class SlidesPresentation {
     const handled = ['ArrowRight', 'ArrowDown', ' ', 'PageDown', 'ArrowLeft', 'ArrowUp', 'PageUp', 'Home', 'End'];
     if (!handled.includes(ev.key)) return;
     const target = ev.target;
-    if (target && target.closest && target.closest('input, textarea, select, [contenteditable="true"], button, a')) return;
+    if (target instanceof Element && target.closest('input, textarea, select, [contenteditable="true"], button, a')) return;
     ev.preventDefault();
     ev.stopPropagation();
     if (ev.key === 'ArrowRight' || ev.key === 'ArrowDown' || ev.key === ' ' || ev.key === 'PageDown') { this.next(); return; }
@@ -118,9 +120,10 @@ export class SlidesPresentation {
     this.show(this.pages.length - 1);
   }
 
-  _onDeckClick(ev) {
+  _onDeckClick(ev: MouseEvent) {
     // 链接与控件照常工作，不触发翻页
-    if (ev.target.closest && ev.target.closest('a, button, input, textarea, select, [contenteditable="true"]')) return;
+    if (ev.target instanceof Element && ev.target.closest('a, button, input, textarea, select, [contenteditable="true"]')) return;
+    if (!this.deckEl) return;
     const rect = this.deckEl.getBoundingClientRect();
     if (ev.clientX - rect.left < rect.width / 2) this.prev();
     else this.next();
@@ -128,16 +131,18 @@ export class SlidesPresentation {
 
   /* ------------------------------------------------------------ 渲染 */
 
-  async _render(text) {
+  async _render(text: string) {
     const version = ++this._renderVersion;
-    this.deckEl.empty();
+    const deck = this.deckEl;
+    if (!deck) return;
+    deck.empty();
     this.pages = [];
     this.current = 0;
     const body = stripFrontmatter(text || '');
     const pageTexts = splitSlides(body);
     if (!pageTexts.length) pageTexts.push('');
     for (const pageText of pageTexts) {
-      const section = this.deckEl.createEl('section', { cls: 'slides-section markdown-rendered' });
+      const section = deck.createEl('section', { cls: 'slides-section markdown-rendered' });
       this.pages.push(section);
       try {
         await renderMarkdown(this.app, pageText, section, this.file ? this.file.path : '');
@@ -151,7 +156,7 @@ export class SlidesPresentation {
 
   /* ------------------------------------------------------------ 翻页 */
 
-  show(index) {
+  show(index: number) {
     const count = this.pages.length;
     if (!count) return;
     const previous = this.current;

@@ -21,9 +21,10 @@ import { CanvasTextNode } from '../views/canvas-text-node.js';
 import {
   applyCanvasOptions, canvasNewFileParent, loadCanvasOptions, saveCanvasOptions,
 } from '../views/canvas-options.js';
-import { SettingGroup } from '../core/setting.js';
+import { Setting, SettingGroup } from '../core/setting.js';
 import { t } from '../core/i18n.js';
 import { IS_MAC } from '../core/keymap.js';
+import { Command,CommandDefinition } from '../core/commands.js';
 
 export const nameKey = 'plugins.canvas';
 
@@ -32,8 +33,8 @@ const EMPTY_CANVAS = '{\n\t"nodes": [],\n\t"edges": []\n}';
 
 class CanvasPlugin {
   declare app: App;
-  declare _commandIds: any[];
-  declare _ribbonEl: any;
+  declare _commandIds: string[];
+  declare _ribbonEl: HTMLDivElement | null;
 
   constructor(app: App) {
     this.app = app;
@@ -63,7 +64,7 @@ class CanvasPlugin {
   }
 
   registerCommands() {
-    const add = (command) => {
+    const add = (command: Command|CommandDefinition) => {
       this.app.commands.addCommand(command);
       this._commandIds.push(command.id);
     };
@@ -116,7 +117,7 @@ class CanvasPlugin {
   }
 
   getActiveCanvasView() {
-    return this.app.workspace.getActiveViewOfType('canvas');
+    return this.app.workspace.getActiveViewOfType(CanvasView);
   }
 
   /** 新建命令与功能区共用；功能区可指定新标签并聚焦。 */
@@ -124,7 +125,7 @@ class CanvasPlugin {
     const activeFile = this.app.workspace.getActiveFile();
     // 原版 getNewFileParent：新白板位置取自白板设定（root/current/folder），不是全局的新笔记位置。
     const options = loadCanvasOptions(this.app);
-    const folder = canvasNewFileParent(this.app, options, activeFile ? activeFile.path : null);
+    const folder = canvasNewFileParent(this.app, options, activeFile ? activeFile.path : undefined);
     const file = await this.app.fileManager.createNewFile(folder, 'Untitled.canvas', EMPTY_CANVAS);
     if (!file) return;
     const leaf = await this.app.workspace.openFile(file, { newLeaf: newLeaf ? 'tab' : false });
@@ -137,7 +138,7 @@ class CanvasPlugin {
  * 条目与顺序对齐原版画布插件设置页（app.js 3431431 附近的 getSettingDefinitions）：
  * 新白板位置 → 新白板文件夹（仅 folder 时可见）→ 滚轮行为 → Mod 行为 → 卡片标签 → 对齐网格 → 对齐物体 → 缩放阈值。
  * -------------------------------------------------------------------------- */
-export function settingTab(app: App, containerEl) {
+export function settingTab(app: App, containerEl: HTMLElement) {
   const options = loadCanvasOptions(app);
   const save = () => {
     saveCanvasOptions(app, options);
@@ -147,7 +148,7 @@ export function settingTab(app: App, containerEl) {
   group.setHeading(t('plugins.canvas.label-canvas-settings') || 'Canvas settings');
 
   // 新白板文件夹行仅在位置为 folder 时显示（原版 visible 判定）
-  let folderRow = null;
+  let folderRow: Setting|null = null;
   const syncFolderRow = () => {
     if (folderRow) folderRow.settingEl.toggle((options.newFileLocation || 'root') === 'folder');
   };
@@ -261,7 +262,7 @@ export function settingTab(app: App, containerEl) {
       .setDesc(t('plugins.canvas.option-zoom-breakpoint-desc') || 'Lower values improve performance but hide card content sooner.')
       .addSlider((component) => {
         // 原版 displayFormat：Math.round(100 * 1.2^z)%，滑杆提示按此显示。
-        const percent = (value) => Math.round(100 * Math.pow(1.2, value)) + '%';
+        const percent = (value: number) => Math.round(100 * Math.pow(1.2, value)) + '%';
         component.getValuePretty = () => percent(component.getValue());
         component
           .setLimits(-0.7, 2.4, 0.01)

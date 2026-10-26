@@ -7,6 +7,8 @@
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 
+import type { SearchNode, SearchToken, SearchValueNode, SearchRegex, SearchInfo } from './search-types.js';
+interface ParsedValue { value?: string; exact?: boolean; regex?: SearchRegex | null; invalidRegex?: string; }
 const FIELD_OPERATORS = new Set(['path', 'file', 'tag', 'content']);
 const SCOPE_OPERATORS = new Set(['line', 'section', 'block', 'task', 'task-todo', 'task-done']);
 const CASE_OPERATORS = new Set(['match-case', 'ignore-case']);
@@ -15,7 +17,7 @@ const REGEX_PARSE_ERROR = 'Failed to parse regular expression. ';
 
 /* ------------------------------------------------------------------ lexer */
 
-function readQuoted(input, start) {
+function readQuoted(input: string, start: number) {
   let text = '';
   let i = start + 1;
   while (i < input.length) {
@@ -32,7 +34,7 @@ function readQuoted(input, start) {
   return { text, end: i };
 }
 
-function readRegex(input, start) {
+function readRegex(input: string, start: number) {
   let source = '';
   let i = start + 1;
   while (i < input.length) {
@@ -43,7 +45,7 @@ function readRegex(input, start) {
       continue;
     }
     if (ch === '/') {
-      const flags = /^[a-z]*/.exec(input.slice(i + 1))[0];
+      const flags = (/^[a-z]*/.exec(input.slice(i + 1))?.[0] || '');
       return { source, flags, end: i + 1 + flags.length };
     }
     source += ch;
@@ -52,7 +54,7 @@ function readRegex(input, start) {
   return null;
 }
 
-function readProperty(input, start) {
+function readProperty(input: string, start: number) {
   let i = start + 1;
   let quote = false;
   let regex = false;
@@ -71,7 +73,7 @@ function readProperty(input, start) {
   return null;
 }
 
-function splitProperty(raw) {
+function splitProperty(raw: string) {
   let quote = false;
   let regex = false;
   let escaped = false;
@@ -88,8 +90,8 @@ function splitProperty(raw) {
   return { key: raw, value: null };
 }
 
-function scan(input) {
-  const tokens = [];
+function scan(input: string) {
+  const tokens: SearchToken[] = [];
   let i = 0;
   while (i < input.length) {
     const ch = input[i];
@@ -141,11 +143,11 @@ function scan(input) {
 
 /* ----------------------------------------------------------------- parser */
 
-function textNode(value, exact, regex) {
+function textNode(value: string | undefined, exact: boolean | undefined, regex: SearchRegex | null | undefined): SearchValueNode {
   return { type: 'value', field: 'any', value, exact, regex };
 }
 
-function inlineValue(rest) {
+function inlineValue(rest: string): ParsedValue {
   if (rest.length > 1 && rest[0] === '/') {
     const last = rest.lastIndexOf('/');
     if (last > 0) {
@@ -155,14 +157,14 @@ function inlineValue(rest) {
         new RegExp(source, flags);
         return { value: source, exact: false, regex: { source, flags } };
       } catch (error) {
-        return { invalidRegex: REGEX_PARSE_ERROR + error.message };
+        return { invalidRegex: REGEX_PARSE_ERROR + (error instanceof Error ? error.message : String(error)) };
       }
     }
   }
   return { value: rest, exact: false, regex: null };
 }
 
-function propertyMatcher(raw) {
+function propertyMatcher(raw: string): { node: SearchValueNode; error?: never } | { error: string; node?: never } {
   const text = String(raw == null ? '' : raw).trim();
   if (text.length > 1 && text[0] === '/' && text.lastIndexOf('/') > 0) {
     const last = text.lastIndexOf('/');
@@ -171,7 +173,7 @@ function propertyMatcher(raw) {
     try {
       new RegExp(source, flags);
     } catch (error) {
-      return { error: REGEX_PARSE_ERROR + error.message };
+      return { error: REGEX_PARSE_ERROR + (error instanceof Error ? error.message : String(error)) };
     }
     return { node: textNode(source, false, { source, flags }) };
   }
@@ -181,29 +183,29 @@ function propertyMatcher(raw) {
   return { node: textNode(text, false, null) };
 }
 
-function valueFromToken(token) {
+function valueFromToken(token: SearchToken): ParsedValue {
   if (token.kind === 'string') return { value: token.text, exact: true, regex: null };
   if (token.kind === 'regex') {
     try {
       new RegExp(token.source, token.flags.replace(/[gy]/g, ''));
       return { value: token.source, exact: false, regex: { source: token.source, flags: token.flags.replace(/[gy]/g, '') } };
     } catch (error) {
-      return { invalidRegex: REGEX_PARSE_ERROR + error.message };
+      return { invalidRegex: REGEX_PARSE_ERROR + (error instanceof Error ? error.message : String(error)) };
     }
   }
-  return inlineValue(token.text || '');
+  return inlineValue('text' in token ? token.text : '');
 }
 
-export function parseQuery(source) {
+export function parseQuery(source: string) {
   const tokens = scan(source || '');
   let index = 0;
-  let error = null;
-  const flags = { forceCase: null };
+  let error: string | null = null;
+  const flags: { forceCase: boolean | null } = { forceCase: null };
 
   const peek = () => tokens[index];
   const take = () => tokens[index++];
 
-  function consumeGroup() {
+  function consumeGroup(): SearchNode | null {
     if (peek() && peek().kind === '(') {
       index++;
       const node = parseOr();
@@ -213,8 +215,8 @@ export function parseQuery(source) {
     return null;
   }
 
-  function parseOr() {
-    const parts = [parseAnd()].filter(Boolean);
+  function parseOr(): SearchNode | null {
+    const parts = [parseAnd()].filter((node): node is SearchNode => !!node);
     while (peek() && peek().kind === 'or') {
       index++;
       const node = parseAnd();
@@ -224,8 +226,8 @@ export function parseQuery(source) {
     return parts.length === 1 ? parts[0] : { type: 'or', children: parts };
   }
 
-  function parseAnd() {
-    const parts = [];
+  function parseAnd(): SearchNode | null {
+    const parts: SearchNode[] = [];
     while (peek() && peek().kind !== 'or' && peek().kind !== ')') {
       const node = parseUnary();
       if (node) parts.push(node);
@@ -234,7 +236,7 @@ export function parseQuery(source) {
     return parts.length === 1 ? parts[0] : { type: 'and', children: parts };
   }
 
-  function parseUnary() {
+  function parseUnary(): SearchNode | null {
     if (peek() && peek().kind === 'not') {
       index++;
       const child = parseUnary();
@@ -243,18 +245,18 @@ export function parseQuery(source) {
     return parsePrimary();
   }
 
-  function wrapField(op, value) {
+  function wrapField(op: string, value: ParsedValue | null): SearchNode {
     if (SCOPE_OPERATORS.has(op)) {
       let scope = op;
-      let state = null;
+      let state: boolean | null = null;
       if (op === 'task-todo') { scope = 'task'; state = false; }
       else if (op === 'task-done') { scope = 'task'; state = true; }
       return { type: 'scope', scope, state, child: value ? { type: 'value', field: 'content', ...value } : null };
     }
-    return { type: 'value', field: op, value: value.value, exact: value.exact, regex: value.regex };
+    return { type: 'value', field: op, value: value?.value, exact: value?.exact, regex: value?.regex };
   }
 
-  function fromWord(raw) {
+  function fromWord(raw: string): SearchNode | null {
     const match = OPERATOR_RE.exec(raw);
     if (!match) return textNode(raw, false, null);
     const op = match[1];
@@ -287,7 +289,7 @@ export function parseQuery(source) {
     if (peek() && peek().kind === '(') {
       const child = consumeGroup();
       if (!child) return null;
-      if (SCOPE_OPERATORS.has(op)) return { ...wrapField(op, null), child };
+      if (SCOPE_OPERATORS.has(op)) { const wrapped = wrapField(op, null); if (wrapped.type === 'scope') return { ...wrapped, child }; }
       return child;
     }
 
@@ -302,7 +304,7 @@ export function parseQuery(source) {
     return { type: 'value', field: op, value: '', exact: false, regex: null };
   }
 
-  function parsePrimary() {
+  function parsePrimary(): SearchNode | null {
     const token = peek();
     if (!token) return null;
     if (token.kind === '(') {
@@ -315,11 +317,11 @@ export function parseQuery(source) {
       index++;
       const parts = splitProperty(token.text);
       const key = propertyMatcher(parts.key);
-      if (key.error) { error = key.error; return null; }
-      let value = null;
+      if (!key.node) { error = key.error || 'Invalid property key'; return null; }
+      let value: SearchValueNode | null = null;
       if (parts.value !== null) {
         const parsedValue = propertyMatcher(parts.value);
-        if (parsedValue.error) { error = parsedValue.error; return null; }
+        if (!parsedValue.node) { error = parsedValue.error || 'Invalid property value'; return null; }
         value = parsedValue.node;
       }
       return { type: 'property', key: key.node, value };
@@ -356,19 +358,19 @@ export function parseQuery(source) {
 
 /* ------------------------------------------------------------------ info */
 
-function displayValue(node) {
+function displayValue(node: SearchValueNode) {
   if (node.regex) return '/' + node.regex.source + '/' + (node.regex.flags || '');
   if (node.field === 'tag' && node.value && !String(node.value).startsWith('#')) return '#' + node.value;
   return '"' + (node.value || '') + '"';
 }
 
-function valueLabel(node) {
+function valueLabel(node: SearchValueNode) {
   if (node.regex) return 'plugins.search.label-match-regex';
   if (node.exact) return 'plugins.search.label-match-exact-text';
   return 'plugins.search.label-match-text';
 }
 
-const SCOPE_LABELS = {
+const SCOPE_LABELS: Record<string, string> = {
   path: 'plugins.search.label-match-file-path',
   file: 'plugins.search.label-match-file-name',
   content: 'plugins.search.label-match-content',
@@ -381,7 +383,7 @@ const SCOPE_LABELS = {
   'task-done': 'plugins.search.label-match-task-done',
 };
 
-export function queryInfo(node) {
+export function queryInfo(node: SearchNode | null): SearchInfo[] {
   if (!node) return [];
   if (node.type === 'and') {
     if (node.children.length === 1) return queryInfo(node.children[0]);

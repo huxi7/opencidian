@@ -1,7 +1,7 @@
 /**
  * [INPUT]: 依赖 i18n/Notice/SettingGroup/Setting 控件/Modal 的界面能力；依赖 ../views/diff-view.js 的 renderDiffView；依赖 Vault 的文件与索引写入；Node fs/path；moment；Electron clipboard
  * [OUTPUT]: 导出 nameKey、DATA_FILE、SNAPSHOT_DIR、DEFAULT_OPTIONS、SNAPSHOT_EXTENSIONS、loadOptions、formatBytes、create、settingTab；实例暴露快照查询、restoreSnapshot、saveOptions 与弹窗入口
- * [POS]: plugins-core/ 的文件恢复插件。快照范围为 md/canvas/base；间隔单位分钟（默认 5，0 表示每次变更即存），旧 intervalSeconds 配置按 60 秒=1 分钟在读取时迁移。快照仍按天原子替换 .obsidian/.file-recovery/*.json，旧快照保持可读。恢复先保存编辑器，再经 Vault 写入并同步视图；canvas 视图经 vault modify 事件自行重载。清空或卸载使在途读取失效。
+ * [POS]: plugins-core/ 的文件恢复插件。快照范围为 md/canvas/base；间隔单位分钟（默认 5，0 表示每次变更即存），旧 intervalSeconds 配置按 60 秒=1 分钟在读取时迁移。快照仍按天原子替换 .obsidian/.file-recovery/*.json，旧快照保持可读。恢复先保存编辑器，保存失败则拒绝覆盖。成功后经 Vault 写入并同步视图；canvas 视图经 vault modify 事件自行重载。清空或卸载使在途读取失效。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 /* Core plugin: file-recovery — snapshot md/canvas/base files and restore them. */
@@ -10,11 +10,20 @@ import { Notice } from '../core/notices.js';
 import { SettingGroup, ToggleComponent, ButtonComponent } from '../core/setting.js';
 import { Modal, confirmDialog } from '../core/modals.js';
 import { renderDiffView } from '../views/diff-view.js';
+import { TFile, type VaultEntry } from '../core/vault.js';
+import { MarkdownView } from '../views/markdown-view.js';
+import { isJsonRecord, type JsonRecord } from '../core/settings-types.js';
+import type { EventRef } from '../core/events.js';
 
-const fs = require('fs');
-const nodePath = require('path');
-const moment = require('moment');
-const { clipboard } = require('electron');
+const fs: typeof import('node:fs') = require('fs');
+const nodePath: typeof import('node:path') = require('path');
+import moment from 'moment';
+const { clipboard }: typeof import('electron') = require('electron');
+
+interface Snapshot { ts: number; data: string; }
+function isSnapshot(value: unknown): value is Snapshot {
+  return isJsonRecord(value) && typeof value.ts === 'number' && Number.isFinite(value.ts) && typeof value.data === 'string';
+}
 
 export const nameKey = 'plugins.file-recovery';
 export const DATA_FILE = 'file-recovery.json';
@@ -27,17 +36,23 @@ export function loadOptions(app: App) {
   const raw = app.settings.loadPluginData(DATA_FILE, {});
   const options = { ...DEFAULT_OPTIONS };
   if (!raw || typeof raw !== 'object') return options;
-  if (raw.intervalMinutes !== undefined) options.intervalMinutes = raw.intervalMinutes;
+  if (raw.intervalMinutes !== undefined) {
+    const minutes = parseFloat(String(raw.intervalMinutes));
+    if (Number.isFinite(minutes) && minutes >= 0) options.intervalMinutes = minutes;
+  }
   else if (raw.intervalSeconds !== undefined) {
-    const seconds = parseFloat(raw.intervalSeconds);
+    const seconds = parseFloat(String(raw.intervalSeconds));
     options.intervalMinutes = Number.isFinite(seconds) && seconds >= 0 ? seconds / 60 : DEFAULT_OPTIONS.intervalMinutes;
   }
-  if (raw.keepDays !== undefined) options.keepDays = raw.keepDays;
+  if (raw.keepDays !== undefined) {
+    const days = parseFloat(String(raw.keepDays));
+    if (Number.isFinite(days) && days >= 1) options.keepDays = days;
+  }
   return options;
 }
 
 /** 人类可读的文件大小（对齐原版 Df：B 为整数，其余两位小数并带千分位）。 */
-export function formatBytes(size) {
+export function formatBytes(size: number) {
   if (!size || size <= 0) return '0 B';
   const units = ['B', 'KB', 'MB', 'GB', 'TB', 'PB'];
   let index = units.length - 1;
@@ -52,7 +67,7 @@ export function formatBytes(size) {
 }
 
 /** 显示用路径：仅 Markdown 去掉扩展名（对齐原版 uu）。 */
-function displayPath(path) {
+function displayPath(path: string) {
   const base = path.slice(path.lastIndexOf('/') + 1);
   if (extensionOf(base) !== 'md') return path;
   const index = path.lastIndexOf('.');
@@ -60,7 +75,7 @@ function displayPath(path) {
 }
 
 /** 小写扩展名（对齐原版 ou）。 */
-function extensionOf(path) {
+function extensionOf(path: string) {
   const index = path.lastIndexOf('.');
   if (index < 0 || index === path.length - 1 || index === 0) return '';
   return path.slice(index + 1).toLowerCase();
@@ -71,15 +86,15 @@ function extensionOf(path) {
  * ------------------------------------------------------------------------ */
 class FileRecovery {
   declare app: App;
-  declare options: any;
-  declare tsCache: any;
-  declare pendingFiles: any;
-  declare _intervals: any[];
-  declare _refs: any[];
-  declare _commandIds: any[];
-  declare _jobs: any;
+  declare options: typeof DEFAULT_OPTIONS;
+  declare tsCache: Record<string, number>;
+  declare pendingFiles: Set<string>;
+  declare _intervals: number[];
+  declare _refs: EventRef[];
+  declare _commandIds: string[];
+  declare _jobs: Map<string, Promise<unknown>>;
   declare _generation: number;
-  declare _cleanupTimer: any;
+  declare _cleanupTimer: number | null;
 
   constructor(app: App) {
     this.app = app;
@@ -101,16 +116,16 @@ class FileRecovery {
     fs.mkdirSync(this.dir(), { recursive: true });
   }
 
-  dayFile(dateStr) { return nodePath.join(this.dir(), dateStr + '.json'); }
+  dayFile(dateStr: string) { return nodePath.join(this.dir(), dateStr + '.json'); }
 
-  readDay(dateStr) {
+  readDay(dateStr: string) {
     try {
-      const data = JSON.parse(fs.readFileSync(this.dayFile(dateStr), 'utf8'));
-      return data && !Array.isArray(data) && typeof data === 'object' ? data : {};
+      const data: unknown = JSON.parse(fs.readFileSync(this.dayFile(dateStr), 'utf8'));
+      return isJsonRecord(data) ? data : {};
     } catch (e) { return {}; }
   }
 
-  writeDay(dateStr, obj) {
+  writeDay(dateStr: string, obj: JsonRecord) {
     const target = this.dayFile(dateStr);
     const temporary = target + '.tmp';
     try {
@@ -125,30 +140,29 @@ class FileRecovery {
   listDayFiles() {
     try {
       return fs.readdirSync(this.dir())
-        .filter((name) => /^\d{4}-\d{2}-\d{2}\.json$/.test(name))
+        .filter((name: string) => /^\d{4}-\d{2}-\d{2}\.json$/.test(name))
         .map((name) => name.slice(0, 10))
         .sort();
     } catch (e) { return []; }
   }
 
   /** 某文件全部快照，ts 降序。 */
-  getSnapshots(path) {
-    const out = [];
+  getSnapshots(path: string|number) {
+    const out: Snapshot[] = [];
     for (const date of this.listDayFiles()) {
       const list = this.readDay(date)[path];
-      if (Array.isArray(list)) out.push(...list.filter((snap) =>
-        snap && Number.isFinite(snap.ts) && typeof snap.data === 'string'));
+      if (Array.isArray(list)) out.push(...list.filter(isSnapshot));
     }
     return out.sort((a, b) => b.ts - a.ts);
   }
 
   /** 最新一条快照（从新到旧扫日文件，避免全量读盘）。 */
-  latestSnapshot(path) {
+  latestSnapshot(path: string|number) {
     const dates = this.listDayFiles().reverse();
     for (const date of dates) {
       const list = this.readDay(date)[path];
       if (Array.isArray(list)) {
-        const valid = list.filter((snap) => snap && Number.isFinite(snap.ts) && typeof snap.data === 'string');
+        const valid = list.filter(isSnapshot);
         if (valid.length) return valid.reduce((latest, snap) => snap.ts >= latest.ts ? snap : latest);
       }
     }
@@ -165,22 +179,24 @@ class FileRecovery {
     return [...set].sort((a, b) => a.localeCompare(b));
   }
 
-  appendSnapshot(path, ts, data) {
+  appendSnapshot(path: string|number, ts: number, data: string) {
     const latest = this.latestSnapshot(path);
     if (latest) ts = Math.max(ts, latest.ts + 1);
     const date = moment(ts).format('YYYY-MM-DD');
     const day = this.readDay(date);
-    if (!Array.isArray(day[path])) day[path] = [];
-    day[path].push({ ts, data });
+    const existing = day[path];
+    const snapshots: unknown[] = Array.isArray(existing) ? existing : [];
+    snapshots.push({ ts, data });
+    day[path] = snapshots;
     this.writeDay(date, day);
     this.tsCache[path] = ts;
   }
 
   /** 恢复后强制补一条快照（原版 forceAdd）。 */
-  forceAdd(path, data) { this.appendSnapshot(path, Date.now(), data); }
+  forceAdd(path: string|number, data: string) { this.appendSnapshot(path, Date.now(), data); }
 
   /** 同一路径的读写按事件顺序完成，旧读取不能覆盖恢复结果。 */
-  enqueue(path, action) {
+  enqueue<T>(path: string, action: () => T | Promise<T>): Promise<T> {
     const job = (this._jobs.get(path) || Promise.resolve()).then(action);
     const settled = job.catch(() => {});
     this._jobs.set(path, settled);
@@ -189,14 +205,14 @@ class FileRecovery {
   }
 
   /* ------------------------------------------------------------ 采集层 */
-  onFileChanged(file) {
-    if (!file || !SNAPSHOT_EXTENSIONS.includes(file.extension)) return;
+  onFileChanged(file: VaultEntry | null) {
+    if (!(file instanceof TFile) || !SNAPSHOT_EXTENSIONS.includes(file.extension)) return;
     const path = file.path;
     const generation = this._generation;
     return this.enqueue(path, () => this.capture(file, path, generation));
   }
 
-  async capture(file, path, generation) {
+  async capture(file: TFile, path: string, generation: number) {
     if (generation !== this._generation || file.path !== path) return;
     let last = this.tsCache[path];
     if (last === undefined) {
@@ -205,7 +221,7 @@ class FileRecovery {
       this.tsCache[path] = last;
     }
     const now = Date.now();
-    const minutes = parseFloat(this.options.intervalMinutes);
+    const minutes = Number(this.options.intervalMinutes);
     const intervalMinutes = Number.isFinite(minutes) && minutes >= 0 ? minutes : 5;
     if (now - last < 60 * intervalMinutes * 1000) { this.pendingFiles.add(path); return; }
     let data;
@@ -249,13 +265,15 @@ class FileRecovery {
   }
 
   /** 恢复已有文件或重建已删除文件，返回时索引与打开的编辑器已同步。 */
-  restoreSnapshot(path, snapshot) {
+  restoreSnapshot(path: string, snapshot: Snapshot) {
     if (!snapshot || typeof snapshot.data !== 'string') return Promise.reject(new Error('Invalid snapshot'));
     const data = snapshot.data;
     return this.enqueue(path, async () => {
       const views = this.app.workspace.getLeavesOfType('markdown')
-        .filter((leaf) => leaf.view.file && leaf.view.file.path === path);
-      for (const leaf of views) await leaf.view.save();
+        .filter((leaf) => leaf.view instanceof MarkdownView && leaf.view.file?.path === path);
+      for (const leaf of views) {
+        if (leaf.view instanceof MarkdownView && await leaf.view.save() === false) throw new Error('Document could not be saved before recovery.');
+      }
       let file = this.app.vault.getFileByPath(path);
       if (file) {
         const current = await this.app.vault.cachedRead(file);
@@ -274,11 +292,12 @@ class FileRecovery {
       this.forceAdd(path, data);
       this.pendingFiles.delete(path);
       for (const leaf of views) {
+        if (!(leaf.view instanceof MarkdownView)) continue;
         if (leaf.view._fileDeleted) {
           const state = leaf.view.getState();
           await leaf.setViewState({ type: 'empty' });
           await leaf.setViewState({ type: 'markdown', state });
-          await leaf.view.setState(state);
+          await leaf.view?.setState(state);
         } else {
           await leaf.view._onExternalModify();
         }
@@ -287,7 +306,7 @@ class FileRecovery {
     });
   }
 
-  openModal(path) {
+  openModal(path = '') {
     const modal = new FileRecoveryModal(this.app, this);
     modal.open();
     if (path) modal.switchToPath(path);
@@ -301,7 +320,7 @@ class FileRecovery {
     this.registerCommand();
     const vault = this.app.vault;
     const workspace = this.app.workspace;
-    const onVaultFile = (file) => Promise.resolve(this.onFileChanged(file))
+    const onVaultFile = (file: VaultEntry | null) => Promise.resolve(this.onFileChanged(file))
       .catch((error) => console.error('file-recovery: snapshot failed', error));
     const onOpenFile = onVaultFile;
     this._refs.push(vault.on('modify', onVaultFile));
@@ -321,7 +340,7 @@ class FileRecovery {
 
   onunload() {
     this._generation += 1;
-    clearTimeout(this._cleanupTimer);
+    clearTimeout(this._cleanupTimer ?? undefined);
     this._cleanupTimer = null;
     for (const ref of this._refs) ref.unregister();
     this._refs = [];
@@ -353,25 +372,25 @@ class FileRecovery {
  * FileRecoveryModal — 左栏文件搜索 + 快照列表，右栏预览 + 恢复
  * ------------------------------------------------------------------------ */
 class FileRecoveryModal extends Modal {
-  declare plugin: any;
+  declare plugin: FileRecovery;
   declare path: string;
-  declare currentVersion: any;
-  declare _suggestions: any[];
-  declare searchInputEl: any;
-  declare suggestionsEl: any;
-  declare versionListEl: any;
-  declare emptyEl: any;
-  declare contentPaneEl: any;
-  declare paneTitleEl: any;
-  declare diffToggle: any;
-  declare copyBtn: any;
-  declare restoreBtn: any;
-  declare textareaEl: any;
-  declare diffEl: any;
-  declare _prevVersion: any;
+  declare currentVersion: Snapshot | null;
+  declare _suggestions: string[];
+  declare searchInputEl: HTMLInputElement;
+  declare suggestionsEl: HTMLDivElement;
+  declare versionListEl: HTMLDivElement;
+  declare emptyEl: HTMLParagraphElement;
+  declare contentPaneEl: HTMLDivElement;
+  declare paneTitleEl: HTMLDivElement;
+  declare diffToggle: ToggleComponent;
+  declare copyBtn: ButtonComponent;
+  declare restoreBtn: ButtonComponent;
+  declare textareaEl: HTMLTextAreaElement;
+  declare diffEl: HTMLDivElement;
+  declare _prevVersion: Snapshot | null;
   declare _diffRendered: boolean;
 
-  constructor(app: App, plugin) {
+  constructor(app: App, plugin: FileRecovery) {
     super(app);
     this.plugin = plugin;
     this.path = '';
@@ -393,7 +412,7 @@ class FileRecoveryModal extends Modal {
     this.suggestionsEl.style.cssText = 'display:none;overflow-y:auto;max-height:40%;';
     this.versionListEl = list.createDiv('file-recovery-list-item-container');
     this.searchInputEl.addEventListener('input', () => this.updateSuggestions());
-    this.searchInputEl.addEventListener('keydown', (ev) => {
+    this.searchInputEl.addEventListener('keydown', (ev: { key: string; }) => {
       if (ev.key === 'Enter' && this._suggestions.length) this.switchToPath(this._suggestions[0]);
     });
 
@@ -446,7 +465,7 @@ class FileRecoveryModal extends Modal {
   updateSuggestions() {
     const query = this.searchInputEl.value.trim().toLowerCase();
     const paths = this.plugin.getPaths();
-    this._suggestions = (query ? paths.filter((p) => p.toLowerCase().includes(query)) : paths).slice(0, 100);
+    this._suggestions = (query ? paths.filter((p: string) => p.toLowerCase().includes(query)) : paths).slice(0, 100);
     this.suggestionsEl.empty();
     if (!this._suggestions.length) { this.suggestionsEl.style.display = 'none'; return; }
     for (const p of this._suggestions) {
@@ -459,7 +478,7 @@ class FileRecoveryModal extends Modal {
   }
 
   /** 切换到某个文件并列出其快照（原版 switchToPath）。 */
-  switchToPath(path) {
+  switchToPath(path: string) {
     this.path = path;
     const display = displayPath(path);
     this.searchInputEl.value = display;
@@ -479,7 +498,7 @@ class FileRecoveryModal extends Modal {
       this._showEmpty();
       return;
     }
-    snapshots.forEach((snap, i) => {
+    snapshots.forEach((snap, i: number) => {
       const item = this.versionListEl.createDiv('file-recovery-list-item-header');
       item.createDiv({ cls: 'file-recovery-list-item-details', text: moment(snap.ts).format('llll') });
       item.createDiv({ cls: 'u-small u-muted', text: formatBytes(snap.data.length) });
@@ -488,13 +507,13 @@ class FileRecoveryModal extends Modal {
     });
   }
 
-  selectVersion(snap, itemEl) {
+  selectVersion(snap: Snapshot, itemEl: { addClass: (arg0: string) => void; }) {
     this.currentVersion = snap;
     for (const el of this.versionListEl.findAll('.file-recovery-list-item-header')) {
       el.removeClass('is-active');
     }
     itemEl.addClass('is-active');
-    this.contentPaneEl.parentElement.removeClass('mod-empty');
+    this.contentPaneEl.parentElement?.removeClass('mod-empty');
     this.emptyEl.style.display = 'none';
     this.contentPaneEl.style.display = 'flex';
     this.paneTitleEl.setText(displayPath(this.path));
@@ -510,7 +529,7 @@ class FileRecoveryModal extends Modal {
   }
 
   /** 对齐原版 openHistory：切换 textarea/diff 显隐；首次显示差异时按需渲染。 */
-  updateDiffVisibility(show) {
+  updateDiffVisibility(show: boolean) {
     this.textareaEl.toggle(!show);
     this.diffEl.toggle(show);
     if (show && !this._diffRendered && this.currentVersion) {
@@ -522,7 +541,7 @@ class FileRecoveryModal extends Modal {
   }
 
   _showEmpty() {
-    this.contentPaneEl.parentElement.addClass('mod-empty');
+    this.contentPaneEl.parentElement?.addClass('mod-empty');
     this.emptyEl.style.display = '';
     this.contentPaneEl.style.display = 'none';
     this.textareaEl.value = '';
@@ -537,7 +556,7 @@ class FileRecoveryModal extends Modal {
     try {
       await this.plugin.restoreSnapshot(path, snap);
     } catch (e) {
-      new Notice(String(e && e.message ? e.message : e));
+      new Notice(String(e instanceof Error ? e.message : e));
       return;
     } finally {
       this.restoreBtn.disabled = false;
@@ -552,13 +571,13 @@ class FileRecoveryModal extends Modal {
 /* --------------------------------------------------------------------------
  * 设置页（设置宿主经 module.settingTab(app, containerEl) 调用）
  * ------------------------------------------------------------------------ */
-export function settingTab(app: App, containerEl) {
+export function settingTab(app: App, containerEl: HTMLElement) {
   const instance = () => {
     const entry = app.plugins && app.plugins.getInternalPlugin('file-recovery');
     return entry && entry.instance ? entry.instance : null;
   };
   // 与运行中的插件共享同一 options 对象：改动即时生效（对齐原版设置页直接改 instance.options）
-  const options = instance() ? instance().options : loadOptions(app);
+  const options = instance()?.options || loadOptions(app);
   const save = () => {
     const inst = instance();
     if (inst) inst.saveOptions();
@@ -640,10 +659,10 @@ export function create(app: App) {
     get options() { return plugin.options; },
     saveOptions: () => plugin.saveOptions(),
     // 供设置页签/其他插件调用
-    openModal: (path) => plugin.openModal(path),
-    getSnapshots: (path) => plugin.getSnapshots(path),
+    openModal: (path?: string) => plugin.openModal(path),
+    getSnapshots: (path: string|number) => plugin.getSnapshots(path),
     getPaths: () => plugin.getPaths(),
-    restoreSnapshot: (path, snapshot) => plugin.restoreSnapshot(path, snapshot),
+    restoreSnapshot: (path: string, snapshot: Snapshot) => plugin.restoreSnapshot(path, snapshot),
     clearData: () => plugin.clearData(),
   };
 }

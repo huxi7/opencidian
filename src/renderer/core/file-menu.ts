@@ -10,14 +10,18 @@
 import { t, tt } from './i18n.js';
 import { Notice } from './notices.js';
 import { Desktop } from './ipc.js';
+import type { Workspace } from './workspace.js';
+import type { Menu } from './menu.js';
+import type { TFile, VaultEntry } from './vault.js';
 import { TFolder } from './vault.js';
+import { DocumentWindowResult } from '../../ipc-contracts.js';
 
 /** 原版 OI：非根文件夹且非外部文件（本项目无外部文件）。 */
-function canMove(file) {
+function canMove(file: VaultEntry | null) {
   return !!file && !(file instanceof TFolder && file.isRoot());
 }
 
-function copyText(text) {
+function copyText(text: string) {
   try {
     const result = navigator.clipboard.writeText(text);
     if (result && result.catch) result.catch(() => { new Notice(tt('interface.copy_failed', '无法复制到剪贴板')); });
@@ -26,25 +30,25 @@ function copyText(text) {
   }
 }
 
-function copyWithNotice(text, item?) {
+function copyWithNotice(text: string, item?: undefined) {
   copyText(text);
   new Notice(item ? tt('interface.copied', '{{item}} 已复制到你的剪贴板', { item }) : tt('interface.copied_generic', '已复制到剪贴板'));
 }
 
 /** 原版 app.copyObsidianUrl。 */
-export function copyObsidianUrl(app: App, file) {
+export function copyObsidianUrl(app: App, file: VaultEntry) {
   const vault = encodeURIComponent(app.vault.getName());
   const path = encodeURIComponent(file.path.replace(/\.md$/, ''));
   copyWithNotice('obsidian://open?vault=' + vault + '&file=' + path);
 }
 
 /** 原版 file-menu 监听体：复制路径子菜单 + 系统项 + 移动。 */
-export function fillFileMenu(workspace, menu, file, source) {
+export function fillFileMenu(workspace: Workspace, menu: Menu, file: VaultEntry, source: string) {
   const app = workspace.app;
   menu.setSectionSubmenu('info.copy', { title: t('interface.menu.copy-path'), icon: 'lucide-clipboard' });
   if (!(file instanceof TFolder)) {
     const state = app.workspace._getViewStateForFile(file);
-    if (state.type !== 'empty') menu.addItem(item => item.setSection('open').setTitle(t('interface.menu.open-in-new-window')).setIcon('lucide-picture-in-picture-2')
+    if (state.type !== 'empty') menu.addItem((item) => item.setSection('open').setTitle(t('interface.menu.open-in-new-window')).setIcon('lucide-picture-in-picture-2')
       .onClick(() => Desktop.openDocumentWindow(state)));
     menu.addItem((i) => i.setSection('info.copy').setTitle(t('interface.menu.copy-obsidian-url'))
       .setIcon('lucide-link').onClick(() => copyObsidianUrl(app, file)));
@@ -76,7 +80,7 @@ export function fillFileMenu(workspace, menu, file, source) {
 }
 
 /** 原版 files-menu 监听体：多选移动。 */
-export function fillFilesMenu(workspace, menu, files) {
+export function fillFilesMenu(workspace: Workspace, menu: Menu, files: VaultEntry[]) {
   const app = workspace.app;
   menu.addItem((i) => i.setSection('action')
     .setTitle(t('plugins.file-explorer.action-move-items', { count: files.length }))
@@ -89,7 +93,7 @@ export function fillFilesMenu(workspace, menu, files) {
 }
 
 /** 把两个补全器接到 workspace 事件总线上（加载期只注册一次）。 */
-export function attachFileMenuHandler(workspace) {
+export function attachFileMenuHandler(workspace: Workspace) {
   if (workspace._fileMenuAttached) return;
   workspace._fileMenuAttached = true;
   workspace.on('file-menu', (menu, file, source, leaf) => fillFileMenu(workspace, menu, file, source));

@@ -5,13 +5,27 @@
  *        模式与原版 EditorSuggest 一致：file / heading / block / display；文件项含别名与未创建的 linktext，空结果返回 type=none 的“未找到匹配结果”项。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
+import type { EditorView } from '@codemirror/view';
 import { fuzzyMatch } from '../core/suggest.js';
 import { t } from '../core/i18n.js';
+import { TFile, VaultEntry } from '../core/vault.js';
+import { CachedMetadata,CacheBlock } from '../core/metadata-types.js';
 
+export interface LinkContext { start: number; end: number; query: string; lineFrom: number; lineTo: number; lineText: string; }
+export type LinkMode = 'file' | 'heading' | 'block' | 'display';
+interface MatchData { score: number; matches: number[] | null; note?: string; noteMatches?: number[] | null; downranked?: boolean; }
+interface FileData { file: TFile; path: string; linkText: string; }
+export type FileSuggestion = MatchData & FileData & { type: 'file'; title: string };
+export type AliasSuggestion = MatchData & FileData & { type: 'alias'; title: string; alias: string; displayFallback?: boolean };
+export type HeadingSuggestion = MatchData & FileData & { type: 'heading'; heading: string; level: number; subpath: string; fallback?: boolean };
+export type BlockSuggestion = MatchData & FileData & { type: 'block'; blockId: string; display: string; subpath: string };
+export type LinktextSuggestion = MatchData & { type: 'linktext'; file: null; path: string; linkText: string; title: string };
+export type FileCandidate = FileSuggestion | AliasSuggestion | LinktextSuggestion;
+export type LinkSuggestion = FileCandidate | HeadingSuggestion | BlockSuggestion | (MatchData & { type: 'none' });
 const NONE_TYPE = 'none';
 
 /** 原版 trigger 的触发范围：同一行、光标前最后一个 [[ 之后，且其后没有 ]。 */
-export function buildLinkContext(view) {
+export function buildLinkContext(view: EditorView): LinkContext | null {
   const selection = view.state.selection.main;
   if (!selection.empty) return null;
   const head = selection.head;
@@ -31,35 +45,35 @@ export function buildLinkContext(view) {
 }
 
 /** 原版 CT：第一个 # 之前是链接路径，之后（含 #）是子路径。 */
-export function splitSubpath(text) {
+export function splitSubpath(text: string) {
   const index = text.indexOf('#');
   if (index < 0) return { path: text, subpath: '' };
   return { path: text.slice(0, index), subpath: text.slice(index) };
 }
 
 /** 原版 PT：标题写入链接前清掉分隔符并压缩空白。 */
-export function sanitizeHeading(heading) {
+export function sanitizeHeading(heading: string) {
   return String(heading || '')
     .replace(/[:#|^\\\r\n]|%%|\[\[|\]\]/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();
 }
 
-function fullPath(file) {
+function fullPath(file: TFile) {
   return file.extension === 'md' ? file.path.replace(/\.md$/i, '') : file.path;
 }
 
-function pathBasename(path) {
+function pathBasename(path: string) {
   const index = path.lastIndexOf('/');
   return index < 0 ? path : path.slice(index + 1);
 }
 
-function pathFolder(path) {
+function pathFolder(path: string) {
   const index = path.lastIndexOf('/');
   return index < 0 ? '' : path.slice(0, index + 1);
 }
 
-function relativeLinkPath(fromDir, target) {
+function relativeLinkPath(fromDir: string, target: string) {
   const from = fromDir ? fromDir.split('/') : [];
   const to = target.split('/');
   let common = 0;
@@ -69,7 +83,7 @@ function relativeLinkPath(fromDir, target) {
 }
 
 /** 原版 fileToLinktext 的最短路径策略：唯一 basename 用文件名，其余按 newLinkFormat。 */
-export function linkTextForFile(app: App, file, sourcePath = '') {
+export function linkTextForFile(app: App, file: TFile, sourcePath = '') {
   const settings = (app.settings && app.settings.appSettings) || {};
   const format = settings.newLinkFormat || 'shortest';
   const isMarkdown = file.extension === 'md';
@@ -106,22 +120,22 @@ function compileIgnoreRules(app: App) {
   });
 }
 
-function isIgnored(rules, path) {
+function isIgnored(rules: RegExp[], path: string) {
   return rules.some((rule) => {
     rule.lastIndex = 0;
     return rule.test(path);
   });
 }
 
-function mtimeOf(file) {
+function mtimeOf(file: TFile) {
   return (file && file.stat && Number(file.stat.mtime)) || 0;
 }
 
-function noneItem() {
+function noneItem(): Extract<LinkSuggestion, { type: 'none' }> {
   return { type: NONE_TYPE, matches: null, score: 0 };
 }
 
-function baseFileItem(app: App, file, sourcePath, rules) {
+function baseFileItem(app: App, file: TFile, sourcePath: string|undefined, rules: RegExp[]): FileSuggestion {
   const path = fullPath(file);
   return {
     type: 'file',
@@ -136,11 +150,11 @@ function baseFileItem(app: App, file, sourcePath, rules) {
   };
 }
 
-function aliasItems(app: App, file, sourcePath, rules) {
+function aliasItems(app: App, file: TFile, sourcePath: string|undefined, rules: RegExp[]): AliasSuggestion[] | null {
   const aliases = app.metadataCache ? app.metadataCache.getAliases(file) : [];
   if (!aliases.length) return null;
   const path = fullPath(file);
-  return aliases.map((alias) => ({
+  return aliases.map<AliasSuggestion>((alias) => ({
     type: 'alias',
     file,
     path,
@@ -155,7 +169,7 @@ function aliasItems(app: App, file, sourcePath, rules) {
 }
 
 /** 文件模式：文件与 frontmatter 别名同列；空查询按 mtime 倒序（原版）。 */
-function collectFiles(app: App, query, sourcePath) {
+function collectFiles(app: App, query: string, sourcePath: string|undefined) {
   const rules = compileIgnoreRules(app);
   const files = app.vault.getFiles().filter((file) => {
     if (!file || file.extension === undefined) return false;
@@ -163,14 +177,14 @@ function collectFiles(app: App, query, sourcePath) {
     if (file.path.startsWith('.') || file.path.includes('/.')) return false;
     return true;
   });
-  const entries = [];
+  const entries: FileCandidate[] = [];
   for (const file of files) {
     entries.push(baseFileItem(app, file, sourcePath, rules));
     const aliases = aliasItems(app, file, sourcePath, rules);
     if (aliases) entries.push(...aliases);
   }
   // 原版 getLinkSuggestions 的 linktext：库里被引用但尚未创建的目标也参与补全
-  const unresolved = new Map();
+  const unresolved = new Map<string, boolean>();
   const unresolvedLinks = (app.metadataCache && app.metadataCache.unresolvedLinks) || {};
   for (const links of Object.values(unresolvedLinks)) {
     for (const linktext of Object.keys(links || {})) {
@@ -189,7 +203,7 @@ function collectFiles(app: App, query, sourcePath) {
     entries.sort((a, b) => b.score - a.score);
     return entries.slice(0, 100);
   }
-  const matches = [];
+  const matches: FileCandidate[] = [];
   for (const entry of entries) {
     let match = fuzzyMatch(trimmed, entry.title);
     if (match) {
@@ -220,7 +234,7 @@ function collectFiles(app: App, query, sourcePath) {
   return matches.slice(0, 100);
 }
 
-function linkTextForSubpath(app: App, file, sourcePath) {
+function linkTextForSubpath(app: App, file: TFile, sourcePath: string|undefined) {
   if (file && sourcePath && file.path === sourcePath) return '';
   return linkTextForFile(app, file, sourcePath);
 }
@@ -229,7 +243,7 @@ function linkTextForSubpath(app: App, file, sourcePath) {
  * 原版 VI 的标题层级匹配：最后一段模糊匹配标题，之前的段必须按文档顺序命中祖先。
  * 返回的 subpath 含前缀（[[A#B]] 的 "#A#B"）。
  */
-function collectLocalHeadingItems(app: App, file, subpath, sourcePath) {
+function collectLocalHeadingItems(app: App, file: TFile, subpath: string, sourcePath: string|undefined): HeadingSuggestion[] {
   const cache = app.metadataCache.getFileCache(file);
   const headings = (cache && cache.headings) || [];
   const raw = subpath.startsWith('#') ? subpath.slice(1) : subpath;
@@ -237,7 +251,7 @@ function collectLocalHeadingItems(app: App, file, subpath, sourcePath) {
   if (raw.endsWith('#')) segments.push('');
   if (!segments.length) segments.push('');
   const prefix = '#' + segments.slice(0, -1).join('#') + (segments.length > 1 ? '#' : '');
-  const items = [];
+  const items: HeadingSuggestion[] = [];
   let matched = 0;
   let parentLevel = 0;
   for (const heading of headings) {
@@ -275,9 +289,9 @@ function collectLocalHeadingItems(app: App, file, subpath, sourcePath) {
   }];
 }
 
-function collectGlobalHeadingItems(app: App, query, sourcePath) {
+function collectGlobalHeadingItems(app: App, query: string, sourcePath: string|undefined): HeadingSuggestion[] {
   const rules = compileIgnoreRules(app);
-  const items = [];
+  const items: HeadingSuggestion[] = [];
   const trimmed = query.trim();
   for (const file of app.vault.getMarkdownFiles()) {
     if (isIgnored(rules, file.path)) continue;
@@ -300,7 +314,7 @@ function collectGlobalHeadingItems(app: App, query, sourcePath) {
   return items.slice(0, 100);
 }
 
-function blockDisplay(cache, block) {
+function blockDisplay(cache: CachedMetadata|null, block: CacheBlock) {
   const raw = (cache && cache._rawText) || '';
   const line = block && block.position && block.position.start ? raw.split('\n')[block.position.start.line] : '';
   const id = block && block.id;
@@ -310,11 +324,11 @@ function blockDisplay(cache, block) {
   return text || (id ? String(id) : '');
 }
 
-function collectLocalBlockItems(app: App, file, blockQuery, sourcePath) {
+function collectLocalBlockItems(app: App, file: TFile, blockQuery: string, sourcePath: string|undefined): BlockSuggestion[] {
   const cache = app.metadataCache.getFileCache(file);
   const blocks = (cache && cache.blocks) || {};
   const trimmed = blockQuery.trim();
-  const items = [];
+  const items: BlockSuggestion[] = [];
   for (const id of Object.keys(blocks)) {
     const display = blockDisplay(cache, blocks[id]);
     const displayMatch = trimmed ? fuzzyMatch(trimmed, display) : { score: 0, matches: null };
@@ -325,18 +339,18 @@ function collectLocalBlockItems(app: App, file, blockQuery, sourcePath) {
       blockId: id, display, note: id, subpath: '#^' + id,
       matches: displayMatch ? displayMatch.matches : null,
       noteMatches: idMatch ? idMatch.matches : null,
-      score: idMatch ? 0 : displayMatch.score,
+      score: idMatch ? 0 : displayMatch?.score || 0,
     });
   }
   items.sort((a, b) => b.score - a.score);
   return items.slice(0, 100);
 }
 
-function collectGlobalBlockItems(app: App, query, sourcePath) {
+function collectGlobalBlockItems(app: App, query: string, sourcePath: string|undefined): BlockSuggestion[] {
   const rules = compileIgnoreRules(app);
   const trimmed = query.trim().toLowerCase();
   const words = trimmed.split(/\s+/).filter(Boolean);
-  const items = [];
+  const items: BlockSuggestion[] = [];
   for (const file of app.vault.getMarkdownFiles()) {
     if (isIgnored(rules, file.path)) continue;
     const cache = app.metadataCache.getFileCache(file);
@@ -370,14 +384,14 @@ function collectGlobalBlockItems(app: App, query, sourcePath) {
   return items.slice(0, 100);
 }
 
-function collectDisplayItems(app: App, pathText, subpath, displayText, sourcePath) {
+function collectDisplayItems(app: App, pathText: string, subpath: string, displayText: string, sourcePath: string|undefined): AliasSuggestion[] {
   const file = resolveFile(app, pathText, sourcePath);
   if (!file) return [];
   const note = pathText + subpath;
   const linkText = linkTextForFile(app, file, sourcePath) + subpath;
   const aliases = (app.metadataCache.getAliases(file) || []).map(String);
   const trimmed = displayText.trim();
-  const items = [];
+  const items: AliasSuggestion[] = [];
   for (const alias of aliases) {
     const match = trimmed ? fuzzyMatch(trimmed, alias) : { score: 0, matches: null };
     if (!match) continue;
@@ -393,7 +407,7 @@ function collectDisplayItems(app: App, pathText, subpath, displayText, sourcePat
   }];
 }
 
-function resolveFile(app: App, pathText, sourcePath) {
+function resolveFile(app: App, pathText: string, sourcePath: string|undefined) {
   if (!pathText && sourcePath) return app.vault.getFileByPath(sourcePath);
   const destination = app.metadataCache.getFirstLinkpathDest(pathText, sourcePath);
   return destination ? app.vault.getFileByPath(destination) : null;
@@ -402,7 +416,7 @@ function resolveFile(app: App, pathText, sourcePath) {
 /**
  * @returns {{mode: 'file'|'heading'|'block'|'display', items: object[]}}
  */
-export function collectLinkSuggestions(app: App, context, sourcePath = '') {
+export function collectLinkSuggestions(app: App, context: LinkContext, sourcePath = ''): { mode: LinkMode; items: LinkSuggestion[] } {
   const query = String(context.query || '').trim();
   let body = query;
   let display = null;
@@ -456,7 +470,7 @@ const MEDIA_EXTENSIONS = new Set([
  * 按原版 qI 生成替换：start 回溯两个字符吞掉 [[，尾部已有 ]] 时一并吞掉。
  * marker 用于 #/^ 键：先接受当前文件，再把模式切到标题或块。
  */
-export function buildLinkInsertion(item, context, options: Record<string, any> = {}) {
+export function buildLinkInsertion(item: LinkSuggestion, context: LinkContext, options: { marker?: string } = {}) {
   const marker = options.marker || '';
   let alias = item.type === 'alias' ? (item.alias || '') : '';
   let end = context.end;

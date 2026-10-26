@@ -5,7 +5,7 @@
  *        普通变量名不产出 token，对齐原版 Prism JS（`const a` 的 a 保持正文色）。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
-import { LanguageDescription } from '@codemirror/language';
+import { LanguageDescription, type Language } from '@codemirror/language';
 import { languages } from '@codemirror/language-data';
 import { highlightTree, tagHighlighter, tags } from '@lezer/highlight';
 
@@ -32,8 +32,8 @@ export const codeHighlighter = tagHighlighter([
   { tag: tags.invalid, class: 'token important' },
 ]);
 
-const pendingLanguages = new WeakMap();
-const pendingElements = new WeakMap();
+const pendingLanguages = new WeakMap<LanguageDescription, Promise<Language | null>>();
+const pendingElements = new WeakMap<HTMLElement, object>();
 const plainLanguages = new Set(['', 'text', 'txt', 'plain', 'plaintext', 'none', 'mermaid']);
 
 export function codeLanguageName(info = '') {
@@ -41,7 +41,7 @@ export function codeLanguageName(info = '') {
   return /^[\w.+#-]+$/.test(name) ? name : '';
 }
 
-async function loadLanguage(name) {
+async function loadLanguage(name: string) {
   if (plainLanguages.has(name)) return null;
   const description = LanguageDescription.matchLanguageName(languages, name, false) ||
     LanguageDescription.matchFilename(languages, 'code.' + name);
@@ -52,12 +52,12 @@ async function loadLanguage(name) {
   return pendingLanguages.get(description);
 }
 
-export function cancelCodeHighlight(element) {
+export function cancelCodeHighlight(element: HTMLElement | null) {
   if (element) pendingElements.delete(element);
 }
 
-export async function highlightCodeElement(element, info = element.dataset.lang || '') {
-  const source = element.textContent;
+export async function highlightCodeElement(element: HTMLElement, info = element.dataset.lang || '') {
+  const source = element.textContent || '';
   const request = {};
   pendingElements.set(element, request);
   const name = codeLanguageName(info);

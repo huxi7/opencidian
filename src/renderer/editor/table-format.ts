@@ -7,7 +7,11 @@
  *        table-selection.js 的单元格菜单是唯一调用方；本文件不接触 DOM 渲染与 CM6。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
+import type { CellPosition } from './table-types.js';
+import type { EditorView } from '@codemirror/view';
+import type { TableWidget } from './table-widget.js';
 import { t } from '../core/i18n.js';
+import { Menu } from '../core/menu.js';
 import { cellTextFromInput } from './table-model.js';
 
 /** 文本格式条目 —— 原版 NV 的图标与 section；marker 是 textarea 单元格的等价标记。 */
@@ -24,12 +28,12 @@ const FORMAT_ITEMS = [
 /** 清除格式：原版 clearMarkdownFormatting 覆盖的标记集合（双字符在前，避免先删单字符）。 */
 const CLEAR_MARKERS = ['**', '__', '~~', '==', '%%', '*', '`', '$'];
 
-function isWrapped(text, marker) {
+function isWrapped(text: string, marker: string) {
   return text.length >= marker.length * 2 && text.startsWith(marker) && text.endsWith(marker);
 }
 
 /** 单元格文本的格式状态：整格被 marker 成对包裹即勾选（原版 hf(state, range) 的单元格等价物）。 */
-export function cellFormatState(text) {
+export function cellFormatState(text: string): Record<string, boolean> {
   const value = String(text == null ? '' : text).trim();
   return {
     bold: isWrapped(value, '**') || isWrapped(value, '__'),
@@ -43,21 +47,21 @@ export function cellFormatState(text) {
 }
 
 /** 包裹/取消包裹：已成对就去标记，否则两侧补标记（原版 toggleMarkdownFormatting 的开关语义）。 */
-export function toggleMarker(text, marker) {
+export function toggleMarker(text: string, marker: string) {
   const value = String(text == null ? '' : text).trim();
   if (isWrapped(value, marker)) return value.slice(marker.length, value.length - marker.length).trim();
   return marker + value + marker;
 }
 
 /** 清除格式：删除全部标记字符（含单字符标记），去掉首尾空白。 */
-export function clearMarkers(text) {
+export function clearMarkers(text: string) {
   let value = String(text == null ? '' : text);
   for (const marker of CLEAR_MARKERS) value = value.split(marker).join('');
   return value.trim();
 }
 
 /** 「文本格式」子菜单：三段之间插分隔线，勾选态取自单元格文本。 */
-export function buildFormattingSubmenu(menu, widget, view, cell) {
+export function buildFormattingSubmenu(menu: Menu, widget: TableWidget, view: EditorView, cell: CellPosition) {
   const model = widget.model();
   const state = cellFormatState(model && model.rows[cell.row] ? model.rows[cell.row][cell.col] : '');
   const item = menu.addItem((entry) => entry
@@ -82,7 +86,7 @@ export function buildFormattingSubmenu(menu, widget, view, cell) {
 }
 
 /** 标记为 null 即清除格式；编辑器内有选区时只包裹选区，否则整格包裹。 */
-function applyMarker(widget, view, cell, marker) {
+function applyMarker(widget: TableWidget, view: EditorView, cell: CellPosition, marker: string|null) {
   const model = widget.model();
   if (!model || !model.rows[cell.row]) return false;
   const editor = widget.edit && widget.edit.row === cell.row && widget.edit.col === cell.col

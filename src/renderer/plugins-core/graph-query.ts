@@ -4,9 +4,11 @@
  * [POS]: 图谱筛选与颜色组共用的字段匹配器；由引擎提供元数据。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
+interface QueryTerm { negated: boolean; type: string; value: string; }
+interface GraphFields { filename?: string; filepath?: string; content?: string; tags?: string[]; }
 const QUERY_TERM_RE = /(-)?(?:(file|path|tag|content):)?("([^"]*)"|\S+)/g;
 
-function parseTerms(query) {
+function parseTerms(query: string) {
   const terms = [];
   QUERY_TERM_RE.lastIndex = 0;
   let m;
@@ -18,12 +20,12 @@ function parseTerms(query) {
   return terms;
 }
 
-function textMatches(text, needle) {
+function textMatches(text: string, needle: string) {
   if (!text) return false;
   return text.toLowerCase().includes(needle.toLowerCase());
 }
 
-function tagMatches(tag, needle) {
+function tagMatches(tag: string, needle: string) {
   const full = needle.startsWith('#') ? needle : '#' + needle;
   const lower = tag.toLowerCase();
   const target = full.toLowerCase();
@@ -31,10 +33,10 @@ function tagMatches(tag, needle) {
 }
 
 /* 单条检索式对某个字段集的匹配；字段不存在（如附件没有 content）视为不匹配 */
-function termMatches(term, fields) {
+function termMatches(term: QueryTerm, fields: GraphFields) {
   switch (term.type) {
     case 'tag':
-      return (fields.tags || []).some((tag) => tagMatches(tag, term.value));
+      return (fields.tags || []).some((tag: string) => tagMatches(tag, term.value));
     case 'file':
       return fields.filename !== undefined && textMatches(fields.filename, term.value);
     case 'path':
@@ -49,18 +51,18 @@ function termMatches(term, fields) {
 }
 
 export class GraphQuery {
-  declare query: any;
-  declare terms: any;
-  declare matcher: any;
+  declare query: string;
+  declare terms: QueryTerm[];
+  declare matcher: GraphQuery | null;
 
-  constructor(query) {
+  constructor(query: string) {
     this.query = query;
     this.terms = parseTerms(query);
     /* 原版：解析不出匹配式时 matcher 为 null，该检索式不参与过滤 */
     this.matcher = this.terms.length ? this : null;
   }
   /* 原版 NH.match(file, content)：非 md 只有文件名可匹配 */
-  match(file, content, tags = []) {
+  match(file: { name: string; path: string; extension: string }, content: string, tags: string[] = []) {
     const fields = {
       filename: file.name,
       filepath: file.path,
@@ -69,14 +71,14 @@ export class GraphQuery {
     };
     return this._every((term) => termMatches(term, fields));
   }
-  matchTag(tag) {
+  matchTag(tag: string) {
     return this._every((term) => termMatches(term, { tags: [tag] }));
   }
-  matchFilepath(path) {
+  matchFilepath(path: string) {
     const base = path.split('/').pop();
     return this._every((term) => termMatches(term, { filename: base, filepath: path }));
   }
-  _every(fn) {
+  _every(fn: (term: QueryTerm) => boolean) {
     for (const term of this.terms) {
       const hit = fn(term);
       if (term.negated ? hit : !hit) return false;

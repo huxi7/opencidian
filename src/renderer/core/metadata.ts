@@ -10,10 +10,14 @@
  * tags pane, graph view, quick switcher and search.
  */
 import { Events } from './events.js';
-import { TFile, TFolder } from './vault.js';
+import { TFile, TFolder, type Vault, type VaultEntry } from './vault.js';
+import type { CacheLink, CachedMetadata, FrontmatterParseResult, LinkCounts, LinkResolution } from './metadata-types.js';
+import { isJsonRecord } from './settings-types.js';
+interface MetadataHost { vault: Vault; settings?: { appSettings?: { userIgnoreFilters?: unknown }; config?: { userIgnoreFilters?: unknown } }; }
+interface MetadataEvents { changed: [file: VaultEntry, text?: string, cache?: CachedMetadata]; resolved: []; }
 import { createUserIgnoreMatcher } from './user-ignore.js';
 
-const yaml = require('js-yaml');
+const yaml: typeof import('js-yaml') = require('js-yaml');
 
 const WIKILINK_RE = /(!?)\[\[([^\[\]]+?)\]\]/g;
 const MDLINK_RE = /(!?)\[([^\]]*)\]\(([^()\s]+(?:\s+"[^"]*")?)\)/g;
@@ -22,19 +26,20 @@ const HEX_COLOR_RE = /^[0-9a-fA-F]{3,8}$/;
 const HEADING_RE = /^(#{1,6})\s+(.*?)(?:\s+#+)?$/;
 const BLOCK_ID_RE = /\^([A-Za-z0-9-]+)\s*$/;
 
-export class MetadataCache extends Events {
-  declare app: App;
-  declare _isUserIgnored: any;
-  declare caches: any;
-  declare resolvedLinks: any;
-  declare unresolvedLinks: any;
-  declare _basenameIndex: any;
-  declare _aliasIndex: any;
-  declare _initialized: boolean;
-  declare _parseQueue: any[];
-  declare _flushTimer: any;
+export class MetadataCache extends Events<MetadataEvents> {
+  app: MetadataHost;
+  iterateRefsForFile?: (file: TFile, callback: (reference: CacheLink) => void) => void;
+  _isUserIgnored: ReturnType<typeof createUserIgnoreMatcher>;
+  caches: Map<string, CachedMetadata>;
+  resolvedLinks: LinkResolution;
+  unresolvedLinks: LinkResolution;
+  _basenameIndex: Map<string, string[]>;
+  _aliasIndex: Map<string, string[]>;
+  _initialized: boolean;
+  _parseQueue: TFile[];
+  _flushTimer: ReturnType<typeof setTimeout> | null;
 
-  constructor(app: App) {
+  constructor(app: MetadataHost) {
     super();
     this.app = app;
     this._isUserIgnored = createUserIgnoreMatcher(() => {
@@ -51,7 +56,7 @@ export class MetadataCache extends Events {
     this._flushTimer = null;
   }
 
-  isUserIgnored(fileOrPath) { return this._isUserIgnored(fileOrPath); }
+  isUserIgnored(fileOrPath: string | { path: string } | null | undefined) { return this._isUserIgnored(fileOrPath); }
 
   async initialize() {
     const files = this.app.vault.getMarkdownFiles();
@@ -79,13 +84,13 @@ export class MetadataCache extends Events {
     for (const file of this.app.vault.getMarkdownFiles()) {
       const key = file.basename.toLowerCase();
       if (!this._basenameIndex.has(key)) this._basenameIndex.set(key, []);
-      this._basenameIndex.get(key).push(file.path);
+      this._basenameIndex.get(key)!.push(file.path);
       const cache = this.caches.get(file.path);
       if (cache && cache.aliases) {
         for (const alias of cache.aliases) {
           const akey = String(alias).toLowerCase();
           if (!this._aliasIndex.has(akey)) this._aliasIndex.set(akey, []);
-          this._aliasIndex.get(akey).push(file.path);
+          this._aliasIndex.get(akey)!.push(file.path);
         }
       }
     }
@@ -96,8 +101,8 @@ export class MetadataCache extends Events {
     this.resolvedLinks = {};
     this.unresolvedLinks = {};
     for (const [path, cache] of this.caches) {
-      const resolved = {};
-      const unresolved = {};
+      const resolved: LinkCounts = {};
+      const unresolved: LinkCounts = {};
       const allLinks = [...(cache.links || []), ...(cache.embeds || [])];
       for (const link of allLinks) {
         const dest = this.getFirstLinkpathDest(link.link, path, true);
@@ -113,7 +118,7 @@ export class MetadataCache extends Events {
     this.trigger('resolved');
   }
 
-  async parseFile(file, silent = false) {
+  async parseFile(file: TFile, silent = false) {
     let text = '';
     try { text = await this.app.vault.cachedRead(file); }
     catch (e) { return; }
@@ -123,12 +128,12 @@ export class MetadataCache extends Events {
       // update indices for single file
       const key = file.basename.toLowerCase();
       if (!this._basenameIndex.has(key)) this._basenameIndex.set(key, []);
-      const arr = this._basenameIndex.get(key);
+      const arr = this._basenameIndex.get(key)!;
       if (!arr.includes(file.path)) arr.push(file.path);
       if (cache.aliases) for (const alias of cache.aliases) {
         const akey = String(alias).toLowerCase();
         if (!this._aliasIndex.has(akey)) this._aliasIndex.set(akey, []);
-        const aarr = this._aliasIndex.get(akey);
+        const aarr = this._aliasIndex.get(akey)!;
         if (!aarr.includes(file.path)) aarr.push(file.path);
       }
       this.scheduleResolution();
@@ -137,16 +142,16 @@ export class MetadataCache extends Events {
   }
 
   scheduleResolution() {
-    clearTimeout(this._flushTimer);
+    if (this._flushTimer !== null) clearTimeout(this._flushTimer);
     this._flushTimer = setTimeout(() => this.rebuildLinkResolution(), 150);
   }
 
-  onFileModify(file) {
-    if (file.extension === 'md') this.parseFile(file).catch((e) => console.error(e));
+  onFileModify(file: VaultEntry) {
+    if (file instanceof TFile && file.extension === 'md') this.parseFile(file).catch((e) => console.error(e));
     else this.trigger('changed', file);
   }
 
-  onFileDelete(file) {
+  onFileDelete(file: VaultEntry) {
     this.caches.delete(file.path);
     this._basenameIndex.forEach((arr, key) => {
       const i = arr.indexOf(file.path);
@@ -159,7 +164,7 @@ export class MetadataCache extends Events {
     this.scheduleResolution();
   }
 
-  onFileRename(file, oldPath) {
+  onFileRename(file: VaultEntry, oldPath: string) {
     const cache = this.caches.get(oldPath);
     if (cache) {
       this.caches.delete(oldPath);
@@ -176,14 +181,14 @@ export class MetadataCache extends Events {
     this.scheduleResolution();
   }
 
-  getCache(path) {
+  getCache(path: string | TFile) {
     if (path instanceof TFile) path = path.path;
     return this.caches.get(path) || null;
   }
 
-  getFileCache(file) { return this.getCache(file.path); }
+  getFileCache(file: VaultEntry) { return this.getCache(file.path); }
 
-  getFirstLinkpathDest(linkpath, sourcePath, fromCache = false) {
+  getFirstLinkpathDest(linkpath: string, sourcePath = '', fromCache = false): string | null {
     if (!linkpath) return null;
     let link = String(linkpath).split('|')[0];
     link = link.split('#')[0].split('^')[0];
@@ -219,7 +224,7 @@ export class MetadataCache extends Events {
       }
     }
     // 3) basename index (last path segment)
-    const base = clean.split('/').pop().toLowerCase();
+    const base = (clean.split('/').pop() || '').toLowerCase();
     let arr = this._basenameIndex.get(hasExt ? base : base);
     if (!arr) {
       const withoutExt = base.replace(/\.md$/i, '');
@@ -244,20 +249,20 @@ export class MetadataCache extends Events {
     return null;
   }
 
-  getBacklinksForFile(file) {
+  getBacklinksForFile(file: TFile) {
     const target = file.path;
-    const result = new Map(); // sourcePath -> count
+    const result = new Map<string, number>(); // sourcePath -> count
     for (const [source, links] of Object.entries(this.resolvedLinks)) {
       if (source === target) continue;
       if (links[target]) result.set(source, links[target]);
     }
-    const backlinks = {};
+    const backlinks: Record<string, { link: TFile; count: number }> = {};
     for (const [source, count] of result) {
       const srcFile = this.app.vault.getFileByPath(source);
       if (srcFile instanceof TFile) backlinks[source] = { link: srcFile, count };
     }
     // unresolved links that match this file's basename
-    const unresolved = {};
+    const unresolved: LinkResolution = {};
     const key = file.basename.toLowerCase();
     for (const [source, links] of Object.entries(this.unresolvedLinks)) {
       for (const [text, count] of Object.entries(links)) {
@@ -272,7 +277,7 @@ export class MetadataCache extends Events {
     return { backlinks, unresolved, resolved: this.resolvedLinks };
   }
 
-  getUnlinkedMentions(file) {
+  getUnlinkedMentions(file: TFile) {
     // files that mention the basename/alias but don't link
     const names = new Set([file.basename]);
     const cache = this.getCache(file.path);
@@ -292,7 +297,7 @@ export class MetadataCache extends Events {
   }
 
   getTags() {
-    const counts = {};
+    const counts: LinkCounts = {};
     for (const [, cache] of this.caches) {
       for (const tag of cache.tags || []) {
         const key = tag.tag;
@@ -302,7 +307,7 @@ export class MetadataCache extends Events {
     return counts;
   }
 
-  getFilesWithTag(tag) {
+  getFilesWithTag(tag: string) {
     const out = [];
     const needle = tag.startsWith('#') ? tag : '#' + tag;
     for (const [path, cache] of this.caches) {
@@ -326,7 +331,7 @@ export class MetadataCache extends Events {
     return out;
   }
 
-  getAliases(file) {
+  getAliases(file: TFile) {
     const cache = this.getCache(file.path);
     return cache && cache.aliases ? cache.aliases : [];
   }
@@ -334,7 +339,7 @@ export class MetadataCache extends Events {
   isInitialized() { return this._initialized; }
 }
 
-function normalizeJoin(dir, rel) {
+function normalizeJoin(dir: string, rel: string) {
   const parts = (dir ? dir.split('/') : []).concat(rel.split('/'));
   const out = [];
   for (const p of parts) {
@@ -348,9 +353,9 @@ function normalizeJoin(dir, rel) {
 // ---------------------------------------------------------------------------
 // Markdown parsing
 // ---------------------------------------------------------------------------
-export function parseMarkdown(text, file) {
+export function parseMarkdown(text: string, file: TFile): CachedMetadata {
   const lines = text.split('\n');
-  const cache: Record<string, any> = {
+  const cache: CachedMetadata = {
     file, _rawText: text,
     frontmatter: {}, aliases: [], tags: [], headings: [], links: [], embeds: [],
     sections: [], blocks: {},
@@ -367,7 +372,7 @@ export function parseMarkdown(text, file) {
       const fmText = lines.slice(1, end).join('\n');
       try {
         const fm = yaml.load(fmText);
-        if (fm && typeof fm === 'object') {
+        if (isJsonRecord(fm)) {
           cache.frontmatter = fm;
           if (fm.aliases) {
             if (Array.isArray(fm.aliases)) cache.aliases = fm.aliases.map(String);
@@ -384,7 +389,7 @@ export function parseMarkdown(text, file) {
           if (fm.cssclasses) { /* handled by renderer */ }
         }
       } catch (e) {
-        cache.frontmatterError = String(e.message || e);
+        cache.frontmatterError = e instanceof Error ? e.message : String(e);
       }
       cache.frontmatterPosition = {
         start: { line: 0, col: 0, offset: 0 },
@@ -460,7 +465,7 @@ export function parseMarkdown(text, file) {
       const linktext = parts[0].trim();
       const displayText = parts.length > 1 ? parts.slice(1).join('|').trim() : undefined;
       let link = linktext;
-      let subpath = undefined;
+      let subpath: string | undefined;
       {
         const hashIdx = linktext.indexOf('#');
         if (hashIdx >= 0) { subpath = linktext.slice(hashIdx + 1); link = linktext.slice(0, hashIdx); }
@@ -520,7 +525,7 @@ export function parseMarkdown(text, file) {
   return cache;
 }
 
-export function parseFrontmatterText(text) {
+export function parseFrontmatterText(text: string): FrontmatterParseResult {
   const lines = text.split('\n');
   if (lines[0] === undefined || lines[0].trim() !== '---') return { frontmatter: {}, body: text, startLine: -1, endLine: -1 };
   for (let j = 1; j < lines.length; j++) {
@@ -528,7 +533,7 @@ export function parseFrontmatterText(text) {
       try {
         const fm = yaml.load(lines.slice(1, j).join('\n'));
         return {
-          frontmatter: (fm && typeof fm === 'object') ? fm : {},
+          frontmatter: isJsonRecord(fm) ? fm : {},
           body: lines.slice(j + 1).join('\n'),
           startLine: 0, endLine: j,
           rawFrontmatter: lines.slice(1, j).join('\n'),

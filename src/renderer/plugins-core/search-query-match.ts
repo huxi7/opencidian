@@ -7,6 +7,9 @@
  *        canvas 文件只匹配文本节点文字且节点命中不计入计数（countContent=false）。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
+import type { SearchNode, SearchValueNode, SearchRegex, SearchDocument, SearchDocRange, SearchRange, SearchEval, SearchField, SearchProperty, SearchMatch, SearchEvaluation } from './search-types.js';
+import { TFile } from '../core/vault.js';
+import { CachedMetadata, CacheHeading } from '../core/metadata-types.js';
 import { parseQuery } from './search-query-parse.js';
 
 const TASK_RE = /^\s*[-*+]\s+\[([ xX])\]\s+/;
@@ -14,7 +17,7 @@ const MAX_MATCHES = 500;
 
 /* ------------------------------------------------------------------ docs */
 
-function lineOffsets(lines) {
+function lineOffsets(lines: string[]) {
   const offsets = [];
   let offset = 0;
   for (const line of lines) {
@@ -24,7 +27,7 @@ function lineOffsets(lines) {
   return offsets;
 }
 
-function buildSections(lines, headings) {
+function buildSections(lines: string[], headings: CacheHeading[]) {
   const list = headings || [];
   const out = [];
   const firstLine = list.length ? list[0].position.start.line : lines.length;
@@ -37,7 +40,7 @@ function buildSections(lines, headings) {
   return out;
 }
 
-function buildBlocks(lines) {
+function buildBlocks(lines: string[]) {
   const out = [];
   let start = -1;
   for (let i = 0; i < lines.length; i++) {
@@ -49,16 +52,16 @@ function buildBlocks(lines) {
   return out;
 }
 
-function withOffsets(ranges, offsets, lines) {
-  return ranges.map((range) => ({
+function withOffsets(ranges: { startLine: number; endLine: number; }[], offsets: number[], lines: string[]) {
+  return ranges.map((range: { startLine: number; endLine: number; }) => ({
     startLine: range.startLine,
     endLine: range.endLine,
     start: offsets[range.startLine],
     end: (offsets[range.endLine] || 0) + (lines[range.endLine] || '').length,
-  })).filter((range) => range.end >= range.start);
+  })).filter((range: { end: number; start: number; }) => range.end >= range.start);
 }
 
-export function createSearchDocument(file, text, cache) {
+export function createSearchDocument(file: TFile, text: string, cache: CachedMetadata|null|undefined): SearchDocument {
   const lines = text.split('\n');
   const offsets = lineOffsets(lines);
   const headings = (cache && cache.headings) || [];
@@ -75,7 +78,7 @@ export function createSearchDocument(file, text, cache) {
 
 /* --------------------------------------------------------------- matching */
 
-function literalRanges(text, needle, caseSensitive) {
+function literalRanges(text: string, needle: string, caseSensitive: boolean) {
   if (!needle) return [];
   const haystack = caseSensitive ? text : text.toLowerCase();
   const search = caseSensitive ? needle : needle.toLowerCase();
@@ -90,7 +93,7 @@ function literalRanges(text, needle, caseSensitive) {
   return out;
 }
 
-function regexRanges(text, regex) {
+function regexRanges(text: string, regex: SearchRegex) {
   let compiled;
   try {
     const flags = (regex.flags || '').replace(/[gy]/g, '') + 'g';
@@ -107,7 +110,7 @@ function regexRanges(text, regex) {
   return out;
 }
 
-function propertyValueText(value) {
+function propertyValueText(value: unknown): string {
   if (value === null || value === undefined) return '';
   if (Array.isArray(value)) return value.map(propertyValueText).join(', ');
   if (typeof value === 'object') {
@@ -116,7 +119,7 @@ function propertyValueText(value) {
   return String(value);
 }
 
-function wholeWordRanges(text, phrase, caseSensitive) {
+function wholeWordRanges(text: string, phrase: string, caseSensitive: boolean) {
   if (!phrase) return [];
   const escaped = phrase.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   const regex = new RegExp('(^|\\W)' + escaped + '(?=\\W|$)', caseSensitive ? 'g' : 'gi');
@@ -130,14 +133,14 @@ function wholeWordRanges(text, phrase, caseSensitive) {
   return out;
 }
 
-function propertyRanges(node, text, caseSensitive) {
+function propertyRanges(node: SearchValueNode | null, text: string, caseSensitive: boolean) {
   if (!node) return [];
   if (node.regex) return regexRanges(text, node.regex);
   if (node.exact) return wholeWordRanges(text, node.value || '', caseSensitive);
   return literalRanges(text, node.value || '', caseSensitive);
 }
 
-function propertyKeyMatches(node, key, caseSensitive) {
+function propertyKeyMatches(node: SearchValueNode | null, key: string, caseSensitive: boolean) {
   if (!node) return false;
   if (node.regex) return regexRanges(key, node.regex).length > 0;
   if (!node.value) return false;
@@ -147,9 +150,9 @@ function propertyKeyMatches(node, key, caseSensitive) {
   return literalRanges(key, node.value, caseSensitive).length > 0;
 }
 
-function evalProperty(node, doc, caseSensitive) {
+function evalProperty(node: Extract<SearchNode, { type: 'property' }>, doc: SearchDocument, caseSensitive: boolean): SearchEval {
   const frontmatter = doc.cache && doc.cache.frontmatter;
-  const properties = [];
+  const properties: SearchProperty[] = [];
   if (!frontmatter || typeof frontmatter !== 'object') return { ok: false, content: [], fields: [], properties };
   for (const key of Object.keys(frontmatter)) {
     if (!propertyKeyMatches(node.key, key, caseSensitive)) continue;
@@ -169,18 +172,18 @@ function evalProperty(node, doc, caseSensitive) {
   return { ok: properties.length > 0, content: [], fields: [], properties };
 }
 
-function testRanges(text, node, caseSensitive) {
+function testRanges(text: string, node: SearchValueNode, caseSensitive: boolean) {
   if (node.regex) return regexRanges(text, node.regex);
   return literalRanges(text, node.value || '', caseSensitive);
 }
 
-function contentRanges(text, node, caseSensitive) {
+function contentRanges(text: string, node: SearchValueNode, caseSensitive: boolean) {
   if (node.regex) return regexRanges(text, node.regex);
   if (node.exact) return wholeWordRanges(text, node.value || '', caseSensitive);
   return literalRanges(text, node.value || '', caseSensitive);
 }
 
-function dedupeRanges(ranges) {
+function dedupeRanges(ranges: SearchRange[]): SearchRange[] {
   const seen = new Set();
   const out = [];
   for (const range of ranges) {
@@ -192,10 +195,10 @@ function dedupeRanges(ranges) {
   return out;
 }
 
-function valueResult(node, doc, caseSensitive, range) {
+function valueResult(node: SearchValueNode, doc: SearchDocument, caseSensitive: boolean, range: { start: number; end: number; }|null) {
   const field = node.field || 'any';
-  const content = [];
-  const fields = [];
+  const content: { start: number; end: number; }[] = [];
+  const fields: { field: string; ranges?: { start: number; end: number; }[]; value?: string; }[] = [];
   if (!node.value && !node.regex) {
     return { ok: field === 'tag' && !!(doc.cache.tags && doc.cache.tags.length), content, fields };
   }
@@ -240,9 +243,9 @@ function valueResult(node, doc, caseSensitive, range) {
   return { ok, content, fields };
 }
 
-function scopeRanges(scope, doc) {
+function scopeRanges(scope: string, doc: SearchDocument) {
   if (scope === 'line' || scope === 'task') {
-    return doc.lines.map((line, index) => ({
+    return doc.lines.map((line, index: number) => ({
       startLine: index,
       endLine: index,
       start: doc.offsets[index],
@@ -254,12 +257,12 @@ function scopeRanges(scope, doc) {
   return [];
 }
 
-function evalScope(node, doc, context, outerRange) {
+function evalScope(node: Extract<SearchNode, { type: 'scope' }>, doc: SearchDocument, context: { caseSensitive: boolean }, outerRange: SearchRange | null): SearchEval {
   let ranges = scopeRanges(node.scope, doc);
   if (outerRange) {
-    ranges = ranges.filter((range) => range.start >= outerRange.start && range.end <= outerRange.end);
+    ranges = ranges.filter((range: { start: number; end: number; }) => range.start >= outerRange.start && range.end <= outerRange.end);
   }
-  const content = [];
+  const content: SearchRange[] = [];
   let ok = false;
   for (const range of ranges) {
     if (node.scope === 'task') {
@@ -285,10 +288,10 @@ function evalScope(node, doc, context, outerRange) {
   return { ok, content: dedupeRanges(content), fields: [] };
 }
 
-function mergeResults(results) {
-  const content = [];
-  const fields = [];
-  const properties = [];
+function mergeResults(results: SearchEval[]): SearchEval {
+  const content: SearchRange[] = [];
+  const fields: SearchField[] = [];
+  const properties: SearchProperty[] = [];
   for (const result of results) {
     content.push(...result.content);
     fields.push(...result.fields);
@@ -302,7 +305,7 @@ function mergeResults(results) {
   };
 }
 
-function evalNode(node, doc, context, range) {
+function evalNode(node: SearchNode | null, doc: SearchDocument, context: { caseSensitive: boolean }, range: SearchRange | null): SearchEval {
   if (!node) return { ok: false, content: [], fields: [] };
   switch (node.type) {
     case 'and': {
@@ -340,7 +343,7 @@ function evalNode(node, doc, context, range) {
   }
 }
 
-function lineForOffset(doc, offset) {
+function lineForOffset(doc: SearchDocument, offset: number) {
   const offsets = doc.offsets;
   let low = 0;
   let high = offsets.length - 1;
@@ -352,7 +355,7 @@ function lineForOffset(doc, offset) {
   return Math.max(0, high);
 }
 
-export function searchDocument(doc, ast, options: Record<string, any> = {}) {
+export function searchDocument(doc: SearchDocument, ast: SearchNode, options: { matchCase?: boolean; countContent?: boolean } = {}): SearchEvaluation | null {
   const context = { caseSensitive: !!options.matchCase };
   const result = evalNode(ast, doc, context, null);
   if (!result.ok) return null;  const content = dedupeRanges(result.content).sort((a, b) => a.start - b.start || a.end - b.end).map((range) => {
@@ -365,18 +368,18 @@ export function searchDocument(doc, ast, options: Record<string, any> = {}) {
       lineEnd: doc.offsets[line] + (doc.lines[line] || '').length,
     };
   });
-  const properties = [];
+  const properties: SearchProperty[] = [];
   const seenProperties = new Set();
   for (const property of result.properties || []) {
-    const key = property.key + ':' + property.value + ':' + property.ranges.map((range) => range.start + '-' + range.end).join(',');
+    const key = property.key + ':' + property.value + ':' + property.ranges.map((range: { start: number; end: number; }) => range.start + '-' + range.end).join(',');
     if (seenProperties.has(key)) continue;
     seenProperties.add(key);
     properties.push(property);
   }
-  const fields = [];
+  const fields: SearchField[] = [];
   const seenFields = new Set();
   for (const field of result.fields) {
-    const key = field.field + ':' + (field.ranges ? field.ranges.map((r) => r.start + '-' + r.end).join(',') : field.value);
+    const key = field.field + ':' + (field.ranges ? field.ranges.map((r: { start: number; end: number; }) => r.start + '-' + r.end).join(',') : field.value);
     if (seenFields.has(key)) continue;
     seenFields.add(key);
     fields.push(field);
@@ -404,12 +407,12 @@ export function searchDocument(doc, ast, options: Record<string, any> = {}) {
  * 原版 NL.match 的 canvas 分支：只把文本节点的文字当正文，
  * 节点按 y 再 x 排序（与原版一致），原文 JSON 不参与匹配。
  */
-export function canvasNodeText(text) {
+export function canvasNodeText(text: string) {
   try {
-    const data = JSON.parse(text);
-    if (!data || !Array.isArray(data.nodes)) return null;
+    const data: unknown = JSON.parse(text);
+    if (!data || typeof data !== 'object' || !('nodes' in data) || !Array.isArray(data.nodes)) return null;
     const nodes = data.nodes
-      .filter((node) => node && node.type === 'text' && typeof node.text === 'string')
+      .filter((node: unknown): node is { type: 'text'; text: string; x?: number; y?: number } => !!node && typeof node === 'object' && 'type' in node && node.type === 'text' && 'text' in node && typeof node.text === 'string')
       .sort((a, b) => (a.y || 0) - (b.y || 0) || (a.x || 0) - (b.x || 0));
     if (!nodes.length) return null;
     return nodes.map((node) => node.text).join('\n');
@@ -420,7 +423,7 @@ export function canvasNodeText(text) {
 
 /* ------------------------------------------------- 无 DOM 兼容检索入口 */
 
-export function searchFile(text, file, terms, matchCase) {
+export function searchFile(text: string, file: TFile & { _cache?: CachedMetadata }, terms: Array<{ type?: string; value: string; negated?: boolean; exact?: boolean; regex?: { flags?: string } }>, matchCase: boolean) {
   const query = terms.map((term) => {
     const prefix = term.negated ? '-' : '';
     if (term.type && term.type !== 'content') return prefix + term.type + ':' + term.value;
@@ -444,7 +447,7 @@ export function searchFile(text, file, terms, matchCase) {
   };
 }
 
-export async function searchVault(app: App, query, options: Record<string, any> = {}) {
+export async function searchVault(app: App, query: string, options: { matchCase?: boolean } = {}) {
   const parsed = parseQuery(query);
   if (!parsed.ast) return { results: [], total: 0, count: 0 };
   const results = [];

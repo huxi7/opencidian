@@ -5,14 +5,17 @@
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 /* Bookmarks view — tree of bookmarks grouped by item type. */
+import type { BookmarkItem, create as createBookmarks } from '../plugins-core/bookmarks.js';
+import type { EventRef } from '../core/events.js';
 import { View } from '../core/view.js';
 import { t } from '../core/i18n.js';
 import { setIcon } from '../core/icons.js';
 import { Menu } from '../core/menu.js';
 import { Notice } from '../core/notices.js';
 import { SearchComponent } from '../core/setting.js';
+import { WorkspaceLeaf } from '../core/workspace-model.js';
 
-function itemIcon(item) {
+function itemIcon(item: BookmarkItem) {
   // 显式 lucide- 前缀：绕过别名表（'folder' 会被别名解析成 folder-open，原版是闭口 folder）。
   if (item.type === 'file') {
     if (item.path.endsWith('.canvas')) return 'lucide-layout-dashboard';
@@ -30,21 +33,21 @@ function itemIcon(item) {
 export class BookmarksView extends View {
   declare icon: string;
   declare navigation: boolean;
-  declare _plugin: any;
-  declare _refs: any[];
-  declare _collapsed: any;
-  declare _queueTimer: any;
-  declare _searchTimer: any;
+  declare _plugin: ReturnType<typeof createBookmarks> | null;
+  declare _refs: EventRef[];
+  declare _collapsed: Set<number | undefined>;
+  declare _queueTimer: ReturnType<typeof setTimeout> | null;
+  declare _searchTimer: ReturnType<typeof setTimeout> | null;
   declare _searchQuery: string;
   declare _isSearching: boolean;
-  declare _search: any;
-  declare _searchBtn: any;
-  declare _header: any;
-  declare _buttons: any;
-  declare _collapseAllBtn: any;
-  declare _treeEl: any;
+  declare _search: SearchComponent | null;
+  declare _searchBtn: HTMLElement | null;
+  declare _header: HTMLDivElement;
+  declare _buttons: HTMLDivElement;
+  declare _collapseAllBtn: HTMLElement | null;
+  declare _treeEl: HTMLDivElement;
 
-  constructor(leaf) {
+  constructor(leaf: WorkspaceLeaf) {
     super(leaf);
     this.icon = 'bookmark';
     this.navigation = true;
@@ -61,7 +64,7 @@ export class BookmarksView extends View {
   getViewType() { return 'bookmarks'; }
   getDisplayText() { return t('plugins.bookmarks.name') || 'Bookmarks'; }
   getIcon() { return 'bookmark'; }
-  setPlugin(plugin) { this._plugin = plugin; }
+  setPlugin(plugin: ReturnType<typeof createBookmarks>) { this._plugin = plugin; }
 
   async onOpen() {
     this.contentEl.addClass('bookmarks-view');
@@ -79,7 +82,7 @@ export class BookmarksView extends View {
   onClose() {
     for (const ref of this._refs) ref.unregister && ref.unregister();
     this._refs = [];
-    clearTimeout(this._queueTimer);
+    clearTimeout(this._queueTimer || undefined);
   }
 
   _queueRender() {
@@ -89,7 +92,7 @@ export class BookmarksView extends View {
 
   /* ------------------------------------------------------------------ 渲染 */
   _render() {
-    clearTimeout(this._queueTimer);
+    clearTimeout(this._queueTimer || undefined);
     this._queueTimer = null;
     const plugin = this._plugin;
     if (!plugin) return;
@@ -101,10 +104,10 @@ export class BookmarksView extends View {
       plugin.bookmarkCurrentView();
     });
     this._addNavButton('lucide-folder-plus', t('plugins.bookmarks.action-new-group') || 'New group', () => this._createGroup(null));
-    const collapseBtn = this._addNavButton('lucide-chevrons-down-up', t('plugins.bookmarks.action-collapse-all') || 'Collapse all', (ev) => this._toggleCollapseAll(ev.currentTarget));
+    const collapseBtn = this._addNavButton('lucide-chevrons-down-up', t('plugins.bookmarks.action-collapse-all') || 'Collapse all', (ev: MouseEvent) => this._toggleCollapseAll(ev.currentTarget instanceof Element ? ev.currentTarget : null));
     this._collapseAllBtn = collapseBtn;
     // 原版视图头第四个动作：搜索书签（lucide-search + 收起式输入框）。
-    this._searchBtn = this._addNavButton('lucide-search', t('plugins.bookmarks.action-search', 'Search bookmarks') || 'Search bookmarks', () => this._toggleSearch());
+    this._searchBtn = this._addNavButton('lucide-search', t('plugins.bookmarks.action-search') || 'Search bookmarks', () => this._toggleSearch());
     this._buildSearch();
     this._treeEl = this.contentEl.createDiv('bookmarks-tree');
     this._renderTree();
@@ -114,9 +117,9 @@ export class BookmarksView extends View {
   _buildSearch() {
     this._search = new SearchComponent(this._header);
     this._search
-      .setPlaceholder(t('plugins.bookmarks.placeholder-search', 'Search bookmarks...') || 'Search bookmarks...')
+      .setPlaceholder(t('plugins.bookmarks.placeholder-search') || 'Search bookmarks...')
       .onChange((value) => {
-        clearTimeout(this._searchTimer);
+        clearTimeout(this._searchTimer || undefined);
         this._searchTimer = setTimeout(() => {
           const query = String(value || '').trim().toLowerCase();
           if (query === this._searchQuery) return;
@@ -132,7 +135,7 @@ export class BookmarksView extends View {
     if (this._isSearching) this._search.setValue(this._searchQuery);
   }
 
-  _toggleSearch(force?) {
+  _toggleSearch(force?: boolean|undefined) {
     if (!this._search || !this._searchBtn) return;
     const show = force === undefined ? !this._isSearching : !!force;
     this._isSearching = show;
@@ -170,23 +173,23 @@ export class BookmarksView extends View {
   }
 
   /** 搜索命中：标题/路径/查询串任一处包含查询词；分组按后代是否命中保留。 */
-  _itemMatches(item) {
+  _itemMatches(item: BookmarkItem): boolean {
     const query = this._searchQuery;
     if (!query) return true;
     const plugin = this._plugin;
     const haystack = [
       plugin ? plugin.getItemTitle(item) : '',
-      item.path || '',
-      item.subpath || '',
-      item.query || '',
-      item.url || '',
+      'path' in item ? item.path : '',
+      item.type === 'file' ? item.subpath || '' : '',
+      item.type === 'search' ? item.query : '',
+      item.type === 'url' ? item.url : '',
     ].join(' ').toLowerCase();
     if (haystack.includes(query)) return true;
-    if (item.type === 'group') return (item.items || []).some((child) => this._itemMatches(child));
+    if (item.type === 'group') return (item.items || []).some((child: BookmarkItem) => this._itemMatches(child));
     return false;
   }
 
-  _addNavButton(icon, label, callback) {
+  _addNavButton(icon: string, label: string, callback: (event: MouseEvent) => void) {
     const btn = this._buttons.createDiv('nav-action-button clickable-icon');
     btn.setAttr('aria-label', label);
     setIcon(btn, icon);
@@ -195,9 +198,10 @@ export class BookmarksView extends View {
   }
 
   /** 渲染一条书签，返回该行是否可见（文件不存在时隐藏，对齐原版）。 */
-  _renderItem(container, item, parentItem) {
+  _renderItem(container: HTMLElement, item: BookmarkItem, parentItem: Extract<BookmarkItem, { type: 'group' }> | null) {
     if (!this._itemMatches(item)) return false;
     const plugin = this._plugin;
+    if (!plugin) return false;
     const isGroup = item.type === 'group';
     const itemEl = container.createDiv('tree-item');
     itemEl.setAttr('data-path', this._itemPath(item));
@@ -221,17 +225,17 @@ export class BookmarksView extends View {
     titleEl.setText(plugin.getItemTitle(item) || '');
 
     // 原版条目没有行尾“…”按钮：重命名/删除/复制路径走右键菜单。
-    self.oncontextmenu = (ev) => { ev.preventDefault(); this._showItemMenu(ev, item, parentItem); };
-    self.onclick = (ev) => {
+    self.oncontextmenu = (ev: MouseEvent) => { ev.preventDefault(); this._showItemMenu(ev, item, parentItem); };
+    self.onclick = (ev: MouseEvent) => {
       if (isGroup) this._toggleGroup(item, itemEl, self);
       else if (ev.button === 0) plugin.openItem(item, ev);
     };
-    self.onauxclick = ev => {
+    self.onauxclick = (ev: MouseEvent) => {
       if (ev.button !== 1 || isGroup) return;
       ev.preventDefault(); plugin.openItem(item, ev);
     };
     // 行内重命名入口（双击标题）
-    titleEl.ondblclick = (ev) => { ev.stopPropagation(); this._startRename(item, self, titleEl); };
+    titleEl.ondblclick = (ev: { stopPropagation: () => void; }) => { ev.stopPropagation(); this._startRename(item, self, titleEl); };
 
     let visible = true;
     if (item.type === 'file' || item.type === 'folder') {
@@ -247,18 +251,18 @@ export class BookmarksView extends View {
     return visible;
   }
 
-  _itemPath(item) {
+  _itemPath(item: BookmarkItem) {
     const plugin = this._plugin;
     const parts = [];
-    let node = item;
+    let node: BookmarkItem | null = item;
     while (node) {
       parts.push(plugin ? plugin.getItemTitle(node) : '');
-      node = node[Object.getOwnPropertySymbols(node).find((s) => String(s).includes('parent'))] || null;
+      node = plugin?.getParentItem(node) || null;
     }
     return parts.reverse().join('/');
   }
 
-  _toggleGroup(item, itemEl, self) {
+  _toggleGroup(item: BookmarkItem, itemEl: HTMLElement, self: HTMLElement) {
     const collapsed = !this._collapsed.has(item.ctime);
     if (collapsed) this._collapsed.add(item.ctime);
     else this._collapsed.delete(item.ctime);
@@ -267,11 +271,11 @@ export class BookmarksView extends View {
     if (iconEl) iconEl.toggleClass('is-collapsed', collapsed);
   }
 
-  _toggleCollapseAll(btn) {
+  _toggleCollapseAll(btn: Element|null|undefined) {
     const plugin = this._plugin;
     const allCollapsed = this._collapsed.size > 0;
     if (allCollapsed) this._collapsed.clear();
-    else for (const item of plugin.items) this._collectGroups(item, (g) => this._collapsed.add(g.ctime));
+    else for (const item of plugin?.items || []) this._collectGroups(item, (g) => this._collapsed.add(g.ctime));
     if (btn) {
       btn.empty();
       setIcon(btn, allCollapsed ? 'lucide-chevrons-down-up' : 'lucide-chevrons-up-down');
@@ -282,7 +286,7 @@ export class BookmarksView extends View {
     this._renderTree();
   }
 
-  _collectGroups(item, cb) {
+  _collectGroups(item: BookmarkItem, cb: (group: Extract<BookmarkItem, { type: 'group' }>) => void) {
     if (item.type !== 'group') return;
     cb(item);
     for (const child of item.items || []) this._collectGroups(child, cb);
@@ -300,15 +304,16 @@ export class BookmarksView extends View {
   }
 
   /* ------------------------------------------------------------------ 菜单 */
-  _showItemMenu(ev, item, parentItem) {
+  _showItemMenu(ev: MouseEvent, item: BookmarkItem, parentItem: Extract<BookmarkItem, { type: 'group' }> | null) {
     const plugin = this._plugin;
+    if (!plugin) return;
     const menu = new Menu(this.app);
     menu.addItem((i) => i
       .setTitle(t('plugins.bookmarks.menu-opt-rename') || 'Rename')
       .setIcon('pencil')
       .onClick(() => {
-        const self = ev.target.closest ? ev.target.closest('.tree-item-self') : null;
-        if (self) this._startRename(item, self, self.querySelector('.tree-item-inner-text'));
+        const self = ev.target instanceof Element ? ev.target.closest<HTMLElement>('.tree-item-self') : null;
+        if (self) this._startRename(item, self, self.querySelector<HTMLElement>('.tree-item-inner-text'));
       }));
     menu.addItem((i) => i
       .setTitle(t('plugins.bookmarks.menu-opt-remove') || 'Remove')
@@ -329,30 +334,31 @@ export class BookmarksView extends View {
     menu.showAtMouseEvent(ev);
   }
 
-  _copyPath(item) {
+  _copyPath(item: BookmarkItem) {
     let value = '';
     if (item.type === 'file') value = item.path + (item.subpath || '');
     else if (item.type === 'folder') value = item.path;
     else if (item.type === 'search') value = item.query;
     else if (item.type === 'url') value = item.url;
-    else value = this._plugin.getItemTitle(item) || '';
+    else value = this._plugin?.getItemTitle(item) || '';
     if (navigator.clipboard && navigator.clipboard.writeText) { try { const p = navigator.clipboard.writeText(value); if (p && p.catch) p.catch(() => {}); } catch (e) {} }
     new Notice(t('interface.menu.copy-path') || 'Copy path');
   }
 
-  _createGroup(parentItem) {
+  _createGroup(parentItem: Extract<BookmarkItem, { type: 'group' }> | null) {
     const plugin = this._plugin;
+    if (!plugin) return;
     const group = plugin.createGroup(parentItem);
     this._render();
     const row = this._treeEl.findAll('.tree-item-self.bookmark').find((el) => {
       const titleEl = el.querySelector('.tree-item-inner-text');
       return titleEl && titleEl.textContent === plugin.getItemTitle(group);
     });
-    if (row) this._startRename(group, row, row.querySelector('.tree-item-inner-text'));
+    if (row) this._startRename(group, row, row.querySelector<HTMLElement>('.tree-item-inner-text'));
   }
 
   /* ------------------------------------------------------------------ 重命名 */
-  _startRename(item, self, titleEl) {
+  _startRename(item: BookmarkItem, self: HTMLElement, titleEl: HTMLElement | null) {
     if (!titleEl) return;
     self.addClass('is-being-renamed');
     titleEl.setAttr('contenteditable', 'true');
@@ -360,22 +366,22 @@ export class BookmarksView extends View {
     const selection = window.getSelection();
     const range = document.createRange();
     range.selectNodeContents(titleEl);
-    selection.removeAllRanges();
-    selection.addRange(range);
-    const commit = (save) => {
+    selection?.removeAllRanges();
+    selection?.addRange(range);
+    const commit = (save: boolean) => {
       titleEl.removeAttribute('contenteditable');
       self.removeClass('is-being-renamed');
       titleEl.onkeydown = null;
       titleEl.onblur = null;
       if (save) {
-        const value = titleEl.textContent.trim();
-        if (value) this._plugin.renameItem(item, value);
-        else titleEl.setText(this._plugin.getItemTitle(item) || '');
+        const value = (titleEl.textContent || '').trim();
+        if (value) this._plugin?.renameItem(item, value);
+        else titleEl.setText(this._plugin?.getItemTitle(item) || '');
       } else {
-        titleEl.setText(this._plugin.getItemTitle(item) || '');
+        titleEl.setText(this._plugin?.getItemTitle(item) || '');
       }
     };
-    titleEl.onkeydown = (ev) => {
+    titleEl.onkeydown = (ev: { stopPropagation: () => void; key: string; preventDefault: () => void; }) => {
       ev.stopPropagation();
       if (ev.key === 'Enter') { ev.preventDefault(); commit(true); }
       else if (ev.key === 'Escape') { ev.preventDefault(); commit(false); }

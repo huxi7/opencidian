@@ -10,7 +10,7 @@ const DURATION = 200;
 const EASING = 'ease-in-out';
 
 /** 新标签头展开：自然宽测量后从 0 宽、透明长到自然宽。 */
-export function animateTabIn(header) {
+export function animateTabIn(header: HTMLElement) {
   if (!header || !header.isConnected) return;
   const width = header.getBoundingClientRect().width;
   if (!width) return;
@@ -27,11 +27,11 @@ export function animateTabIn(header) {
 }
 
 /** 关闭标签：在原位置留一个同宽克隆，200ms 收窄并淡出后摘除；原头由调用方立刻卸下。 */
-export function animateTabOut(header, container) {
+export function animateTabOut(header: HTMLElement, container: HTMLElement) {
   if (!header || !container || !header.isConnected) return;
   const width = header.getBoundingClientRect().width;
   if (!width) return;
-  const clone = header.cloneNode(true);
+  const clone = header.cloneNode(true) as HTMLElement;
   clone.removeAttribute('id');
   clone.removeClass('is-active');
   clone.style.flex = '0 0 auto';

@@ -7,12 +7,16 @@
  * 落点覆盖层边缘取 max(尺寸/3,40)，center 用 10px 标签插入条。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
+import { WorkspaceTabs } from './workspace-model.js';
+import type { DropZone } from './workspace-types.js';
+import type { Workspace } from './workspace.js';
+import type { WorkspaceNode, WorkspaceLeaf, WorkspaceSplit as WorkspaceSplit } from './workspace-model.js';
 import { t } from './i18n.js';
 import { Menu } from './menu.js';
 import { setIcon } from './icons.js';
 import { canOpenLeafInWindow, openLeafInWindow } from './document-window.js';
 
-export function _onNewTab(workspace, tabs) {
+export function _onNewTab(workspace: Workspace, tabs: WorkspaceTabs) {
   if (workspace._sideOf(tabs) !== 'center') return null;
   const leaf = workspace.createLeafInTabGroup(tabs);
   leaf.setViewState({ type: 'empty' });
@@ -27,7 +31,7 @@ export function _onNewTab(workspace, tabs) {
  * 视图自带项经 view.onTabMenu / view.onPaneMenu(menu, 'tab-header') 追加，随后触发 leaf-menu 供插件扩展。
  * 文档窗口项等待同库新窗口就绪后转移来源叶子。
  */
-export function _showTabContextMenu(workspace, ev, leaf) {
+export function _showTabContextMenu(workspace: Workspace, ev: MouseEvent, leaf: WorkspaceLeaf) {
   if (!workspace.canCloseLeaf(leaf)) return;
   const menu = new Menu(workspace.app);
   menu.addSections(['title', 'close', 'pane', 'open', 'action', 'find', 'info', 'info.copy', 'view', 'view.linked', 'system', '', 'danger']);
@@ -37,7 +41,7 @@ export function _showTabContextMenu(workspace, ev, leaf) {
   menu.setSectionSubmenu('info.copy', { title: t('interface.menu.copy-path'), icon: 'lucide-clipboard' });
   menu.setSectionSubmenu('view.linked', { title: t('interface.menu.open-linked-view'), icon: 'lucide-link' });
   const tabs = leaf.parent;
-  if (tabs) {
+  if (tabs instanceof WorkspaceTabs) {
     menu.addItem((item) => item.setSection('close').setTitle(t('interface.menu.close') || 'Close').setIcon('lucide-x').onClick(() => leaf.detach()));
     const siblings = tabs.children.slice();
     const others = siblings.filter((l) => !l.pinned && l !== leaf);
@@ -61,11 +65,11 @@ export function _showTabContextMenu(workspace, ev, leaf) {
     .setIcon('lucide-pin')
     .onClick(() => { leaf.pinned = !leaf.pinned; workspace._syncAllTabs(); }));
   // 原版 ItemView.onPaneMenu：拆分右侧/拆分下方（duplicateLeaf 复制当前视图状态）
-  const duplicateLeaf = async (direction) => {
+  const duplicateLeaf = async (direction: 'horizontal' | 'vertical') => {
     const view = leaf.view;
     const state = view && view.getState ? view.getState() : null;
     const newLeaf = workspace.createLeafBySplit(leaf, direction);
-    await newLeaf.setViewState(state ? { type: view.getViewType(), state } : { type: 'empty' });
+    await newLeaf.setViewState(state ? { type: view?.getViewType() || 'empty', state } : { type: 'empty' });
     workspace.setActiveLeaf(newLeaf, { focus: true });
   };
   menu.addItem((item) => item.setSection('open').setTitle(t('commands.split-right') || 'Split right')
@@ -76,12 +80,12 @@ export function _showTabContextMenu(workspace, ev, leaf) {
   if (view && typeof view.onTabMenu === 'function') view.onTabMenu(menu);
   if (view && typeof view.onPaneMenu === 'function') view.onPaneMenu(menu, 'tab-header');
   workspace.trigger('leaf-menu', menu, leaf);
-  const header = ev && ev.currentTarget && ev.currentTarget.addClass ? ev.currentTarget : leaf._tabHeaderEl;
+  const header = ev && ev.currentTarget instanceof HTMLElement ? ev.currentTarget : leaf._tabHeaderEl;
   if (header) menu.setParentElement(header);
   menu.showAtMouseEvent(ev);
 }
 
-export function _showTabListMenu(workspace, ev, tabs) {
+export function _showTabListMenu(workspace: Workspace, ev: MouseEvent, tabs: WorkspaceTabs) {
   if (workspace._sideOf(tabs) !== 'center') return;
   const menu = new Menu(workspace.app);
   for (const leaf of tabs.children) {
@@ -104,7 +108,7 @@ export function _showTabListMenu(workspace, ev, tabs) {
  * 原版 VD.getTabInsertLocation：按 clientX 在标签头上求插入 index。
  * 遍历含被拖头本身——同组重排由调用方按原版 `p>f&&p-- 且 f===p 返回` 消解。
  */
-export function _tabInsertInfo(tabs, clientX) {
+export function _tabInsertInfo(tabs: WorkspaceTabs, clientX: number) {
   const children = tabs.children;
   let index = children.length;
   let x = 0;
@@ -128,7 +132,7 @@ export function _tabInsertInfo(tabs, clientX) {
 }
 
 /** 原版 getTabInsertLocation 的落点覆盖层：10px 宽竖条贴在插入缝上。 */
-function overlayAtRect(node, rect) {
+function overlayAtRect(node: HTMLElement, rect: { x: number; y: number; width: number; height: number }) {
   node.style.left = rect.x + 'px';
   node.style.top = rect.y + 'px';
   node.style.width = Math.max(0, rect.width) + 'px';
@@ -137,7 +141,7 @@ function overlayAtRect(node, rect) {
 }
 
 /** 标签栏落点复用 workspace-drop-overlay（原版 dragManager.showOverlay 的同一元素）。 */
-function tabOverlayEl(workspace) {
+function tabOverlayEl(workspace: Workspace) {
   let el = workspace._tabDropOverlay;
   if (!el || !el.isConnected) {
     el = workspace.containerEl.createDiv('workspace-drop-overlay');
@@ -150,7 +154,7 @@ function tabOverlayEl(workspace) {
  * 原版 onDragLeaf 的 ghost：drag-ghost mod-leaf（图标 + 标题），setDragImage(0,0)。
  * Chromium 需要元素在 DOM 中渲染过，截图后即可摘除。
  */
-export function _dragGhost(workspace, ev) {
+export function _dragGhost(workspace: Workspace, ev: DragEvent) {
   const leaf = workspace._dragData && workspace._dragData.leaf;
   if (!leaf) return;
   const ghost = createDiv('drag-ghost mod-leaf');
@@ -165,14 +169,14 @@ export function _dragGhost(workspace, ev) {
 }
 
 /** 收尾：按原版移除 is-grabbing，清空宿主拖拽数据与全部落点指示。 */
-export function _endTabDrag(workspace) {
+export function _endTabDrag(workspace: Workspace) {
   document.body.removeClass('is-grabbing');
   workspace._dragData = null;
   workspace._tabDropTarget = null;
   workspace._clearDropIndicators();
 }
 
-export function _setupTabDrag(workspace, header, leaf) {
+export function _setupTabDrag(workspace: Workspace, header: HTMLElement, leaf: WorkspaceLeaf) {
   if (workspace.canCloseLeaf(leaf) && !header._tabDragBound) {
     header._tabDragBound = true;
     header.addEventListener('dragstart', (ev) => {
@@ -182,8 +186,8 @@ export function _setupTabDrag(workspace, header, leaf) {
         startX: ev.clientX, startY: ev.clientY, grabbing: false,
         dropTarget: null, dropAfter: false, dropIndex: null,
       };
-      try { ev.dataTransfer.setData('text/plain', ''); } catch (e) {}
-      ev.dataTransfer.effectAllowed = 'move';
+      try { ev.dataTransfer?.setData('text/plain', ''); } catch (e) {}
+      if (ev.dataTransfer) ev.dataTransfer.effectAllowed = 'move';
       header.addClass('is-being-dragged');
       workspace._dragGhost(ev);
     });
@@ -213,12 +217,12 @@ export function _setupTabDrag(workspace, header, leaf) {
       const info = _tabInsertInfo(tabs, ev.clientX);
       drag.dropIndex = info.index;
       overlayAtRect(tabOverlayEl(workspace), info.rect);
-      const hovered = ev.target && ev.target.closest ? ev.target.closest('.workspace-tab-header') : null;
+      const hovered = ev.target instanceof Element ? ev.target.closest<HTMLElement>('.workspace-tab-header') : null;
       drag.dropTarget = hovered && hovered._leaf && hovered._leaf !== drag.leaf ? hovered : null;
       drag.dropAfter = false;
     });
     bar.addEventListener('dragleave', (ev) => {
-      if (!bar.contains(ev.relatedTarget)) {
+      if (!(ev.relatedTarget instanceof Node && bar.contains(ev.relatedTarget))) {
         const drag = workspace._dragData;
         if (drag) { drag.dropTarget = null; drag.dropAfter = false; drag.dropIndex = null; }
         clearIndicators();
@@ -250,7 +254,7 @@ export function _setupTabDrag(workspace, header, leaf) {
 
 /** 叶内落点覆盖层：fixed 定位 + 100ms 过渡（原版 workspace-drop-overlay）。
  *  边缘 d=max(尺寸/3, 40)，center 由调用方给标签插入条矩形（原版 showOverlay 语义）。 */
-function layoutDropOverlay(el, node, zone) {
+function layoutDropOverlay(el: HTMLElement, node: HTMLElement, zone: DropZone) {
   const rect = el.getBoundingClientRect();
   let x = rect.left, y = rect.top, w = rect.width, h = rect.height;
   if (zone === 'left') w = Math.max(rect.width / 3, 40);
@@ -264,12 +268,12 @@ function layoutDropOverlay(el, node, zone) {
   node.addClass('mod-active');
 }
 
-export function _setupLeafDrop(workspace, el, leaf) {
+export function _setupLeafDrop(workspace: Workspace, el: HTMLElement, leaf: WorkspaceLeaf) {
   if (!workspace.canCloseLeaf(leaf)) return;
-  let overlayEl = null;
+  let overlayEl: HTMLElement | null = null;
   const overlay = () => {
     if (!overlayEl || !overlayEl.isConnected) {
-      overlayEl = el.querySelector(':scope > .workspace-drop-overlay') || el.createDiv('workspace-drop-overlay');
+      overlayEl = el.querySelector<HTMLElement>(':scope > .workspace-drop-overlay') || el.createDiv('workspace-drop-overlay');
     }
     return overlayEl;
   };
@@ -290,7 +294,7 @@ export function _setupLeafDrop(workspace, el, leaf) {
     if (zone === 'center') {
       const tabs = leaf.parent;
       if (tabs && tabs.children && tabs.children.length === 1 && tabs.children[0] === drag.leaf) return;   // 原版：单标签组拖回自身，无落点
-      const info = tabs && tabs.children ? _tabInsertInfo(tabs, ev.clientX) : null;
+      const info = tabs instanceof WorkspaceTabs ? _tabInsertInfo(tabs, ev.clientX) : null;
       if (info) overlayAtRect(node, info.rect);
       else layoutDropOverlay(el, node, zone);
     } else {
@@ -303,7 +307,7 @@ export function _setupLeafDrop(workspace, el, leaf) {
     el.toggleClass('mod-drop-bottom', zone === 'bottom');
   });
   el.addEventListener('dragleave', (ev) => {
-    if (!el.contains(ev.relatedTarget)) workspace._clearLeafDropIndicators();
+    if (!(ev.relatedTarget instanceof Node && el.contains(ev.relatedTarget))) workspace._clearLeafDropIndicators();
   });
   el.addEventListener('drop', (ev) => {
     const drag = workspace._dragData;
@@ -313,10 +317,10 @@ export function _setupLeafDrop(workspace, el, leaf) {
     const draggedLeaf = drag.leaf;
     const zone = leaf._dropZone || 'center';
     const tabsOfTarget = leaf.parent;
-    const info = zone === 'center' && tabsOfTarget && tabsOfTarget.children ? _tabInsertInfo(tabsOfTarget, ev.clientX) : null;
+    const info = zone === 'center' && tabsOfTarget instanceof WorkspaceTabs ? _tabInsertInfo(tabsOfTarget, ev.clientX) : null;
     workspace._clearLeafDropIndicators();
     workspace._endTabDrag();
-    if (!tabsOfTarget) return;
+    if (!(tabsOfTarget instanceof WorkspaceTabs)) return;
     if (zone === 'center') {
       const idx = info ? info.index : tabsOfTarget.children.length;
       workspace.moveLeafToTabs(draggedLeaf, tabsOfTarget, idx);
@@ -331,10 +335,10 @@ export function _setupLeafDrop(workspace, el, leaf) {
 }
 
 /** 原版 getDropDirection 的归一化移植：0.33 阈值，按最近边缘取最小值。 */
-export function _dropZone(workspace, x, y, allowed?) {
+export function _dropZone(workspace: Workspace, x: number, y: number, allowed?: string[] | null): DropZone {
   const blocked = allowed || [];
   const left = x, top = y, right = 1 - x, bottom = 1 - y;
-  let zone = 'center';
+  let zone: DropZone = 'center';
   let min = 1;
   if (top < 0.33 && top < min && !blocked.includes('top')) { min = top; zone = 'top'; }
   if (left < 0.33 && left < min && !blocked.includes('left')) { min = left; zone = 'left'; }
@@ -343,7 +347,7 @@ export function _dropZone(workspace, x, y, allowed?) {
   return zone;
 }
 
-export function _clearLeafDropIndicators(workspace) {
+export function _clearLeafDropIndicators(workspace: Workspace) {
   workspace.containerEl.findAll('.workspace-leaf.is-drop-target, .workspace-leaf.mod-drop-left, .workspace-leaf.mod-drop-right, .workspace-leaf.mod-drop-top, .workspace-leaf.mod-drop-bottom')
     .forEach((el) => el.removeClass('is-drop-target', 'mod-drop-left', 'mod-drop-right', 'mod-drop-top', 'mod-drop-bottom'));
   workspace.containerEl.findAll('.workspace-drop-overlay.mod-active').forEach((el) => {
@@ -353,11 +357,11 @@ export function _clearLeafDropIndicators(workspace) {
   });
 }
 
-export function _clearDropIndicators(workspace) {
+export function _clearDropIndicators(workspace: Workspace) {
   workspace._clearLeafDropIndicators();
   workspace._tabDropTarget = null;
 }
 
-export function _makeTabBarSortable(workspace, tabs) {
+export function _makeTabBarSortable(workspace: Workspace, tabs: WorkspaceTabs) {
   // handled via header drag events
 }

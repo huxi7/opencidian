@@ -1,5 +1,5 @@
 /**
- * [INPUT]: Menu、Modal、i18n、PropertyTypes 与 Electron 剪贴板；属性行和当前输入选区。
+ * [INPUT]: Menu、Modal、i18n、PropertyTypes 与 Electron 剪贴板；属性值及输入选区。
  * [OUTPUT]: attachPropertyRowMenu、showPropertyTypeMenu；共用属性菜单和显式格式转换确认。
  * [POS]: 属性操作边界。类型赋值不改笔记值；不兼容值只在确认后经 processFrontMatter 改写。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
@@ -8,8 +8,10 @@ import { Menu } from '../core/menu.js';
 import { Modal } from '../core/modals.js';
 import { t } from '../core/i18n.js';
 import { getPropertyTypes } from './properties-types.js';
+import type { TFile } from '../core/vault.js';
+import type { PropertyValue, PropertyWidget } from './reading-types.js';
 
-export function attachPropertyRowMenu(app: App, file, prop, row) {
+export function attachPropertyRowMenu(app: App, file: TFile, prop: PropertyValue, row: HTMLElement) {
   row.addEventListener('contextmenu', event => {
     event.preventDefault();
     event.stopPropagation();
@@ -24,7 +26,7 @@ export function attachPropertyRowMenu(app: App, file, prop, row) {
   });
 }
 
-export function showPropertyTypeMenu(app: App, prop, anchor, event, file?) {
+export function showPropertyTypeMenu(app: App, prop: PropertyValue, anchor: HTMLElement, event: MouseEvent, file?: TFile) {
   event.preventDefault();
   event.stopPropagation();
   const menu = new Menu(app);
@@ -32,7 +34,7 @@ export function showPropertyTypeMenu(app: App, prop, anchor, event, file?) {
   menu.setParentElement(anchor).showAtMouseEvent(event);
 }
 
-function addTypeItems(app: App, prop, menu, file) {
+function addTypeItems(app: App, prop: PropertyValue, menu: Menu, file: TFile|undefined) {
   const types = getPropertyTypes(app);
   const assigned = types.getAssignedWidget(prop.key);
   const inferred = types.getTypeInfo(prop.key, prop.value).inferred;
@@ -50,7 +52,7 @@ function addTypeItems(app: App, prop, menu, file) {
   }
 }
 
-function promptAdaptation(app: App, file, prop, widget, inferred) {
+function promptAdaptation(app: App, file: TFile, prop: PropertyValue, widget: PropertyWidget, inferred: PropertyWidget) {
   const modal = new Modal(app);
   modal.setTitle(t('properties.label-change-property-type', { type: widget.type }));
   modal.contentEl.createEl('p', { text: t('properties.label-change-property-type-desc', { oldType: inferred.type }) });
@@ -72,7 +74,7 @@ function promptAdaptation(app: App, file, prop, widget, inferred) {
   modal.open();
 }
 
-function adaptValue(value, type) {
+function adaptValue(value: unknown, type: string) {
   if (type === 'text') return typeof value === 'object' ? JSON.stringify(value) : String(value);
   if (type === 'multitext') return value == null ? [] : Array.isArray(value) ? value : [value];
   if (type === 'number') return String(value).trim() !== '' && Number.isFinite(Number(value)) ? Number(value) : null;
@@ -84,27 +86,30 @@ function adaptValue(value, type) {
   return value;
 }
 
-function addClipboardItems(menu, event) {
+function addClipboardItems(menu: Menu, event: MouseEvent) {
+  if (!(event.target instanceof Element)) return;
   const doc = event.target.ownerDocument;
-  const input = event.target.closest('input,textarea,[contenteditable="true"]');
-  const editable = input && !input.readOnly && !input.disabled;
-  const from = input?.selectionStart;
-  const to = input?.selectionEnd;
+  const input = event.target.closest<HTMLElement>('input,textarea,[contenteditable="true"]');
+  const textInput = input instanceof HTMLInputElement || input instanceof HTMLTextAreaElement ? input : null;
+  const editable = textInput ? !textInput.readOnly && !textInput.disabled : !!input?.isContentEditable;
+  const from = textInput?.selectionStart;
+  const to = textInput?.selectionEnd;
   const selection = doc.getSelection();
   const range = from == null && input && selection?.rangeCount && input.contains(selection.anchorNode) ? selection.getRangeAt(0).cloneRange() : null;
-  const selected = from != null ? input.value.slice(from, to) : range ? range.toString() : String(selection || '');
-  const clipboard = require('electron').clipboard;
-  const changeSelection = async value => {
+  const selected = textInput && from != null && to != null ? textInput.value.slice(from, to) : range ? range.toString() : String(selection || '');
+  const clipboard: typeof import('electron').clipboard = require('electron').clipboard;
+  const changeSelection = async (value: string) => {
+    if (!input || !editable) return;
     input.focus();
-    if (from != null) input.setRangeText(value, from, to, 'end');
+    if (textInput && from != null && to != null) textInput.setRangeText(value, from, to, 'end');
     else if (range) {
       range.deleteContents();
       const inserted = doc.createTextNode(value);
       range.insertNode(inserted);
       range.setStartAfter(inserted); range.collapse(true);
-      selection.removeAllRanges(); selection.addRange(range);
+      selection?.removeAllRanges(); selection?.addRange(range);
     } else if (input.isContentEditable) input.textContent += value;
-    else input.value = value;
+    else if (textInput) textInput.value = value;
     input.dispatchEvent(new Event('input', { bubbles: true }));
     if (input.commitMetadata) await input.commitMetadata();
   };

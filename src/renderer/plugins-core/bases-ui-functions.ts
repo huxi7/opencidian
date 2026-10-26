@@ -86,6 +86,7 @@ export const BASE_FORMULA_DOCS = [
   {"type":"link","name":"asFile","signature":"asFile()","description":"Returns a file object if this links resolves to one.","sourceKey":"labelLinkAsFile","params":[]},
   {"type":"tag","name":"matches","signature":"matches(tag: String)","description":"Returns if the given string matches the current tag.","sourceKey":"labelTagMatches","params":[{"name":"tag","types":["String"],"optional":false,"variadic":false}]}
 ];
-export function baseFormulaDocs(name, type = '') {
+export function baseFormulaDocs(name: string|undefined, type = '') {
+  if (!name) return [];
   return BASE_FORMULA_DOCS.filter(doc => doc.name.toLowerCase() === name.toLowerCase() && (!type || doc.type === type || doc.type === 'value'));
 }

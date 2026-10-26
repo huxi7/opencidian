@@ -9,15 +9,17 @@
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 /* Empty view — shown for empty tabs; offers common actions like the original. */
+import type { EventRef } from '../core/events.js';
 import { View } from '../core/view.js';
 import { t } from '../core/i18n.js';
 import { setIcon } from '../core/icons.js';
+import { WorkspaceLeaf } from '../core/workspace-model.js';
 
 export class EmptyView extends View {
-  declare state: any;
-  declare _actionsRef: any;
+  declare state: Record<string, unknown>;
+  declare _actionsRef: EventRef | null;
 
-  constructor(leaf) {
+  constructor(leaf: WorkspaceLeaf) {
     super(leaf);
     this.state = { type: 'empty' };
   }
@@ -25,7 +27,7 @@ export class EmptyView extends View {
   getDisplayText() { return t('interface.label-new-tab') || 'New tab'; }
   getIcon() { return 'file'; }
   getState() { return this.state; }
-  setState(state) { this.state = state || {}; return Promise.resolve(); }
+  setState(state: Record<string,unknown>) { this.state = state || {}; return Promise.resolve(); }
 
   async onOpen() {
     const root = this.contentEl;
@@ -34,15 +36,16 @@ export class EmptyView extends View {
     root.addClass('empty-view');
     const state = this.state || {};
     const container = root.createDiv('empty-state').createDiv('empty-state-container');
-    if (state.missing) {
+    const missing = state.missing;
+    if (typeof missing === 'string') {
       container.createDiv('empty-state-title', (el) => el.setText(t('interface.empty-state.unknown-pane-title') || 'Plugin no longer active'));
-      container.createDiv('empty-state-description', (el) => el.setText((t('interface.empty-state.unknown-pane-desc') || 'The plugin that created this tab ({{type}}) has gone away.').replace('{{type}}', state.missing)));
+      container.createDiv('empty-state-description', (el) => el.setText((t('interface.empty-state.unknown-pane-desc') || 'The plugin that created this tab ({{type}}) has gone away.').replace('{{type}}', missing)));
       return;
     }
     // 原版 aI.onOpen（app.js:1433129）：每个动作 = text-icon-button.mod-pill.empty-state-action，
     // 内含 .text-button-icon + .text-button-label；有物理键盘时追加 .empty-state-hotkey 后缀。
     const actions = container.createDiv('empty-state-action-list');
-    const addAction = (commandId, label, icon) => {
+    const addAction = (commandId: string, label: string, icon: string) => {
       const button = actions.createDiv({
         cls: 'text-icon-button tappable mod-pill empty-state-action',
         attr: { tabindex: '0', role: 'button' },

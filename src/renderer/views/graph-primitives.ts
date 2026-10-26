@@ -4,29 +4,31 @@
  * [POS]: 图谱图元模型；渲染器拥有图元和模拟器，图元不安装监听。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
+import type { GraphRenderer } from './graph-renderer.js';
+import type { GraphColor } from '../plugins-core/graph-types.js';
 import { clamp, displayName } from '../plugins-core/graph-utils.js';
 export const GRAPH_FADE = 0.2;
 const FADE = GRAPH_FADE;
 // 图元：节点（原版 MQ）与连线（原版 SQ）
 export class GraphNode {
-  declare renderer: any;
-  declare id: any;
-  declare type: any;
-  declare x: any;
-  declare y: any;
-  declare fx: any;
-  declare fy: any;
-  declare forward: any;
-  declare reverse: any;
+  declare renderer: GraphRenderer;
+  declare id: string;
+  declare type: string;
+  declare x: number | null;
+  declare y: number | null;
+  declare fx: number | null;
+  declare fy: number | null;
+  declare forward: Record<string, GraphLink>;
+  declare reverse: Record<string, GraphLink>;
   declare weight: number;
-  declare color: any;
+  declare color: GraphColor | null;
   declare rgb: number;
   declare fadeAlpha: number;
   declare moveText: number;
   declare textVisible: boolean;
-  declare wrapCache: any;
+  declare wrapCache: { fontSize: number; lines: string[] } | null;
 
-  constructor(renderer, id, type) {
+  constructor(renderer: GraphRenderer, id: string, type: string) {
     this.renderer = renderer;
     this.id = id;
     this.type = type;
@@ -62,14 +64,14 @@ export class GraphNode {
 }
 
 export class GraphLink {
-  declare renderer: any;
-  declare source: any;
-  declare target: any;
-  declare alpha: any;
-  declare arrowAlpha: any;
-  declare rgb: any;
+  declare renderer: GraphRenderer;
+  declare source: GraphNode;
+  declare target: GraphNode;
+  declare alpha: number;
+  declare arrowAlpha: number;
+  declare rgb: number;
 
-  constructor(renderer, source, target) {
+  constructor(renderer: GraphRenderer, source: GraphNode, target: GraphNode) {
     this.renderer = renderer;
     this.source = source;
     this.target = target;

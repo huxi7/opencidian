@@ -4,9 +4,13 @@
  * [POS]: 画布拖拽原语。越过阈值才创建拖拽，清理先于结束。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
+export interface CanvasDragHandlers {
+  move?(event: PointerEvent): void; end?(event: PointerEvent): void; cancel?(event: PointerEvent): void;
+  keydown?(event: KeyboardEvent): void; keyup?(event: KeyboardEvent): void; cleanup?(): void;
+}
 /** 原版 kg：吞掉拖拽之后紧跟的那一次 click。 */
-export function suppressClick(el) {
-  const handler = (e) => { e.preventDefault(); e.stopPropagation(); e.stopImmediatePropagation(); };
+export function suppressClick(el: EventTarget) {
+  const handler = (e: { preventDefault: () => void; stopPropagation: () => void; stopImmediatePropagation: () => void; }) => { e.preventDefault(); e.stopPropagation(); e.stopImmediatePropagation(); };
   window.setTimeout(() => el.removeEventListener('click', handler, { capture: true }), 0);
   el.addEventListener('click', handler, { capture: true });
 }
@@ -16,17 +20,17 @@ export function suppressClick(el) {
  * Windows 的顺序是 pointerup → contextmenu；监听必须在 pointerup 的同一任务里挂好，
  * 所以这里与 suppressClick 一样用 0ms 定时器摘除，而不是等下一帧。
  */
-export function suppressContextMenu(el) {
-  const handler = (e) => { e.preventDefault(); e.stopPropagation(); e.stopImmediatePropagation(); };
+export function suppressContextMenu(el: EventTarget) {
+  const handler = (e: { preventDefault: () => void; stopPropagation: () => void; stopImmediatePropagation: () => void; }) => { e.preventDefault(); e.stopPropagation(); e.stopImmediatePropagation(); };
   window.setTimeout(() => el.removeEventListener('contextmenu', handler, { capture: true }), 0);
   el.addEventListener('contextmenu', handler, { capture: true });
 }
 
 /** 原版 wg：指针拖拽助手。factory 在超过 threshold 后调用一次；cleanup 先于 end/cancel 执行。 */
-export function startDrag(e, factory, threshold = 5, onIdle = null) {
+export function startDrag(e: PointerEvent, factory: () => CanvasDragHandlers | null | undefined, threshold = 5, onIdle: ((event: PointerEvent) => void) | null = null) {
   const win = window;
   const start = { x: e.clientX, y: e.clientY };
-  let drag = null;
+  let drag: CanvasDragHandlers | null | undefined = null;
   let done = false;
   const cleanup = () => {
     if (done) return;
@@ -38,7 +42,7 @@ export function startDrag(e, factory, threshold = 5, onIdle = null) {
     win.removeEventListener('keyup', onKeyUp, true);
     if (drag && drag.cleanup) drag.cleanup();
   };
-  function onMove(ev) {
+  function onMove(ev: PointerEvent) {
     if (ev.pointerId !== e.pointerId) return;
     if (!drag) {
       if (Math.hypot(ev.clientX - start.x, ev.clientY - start.y) < threshold) return;
@@ -47,7 +51,7 @@ export function startDrag(e, factory, threshold = 5, onIdle = null) {
     }
     if (drag.move) drag.move(ev);
   }
-  function onUp(ev) {
+  function onUp(ev: PointerEvent) {
     // 原版 oM：pointerup 必须来自发起拖动的同一个指针与同一个按键，避免右键拖动被左键松开收尾。
     if (ev.pointerId !== e.pointerId || ev.button !== e.button) return;
     const current = drag;
@@ -57,15 +61,15 @@ export function startDrag(e, factory, threshold = 5, onIdle = null) {
     // 否则调用方在 pointerdown 时置的拖动状态永远清不掉（原版 cleanup 总会执行）。
     else if (!current && onIdle) onIdle(ev);
   }
-  function onCancel(ev) {
+  function onCancel(ev: PointerEvent) {
     if (ev.pointerId !== e.pointerId) return;
     const current = drag;
     cleanup();
     if (current && current.cancel) current.cancel(ev);
     else if (!current && onIdle) onIdle(ev);
   }
-  function onKeyDown(ev) { if (drag && drag.keydown) drag.keydown(ev); }
-  function onKeyUp(ev) { if (drag && drag.keyup) drag.keyup(ev); }
+  function onKeyDown(ev: KeyboardEvent) { if (drag && drag.keydown) drag.keydown(ev); }
+  function onKeyUp(ev: KeyboardEvent) { if (drag && drag.keyup) drag.keyup(ev); }
   win.addEventListener('pointermove', onMove, true);
   win.addEventListener('pointerup', onUp, true);
   win.addEventListener('pointercancel', onCancel, true);

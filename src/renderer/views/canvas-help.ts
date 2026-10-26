@@ -12,11 +12,12 @@
 import { t } from '../core/i18n.js';
 import { Modal } from '../core/modals.js';
 import { IS_MAC } from '../core/keymap.js';
+import { CanvasOptions } from './canvas-types.js';
 
-const MOD_DISPLAY_MAC = { Mod: '⌘', Shift: '⇧', Alt: '⌥', Ctrl: '⌃' };
+const MOD_DISPLAY_MAC: Record<string, string> = { Mod: '⌘', Shift: '⇧', Alt: '⌥', Ctrl: '⌃' };
 
 /** 原版 l3：把 ['Mod','Shift','1'] 这样的组合拼成 "⌘⇧1"（macOS）或 "Ctrl+Shift+1"。 */
-export function hotkeyLabel(parts) {
+export function hotkeyLabel(parts: string[]) {
   const out = [];
   for (const part of parts) {
     if (IS_MAC) out.push(MOD_DISPLAY_MAC[part] || part);
@@ -26,10 +27,10 @@ export function hotkeyLabel(parts) {
 }
 
 export class CanvasHelpModal extends Modal {
-  declare options: any;
-  declare helpEl: any;
+  declare options: CanvasOptions;
+  declare helpEl: HTMLDivElement;
 
-  constructor(app: App, options) {
+  constructor(app: App, options: CanvasOptions) {
     super(app);
     this.options = options || {};
     this.modalEl.addClass('mod-canvas-help');
@@ -38,7 +39,7 @@ export class CanvasHelpModal extends Modal {
   }
 
   /** 原版 o()：一行文案 + 若干组合键；每个组合键一个 .setting-hotkey 片段。 */
-  addInstruction(label, hotkeys) {
+  addInstruction(label: string, hotkeys: string[][]) {
     const row = this.helpEl.createDiv('canvas-instruction');
     row.createDiv({ cls: 'canvas-instruction-label', text: label });
     const desc = row.createDiv('canvas-instruction-desc');

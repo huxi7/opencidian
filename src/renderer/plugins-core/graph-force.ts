@@ -8,7 +8,7 @@
  *        零距离补 jiggle 用原版确定性 LCG（seed=1），弹簧/碰撞逐分量处理，自环度数计两次。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
-import { buildQuadtree, visitAfter } from './graph-quadtree.js';
+import { buildQuadtree, QuadNode, visitAfter, type QuadBucket } from './graph-quadtree.js';
 
 export const ALPHA_DECAY = 1 - Math.pow(0.001, 1 / 300); // 原版 B
 export const VELOCITY_DECAY = 0.6;                       // 原版 complete(..., 0.6)
@@ -25,10 +25,12 @@ const jiggle = () => {
   lcgState = (1664525 * lcgState + 1013904223) % 4294967296;
   return 1e-6 * (lcgState / 4294967296 - 0.5);
 };
-const hasOwn = (object, key) => Object.prototype.hasOwnProperty.call(object, key);
+const hasOwn = (object: object, key: PropertyKey) => Object.prototype.hasOwnProperty.call(object, key);
 
 /* 原版 worker 的新节点形态：{id,x,y,vx,vy,fx:null,fy:null}（index 由 setNodes 重排） */
-export function createNode(id) {
+export interface ForceNode { id: string; x: number; y: number; vx: number; vy: number; fx: number | null; fy: number | null; index: number; }
+export type ForceOptions = Partial<Record<'centerStrength' | 'linkStrength' | 'linkDistance' | 'repelStrength', number>>;
+export function createNode(id: string): ForceNode {
   return { id, x: 0, y: 0, vx: 0, vy: 0, fx: null, fy: null, index: 0 };
 }
 
@@ -37,18 +39,18 @@ export function createNode(id) {
  * 门面（本地回退）与 worker 用同一份实现，因此两条后端的行为一致。
  */
 export class ForceKernel {
-  declare nodeById: any;
-  declare nodes: any[];
-  declare links: any[];
-  declare linkCounts: any;
+  declare nodeById: Map<string, ForceNode>;
+  declare nodes: ForceNode[];
+  declare links: Array<{source: ForceNode; target: ForceNode}>;
+  declare linkCounts: Map<ForceNode, number>;
   declare alpha: number;
   declare alphaTarget: number;
   declare centerStrength: number;
   declare repelStrength: number;
   declare linkStrength: number;
   declare linkDistance: number;
-  declare _repelStack: any[] | undefined;
-  declare _collideStack: any[] | undefined;
+  declare _repelStack: QuadNode<ForceNode>[] | undefined;
+  declare _collideStack: QuadNode<ForceNode>[] | undefined;
 
   constructor() {
     this.nodeById = new Map();
@@ -68,11 +70,11 @@ export class ForceKernel {
    * ------------------------------------------------------------------------ */
 
   /** nodes 消息：删除不在载荷里的节点（保留对象）；新 id 入表；[x,y] 覆盖坐标；重排 index。 */
-  setNodes(payload) {
-    const next = [];
+  setNodes(payload: Record<string, [number, number] | false | null>) {
+    const next: ForceNode[] = [];
     for (const id of Array.from(this.nodeById.keys())) {
       if (!hasOwn(payload, id)) this.nodeById.delete(id);
-      else next.push(this.nodeById.get(id));
+      else next.push(this.nodeById.get(id)!);
     }
     for (const id in payload) {
       if (!hasOwn(payload, id)) continue;
@@ -90,7 +92,7 @@ export class ForceKernel {
   }
 
   /** links 消息：按 id 表映射成对象引用；端点缺失的连线丢弃。 */
-  setLinks(payload) {
+  setLinks(payload: Array<[string, string]>) {
     this.links = [];
     for (const pair of payload) {
       const source = this.nodeById.get(pair[0]);
@@ -107,7 +109,7 @@ export class ForceKernel {
   }
 
   /** forceNode 消息：钉住节点；x/y 传 null 即解除钉住。 */
-  forceNode(id, x, y) {
+  forceNode(id: string, x: number | null, y: number | null) {
     const node = this.nodeById.get(id);
     if (!node) return;
     node.fx = x;
@@ -115,7 +117,7 @@ export class ForceKernel {
   }
 
   /** forces 消息：逐键更新；|repelStrength| < 1 时钳到 -1，避免零斥力。 */
-  setForces(forces) {
+  setForces(forces: ForceOptions) {
     if (forces.centerStrength !== undefined) this.centerStrength = forces.centerStrength;
     if (forces.linkStrength !== undefined) this.linkStrength = forces.linkStrength;
     if (forces.linkDistance !== undefined) this.linkDistance = forces.linkDistance;
@@ -125,12 +127,12 @@ export class ForceKernel {
   }
 
   /** alpha 消息：仅当传入值大于当前 alpha 才抬高（原版 Q < t.alpha 才赋值）。 */
-  raiseAlpha(value) {
+  raiseAlpha(value: number) {
     if (this.alpha < value) this.alpha = value;
   }
 
   /** alphaTarget 消息：直接赋值。 */
-  setAlphaTarget(value) {
+  setAlphaTarget(value: number) {
     this.alphaTarget = value;
   }
 
@@ -192,7 +194,7 @@ export class ForceKernel {
     return this.alpha;
   }
 
-  linkCount(node) {
+  linkCount(node: ForceNode) {
     return this.linkCounts.get(node) || 1;
   }
 
@@ -201,7 +203,7 @@ export class ForceKernel {
    * ------------------------------------------------------------------------ */
 
   /** 自底向上聚合强度与质心（d3 manyBody.accumulate）。 */
-  accumulateRepulsion(tree) {
+  accumulateRepulsion(tree: QuadNode<ForceNode>) {
     const strength = this.repelStrength;
     visitAfter(tree, (quad) => {
       if (quad.children) {
@@ -223,7 +225,7 @@ export class ForceKernel {
       }
       if (quad.data) {
         let value = 0;
-        for (let q = quad; q; q = q.next) value += strength;
+        for (let q: QuadBucket<ForceNode> | null = quad; q; q = q.next) value += strength;
         quad.value = value;
         quad.massX = quad.dataX;
         quad.massY = quad.dataY;
@@ -234,7 +236,7 @@ export class ForceKernel {
   }
 
   /** 逐点受力（d3 manyBody.apply；theta² = 0.81，距离过近按 distanceMin 钳制）。内联栈遍历，避免逐点闭包分配。 */
-  applyRepulsion(tree, nodes, alpha) {
+  applyRepulsion(tree: QuadNode<ForceNode>, nodes: ForceNode[], alpha: number) {
     const theta2 = 0.81;
     const minDist2 = REPEL_DISTANCE_MIN * REPEL_DISTANCE_MIN;
     const strength = this.repelStrength;
@@ -243,7 +245,7 @@ export class ForceKernel {
       stack.length = 0;
       stack.push(tree);
       while (stack.length) {
-        const quad = stack.pop();
+        const quad = stack.pop()!;
         if (!quad.value) continue;
         const w = quad.x1 - quad.x0;
         let x = quad.massX - node.x;
@@ -269,7 +271,7 @@ export class ForceKernel {
           if (y === 0) { y = jiggle(); l += y * y; }
           if (l < minDist2) l = Math.sqrt(minDist2 * l);
         }
-        for (let q = quad; q; q = q.next) {
+        for (let q: QuadBucket<ForceNode> | null = quad; q; q = q.next) {
           if (q.data !== node) {
             const f = strength * alpha / l;
             node.vx += x * f;
@@ -281,7 +283,7 @@ export class ForceKernel {
   }
 
   /** 半径碰撞（d3 collide：半径一致，配对权重 0.5，包围盒裁剪半径 120）。内联栈遍历。 */
-  applyCollision(tree, nodes) {
+  applyCollision(tree: QuadNode<ForceNode>, nodes: ForceNode[]) {
     const radius = COLLIDE_RADIUS;
     const reach = radius * 2;
     const reach2 = reach * reach;
@@ -293,7 +295,7 @@ export class ForceKernel {
       stack.length = 0;
       stack.push(tree);
       while (stack.length) {
-        const quad = stack.pop();
+        const quad = stack.pop()!;
         if (quad.data) {
           if (quad.data.index > node.index) {
             let x = xi - quad.data.x - quad.data.vx;

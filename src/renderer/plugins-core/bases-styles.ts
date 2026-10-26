@@ -4,7 +4,7 @@
  * [POS]: Bases 四种布局、窗口化行与原版工具栏样式；文件视图和嵌入共用主题变量。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
-export function installBasesStyles(doc) {
+export function installBasesStyles(doc: Document) {
   if (doc.getElementById('opensidian-bases-style')) return;
   const style = doc.createElement('style'); style.id = 'opensidian-bases-style';
   style.textContent = `

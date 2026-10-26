@@ -176,7 +176,9 @@ check(view.editor.getValue()===' beta','“剪切”移除选中文本：'+JSON.
 check(clip.readText()==='alpha','“剪切”写入系统剪贴板：'+clip.readText());
 openMenu(0);
 await until(()=>!!document.querySelector('body > .menu'),'粘贴菜单弹出',2000);
-realClick(menuItem(/粘贴|Paste/));
+const pasteItem=menuItem(/粘贴|Paste/);
+check(!!pasteItem&&!pasteItem.classList.contains('is-disabled'),'未收到原生 editFlags 时粘贴仍可用');
+realClick(pasteItem);
 await wait(120);
 check(view.editor.getValue().includes('alpha'),'“粘贴”写回文本：'+JSON.stringify(view.editor.getValue()));
 

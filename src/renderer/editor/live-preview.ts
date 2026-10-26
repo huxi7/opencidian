@@ -13,8 +13,8 @@
  *    decorations via state fields
  *  - styles headings, quotes, code blocks and lists like the original app
  */
-import { Decoration, ViewPlugin, WidgetType, EditorView } from '@codemirror/view';
-import { RangeSet, Facet, StateField, StateEffect } from '@codemirror/state';
+import { Decoration, ViewPlugin, WidgetType, EditorView, type DecorationSet, type ViewUpdate } from '@codemirror/view';
+import { RangeSet, Facet, StateField, StateEffect, type Text, type Line, type EditorState, type Range } from '@codemirror/state';
 import { foldedRanges } from '@codemirror/language';
 import { getMarkdownIt, attachMarkdownInteractions, renderMermaidBlocks } from '../markdown/reading.js';
 import { splitImageSize, splitEmbedSize } from '../markdown/source-text.js';
@@ -25,18 +25,19 @@ import { renderMath } from '../markdown/math.js';
 import { setIcon } from '../core/icons.js';
 import { tt } from '../core/i18n.js';
 import { TableWidget } from './table-widget.js';
+import type { TFile } from '../core/vault.js';
 import {
   appFacet, CheckboxWidget, BulletWidget, imageWidget, MathWidget, HrWidget, LangWidget, LinkWidget,
 } from './live-preview-inline-widgets.js';
 
-const sourcePathFacet = Facet.define({ combine: (values) => values[0] });
+const sourcePathFacet = Facet.define<() => string, () => string>({ combine: (values) => values[0] || (() => '') });
 
 // ---------------------------------------------------------------------------
 // Block widgets
 // ---------------------------------------------------------------------------
 
 /** 原版 addEditButton：块 widget 右上角"编辑这个区块"，点击把光标放回源码（widget 让位）。 */
-function addEditBlockButton(el, view, from, to) {
+function addEditBlockButton(el: HTMLElement, view: EditorView, from: number, to: number) {
   if (typeof from !== 'number') return null;
   const btn = el.createDiv('edit-block-button');
   setIcon(btn, 'lucide-code-2');
@@ -51,13 +52,13 @@ function addEditBlockButton(el, view, from, to) {
 }
 
 class MathBlockWidget extends WidgetType {
-  declare tex: any;
-  declare from: any;
-  declare to: any;
+  declare tex: string;
+  declare from: number;
+  declare to: number;
 
-  constructor(tex, from, to) { super(); this.tex = tex; this.from = from; this.to = to; }
-  eq(o) { return o.tex === this.tex && o.from === this.from && o.to === this.to; }
-  toDOM(view) {
+  constructor(tex: string, from: number, to: number) { super(); this.tex = tex; this.from = from; this.to = to; }
+  eq(o: MathBlockWidget) { return o.tex === this.tex && o.from === this.from && o.to === this.to; }
+  toDOM(view: EditorView) {
     const el = createDiv({ cls: 'math math-block' });
     // renderMath 异步写入内容：按钮在渲染完成后再挂，避免被覆盖
     renderMath(el, this.tex, true).then(() => {
@@ -70,14 +71,14 @@ class MathBlockWidget extends WidgetType {
 
 /** 实时预览代码块 widget：光标不在块内时以 <pre><code> 呈现（对齐阅读视图样式）。 */
 class CodeBlockWidget extends WidgetType {
-  declare lang: any;
-  declare code: any;
-  declare from: any;
-  declare to: any;
+  declare lang: string;
+  declare code: string;
+  declare from: number;
+  declare to: number;
 
-  constructor(lang, code, from, to) { super(); this.lang = lang; this.code = code; this.from = from; this.to = to; }
-  eq(other) { return other.lang === this.lang && other.code === this.code && other.from === this.from && other.to === this.to; }
-  toDOM(view) {
+  constructor(lang: string, code: string, from: number, to: number) { super(); this.lang = lang; this.code = code; this.from = from; this.to = to; }
+  eq(other: CodeBlockWidget) { return other.lang === this.lang && other.code === this.code && other.from === this.from && other.to === this.to; }
+  toDOM(view: EditorView) {
     const pre = createEl('pre', { cls: 'lp-codeblock' });
     const code = pre.createEl('code', { cls: 'language-' + (this.lang || 'plain') });
     if (this.lang) code.setAttr('data-lang', this.lang);
@@ -98,19 +99,19 @@ class CodeBlockWidget extends WidgetType {
     addEditBlockButton(pre, view, this.from, this.to);
     return pre;
   }
-  destroy(dom) { cancelCodeHighlight(dom.querySelector('code')); }
+  destroy(dom: HTMLElement) { cancelCodeHighlight(dom.querySelector('code')); }
   ignoreEvent() { return false; }
 }
 
 /** 实时预览 mermaid widget：惰性渲染为 SVG（复用阅读视图的 renderMermaidBlocks）。 */
 class MermaidWidget extends WidgetType {
-  declare code: any;
-  declare from: any;
-  declare to: any;
+  declare code: string;
+  declare from: number;
+  declare to: number;
 
-  constructor(code, from, to) { super(); this.code = code; this.from = from; this.to = to; }
-  eq(other) { return other.code === this.code && other.from === this.from && other.to === this.to; }
-  toDOM(view) {
+  constructor(code: string, from: number, to: number) { super(); this.code = code; this.from = from; this.to = to; }
+  eq(other: MermaidWidget) { return other.code === this.code && other.from === this.from && other.to === this.to; }
+  toDOM(view: EditorView) {
     const wrap = createDiv({ cls: 'cm-lp-mermaid' });
     const el = wrap.createDiv({ cls: 'mermaid-source' });
     el.setAttr('data-source', this.code);
@@ -124,12 +125,12 @@ class MermaidWidget extends WidgetType {
 }
 
 class CalloutWidget extends WidgetType {
-  declare text: any;
-  declare sourcePath: any;
+  declare text: string;
+  declare sourcePath: string;
 
-  constructor(text, sourcePath) { super(); this.text = text; this.sourcePath = sourcePath || ''; }
-  eq(o) { return o.text === this.text; }
-  toDOM(view) {
+  constructor(text: string, sourcePath: string) { super(); this.text = text; this.sourcePath = sourcePath || ''; }
+  eq(o: CalloutWidget) { return o.text === this.text; }
+  toDOM(view: EditorView) {
     const app = view.state.facet(appFacet);
     const wrap = createDiv({ cls: 'cm-callout' });
     try {
@@ -138,24 +139,24 @@ class CalloutWidget extends WidgetType {
     if (app) attachMarkdownInteractions(app, wrap, () => this.sourcePath);
     return wrap;
   }
-  ignoreEvent(e) {
+  ignoreEvent(e: Event) {
     // let the fold chevron toggle; everything else goes to the editor (cursor in)
-    return !(e.target && e.target.closest && e.target.closest('.callout-fold'));
+    return !(e.target instanceof Element && e.target.closest('.callout-fold'));
   }
 }
 
 class PropertiesWidget extends WidgetType {
   declare app: App;
-  declare file: any;
-  declare fmText: any;
-  declare from: any;
+  declare file: TFile;
+  declare fmText: string;
+  declare from: number;
 
-  constructor(app: App, file, fmText, from) {
+  constructor(app: App, file: TFile, fmText: string, from: number) {
     super();
     this.app = app; this.file = file; this.fmText = fmText; this.from = from;
   }
-  eq(o) { return o.file === this.file && o.fmText === this.fmText; }
-  toDOM(view) {
+  eq(o: PropertiesWidget) { return o.file === this.file && o.fmText === this.fmText; }
+  toDOM(view: EditorView) {
     const parsed = parseFrontmatterText(this.fmText);
     const el = buildMetadataContainer(this.app, this.file, {
       editable: true,
@@ -203,17 +204,24 @@ const RE_TABLE_DELIM = /^\s{0,3}\|?[\s:|-]*-[\s:|-]*\|?\s*$/;
 const RE_CALLOUT = /^\s{0,3}>\s?\[!([\w-]+)\]([+-])?\s*(.*)$/;
 const RE_QUOTE_LINE = /^\s{0,3}>/;
 
-const blocksCache = new WeakMap();
+interface BlockSpan { startLine: number; endLine: number; from: number; to: number; }
+type Block = BlockSpan & ({ kind: 'code'; lang: string; closed: boolean; code: string } | { kind: 'math'; tex: string } | { kind: 'table' | 'callout' });
+interface Blocks { frontmatter: BlockSpan | null; blocks: Block[]; }
+interface Fence { marker: string; len: number; startLine: number; lang: string; }
+type Decorations = Range<Decoration>[];
+type Touches = (from: number, to: number) => boolean;
+const blocksCache = new WeakMap<Text, Blocks>();
+const fenceCache = new WeakMap<EditorView, { doc: Text; lines: Map<number, string> }>();
 
-function closesFence(text, fence) {
+function closesFence(text: string, fence: Fence) {
   const match = /^\s{0,3}(`{3,}|~{3,})\s*$/.exec(text);
   return match && match[1][0] === fence.marker && match[1].length >= fence.len;
 }
 
-function classifyBlocks(doc) {
+function classifyBlocks(doc: Text): Blocks {
   const hit = blocksCache.get(doc);
   if (hit) return hit;
-  const out = { frontmatter: null, blocks: [] };
+  const out: Blocks = { frontmatter: null, blocks: [] };
   const total = doc.lines;
 
   if (total > 0 && doc.line(1).text.trim() === '---') {
@@ -225,9 +233,9 @@ function classifyBlocks(doc) {
       }
     }
   }
-  const inFm = (n) => out.frontmatter && n >= out.frontmatter.startLine && n <= out.frontmatter.endLine;
+  const inFm = (n: number) => out.frontmatter && n >= out.frontmatter.startLine && n <= out.frontmatter.endLine;
 
-  let fence = null; // { marker, len, startLine, lang }
+  let fence: Fence | null = null; // { marker, len, startLine, lang }
   for (let n = 1; n <= total; n++) {
     if (inFm(n)) continue;
     const line = doc.line(n);
@@ -306,23 +314,22 @@ function classifyBlocks(doc) {
 // ---------------------------------------------------------------------------
 // Block decoration layer (StateField — block widgets are only legal here)
 // ---------------------------------------------------------------------------
-function computeBlockLayer(state) {
+function computeBlockLayer(state: EditorState) {
   const app = state.facet(appFacet);
   const getPath = state.facet(sourcePathFacet);
   const sourcePath = getPath ? getPath() : '';
   const doc = state.doc;
   const { frontmatter, blocks } = classifyBlocks(doc);
   const sel = state.selection.ranges;
-  const touched = (from, to) => {
+  const touched = (from: number, to: number) => {
     for (const r of sel) if (r.from <= to && r.to >= from) return true;
     return false;
   };
 
-  const decorations = [];
-  const coveredLines = new Set();
-  const settings = (app && app.settings && app.settings.appSettings) || {};
-  const propsMode = settings.propertiesInDocument || 'visible';
-  const folded = (from, to) => {
+  const decorations: Decorations = [];
+  const coveredLines = new Set<number>();
+  const propsMode = app?.settings.appSettings.propertiesInDocument || 'visible';
+  const folded = (from: number, to: number) => {
     let hidden = false;
     foldedRanges(state).between(from, to, (start, end) => { if (start < to && end > from) hidden = true; });
     return hidden;
@@ -336,7 +343,7 @@ function computeBlockLayer(state) {
     if (propsMode === 'hidden') {
       // 隐藏模式：属性不显示（源码仍在文件中，切换为“源码”模式可编辑）
       decorations.push(Decoration.replace({ block: true }).range(frontmatter.from, frontmatter.to));
-    } else if (showWidget) {
+    } else if (showWidget && app && file) {
       const fmText = doc.sliceString(frontmatter.from, frontmatter.to);
       decorations.push(Decoration.replace({
         widget: new PropertiesWidget(app, file, fmText, frontmatter.from), block: true,
@@ -350,9 +357,9 @@ function computeBlockLayer(state) {
 
   for (const b of blocks) {
     if (touched(b.from, b.to) || folded(b.from, b.to)) continue;
-    let widget = null;
+    let widget: WidgetType | null = null;
     if (b.kind === 'math') widget = new MathBlockWidget(b.tex, b.from, b.to);
-    else if (b.kind === 'table') widget = new TableWidget(app, doc.sliceString(b.from, b.to), sourcePath, b.from, b.to);
+    else if (b.kind === 'table' && app) widget = new TableWidget(app, doc.sliceString(b.from, b.to), sourcePath, b.from, b.to);
     else if (b.kind === 'callout') widget = new CalloutWidget(doc.sliceString(b.from, b.to), sourcePath);
     else if (b.kind === 'code') widget = b.lang === 'mermaid' ? new MermaidWidget(b.code, b.from, b.to) : new CodeBlockWidget(b.lang, b.code, b.from, b.to);
     if (!widget) continue;
@@ -382,8 +389,8 @@ const RE_BULLET = /^(\s*)([-*+])(\s+)/;
 const RE_ORDERED = /^(\s*)(\d+)([.)])(\s+)/;
 const RE_HR = /^\s{0,3}(?:(?:-\s*){3,}|(?:\*\s*){3,}|(?:_\s*){3,})$/;
 
-function computeFenceLines(doc) {
-  const map = new Map();
+function computeFenceLines(doc: Text) {
+  const map = new Map<number, string>();
   for (const block of classifyBlocks(doc).blocks) {
     if (block.kind !== 'code') continue;
     for (let n = block.startLine; n <= block.endLine; n++) {
@@ -393,18 +400,18 @@ function computeFenceLines(doc) {
   return map;
 }
 
-function lineClass(line, cls) {
+function lineClass(line: Line, cls: string) {
   return Decoration.line({ class: cls }).range(line.from);
 }
 
 // ---------------------------------------------------------------------------
 // Build inline decorations (ViewPlugin — no block decorations allowed here)
 // ---------------------------------------------------------------------------
-function buildDecorations(view, app: App) {
+function buildDecorations(view: EditorView, app: App) {
   const doc = view.state.doc;
-  const decorations = [];
+  const decorations: Decorations = [];
   const sel = view.state.selection.ranges;
-  const touches = (from, to) => {
+  const touches = (from: number, to: number) => {
     for (const r of sel) {
       if (r.from <= to && r.to >= from) return true;
     }
@@ -414,9 +421,9 @@ function buildDecorations(view, app: App) {
   const field = view.state.field(blockLayerField, false);
   const covered = field ? field.coveredLines : new Set();
 
-  const fenceLines = view.__fenceCacheDoc === doc ? view.__fenceCache : computeFenceLines(doc);
-  view.__fenceCache = fenceLines;
-  view.__fenceCacheDoc = doc;
+  const cachedFence = fenceCache.get(view);
+  const fenceLines = cachedFence?.doc === doc ? cachedFence.lines : computeFenceLines(doc);
+  fenceCache.set(view, { doc, lines: fenceLines });
   const getPath = view.state.facet(sourcePathFacet);
   const sourcePath = getPath ? getPath() : '';
 
@@ -438,7 +445,7 @@ function buildDecorations(view, app: App) {
             decorations.push(lineClass(line, 'HyperMD-codeblock-begin HyperMD-codeblock-bg'));
             if (!touches(lineStart, lineStart + text.length)) {
               const m = text.match(RE_FENCE_OPEN);
-              const lang = text.slice(m[1].length).trim().split(/\s+/)[0] || '';
+              const lang = text.slice(m?.[1].length || 0).trim().split(/\s+/)[0] || '';
               decorations.push(Decoration.replace({}).range(lineStart, lineStart + text.length));
               decorations.push(Decoration.widget({ widget: new LangWidget(lang), side: 1 }).range(lineStart));
             }
@@ -486,7 +493,7 @@ function buildDecorations(view, app: App) {
           if (tm) {
             // 原版：非光标行的任务标记只留缩进位（- 不可见），[x] 换成复选框
             const leadMatch = tm[1].match(/^\s*/);
-            const markFrom = lineStart + leadMatch[0].length;
+            const markFrom = lineStart + (leadMatch?.[0].length || 0);
             const cbStart = lineStart + tm[1].length;
             if (!touches(markFrom, cbStart)) {
               decorations.push(Decoration.replace({ widget: new BulletWidget(/\d/.test(tm[1]), 0, true) }).range(markFrom, cbStart));
@@ -506,7 +513,7 @@ function buildDecorations(view, app: App) {
   return Decoration.set(decorations, true);
 }
 
-function bulletDecoration(decorations, line, text, lineStart, touches, offset) {
+function bulletDecoration(decorations: Decorations, line: Line, text: string, lineStart: number, touches: Touches, offset: number) {
   const sub = text.slice(offset);
   if (RE_HR.test(text)) return;
   const om = sub.match(RE_ORDERED);
@@ -532,7 +539,7 @@ function bulletDecoration(decorations, line, text, lineStart, touches, offset) {
 // ---------------------------------------------------------------------------
 // Inline patterns
 // ---------------------------------------------------------------------------
-function resolveImageSrc(app: App, url, sourcePath) {
+function resolveImageSrc(app: App, url: string, sourcePath: string) {
   if (/^(https?|data|app):/i.test(url)) return url;
   let clean = url;
   try { clean = decodeURIComponent(url); } catch (e) {}
@@ -544,7 +551,7 @@ function resolveImageSrc(app: App, url, sourcePath) {
 
 const IMAGE_EXTS = ['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'bmp', 'avif'];
 
-function applyInline(decorations, app: App, line, text, lineStart, sourcePath, touches) {
+function applyInline(decorations: Decorations, app: App, line: Line, text: string, lineStart: number, sourcePath: string, touches: Touches) {
   // images: ![alt](url) — 竖线后的宽度/宽高与阅读视图同一套解析
   let m;
   const imgRe = /!\[([^\]]*)\]\(([^()\s]+)(?:\s+"[^"]*")?\)/g;
@@ -658,20 +665,20 @@ function applyInline(decorations, app: App, line, text, lineStart, sourcePath, t
 // ---------------------------------------------------------------------------
 // Extension
 // ---------------------------------------------------------------------------
-export function livePreviewExtension(app: App, getSourcePath) {
+export function livePreviewExtension(app: App, getSourcePath?: () => string) {
   return [
     appFacet.of(app),
     sourcePathFacet.of(getSourcePath || (() => '')),
     fmSourceField,
     blockLayerField,
     ViewPlugin.fromClass(class {
-  declare decorations: any;
+  declare decorations: DecorationSet;
 
-      constructor(view) {
+      constructor(view: EditorView) {
         this.decorations = RangeSet.empty;
         try { this.decorations = buildDecorations(view, app); } catch (e) { console.error('live preview', e); }
       }
-      update(update) {
+      update(update: ViewUpdate) {
         if (update.docChanged || update.viewportChanged || update.selectionSet || update.geometryChanged) {
           try { this.decorations = buildDecorations(update.view, app); } catch (e) { console.error('live preview', e); }
         }

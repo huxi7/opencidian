@@ -4,7 +4,11 @@
  * [POS]: 核心插件入口。启用时注册功能区、命令与 file-menu 贡献项（打开局部关系图），禁用时一并移除。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
+import type { Menu } from '../core/menu.js';
+import type { TFile, VaultEntry } from '../core/vault.js';
+import { EventRef } from '../core/events.js';
 import { t } from '../core/i18n.js';
+import { WorkspaceLeaf } from '../core/workspace-model.js';
 import { GraphView, LocalGraphView } from '../views/graph-view.js';
 
 export * from './graph-utils.js';
@@ -17,11 +21,11 @@ export { GraphEngine } from './graph-engine.js';
 export const nameKey = 'plugins.graph-view';
 
 export function create(app: App) {
-  let ribbonEl = null;
+  let ribbonEl: HTMLDivElement|null = null;
   /* 原版 onFileMenu：文件菜单的 view.linked 段追加「打开局部关系图」。
      条件与原版一致——必须是 md 文件、菜单带叶子（叶子级菜单），且不是侧栏上下文菜单。 */
-  const onFileMenu = (menu, file, source, leaf) => {
-    if (!file || file.extension !== 'md' || !leaf) return;
+  const onFileMenu = (menu: Menu, file: VaultEntry, source: string, leaf?: unknown) => {
+    if (!('extension' in file) || file.extension !== 'md' || !(leaf instanceof WorkspaceLeaf)) return;
     if (source === 'sidebar-context-menu') return;
     menu.addItem((item) => item.setSection('view.linked')
       .setTitle(t('plugins.graph-view.action-open-local')).setIcon('git-fork')
@@ -35,7 +39,7 @@ export function create(app: App) {
     for (const id of ['graph:open', 'graph:open-local', 'graph:animate']) app.commands.removeCommand(id);
     if (fileMenuRef) { fileMenuRef.unregister(); fileMenuRef = null; }
   };
-  let fileMenuRef = null;
+  let fileMenuRef: EventRef | null = null;
   return {
     async onload() {
       app.viewRegistry.registerView('graph', (leaf) => new GraphView(leaf));
@@ -64,7 +68,7 @@ export function create(app: App) {
         icon: 'wand',
         checkCallback: (checking) => {
           const view = app.workspace.getActiveViewOfType('graph');
-          if (!view) return false;
+          if (!(view instanceof GraphView) || !view.dataEngine) return false;
           if (!checking) view.dataEngine.renderProgression();
           return true;
         },
@@ -76,8 +80,8 @@ export function create(app: App) {
 }
 
 /* 原版 openGraphView：Mod 键按下时新开标签页（对应 Ng.isModEvent） */
-async function openGraphView(app: App, ev) {
-  const mod = !!(ev && (ev.metaKey || ev.ctrlKey));
+async function openGraphView(app: App, ev: Event|undefined) {
+  const mod = !!(ev instanceof MouseEvent || ev instanceof KeyboardEvent ? ev.metaKey || ev.ctrlKey : false);
   const leaf = app.workspace.getLeaf(mod ? 'tab' : false);
   await leaf.setViewState({ type: 'graph', state: {} });
   app.workspace.setActiveLeaf(leaf, { focus: true });
@@ -85,7 +89,7 @@ async function openGraphView(app: App, ev) {
 }
 
 /* 原版 openLocalGraph：当前文件存在时竖向分割并打开局部图谱 */
-function openLocalGraph(app: App, checking) {
+function openLocalGraph(app: App, checking: boolean) {
   const file = app.workspace.getActiveFile();
   if (!file) return false;
   if (!checking && app.workspace.activeLeaf) {
@@ -96,7 +100,7 @@ function openLocalGraph(app: App, checking) {
 }
 
 /* 原版 file-menu 的「打开局部关系图」：在给定叶子右侧竖向分割出局部图谱 */
-function openLocalGraphFor(app: App, file, leaf) {
+function openLocalGraphFor(app: App, file: TFile, leaf: WorkspaceLeaf) {
   const target = app.workspace.createLeafBySplit(leaf, 'vertical');
   target.setViewState({ type: 'localgraph', state: { file: file.path } });
   return target;

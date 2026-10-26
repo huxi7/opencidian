@@ -8,17 +8,17 @@ const MAX_CHARACTERS = 200000;
 const SVG_NS = 'http://www.w3.org/2000/svg';
 const OWNER = '.canvas-node-container,.canvas-node-label,.canvas-group-label,.canvas-edge-label';
 let nextClip = 0;
-function shape(x, y, width, height) {
+function shape(x: number, y: number, width: number, height: number) {
   const h = height * 0.38, w = Math.max(h * 0.25, width * 0.92);
   return { x, y: y + height * 0.34, width: w, height: h, radius: Math.min(w, h) / 2 };
 }
-function glyph(ctx, x, y, width, height) {
+function glyph(ctx: { beginPath: () => void; roundRect: (arg0: number,arg1: number,arg2: number,arg3: number,arg4: number) => void; fill: () => void; }, x: number, y: number, width: number, height: number) {
   if (width < 0.2 || height < 0.2) return;
   const box = shape(x, y, width, height);
   ctx.beginPath(); ctx.roundRect(box.x, box.y, box.width, box.height, box.radius); ctx.fill();
 }
-const number = value => Number(value.toFixed(3));
-function glyphPath(rect, matrix) {
+const number = (value: number) => Number(value.toFixed(3));
+function glyphPath(rect: { width: number; height: number; left: number|undefined; top: number|undefined; right: number|undefined; bottom: number|undefined; }, matrix: DOMMatrixInit|undefined) {
   if (rect.width < 0.2 || rect.height < 0.2) return '';
   const a = new DOMPoint(rect.left, rect.top).matrixTransform(matrix);
   const b = new DOMPoint(rect.right, rect.bottom).matrixTransform(matrix);
@@ -26,7 +26,7 @@ function glyphPath(rect, matrix) {
   const x = number(box.x), y = number(box.y), r = number(box.radius), right = number(box.x + box.width), bottom = number(box.y + box.height);
   return `M${x + r} ${y}H${right - r}Q${right} ${y} ${right} ${y + r}V${bottom - r}Q${right} ${bottom} ${right - r} ${bottom}H${x + r}Q${x} ${bottom} ${x} ${bottom - r}V${y + r}Q${x} ${y} ${x + r} ${y}Z`;
 }
-function textClip(text, owner) {
+function textClip(text: Node, owner: Element) {
   let left = -Infinity, top = -Infinity, right = Infinity, bottom = Infinity, opacity = 1;
   for (let node = text.parentElement; node && node !== owner; node = node.parentElement) {
     const style = getComputedStyle(node), rect = node.getBoundingClientRect();
@@ -36,7 +36,7 @@ function textClip(text, owner) {
   }
   return { left, top, right, bottom, opacity };
 }
-function createLayer(doc, owner) {
+function createLayer(doc: Document, owner: HTMLElement) {
   const position = owner.style.getPropertyValue('position'), priority = owner.style.getPropertyPriority('position');
   const hadStyle = owner.hasAttribute('style');
   if (getComputedStyle(owner).position === 'static') owner.style.position = 'relative';
@@ -50,16 +50,17 @@ function createLayer(doc, owner) {
     if (!hadStyle && !owner.style.length) owner.removeAttribute('style');
   } };
 }
-export function prepareCanvasPrivacy(wrapper) {
+export function prepareCanvasPrivacy(wrapper: HTMLDivElement) {
   const doc = wrapper.ownerDocument, walker = doc.createTreeWalker(wrapper, NodeFilter.SHOW_TEXT);
-  const texts = [], layers = new Map();
+  const texts: Array<{ text: Node; owner: HTMLElement; color: string }> = [], layers = new Map<HTMLElement, ReturnType<typeof createLayer>>();
   let text, count = 0;
   while ((text = walker.nextNode())) {
-    const owner = text.parentElement?.closest(OWNER);
-    if (!owner || !text.textContent.trim() || text.parentElement.closest('script,style,svg,canvas,.canvas-controls,.canvas-menu-container')) continue;
-    const style = getComputedStyle(text.parentElement);
+    const parent = text.parentElement;
+    const owner = parent?.closest<HTMLElement>(OWNER);
+    if (!owner || !parent || !(text.textContent || '').trim() || parent.closest('script,style,svg,canvas,.canvas-controls,.canvas-menu-container')) continue;
+    const style = getComputedStyle(parent);
     if (style.display === 'none' || style.visibility === 'hidden') continue;
-    count += text.textContent.length;
+    count += (text.textContent || '').length;
     if (count > MAX_CHARACTERS) throw Error('隐私导出文字超过 200000 字符；请缩小导出范围。');
     texts.push({ text, owner, color: style.color });
   }
@@ -82,7 +83,7 @@ export function prepareCanvasPrivacy(wrapper) {
       rect.setAttribute('x', String(Math.min(a.x, b.x))); rect.setAttribute('y', String(Math.min(a.y, b.y)));
       rect.setAttribute('width', String(Math.abs(b.x - a.x))); rect.setAttribute('height', String(Math.abs(b.y - a.y))); cp.appendChild(rect); layer.defs.appendChild(cp);
       let pathData = '', index = 0;
-      for (const character of text.textContent) {
+      for (const character of text.textContent || '') {
         const start = index; index += character.length; if (/\s/.test(character)) continue;
         range.setStart(text, start); range.setEnd(text, index);
         for (const glyphRect of range.getClientRects()) pathData += glyphPath(glyphRect, matrix);
@@ -96,7 +97,7 @@ export function prepareCanvasPrivacy(wrapper) {
     return { clear };
   } catch (error) { clear(); throw error; }
 }
-export function drawPrivacyText(ctx, text, x, y, maxWidth, lineHeight) {
+export function drawPrivacyText(ctx: CanvasRenderingContext2D, text: string, x: number, y: number, maxWidth: number, lineHeight: number) {
   let offset = 0, row = 0;
   for (const character of String(text || '')) {
     const width = ctx.measureText(character).width;

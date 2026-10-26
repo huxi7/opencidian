@@ -15,20 +15,29 @@
  */
 /* Canvas viewport engine — original viewport math + animation frame (class chain layer 2). */
 import { View } from '../core/view.js';
-import { clamp, unionBBox, expandBBox, rectOf } from './canvas-utils.js';
+import { clamp, unionBBox, expandBBox, rectOf, CanvasBBox } from './canvas-utils.js';
 import { CanvasNode } from './canvas-node.js';
+
+interface SnapMatch { src: CanvasPoint[]; dest: CanvasPoint[]; }
+interface SnapResult { delta: number; matches: SnapMatch[]; }
 
 const ZOOM_MIN = -4;
 const ZOOM_MAX = 1;
 const ZOOMED_OUT_AT = -1.7;
 const SMOOTHING = 0.984;
 
+import type { CanvasPoint } from './canvas-utils.js';
 import type { CanvasSharedState } from './canvas-types.js';
+import { CanvasEdge } from './canvas-edge.js';
+import { CanvasFileNode } from './canvas-file-node.js';
+import { CanvasGroupNode } from './canvas-group-node.js';
+import { CanvasLinkNode } from './canvas-link-node.js';
+import { CanvasTextNode } from './canvas-text-node.js';
 export interface CanvasViewport extends CanvasSharedState {}
 export abstract class CanvasViewport extends View {
-  abstract getEdgesForNode(...args: any[]): any;
-  abstract applySelectionDiff(...args: any[]): any;
-  abstract setInteractionTarget(...args: any[]): any;
+  abstract getEdgesForNode(node: CanvasNode): CanvasEdge[];
+  abstract applySelectionDiff(): boolean;
+  abstract setInteractionTarget(node: CanvasNode | null): void;
 
   /* ---------------------------------------------------------------- 视口 */
 
@@ -42,7 +51,7 @@ export abstract class CanvasViewport extends View {
   }
   get snapDistance() { return Math.ceil(this.config.objectSnapDistance / this.scale); }
 
-  setViewport(x, y, zoom) {
+  setViewport(x: number, y: number, zoom: number) {
     if (x === this.x && y === this.y && zoom === this.zoom) return;
     this.x = this.tx = x;
     this.y = this.ty = y;
@@ -50,13 +59,13 @@ export abstract class CanvasViewport extends View {
     this.markViewportChanged();
   }
 
-  zoomBy(delta, zoomCenter?) {
+  zoomBy(delta: number, zoomCenter?: { x: number; y: number; }|undefined) {
     this.tZoom = clamp(this.tZoom + delta, ZOOM_MIN, ZOOM_MAX);
     this.zoomCenter = zoomCenter || { x: 0, y: 0 };
     this.markViewportChanged();
   }
 
-  panBy(dx, dy) {
+  panBy(dx: number, dy: number) {
     this.x += dx;
     this.y += dy;
     this.tx = this.x;
@@ -78,7 +87,7 @@ export abstract class CanvasViewport extends View {
     this.zoomToBbox(unionBBox(boxes));
   }
 
-  zoomToBbox(box) {
+  zoomToBbox(box: CanvasBBox) {
     const { width, height } = this.canvasRect;
     if (!width || !height) return;
     const w = Math.max(box.maxX - box.minX, 1);
@@ -92,7 +101,7 @@ export abstract class CanvasViewport extends View {
   }
 
   /** 把 box 挪进视口；box 比视口大时改为缩放到 box。 */
-  panIntoView(box, margin = 20) {
+  panIntoView(box: CanvasBBox, margin = 20) {
     const padded = expandBBox(box, margin);
     const view = this.getViewportBBox();
     if (padded.maxX - padded.minX > view.maxX - view.minX || padded.maxY - padded.minY > view.maxY - view.minY) {
@@ -119,7 +128,7 @@ export abstract class CanvasViewport extends View {
    * 原版 getSnapping：返回把 boxes 吸附到 others 与网格所需的位移，并按需画参考线。
    * useX/useY 为假表示该轴没有位移，只认同轴完全对齐（原版传 0 作为阈值）。
    */
-  getSnapping(boxes, others, useX, useY) {
+  getSnapping(boxes: CanvasBBox[], others: CanvasBBox[], useX: boolean, useY: boolean) {
     if (!boxes.length) return { x: 0, y: 0 };
     let xMatch = null;
     let yMatch = null;
@@ -145,11 +154,11 @@ export abstract class CanvasViewport extends View {
   }
 
   /** 画参考线：每个匹配点画圆点，并按匹配范围画一条直线（原版 renderSnapPoints）。 */
-  renderSnapPoints(xMatch, yMatch, dx, dy) {
+  renderSnapPoints(xMatch: SnapResult | null, yMatch: SnapResult | null, dx: number, dy: number) {
     let el = this.snapContainerEl;
     if (!el) el = this.snapContainerEl = this.canvasEl.createSvg('svg', { cls: 'canvas-snaps' });
     el.style.zIndex = String(this.zIndexCounter + 2);
-    const offset = (p) => ({ x: p.x + dx, y: p.y + dy });
+    const offset = (p: { x: number; y: number; }) => ({ x: p.x + dx, y: p.y + dy });
     const matches = [];
     if (xMatch) matches.push(...xMatch.matches);
     if (yMatch) matches.push(...yMatch.matches);
@@ -184,17 +193,17 @@ export abstract class CanvasViewport extends View {
 
   /* ------------------------------------------------------------ 坐标换算 */
 
-  domPosFromEvt(e) {
+  domPosFromEvt(e: { clientX: number; clientY: number; }) {
     const rect = this.canvasRect;
     return { x: e.clientX - rect.cx, y: e.clientY - rect.cy };
   }
 
-  posFromEvt(e) { return this.posFromDom(this.domPosFromEvt(e)); }
-  posFromClient(p) { return this.posFromDom({ x: p.x - this.canvasRect.cx, y: p.y - this.canvasRect.cy }); }
-  posFromDom(p) { return { x: this.x + p.x / this.scale, y: this.y + p.y / this.scale }; }
-  domFromPos(p) { return { x: (p.x - this.x) * this.scale, y: (p.y - this.y) * this.scale }; }
+  posFromEvt(e: MouseEvent) { return this.posFromDom(this.domPosFromEvt(e)); }
+  posFromClient(p: CanvasPoint) { return this.posFromDom({ x: p.x - this.canvasRect.cx, y: p.y - this.canvasRect.cy }); }
+  posFromDom(p: CanvasPoint) { return { x: this.x + p.x / this.scale, y: this.y + p.y / this.scale }; }
+  domFromPos(p: { x: number; y: number; }) { return { x: (p.x - this.x) * this.scale, y: (p.y - this.y) * this.scale }; }
   posCenter() { return this.posFromDom({ x: 0, y: 0 }); }
-  posInViewport(p) {
+  posInViewport(p: CanvasPoint) {
     const rect = this.canvasRect;
     return p.x >= rect.minX && p.x <= rect.maxX && p.y >= rect.minY && p.y <= rect.maxY;
   }
@@ -202,15 +211,15 @@ export abstract class CanvasViewport extends View {
   /* ------------------------------------------------------------ 帧与渲染 */
 
   markViewportChanged() { this.viewportChanged = true; this.requestFrame(); }
-  markMoved(el) { this.moved.add(el); this.requestFrame(); }
+  markMoved(el: CanvasNode | CanvasEdge) { this.moved.add(el); this.requestFrame(); }
   /** 原版 markDirty：被选中的元素变脏时标记选择变化，帧尾据此重绘浮动工具条（例如取色器实时改色）。 */
-  markDirty(el) {
+  markDirty(el: CanvasNode | CanvasEdge) {
     this.dirty.add(el);
     if (this.selection.has(el)) this.selectionChanged = true;
     this.requestFrame();
   }
 
-  requestFrame(frameStart?) {
+  requestFrame(frameStart?: number|undefined) {
     if (this.frame) return;
     if (!frameStart) frameStart = performance.now();
     this.frame = window.requestAnimationFrame(() => {
@@ -226,7 +235,7 @@ export abstract class CanvasViewport extends View {
   }
 
   /** 原版动画帧：指数平滑趋近 tx/ty/tZoom，随后刷新视口 DOM 并重绘标记过的节点与边。 */
-  renderFrame(dt, now) {
+  renderFrame(dt: number, now: number) {
     const viewportWasChanged = this.viewportChanged;
     let ease = 1 - Math.pow(SMOOTHING, dt);
     if (this.finishViewportAnimation) { ease = 1; this.finishViewportAnimation = false; }
@@ -332,7 +341,7 @@ export abstract class CanvasViewport extends View {
  * ------------------------------------------------------------------------ */
 
 /** 原版 D3：矩形取 4 角 + 中心，共 5 个对齐点。 */
-function boxSnapPoints(box) {
+function boxSnapPoints(box: CanvasBBox) {
   const { minX, minY, maxX, maxY } = box;
   return [
     { x: minX, y: minY },
@@ -344,7 +353,7 @@ function boxSnapPoints(box) {
 }
 
 /** 原版 A3：合并全部点，按 x/y 排序后按坐标去重。 */
-export function uniqueSnapPoints(boxes) {
+export function uniqueSnapPoints(boxes: { minX: number; minY: number; maxX: number; maxY: number; }[]) {
   const all = [];
   for (const box of boxes) all.push(...boxSnapPoints(box));
   all.sort((a, b) => (a.x !== b.x ? a.x - b.x : a.y - b.y));
@@ -362,16 +371,16 @@ export function uniqueSnapPoints(boxes) {
  * 原版 L3：在单轴上为 src 的每个坐标找 dest 中最近的坐标，取绝对差最小且在 dist 内的位移，
  * 返回该位移下的全部点对（src 是移动前的点，dest 是对齐目标点）。
  */
-export function findSnapMatches(src, dest, dist, axis) {
-  const valueOf = (p) => (axis === 'x' ? p.x : p.y);
+export function findSnapMatches(src: CanvasPoint[], dest: CanvasPoint[], dist: number, axis: 'x' | 'y'): SnapResult | null {
+  const valueOf = (p: CanvasPoint) => (axis === 'x' ? p.x : p.y);
   // 防御：非有限坐标（rect 误当 bbox、损坏节点）会让 NaN === NaN 恒为 false，
   // 内层 while 永不前进 → 主线程死循环。先过滤，再保证每轮至少前进一格。
-  const finite = (p) => p && Number.isFinite(valueOf(p));
+  const finite = (p: CanvasPoint) => p && Number.isFinite(valueOf(p));
   const sortedSrc = src.filter(finite).sort((a, b) => valueOf(a) - valueOf(b));
   const sortedDest = dest.filter(finite).sort((a, b) => valueOf(a) - valueOf(b));
   if (!sortedSrc.length || !sortedDest.length) return null;
   let delta = dist;
-  let matches = [];
+  let matches: SnapMatch[] = [];
   let index = 0;
   while (index < sortedSrc.length) {
     const value = valueOf(sortedSrc[index]);
@@ -392,7 +401,7 @@ export function findSnapMatches(src, dest, dist, axis) {
 }
 
 /** 二分找 dest 中与 value 最接近的点（有序数组）。 */
-function nearestByAxis(sorted, value, valueOf) {
+function nearestByAxis(sorted: CanvasPoint[], value: number, valueOf: (point: CanvasPoint) => number) {
   let lo = 0;
   let hi = sorted.length - 1;
   while (lo < hi) {
@@ -406,7 +415,7 @@ function nearestByAxis(sorted, value, valueOf) {
 }
 
 /** 取 dest 中与 sorted[at] 同坐标的全部点（原版向前后扩展同值区间）。 */
-function destGroupAt(sorted, at, valueOf) {
+function destGroupAt(sorted: CanvasPoint[], at: number, valueOf: (point: CanvasPoint) => number) {
   const value = valueOf(sorted[at]);
   let start = at;
   let end = at;

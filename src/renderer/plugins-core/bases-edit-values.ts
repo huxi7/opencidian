@@ -4,22 +4,28 @@
  * [POS]: 表格编辑和看板共用笔记写入语义。拒绝无效 YAML、公式和只读文件字段。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
+import type { BaseQueryRow } from './bases-types.js';
+import type { BasesController as BaseController } from './bases-view.js';
 import { BaseDate, BaseLink, BaseTag, safeKey, ownKey, baseEquals, parseBaseDate } from './bases-values.js';
 import { propertyValue } from './bases-model.js';
 import { convertBaseProperty } from './bases-values-file.js';
 import { enqueueBaseFile } from './bases-edit-store.js';
 import { getPropertyTypes } from '../markdown/properties-types.js';
-const yaml = require('js-yaml');
-export function readBaseFrontmatter(source) {
+import { App } from '../core/app.js';
+const yaml: typeof import('js-yaml') = require('js-yaml');
+export interface BaseWritableInfo { writable: true; name?: string; property: string; folder?: boolean; type?: string; value?: unknown; rawValue?: unknown; reason?: never; }
+export type BaseWriteInfo = BaseWritableInfo | { writable: false; reason: string; name?: never; property?: never; folder?: never; type?: never; value?: never; rawValue?: never };
+const message = (error: unknown) => error instanceof Error ? error.message : String(error);
+export function readBaseFrontmatter(source: string): Record<string, unknown> {
   if (!/^---\s*\r?\n/.test(source)) return {};
   const match = /^---\s*\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/.exec(source);
   if (!match) throw Error('笔记属性缺少结束标记，已取消写入。');
-  const value = yaml.load(match[1]);
+  const value: unknown = yaml.load(match[1]);
   if (value != null && (typeof value !== 'object' || Array.isArray(value))) throw Error('笔记属性必须是 YAML 对象。');
-  return value || {};
+  return value as Record<string, unknown> || {};
 }
-export function basePropertyType(app: App, name, value) {
-  const manager = app.metadataTypeManager || (app.vault.getBasePath && app.metadataCache.on ? getPropertyTypes(app) : null);
+export function basePropertyType(app: App, name: string, value: unknown) {
+  const manager = app.metadataTypeManager || (typeof app.vault.getBasePath === 'function' && typeof app.metadataCache.on === 'function' ? getPropertyTypes(app) : null);
   const declared = manager?.getTypeInfo?.(name)?.expected?.type;
   if (declared) return declared;
   if (['tags', 'aliases', 'cssclasses'].includes(name.toLowerCase())) return 'multitext';
@@ -30,11 +36,11 @@ export function basePropertyType(app: App, name, value) {
   if (typeof value === 'string' && /^\d{4}-\d{2}-\d{2}/.test(value)) return value.length === 10 ? 'date' : 'datetime';
   return 'text';
 }
-export function baseWriteInfo(controller, row = null, property) {
+export function baseWriteInfo(controller: BaseController, row: BaseQueryRow | null, property: string): BaseWriteInfo {
   if (property === 'file.folder') return { writable: true, property, folder: true, value: row?.file.parent?.path || '/' };
   if (!property || /^(?:file|formula)\./.test(property) || property === 'file') return { writable: false, reason: '公式与此文件属性只读。' };
   const name = property.replace(/^note\./, '');
-  try { safeKey(name); } catch (error) { return { writable: false, reason: error.message }; }
+  try { safeKey(name); } catch (error) { return { writable: false, reason: message(error) }; }
   if (!row) return { writable: true, name, property };
   if (row.file.extension !== 'md') return { writable: false, reason: '仅 Markdown 笔记支持属性写入。' };
   try {
@@ -46,9 +52,9 @@ export function baseWriteInfo(controller, row = null, property) {
     const frontmatter = controller.app.metadataCache.getFileCache(row.file)?.frontmatter || {};
     const key = ownKey(frontmatter, name) ?? name;
     return { writable: true, name, property, value, type, rawValue: frontmatter[key] };
-  } catch (error) { return { writable: false, reason: error.message }; }
+  } catch (error) { return { writable: false, reason: message(error) }; }
 }
-export function baseValueToFrontmatter(value) {
+export function baseValueToFrontmatter(value: unknown): unknown {
   if (value == null || ['string', 'boolean'].includes(typeof value)) return value;
   if (typeof value === 'number' && Number.isFinite(value)) return value;
   if (value instanceof BaseDate) { if (!Number.isFinite(value.date.getTime())) throw Error('日期无效。'); return value.toString(); }
@@ -57,7 +63,7 @@ export function baseValueToFrontmatter(value) {
   if (Array.isArray(value)) return value.map(baseValueToFrontmatter);
   throw Error('目标值不能写入笔记属性。');
 }
-export function formatBaseEditValue(info) {
+export function formatBaseEditValue(info: Pick<BaseWritableInfo, 'value' | 'type' | 'rawValue'>) {
   const value = baseValueToFrontmatter(info.value);
   if (info.type === 'date' || info.type === 'datetime') {
     if (info.rawValue instanceof Date && Number.isFinite(info.rawValue.getTime())) return info.rawValue.toISOString().slice(0, info.type === 'date' ? 10 : 19);
@@ -68,7 +74,7 @@ export function formatBaseEditValue(info) {
   }
   return Array.isArray(value) ? JSON.stringify(value) : value == null ? '' : String(value);
 }
-export function parseBaseEditInput(text, type) {
+export function parseBaseEditInput(text: string, type: string|undefined) {
   if (text === '') return null;
   if (type === 'number') { const value = Number(text); if (!Number.isFinite(value)) throw Error('请输入有效数字。'); return value; }
   if (type === 'checkbox') { if (text !== 'true' && text !== 'false') throw Error('复选框只接受 true 或 false。'); return text === 'true'; }
@@ -79,11 +85,11 @@ export function parseBaseEditInput(text, type) {
   }
   if (type === 'multitext' || type === 'tags' || type === 'aliases') {
     if (text.trimStart().startsWith('[')) { const list = yaml.load(text); if (!Array.isArray(list) || list.some(item => !['string', 'number', 'boolean'].includes(typeof item))) throw Error('列表需包含文本、数字或复选值。'); return list; }
-    return text.split(',').map(value => value.trim()).filter(Boolean);
+    return text.split(',').map((value: string) => value.trim()).filter(Boolean);
   }
   return text;
 }
-export function writeBaseProperty(controller, row, info, target) {
+export function writeBaseProperty(controller: BaseController, row: BaseQueryRow, info: BaseWritableInfo, target: unknown) {
   return enqueueBaseFile(controller.app, row.file, async () => {
     if (controller.closed || !controller.enabled) return;
     const file = controller.app.vault.getFileByPath(row.file.path);
@@ -102,8 +108,9 @@ export function writeBaseProperty(controller, row, info, target) {
     let next = baseValueToFrontmatter(target);
     if ((info.type === 'multitext' || Array.isArray(info.value)) && next != null && !Array.isArray(next)) next = [next];
     readBaseFrontmatter(await controller.app.vault.read(file));
-    await controller.app.fileManager.processFrontMatter(file, frontmatter => {
-      const key = ownKey(frontmatter, info.name) ?? info.name;
+    await controller.app.fileManager.processFrontMatter(file, (frontmatter: Record<string, unknown>) => {
+      const name = info.name; if (!name) throw Error('属性名称缺失。');
+      const key = ownKey(frontmatter, name) ?? name;
       const current = convertBaseProperty(frontmatter[key] ?? null, controller.app, file.path, key);
       if (!baseEquals(current, info.value)) throw Error('属性已变化，请重新操作，原始数据未覆盖。');
       if (next == null) delete frontmatter[key]; else frontmatter[key] = next;

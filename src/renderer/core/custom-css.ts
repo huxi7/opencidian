@@ -4,8 +4,8 @@
  * [POS]: 库根 obsidian.css 兼容层。只读 CSS；监听支持创建、修改、删除与原子替换。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
-const fs = require('fs');
-const path = require('path');
+const fs: typeof import('node:fs') = require('fs');
+const path: typeof import('node:path') = require('path');
 
 export function applyVaultCss(app: App) {
   let el = document.getElementById('opensidian-vault-css');

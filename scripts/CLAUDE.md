@@ -5,14 +5,16 @@
 构建与开发脚本。TypeScript 先检查类型，再由 esbuild 生成主进程和渲染器 JS。
 
 成员清单
+canvas-data.test.mjs: 画布 JSON、坏文件切换、块引用回退与演示关闭回归，不启动 Electron。
+graph-simulation.test.mjs: 图谱 Worker 回执回归。固定零坐标、坏缓冲区、代次与销毁边界。
 cdp-probe.mjs: 本地原版 CDP 只读探针，输出被忽略的分析目录；不参与构建和正式验收。
 build-config.mjs: 唯一构建配置源。主进程输出 CommonJS，渲染器和 Worker 输出浏览器包。
-type-contracts.test.mjs: 在严格配置编译正反例，验证 IPC、文件树、事件、布局、DOM 和原子写入契约。
+type-contracts.test.mjs: 编译正反例，验证 IPC、事件、布局、编辑器与画布契约；防止显式 any 和检查豁免回归。
 events.test.mjs: 原型名称、once 重入和防抖 run/cancel/resetTimer 的确定性回归。
 test-unit.mjs: 串行运行独立 Node 测试，验证回执并汇总失败。
 workspace-regression.mjs: 隔离 VM 验证工作区状态、生命周期、循环布局拒绝与异常关闭保留。
 build.mjs: 读取共用配置，编译主进程、主窗口、启动器和图谱 Worker；--watch 增量构建。
-dev.mjs: 开发模式。兼容与严格检查同时 watch，增量编译后启动 Electron；退出释放两组检查器。主进程变更需重启命令。
+dev.mjs: 开发模式。全量严格检查与增量编译共用一套配置；退出释放检查器。主进程变更需重启命令。
 with-lock.sh: 构建/验收互斥锁。并行子代理共享 $TMPDIR/opensidian-build.lock，先到先得，超时 30 分钟退出码 75；用法 `sh scripts/with-lock.sh "<命令>"`。
 
 acceptance/: full.sh 是全量入口。真实 Electron 场景，隔离库与日志判定见 acceptance/CLAUDE.md。 子进程带 `E2E=1`：窗口不激活应用（accessory + showInactive + focusable:false）且整窗透明（opacity:0 + 忽略鼠标）——测试完全不可见、不抢焦点；带 `OBS_ACT` 的直连探针也自动进入 E2E（main.ts 兜底）。

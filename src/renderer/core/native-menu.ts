@@ -4,22 +4,24 @@
  * [POS]: DOM 菜单和系统菜单共用动作树。E2E 默认保留 DOM，仅专属场景测试原生桥。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
+import type { NativeMenuItem } from '../../ipc-contracts.js';
 import { ipcInvoke, ipcSend } from './ipc.js';
+import type { Menu, MenuItem } from './menu.js';
 import { Notice } from './notices.js';
 let nextToken = 0;
-export function usesNativeMenu(menu) {
+export function usesNativeMenu(menu: Menu) {
   const pref = menu.app?.settings?.appearance?.nativeMenus;
   const configured = pref === true || pref == null && navigator.platform.startsWith('Mac');
   const e2e = process.env.E2E === '1' || process.env.OBS_E2E === '1' || !!process.env.OBS_ACT;
   return configured && (!e2e || window.__NATIVE_MENU_TEST__ === true);
 }
-export function closeNativeMenu(menu) {
+export function closeNativeMenu(menu: Menu) {
   if (menu._nativeToken == null) return;
   ipcSend('native-menu-close', menu._nativeToken); menu._nativeToken = null;
 }
-export function showNativeMenu(menu, pos) {
-  const routes = new Map();
-  const serialize = (source, prefix = []) => {
+export function showNativeMenu(menu: Menu, pos: { x: number; y: number }) {
+  const routes = new Map<string, MenuItem>();
+  const serialize = (source: Menu, prefix: number[] = []): NativeMenuItem[] => {
     const grouped = source._sectioned || source.sections.length || Object.keys(source.submenuConfigs).length;
     const ordered = grouped ? source._sort() : source.items;
     return ordered.map((item, index) => {

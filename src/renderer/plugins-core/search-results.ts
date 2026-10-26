@@ -8,6 +8,8 @@
  *        悬停结果行抛 workspace 的 hover-link（source=search），由 page-preview 弹页面预览。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
+import type { TFile } from '../core/vault.js';
+import type { SearchDocument, SearchDocRange, SearchRange, SearchEvaluation, SearchResult, SearchRow, SearchMatchRow, SearchGroup, SearchViewportRange, TrackSearchRow } from './search-types.js';
 import { createDiv } from '../core/dom.js';
 import { setIcon } from '../core/icons.js';
 import { t } from '../core/i18n.js';
@@ -20,23 +22,23 @@ const MAX_MEASURE_PASS = 3;
 /* ------------------------------------------------------------ 虚拟窗口 */
 
 export class SearchVirtualList {
-  declare scrollEl: any;
-  declare childrenEl: any;
-  declare renderGroup: any;
-  declare onRender: any;
-  declare groups: any[];
-  declare groupHeights: any;
-  declare rowHeights: any;
-  declare rowElements: any;
-  declare groupElements: any;
-  declare samples: any;
-  declare range: any;
+  declare scrollEl: HTMLElement;
+  declare childrenEl: HTMLElement;
+  declare renderGroup: (group: SearchGroup, el: HTMLElement, track: TrackSearchRow) => void;
+  declare onRender: (range: SearchViewportRange) => void;
+  declare groups: SearchGroup[];
+  declare groupHeights: Map<string, number>;
+  declare rowHeights: Map<string, number>;
+  declare rowElements: Map<string, { el: HTMLElement; kind: SearchRow['kind'] }>;
+  declare groupElements: Map<string, HTMLDivElement>;
+  declare samples: Record<SearchRow['kind'], { sum: number; n: number }>;
+  declare range: SearchViewportRange;
   declare _pass: number;
-  declare _onScroll: any;
-  declare topSpacer: any;
-  declare bottomSpacer: any;
+  declare _onScroll: () => void;
+  declare topSpacer: HTMLDivElement;
+  declare bottomSpacer: HTMLDivElement;
 
-  constructor(options) {
+  constructor(options: { scrollEl: HTMLElement; childrenEl: HTMLElement; renderGroup: (group: SearchGroup, el: HTMLElement, track: TrackSearchRow) => void; onRender?: (range: SearchViewportRange) => void }) {
     this.scrollEl = options.scrollEl;
     this.childrenEl = options.childrenEl;
     this.renderGroup = options.renderGroup;
@@ -56,7 +58,7 @@ export class SearchVirtualList {
   }
 
   /** 换一批结果：重建组模型并重绘（行高缓存保留，同名行仍复用实测高度）。 */
-  setGroups(groups) {
+  setGroups(groups: SearchGroup[]) {
     this.groups = groups || [];
     this.render();
   }
@@ -75,13 +77,13 @@ export class SearchVirtualList {
   }
 
   /** 行 key → 渲染出的 DOM 元素（未在窗口内则为空）。 */
-  elementOf(key) {
+  elementOf(key: string) {
     const entry = this.rowElements.get(key);
     return entry ? entry.el : null;
   }
 
   /** 行高估值：实测优先，其次同类均值，最后固定值。 */
-  _heightOf(row) {
+  _heightOf(row: SearchRow) {
     const measured = this.rowHeights.get(row.key);
     if (measured) return measured;
     if (row.height) return row.height;
@@ -160,7 +162,7 @@ export class SearchVirtualList {
   }
 
   /** 把行滚进视口：行不在窗口内时改写 scrollTop，随后重绘窗口。 */
-  scrollToRow(key) {
+  scrollToRow(key: string) {
     const layout = this._layout();
     for (let i = 0; i < layout.length; i++) {
       const item = layout[i];
@@ -212,11 +214,11 @@ export class SearchVirtualList {
   }
 
   /** 原版 setChildrenInPlace：保留仍在用的节点，按目标顺序就地换位。 */
-  _setChildren(list) {
+  _setChildren(list: HTMLElement[]) {
     const parent = this.childrenEl;
     const wanted = new Set(list);
     for (const el of [...parent.children]) {
-      if (!wanted.has(el)) el.remove();
+      if (!wanted.has(el as HTMLElement)) el.remove();
     }
     let anchor = parent.firstChild;
     for (const el of list) {
@@ -228,12 +230,12 @@ export class SearchVirtualList {
 
 /* ---------------------------------------------------------- 结果列表 */
 
-function setHighlighted(el, text, ranges) {
+function setHighlighted(el: HTMLElement, text: string, ranges: SearchRange[]) {
   el.empty();
   if (!text) return;
   const sorted = (ranges || [])
-    .filter((range) => range && range.end > range.start)
-    .sort((a, b) => a.start - b.start || a.end - b.end);
+    .filter((range: { end: number; start: number; }) => range && range.end > range.start)
+    .sort((a: { start: number; end: number; }, b: { start: number; end: number; }) => a.start - b.start || a.end - b.end);
   let cursor = 0;
   for (const range of sorted) {
     const start = Math.max(cursor, Math.min(text.length, range.start));
@@ -250,23 +252,24 @@ function setHighlighted(el, text, ranges) {
  * results 项结构：{ file, doc, evaluation }，evaluation 需含 content/fields/properties/score/flair。
  */
 export class SearchResults {
+  declare hoverPopover?: import('../core/workspace-events.js').HoverPopover | null;
   declare app: App;
-  declare scrollEl: any;
-  declare childrenEl: any;
-  declare onOpenFile: any;
-  declare onContextMenu: any;
-  declare _results: any[];
-  declare _collapsed: any;
+  declare scrollEl: HTMLElement;
+  declare childrenEl: HTMLElement;
+  declare onOpenFile: (file: TFile, line: number | null, ch: number, event: MouseEvent) => unknown;
+  declare onContextMenu: (event: MouseEvent, file: TFile, el: HTMLElement, allowDelete: boolean) => unknown;
+  declare _results: SearchResult[];
+  declare _collapsed: Map<string, boolean>;
   declare _collapseAll: boolean;
   declare _extraContext: boolean;
-  declare _expanded: any;
-  declare _groups: any[];
-  declare _focusRows: any[];
+  declare _expanded: Map<string, SearchRange>;
+  declare _groups: SearchGroup[];
+  declare _focusRows: SearchRow[];
   declare _focusedIndex: number;
-  declare _focusEl: any;
+  declare _focusEl: Element | null;
   declare _virtual: SearchVirtualList;
 
-  constructor(options) {
+  constructor(options: { app: App; scrollEl: HTMLElement; childrenEl: HTMLElement; onOpenFile?: SearchResults['onOpenFile']; onContextMenu?: SearchResults['onContextMenu'] }) {
     this.app = options.app;
     this.scrollEl = options.scrollEl;
     this.childrenEl = options.childrenEl;
@@ -300,7 +303,7 @@ export class SearchResults {
 
   /* ------------------------------------------------------------ 数据 */
 
-  setResults(results) {
+  setResults(results: SearchResult[]) {
     this._results = results || [];
     this._expanded.clear();
     this._virtual.resetHeights();
@@ -316,27 +319,27 @@ export class SearchResults {
     return this._results.reduce((sum, result) => sum + result.evaluation.score, 0);
   }
 
-  isCollapsed(path) {
+  isCollapsed(path: string) {
     return this._collapsed.has(path) ? this._collapsed.get(path) : this._collapseAll;
   }
 
-  setCollapseAll(value) {
+  setCollapseAll(value: boolean) {
     this._collapseAll = !!value;
     for (const result of this._results) this._collapsed.set(result.file.path, this._collapseAll);
     this.rebuild();
   }
 
-  setExtraContext(value) {
+  setExtraContext(value: boolean) {
     this._extraContext = !!value;
     this.rebuild();
   }
 
-  toggleCollapse(path) {
+  toggleCollapse(path: string) {
     this._collapsed.set(path, !this.isCollapsed(path));
     this.rebuild();
   }
 
-  setCollapsed(path, value) {
+  setCollapsed(path: string, value: boolean) {
     this._collapsed.set(path, !!value);
     this.rebuild();
   }
@@ -358,20 +361,20 @@ export class SearchResults {
   }
 
   /** 命中行描述：正文按行合并成一行（带高亮区间），属性单独成行。 */
-  _matchRows(result) {
+  _matchRows(result: SearchResult): SearchMatchRow[] {
     const { doc, evaluation } = result;
-    const rows = [];
-    const groups = new Map();
+    const rows: SearchMatchRow[] = [];
+    const groups = new Map<number, import('./search-types.js').SearchMatch[]>();
     for (const match of evaluation.content) {
       if (!groups.has(match.line)) groups.set(match.line, []);
-      groups.get(match.line).push(match);
+      groups.get(match.line)!.push(match);
     }
     const lines = [...groups.keys()].sort((a, b) => a - b);
     const block = this._extraContext
-      ? doc.blocks.find((item) => lines.length && item.startLine <= lines[0] && item.endLine >= lines[0])
+      ? doc.blocks.find((item: { startLine: number; endLine: number; }) => lines.length && item.startLine <= lines[0] && item.endLine >= lines[0])
       : null;
     for (const line of lines) {
-      const matches = groups.get(line);
+      const matches = groups.get(line)!;
       let startOffset = doc.offsets[line];
       let endOffset = doc.offsets[line] + (doc.lines[line] || '').length;
       if (block) {
@@ -404,7 +407,7 @@ export class SearchResults {
         result,
         plain: true,
         text: prefix + property.value,
-        ranges: property.ranges.map((range) => ({ start: range.start + prefix.length, end: range.end + prefix.length })),
+        ranges: property.ranges.map((range: { start: number; end: number; }) => ({ start: range.start + prefix.length, end: range.end + prefix.length })),
         start: 0,
         end: 0,
         line: null,
@@ -416,9 +419,9 @@ export class SearchResults {
 
   /** 分组模型：一个文件一个分组，折叠的分组只保留标题行（对齐原版折叠后不参与键盘导航）。 */
   _buildGroups() {
-    const groups = [];
+    const groups: SearchGroup[] = [];
     for (const result of this._results) {
-      const rows = [{ key: 'f:' + result.file.path, kind: 'file', groupKey: result.file.path, result }];
+      const rows: SearchRow[] = [{ key: 'f:' + result.file.path, kind: 'file', groupKey: result.file.path, result }];
       if (!this.isCollapsed(result.file.path)) {
         for (const row of this._matchRows(result)) rows.push(row);
       }
@@ -429,7 +432,7 @@ export class SearchResults {
 
   /* ------------------------------------------------------------ 渲染 */
 
-  _renderGroup(group, el, track) {
+  _renderGroup(group: SearchGroup, el: HTMLElement, track: TrackSearchRow) {
     const { file, evaluation } = group.result;
     el.empty();
     el.addClass('tree-item');
@@ -450,13 +453,13 @@ export class SearchResults {
     }
     track(group.rows[0].key, titleEl, 'file');
     titleEl.onclick = (event) => {
-      if (event.target && event.target.closest && event.target.closest('.collapse-icon')) return;
+      if (event.target instanceof Element && event.target.closest('.collapse-icon')) return;
       this.onOpenFile(file, null, 0, event);
     };
     titleEl.oncontextmenu = (event) => this.onContextMenu(event, file, el, true);
     // 原版 KW.onResultMouseover：悬停结果行抛 hover-link，页面预览据此弹出。
     titleEl.addEventListener('mouseover', (event) => this.onHover(event, file, titleEl, null));
-    collapseEl.onclick = (event) => {
+    collapseEl.onclick = (event: { preventDefault: () => void; stopPropagation: () => void; }) => {
       event.preventDefault();
       event.stopPropagation();
       this.toggleCollapse(file.path);
@@ -470,16 +473,16 @@ export class SearchResults {
   }
 
   /** 原版 KW 标题规则：md 用不含扩展名的短名，其它文件（白板等）用带扩展名的全名。 */
-  _renderTitle(inner, file, evaluation) {
-    const pathFields = evaluation.fields.filter((field) => field.field === 'path');
-    const nameFields = evaluation.fields.filter((field) => field.field === 'filename');
+  _renderTitle(inner: HTMLElement, file: TFile, evaluation: SearchEvaluation) {
+    const pathFields = evaluation.fields.filter((field: { field: string; }) => field.field === 'path');
+    const nameFields = evaluation.fields.filter((field: { field: string; }) => field.field === 'filename');
     if (pathFields.length) {
       const offset = file.path.length - file.name.length;
-      const ranges = pathFields.flatMap((field) => field.ranges)
-        .concat(nameFields.flatMap((field) => field.ranges.map((range) => ({ start: range.start + offset, end: range.end + offset }))));
+      const ranges = pathFields.flatMap((field) => field.ranges || [])
+        .concat(nameFields.flatMap((field) => (field.ranges || []).map((range: { start: number; end: number; }) => ({ start: range.start + offset, end: range.end + offset }))));
       setHighlighted(inner, file.path, ranges);
     } else if (nameFields.length) {
-      const ranges = nameFields.flatMap((field) => field.ranges);
+      const ranges = nameFields.flatMap((field) => field.ranges || []);
       const last = ranges[ranges.length - 1];
       const useFullName = file.extension !== 'md' || last.end > file.basename.length;
       setHighlighted(inner, useFullName ? file.name : file.basename, ranges);
@@ -488,7 +491,7 @@ export class SearchResults {
     }
   }
 
-  _renderMatch(matchesEl, row, result, track) {
+  _renderMatch(matchesEl: HTMLElement, row: SearchMatchRow, result: SearchResult, track: TrackSearchRow) {
     const file = result.file;
     const rowEl = matchesEl.createDiv('search-result-file-match tappable');
     const expansion = this._expanded.get(row.key);
@@ -497,7 +500,7 @@ export class SearchResults {
     const text = row.plain ? row.text : result.doc.text.slice(start, end);
     const ranges = row.plain
       ? row.ranges
-      : row.ranges.map((range) => ({ start: range.start - start, end: range.end - start }));
+      : row.ranges.map((range: { start: number; end: number; }) => ({ start: range.start - start, end: range.end - start }));
     setHighlighted(rowEl, text, ranges);
     rowEl._line = row.line;
     rowEl._result = result;
@@ -509,12 +512,12 @@ export class SearchResults {
     setIcon(before, 'chevron-up');
     before.setAttr('aria-label', t('plugins.search.label-more-context'));
     before.style.display = 'none';
-    before.onclick = (event) => { event.preventDefault(); event.stopPropagation(); this.expandMatch(row, -1); };
+    before.onclick = (event: { preventDefault: () => void; stopPropagation: () => void; }) => { event.preventDefault(); event.stopPropagation(); this.expandMatch(row, -1); };
     const after = rowEl.createDiv('search-result-hover-button mod-bottom');
     setIcon(after, 'chevron-down');
     after.setAttr('aria-label', t('plugins.search.label-more-context'));
     after.style.display = 'none';
-    after.onclick = (event) => { event.preventDefault(); event.stopPropagation(); this.expandMatch(row, 1); };
+    after.onclick = (event: { preventDefault: () => void; stopPropagation: () => void; }) => { event.preventDefault(); event.stopPropagation(); this.expandMatch(row, 1); };
     rowEl._moreButtons = { before, after };
     rowEl.addEventListener('mouseover', () => this._toggleMoreButtons(rowEl, row, true));
     rowEl.addEventListener('mouseout', () => this._toggleMoreButtons(rowEl, row, false));
@@ -524,7 +527,7 @@ export class SearchResults {
   /* ------------------------------------------------------------ 悬停预览 */
 
   /** 原版 KW.onResultMouseover：结果行悬停时抛 hover-link（source=search），页面预览据此弹出。 */
-  onHover(event, file, targetEl, row) {
+  onHover(event: MouseEvent, file: TFile, targetEl: HTMLElement, row: SearchMatchRow | null) {
     if (event.defaultPrevented) return;
     if (!this.app || !this.app.workspace || typeof this.app.workspace.trigger !== 'function') return;
     this.app.workspace.trigger('hover-link', {
@@ -540,19 +543,19 @@ export class SearchResults {
   /* -------------------------------------------------------- 更多上下文 */
 
   /** 原版 showMoreBefore/showMoreAfter：把上下文扩到相邻段落边界。 */
-  expandMatch(row, direction) {
+  expandMatch(row: SearchMatchRow | null, direction: number) {
     if (!row || row.plain) return false;
     const doc = row.result.doc;
     const current = this._expanded.get(row.key) || { start: row.start, end: row.end };
     if (direction < 0) {
-      let best = null;
+      let best: SearchDocRange | null = null;
       for (const block of doc.blocks) {
         if (block.end <= current.start && (!best || block.end > best.end)) best = block;
       }
       if (!best || best.start >= current.start) return false;
       this._expanded.set(row.key, { start: best.start, end: current.end });
     } else {
-      let best = null;
+      let best: SearchDocRange | null = null;
       for (const block of doc.blocks) {
         if (block.start >= current.end && (!best || block.start < best.start)) best = block;
       }
@@ -563,7 +566,7 @@ export class SearchResults {
     return true;
   }
 
-  _toggleMoreButtons(el, row, show) {
+  _toggleMoreButtons(el: HTMLElement, row: SearchMatchRow, show: boolean) {
     const buttons = el._moreButtons;
     if (!buttons) return;
     const expansion = this._expanded.get(row.key);
@@ -593,7 +596,7 @@ export class SearchResults {
   }
 
   /** 焦点移动：跨虚拟边界按行模型走，滚出窗口的行先滚进视口。 */
-  moveFocus(direction) {
+  moveFocus(direction: number) {
     if (!this._focusRows.length) return null;
     if (this._focusedIndex < 0) this._focusedIndex = direction > 0 ? 0 : this._focusRows.length - 1;
     else this._focusedIndex = Math.max(0, Math.min(this._focusRows.length - 1, this._focusedIndex + direction));
@@ -601,13 +604,13 @@ export class SearchResults {
     return this.focusedRow;
   }
 
-  setFocusedIndex(index) {
+  setFocusedIndex(index: number) {
     this._focusedIndex = index;
     this._applyFocus();
   }
 
   /** 焦点落到某个文件行（折叠命中行后原版把焦点收回文件标题）。 */
-  focusGroup(groupKey) {
+  focusGroup(groupKey: string) {
     const index = this._focusRows.findIndex((row) => row.kind === 'file' && row.groupKey === groupKey);
     if (index >= 0) this._focusedIndex = index;
     this._applyFocus();

@@ -5,6 +5,8 @@
  *        只搬既有叶子与 DOM，不重开视图；建分割仍由宿主 render 落 DOM。workspace.js 只保留同名薄入口。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
+import type { Workspace } from './workspace.js';
+import type { WorkspaceNode, WorkspaceLeaf } from './workspace-model.js';
 import { WorkspaceTabs, WorkspaceSplit } from './workspace-model.js';
 
 /**
@@ -12,9 +14,9 @@ import { WorkspaceTabs, WorkspaceSplit } from './workspace-model.js';
  * 同一个标签组内为纯重排；跨组不重建视图，只搬元素并刷新两边的头/可见性。
  * 源组搬空时交给 workspace._removeTabsNode 收敛分割树。
  */
-export function moveLeafToTabs(workspace, leaf, targetTabs, index) {
+export function moveLeafToTabs(workspace: Workspace, leaf: WorkspaceLeaf, targetTabs: WorkspaceTabs, index: number) {
   const sourceTabs = leaf.parent;
-  if (!(targetTabs instanceof WorkspaceTabs) || !sourceTabs) return false;
+  if (!(targetTabs instanceof WorkspaceTabs) || !(sourceTabs instanceof WorkspaceTabs)) return false;
   let to = (index === undefined || index === null || index < 0 || index > targetTabs.children.length)
     ? targetTabs.children.length : index;
   const from = sourceTabs.children.indexOf(leaf);
@@ -49,21 +51,21 @@ export function moveLeafToTabs(workspace, leaf, targetTabs, index) {
 }
 
 /** 原版 splitLeaf 的建组部分：只建目标分割与空标签组，不建占位叶子。 */
-export function createTabsBySplit(workspace, referenceLeaf, direction, before = false) {
-  if (workspace._sideOf(referenceLeaf) !== 'center') referenceLeaf = workspace._firstLeafInCenter();
-  const tabs = referenceLeaf.parent;
+export function createTabsBySplit(workspace: Workspace, referenceLeaf: WorkspaceLeaf, direction: 'horizontal' | 'vertical', before = false) {
+  if (workspace._sideOf(referenceLeaf) !== 'center') { const center = workspace._firstLeafInCenter(); if (center) referenceLeaf = center; }
+  const tabs = referenceLeaf.parent instanceof WorkspaceTabs ? referenceLeaf.parent : null;
   const splitParent = tabs ? tabs.parent : null;
   const newTabs = new WorkspaceTabs(workspace);
   const theDirection = direction === 'horizontal' ? 'horizontal' : 'vertical';
   if (splitParent instanceof WorkspaceSplit && splitParent.direction === theDirection) {
-    const idx = splitParent.children.indexOf(tabs);
+    const idx = tabs ? splitParent.children.indexOf(tabs) : -1;
     splitParent.insertChild(before ? idx : idx + 1, newTabs);
   } else if (splitParent instanceof WorkspaceSplit) {
-    const idx = splitParent.children.indexOf(tabs);
+    const idx = tabs ? splitParent.children.indexOf(tabs) : -1;
     const newSplit = new WorkspaceSplit(workspace, theDirection);
-    splitParent.removeChild(tabs);
-    if (before) { newSplit.insertChild(0, newTabs); newSplit.insertChild(1, tabs); }
-    else { newSplit.insertChild(0, tabs); newSplit.insertChild(1, newTabs); }
+    if (tabs) splitParent.removeChild(tabs);
+    if (before) { newSplit.insertChild(0, newTabs); if (tabs) newSplit.insertChild(1, tabs); }
+    else { if (tabs) newSplit.insertChild(0, tabs); newSplit.insertChild(1, newTabs); }
     splitParent.insertChild(idx, newSplit);
   } else {
     const newSplit = new WorkspaceSplit(workspace, theDirection);

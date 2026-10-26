@@ -14,11 +14,12 @@ import { setIcon } from '../core/icons.js';
 import { Menu } from '../core/menu.js';
 import { showQuickSettingsMenu } from './canvas-menu.js';
 import { CanvasHelpModal, hotkeyLabel } from './canvas-help.js';
+import { CanvasTextNode } from './canvas-text-node.js';
 
 /** 右下角建卡菜单（原版 card menu）：三个按钮，点击建卡、拖拽拖出尺寸。 */
 export function buildCardMenu(canvas: import('./canvas-view.js').CanvasView) {
   const menu = canvas.cardMenuEl = canvas.wrapperEl.createDiv('canvas-card-menu');
-  const addButton = (icon, title, onClick, onDragStart) => {
+  const addButton = (icon: string, title: string, onClick: (event: MouseEvent) => unknown, onDragStart: (event: PointerEvent) => void) => {
     const el = menu.createDiv({ cls: 'canvas-card-menu-button mod-draggable', attr: { 'aria-label': title } });
     setIcon(el, icon);
     el.addEventListener('click', onClick);
@@ -55,7 +56,7 @@ export function buildControls(canvas: import('./canvas-view.js').CanvasView) {
     menu.setParentElement(quickSettingsButton).showAtMouseEvent(ev);
   });
   const group = controls.createDiv('canvas-control-group mod-raised');
-  const addButton = (icon, title, onClick) => {
+  const addButton = (icon: string, title: string, onClick: (event: MouseEvent) => unknown) => {
     const el = group.createDiv({ cls: 'canvas-control-item', attr: { 'aria-label': title } });
     setIcon(el, icon);
     el.addEventListener('click', onClick);
@@ -67,7 +68,7 @@ export function buildControls(canvas: import('./canvas-view.js').CanvasView) {
   addButton('lucide-minus', t('commands.zoom-out'), () => canvas.zoomBy(-canvas.config.zoomMultiplier));
   // 撤销/重做组（原版第三组控件）
   const historyGroup = controls.createDiv('canvas-control-group mod-raised');
-  const addHistoryButton = (icon, title, onClick) => {
+  const addHistoryButton = (icon: string, title: string, onClick: (event: MouseEvent) => unknown) => {
     const el = historyGroup.createDiv({ cls: 'canvas-control-item', attr: { 'aria-label': title } });
     setIcon(el, icon);
     el.addEventListener('click', onClick);

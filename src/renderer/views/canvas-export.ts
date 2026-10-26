@@ -22,6 +22,12 @@ import { t } from '../core/i18n.js';
 import { Notice } from '../core/notices.js';
 import { Desktop } from '../core/ipc.js';
 import { IS_MAC } from '../core/keymap.js';
+import { CanvasEdge } from './canvas-edge.js';
+import type { CanvasPoint } from './canvas-utils.js';
+import type { CanvasExportOptions, CanvasExportMetrics } from './canvas-export-types.js';
+import { CanvasTextNode } from './canvas-text-node.js';
+import { CanvasContentNode } from './canvas-node.js';
+import { CanvasNode } from './canvas-node.js';
 
 /** 全画布范围的外扩（原版 v3(box, 100)）。 */
 const PADDING = 100;
@@ -37,13 +43,13 @@ const CARD_PADDING = 16;
  * @param {CanvasView} canvas
  * @param {{frame?:'full'|'viewport', box?:object, scale?:number, padding?:number, maxSize?:number}} [opts]
  */
-export function canvasExportMetrics(canvas: import('./canvas-view.js').CanvasView, opts: Record<string, any> = {}) {
+export function canvasExportMetrics(canvas: import('./canvas-view.js').CanvasView, opts: CanvasExportOptions = {}) {
   const maxSize = Math.min(opts.maxSize || MAX_SIZE, MAX_SIZE);
   if (!Number.isFinite(maxSize) || maxSize <= 0) throw Error('画布导出长边尺寸无效');
   const box = exportBBox(canvas, opts);
   const worldWidth = Math.max(box.maxX - box.minX, 1);
   const worldHeight = Math.max(box.maxY - box.minY, 1);
-  const density = opts.pixelRatio ?? canvasPixelRatio(canvas.wrapperEl?.ownerDocument.defaultView.devicePixelRatio || 1, require('electron').webFrame.getZoomFactor());
+  const density = opts.pixelRatio ?? canvasPixelRatio(canvas.wrapperEl?.ownerDocument.defaultView?.devicePixelRatio || 1, require('electron').webFrame.getZoomFactor());
   if (!Number.isFinite(density) || density <= 0) throw Error('画布导出像素密度无效');
   // 视口范围是「所见即所得」：倍率跟随画布缩放；全画布按世界坐标 1:1 起步
   const multiplier = opts.frame === 'viewport' ? canvas.scale : (opts.scale ?? 1);
@@ -63,12 +69,12 @@ export function canvasExportMetrics(canvas: import('./canvas-view.js').CanvasVie
 }
 
 /** 导出范围：显式 box 优先；viewport 取当前视口世界坐标；full 取全部节点包围盒外扩 padding。 */
-function exportBBox(canvas: import('./canvas-view.js').CanvasView, opts) {
+function exportBBox(canvas: import('./canvas-view.js').CanvasView, opts: CanvasExportOptions) {
   if (opts.box) return opts.box;
   if (opts.frame === 'viewport') return canvas.getViewportBBox();
   const padding = opts.padding === undefined ? PADDING : opts.padding;
   const nodes = Array.from(canvas.nodes.values());
-  return expandBBox(unionBBox(nodes.map((node) => node.getBBox())), padding);
+  return expandBBox(unionBBox(nodes.map((node: CanvasNode) => node.getBBox())), padding);
 }
 
 /**
@@ -77,7 +83,7 @@ function exportBBox(canvas: import('./canvas-view.js').CanvasView, opts) {
  * @param {{frame?:string, scale?:number, maxSize?:number, padding?:number, box?:object, showLogo?:boolean, privacyMode?:boolean, images?:Map, linkImages?:Map}} [opts]
  * @returns {{dataURL:string, width:number, height:number, scale:number}|null} 空画布返回 null
  */
-export function renderCanvasImage(canvas: import('./canvas-view.js').CanvasView, opts: Record<string, any> = {}) {
+export function renderCanvasImage(canvas: import('./canvas-view.js').CanvasView, opts: CanvasExportOptions = {}) {
   if (!canvas.nodes.size) return null;
   const metrics = canvasExportMetrics(canvas, opts);
   assertCanvasExportBudget(metrics, opts);
@@ -89,10 +95,11 @@ export function renderCanvasImage(canvas: import('./canvas-view.js').CanvasView,
   canvasEl.width = width;
   canvasEl.height = height;
   const ctx = canvasEl.getContext('2d');
+  if (!ctx) throw new Error('画布导出无法创建绘图上下文');
   ctx.fillStyle = canvasBackground(canvas);
   ctx.fillRect(0, 0, width, height);
   ctx.lineJoin = 'round';
-  const toImage = (p) => ({ x: (p.x - box.minX) * scale, y: (p.y - box.minY) * scale });
+  const toImage = (p: { x: number; y: number; }) => ({ x: (p.x - box.minX) * scale, y: (p.y - box.minY) * scale });
 
   // 边在节点之下（原版 .canvas-edges 先于 .canvas-node 挂载）
   for (const edge of canvas.edges.values()) drawEdge(ctx, edge, toImage, scale);
@@ -108,7 +115,7 @@ export function renderCanvasImage(canvas: import('./canvas-view.js').CanvasView,
  * @param {CanvasView} canvas
  * @returns {Promise<{filePath:string,width:number,height:number}|null>} 取消或空画布返回 null
  */
-export async function exportCanvasImage(canvas: import('./canvas-view.js').CanvasView, options) {
+export async function exportCanvasImage(canvas: import('./canvas-view.js').CanvasView, options?: CanvasExportOptions) {
   if (!canvas.nodes.size) {
     new Notice(t('plugins.canvas.msg-export-failed-empty-canvas'));
     return null;
@@ -120,15 +127,15 @@ export async function exportCanvasImage(canvas: import('./canvas-view.js').Canva
 
 /** 设置弹窗（原版 generateHDImage 第一步）：范围/缩放/显示水印/隐私模式；取消（关闭）返回 null。 */
 function promptCanvasExportOptions(canvas: import('./canvas-view.js').CanvasView) {
-  return new Promise((resolve) => {
+  return new Promise<CanvasExportOptions | null>((resolve) => {
     const metrics = canvasExportMetrics(canvas);
     const modal = new CanvasExportModal(canvas, {
       worldWidth: metrics.worldWidth,
       worldHeight: metrics.worldHeight,
       maxSize: metrics.maxSize,
       maxZoom: metrics.maxZoom,
-      dimensionsFor: (multiplier) => canvasExportMetrics(canvas, { scale: multiplier }),
-      onSave: (options) => resolve(options),
+      dimensionsFor: (multiplier: number) => canvasExportMetrics(canvas, { scale: multiplier }),
+      onSave: (options: CanvasExportOptions) => resolve(options),
     });
     modal.onClose = () => resolve(null);
     modal.open();
@@ -136,7 +143,7 @@ function promptCanvasExportOptions(canvas: import('./canvas-view.js').CanvasView
 }
 
 /** 确认后的落盘链路：保存对话框 → 整窗分块截图 → 写 PNG → 通知。 */
-export async function saveCanvasImage(canvas: import('./canvas-view.js').CanvasView, options) {
+export async function saveCanvasImage(canvas: import('./canvas-view.js').CanvasView, options: CanvasExportOptions) {
   if (!canvas.nodes.size) {
     new Notice(t('plugins.canvas.msg-export-failed-empty-canvas'));
     return null;
@@ -151,7 +158,7 @@ export async function saveCanvasImage(canvas: import('./canvas-view.js').CanvasV
   try {
     image = await renderCanvasTiles(canvas, canvasExportMetrics(canvas, opts), opts, decorate);
   } catch (error) {
-    new Notice('图片导出失败：' + error.message);
+    new Notice('图片导出失败：' + (error instanceof Error ? error.message : String(error)));
     throw error;
   }
   const base64 = image.dataURL.slice(image.dataURL.indexOf(',') + 1);
@@ -176,7 +183,7 @@ function canvasBackground(canvas: import('./canvas-view.js').CanvasView) {
 }
 
 /** 边颜色：优先取真实 path 的计算描边色（含 --canvas-color 的解析结果）。 */
-function edgeColor(edge) {
+function edgeColor(edge: CanvasEdge) {
   const path = edge.lineGroupEl && edge.lineGroupEl.querySelector('.canvas-display-path');
   if (path) {
     const stroke = getComputedStyle(path).stroke;
@@ -187,7 +194,7 @@ function edgeColor(edge) {
 
 /* ------------------------------------------------------------------ 绘制 */
 
-function drawEdge(ctx, edge, toImage, scale) {
+function drawEdge(ctx: CanvasRenderingContext2D, edge: CanvasEdge, toImage: (point: CanvasPoint) => CanvasPoint, scale: number) {
   const fromBox = edge.from.node.getBBox();
   const toBox = edge.to.node.getBBox();
   const a = sidePoint(fromBox, edge.from.side);
@@ -222,10 +229,10 @@ function drawEdge(ctx, edge, toImage, scale) {
   if (edge.to.end === 'arrow') drawArrow(ctx, toImage(b), edge.to.side, scale);
 }
 
-function drawArrow(ctx, point, side, scale) {
+function drawArrow(ctx: CanvasRenderingContext2D, point: { x: number; y: number; }, side: string|number, scale: number) {
   ctx.save();
   ctx.translate(point.x, point.y);
-  ctx.rotate((Number(SIDE_ROTATION[side]) || 0) * Math.PI / 180);
+  ctx.rotate((Number(SIDE_ROTATION[side as keyof typeof SIDE_ROTATION]) || 0) * Math.PI / 180);
   ctx.beginPath();
   ARROW_POINTS.forEach(([x, y], index) => {
     if (index === 0) ctx.moveTo(x * scale, y * scale);
@@ -236,7 +243,7 @@ function drawArrow(ctx, point, side, scale) {
   ctx.restore();
 }
 
-function drawNode(ctx, node, toImage, scale, opts) {
+function drawNode(ctx: CanvasRenderingContext2D, node: CanvasNode, toImage: (point: CanvasPoint) => CanvasPoint, scale: number, opts: CanvasExportOptions) {
   const box = node.getBBox();
   const origin = toImage({ x: box.minX, y: box.minY });
   const width = Math.max(1, (box.maxX - box.minX) * scale);
@@ -284,13 +291,13 @@ function drawNode(ctx, node, toImage, scale, opts) {
   } else if (node instanceof CanvasLinkNode) {
     if (!linkImage) drawText(ctx, node.url, origin, width, height, scale, { align: 'center', color: nodeTextColor(node), font: nodeFont(node, scale) });
   } else {
-    drawText(ctx, node.text || node.placeholderText, origin, width, height, scale, { color: nodeTextColor(node), font: nodeFont(node, scale) });
+    drawText(ctx, node instanceof CanvasTextNode ? node.text : node instanceof CanvasContentNode ? node.placeholderText : '', origin, width, height, scale, { color: nodeTextColor(node), font: nodeFont(node, scale) });
   }
   ctx.restore();
 }
 
 /** 卡片底色：分组取内容层的色块（.canvas-node-content 的 rgba(var(--canvas-color), 0.07)）。 */
-function nodeBackground(node, style) {
+function nodeBackground(node: CanvasNode, style: CSSStyleDeclaration|null) {
   if (node.isGroup && node.contentEl) {
     const tint = getComputedStyle(node.contentEl).backgroundColor;
     if (tint && tint !== 'rgba(0, 0, 0, 0)') return tint;
@@ -302,7 +309,7 @@ function nodeBackground(node, style) {
  * 分组背景图：cover 居中裁切，repeat 以图片固有像素平铺（随导出倍率放大）。
  * 绘制范围限制在圆角框内，边框与标签仍在图片之上。
  */
-function drawGroupBackground(ctx, node, image, origin, width, height, scale, radius) {
+function drawGroupBackground(ctx: CanvasRenderingContext2D, node: CanvasGroupNode, image: HTMLImageElement, origin: { x: number; y: number; }, width: number, height: number, scale: number, radius: number) {
   const iw = image.naturalWidth || image.width;
   const ih = image.naturalHeight || image.height;
   if (!iw || !ih) return;
@@ -333,27 +340,27 @@ function drawGroupBackground(ctx, node, image, origin, width, height, scale, rad
   ctx.restore();
 }
 
-function nodeFont(node, scale) {
+function nodeFont(node: CanvasNode, scale: number) {
   const style = getComputedStyle(styleSource(node));
   const size = parseFloat(style.fontSize) || 16;
   const family = style.fontFamily || 'sans-serif';
   return `${style.fontStyle || 'normal'} ${style.fontWeight || '400'} ${size * scale}px ${family}`;
 }
 
-function nodeTextColor(node) {
+function nodeTextColor(node: CanvasNode) {
   const color = getComputedStyle(styleSource(node)).color;
   return color || 'rgb(0, 0, 0)';
 }
 
 /** 取样式来源：优先已挂载的正文（字号/颜色随主题），否则退回始终挂载的 .canvas-node。 */
-function styleSource(node) {
-  for (const el of [node.previewEl, node.contentEl, node.nodeEl]) {
+function styleSource(node: CanvasNode) {
+  for (const el of [node instanceof CanvasFileNode ? node.previewEl : null, node.contentEl, node.nodeEl]) {
     if (el && el.isConnected) return el;
   }
   return node.nodeEl;
 }
 
-function drawGroupLabel(ctx, node, origin, scale) {
+function drawGroupLabel(ctx: CanvasRenderingContext2D, node: CanvasGroupNode, origin: { x: number; y: number; }, scale: number) {
   const label = node.labelEl ? node.labelEl.getText().trim() : (node.label || '');
   if (!label) return;
   const style = getComputedStyle(node.labelEl || node.nodeEl);
@@ -365,15 +372,15 @@ function drawGroupLabel(ctx, node, origin, scale) {
 }
 
 /** 同步预览用实际文字的前进量生成圆角字形；真实导出直接量取 DOM Range。 */
-function drawPrivacyBars(ctx, node, origin, width, height, scale) {
-  const text = node.text || node.url || node.file?.basename || node.filePath || node.placeholderText || '';
+function drawPrivacyBars(ctx: CanvasRenderingContext2D, node: CanvasNode, origin: { x: number; y: number; }, width: number, height: number, scale: number) {
+  const text = node instanceof CanvasTextNode ? node.text : node instanceof CanvasLinkNode ? node.url : node instanceof CanvasFileNode ? node.file?.basename || node.filePath || node.placeholderText : '';
   ctx.font = nodeFont(node, scale);
   ctx.fillStyle = nodeTextColor(node);
   const size = parseFloat(ctx.font.match(/([\d.]+)px/)?.[1] || '16');
   drawPrivacyText(ctx, text, origin.x + CARD_PADDING * scale, origin.y + CARD_PADDING * scale,
     width - CARD_PADDING * scale * 2, size * 1.4);
 }
-function drawPrivacyLabelBar(ctx, node, origin, width, scale) {
+function drawPrivacyLabelBar(ctx: CanvasRenderingContext2D, node: CanvasGroupNode, origin: { x: number; y: number; }, width: number, scale: number) {
   const label = node.labelEl?.textContent || node.label || '';
   const style = getComputedStyle(node.labelEl || node.nodeEl);
   const size = (parseFloat(style.fontSize) || 24) * scale;
@@ -383,7 +390,7 @@ function drawPrivacyLabelBar(ctx, node, origin, width, scale) {
 }
 
 /** 文件卡片：左上角文件名 + 居中的图标占位矩形（原版占位 .canvas-icon-placeholder 宽 25%）。 */
-function drawFileCard(ctx, node, origin, width, height, scale) {
+function drawFileCard(ctx: CanvasRenderingContext2D, node: CanvasFileNode, origin: { x: number; y: number; }, width: number, height: number, scale: number) {
   const label = node.file ? node.file.basename : (node.filePath || node.placeholderText || '');
   drawText(ctx, label, origin, width, height, scale, { color: nodeTextColor(node), font: nodeFont(node, scale) });
   const iconSize = Math.min(width, height) * 0.25;
@@ -402,7 +409,7 @@ function drawFileCard(ctx, node, origin, width, height, scale) {
  * 左下角水印（原版 canvas-watermark 的 Obsidian logo）：本复刻画应用菱形标记 + 「OpenSidian」文字，
  * 尺寸随输出等比（原版按画布坐标固定 80px 内缩；一次性离屏绘制用输出比例代替分块缩放）。
  */
-function drawLogo(ctx, width, height) {
+function drawLogo(ctx: CanvasRenderingContext2D, width: number, height: number) {
   const unit = Math.min(width, height);
   const size = Math.max(10, Math.round(unit * 0.022));
   const inset = Math.max(10, Math.round(unit * 0.028));
@@ -439,7 +446,7 @@ function logoFontFamily() {
 }
 
 /** 折行绘制文本；超出卡片高度即被裁剪。 */
-function drawText(ctx, text, origin, width, height, scale, opts) {
+function drawText(ctx: CanvasRenderingContext2D, text: string|null|undefined, origin: CanvasPoint, width: number, height: number, scale: number, opts: { align?: CanvasTextAlign; color: string; font: string }) {
   const value = String(text === undefined || text === null ? '' : text).trim();
   if (!value) return;
   const padding = CARD_PADDING * scale;
@@ -465,7 +472,7 @@ function drawText(ctx, text, origin, width, height, scale, opts) {
 }
 
 /** 按空白折行；单个词超宽时逐字符断开（中日文无空格也成立）。 */
-function wrapText(ctx, text, maxWidth) {
+function wrapText(ctx: CanvasRenderingContext2D, text: string, maxWidth: number) {
   const lines = [];
   for (const paragraph of text.split('\n')) {
     let line = '';
@@ -485,7 +492,7 @@ function wrapText(ctx, text, maxWidth) {
   return lines;
 }
 
-function roundRectPath(ctx, x, y, width, height, radius) {
+function roundRectPath(ctx: CanvasRenderingContext2D, x: number, y: number, width: number, height: number, radius: number) {
   const r = Math.max(0, Math.min(radius || 0, width / 2, height / 2));
   ctx.beginPath();
   ctx.moveTo(x + r, y);

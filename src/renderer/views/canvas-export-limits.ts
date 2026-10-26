@@ -6,15 +6,15 @@
  */
 export const MAX_SIZE = 16284;
 export const MAX_EXPORT_MEMORY = 512 * 1024 * 1024;
-export function canvasPixelRatio(devicePixelRatio, pageZoom) {
+export function canvasPixelRatio(devicePixelRatio: number, pageZoom: number) {
   if (![devicePixelRatio, pageZoom].every(value => Number.isFinite(value) && value > 0)) throw Error('画布导出像素密度无效');
   return Math.round(devicePixelRatio / pageZoom * 1e5) / 1e5;
 }
-export function estimateCanvasExportBytes(width, height, tileWidth = 2048, tileHeight = 2048) {
+export function estimateCanvasExportBytes(width: number, height: number, tileWidth = 2048, tileHeight = 2048) {
   if (![width, height, tileWidth, tileHeight].every(value => Number.isSafeInteger(value) && value > 0)) throw Error('画布导出像素尺寸无效');
   return width * height * 20 + Math.min(tileWidth, width) * Math.min(tileHeight, height) * 8;
 }
-export function assertCanvasExportBudget(metrics, options: Record<string, any> = {}) {
+export function assertCanvasExportBudget(metrics: { width: number; height: number }, options: { tileWidth?: number; tileHeight?: number; memoryBudgetBytes?: number } = {}) {
   const { width, height } = metrics;
   if (width > MAX_SIZE || height > MAX_SIZE) throw Error('画布导出长边不能超过 ' + MAX_SIZE + ' 像素');
   const bytes = estimateCanvasExportBytes(width, height, options.tileWidth, options.tileHeight);

@@ -5,9 +5,14 @@
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 import { Desktop } from './ipc.js';
-const yaml = require('js-yaml');
-const queues = new WeakMap();
-export function processFrontMatter(app: App, file, change) {
+import type { TFile, Vault } from './vault.js';
+import { isJsonRecord } from './settings-types.js';
+import type { FrontMatter } from './metadata-types.js';
+interface FrontmatterHost { vault: Vault; }
+export type FrontmatterChange = (frontmatter: FrontMatter) => void | Promise<void>;
+const yaml: typeof import('js-yaml') = require('js-yaml');
+const queues = new WeakMap<Vault, Map<string, Promise<void>>>();
+export function processFrontMatter(app: FrontmatterHost, file: TFile, change: FrontmatterChange): Promise<void> {
   let files = queues.get(app.vault);
   if (!files) { files = new Map(); queues.set(app.vault, files); }
   const key = file.path;
@@ -16,13 +21,15 @@ export function processFrontMatter(app: App, file, change) {
       const source = await app.vault.read(file), newline = source.includes('\r\n') ? '\r\n' : '\n';
       const bom = source.startsWith('\uFEFF') ? '\uFEFF' : '';
       const text = source.slice(bom.length);
-      let frontmatter = {}, body = text;
+      let frontmatter: FrontMatter = {}, body = text;
       if (/^---[ \t]*(?:\r?\n|$)/.test(text)) {
         const match = /^---[ \t]*\r?\n([\s\S]*?)^---[ \t]*(?:\r?\n|$)/m.exec(text);
         if (!match) throw Error('属性 YAML 缺少结束标记，已取消保存');
-        try { frontmatter = yaml.load(match[1]) ?? {}; }
+        let parsed: unknown;
+        try { parsed = yaml.load(match[1]) ?? {}; }
         catch { throw Error('属性 YAML 无效，已取消保存'); }
-        if (typeof frontmatter !== 'object' || Array.isArray(frontmatter)) throw Error('属性必须是 YAML 对象，已取消保存');
+        if (!isJsonRecord(parsed)) throw Error('属性必须是 YAML 对象，已取消保存');
+        frontmatter = parsed;
         body = text.slice(match[0].length);
       }
       await change(frontmatter);

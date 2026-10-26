@@ -6,18 +6,20 @@
  *        因此坐标换算、钉住/解钉与点击阈值只有一份实现。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
+import type { GraphRenderer } from './graph-renderer.js';
+interface TouchPoint { x: number; y: number; }
 export class GraphTouchController {
-  declare renderer: any;
-  declare pointers: any;
-  declare pinch: any;
-  declare dragPointerId: any;
+  declare renderer: GraphRenderer | null;
+  declare pointers: Map<number, TouchPoint>;
+  declare pinch: { ids: [number, number]; lastA: TouchPoint; lastB: TouchPoint } | null;
+  declare dragPointerId: number | null;
   declare lastTouchAt: number;
   declare listening: boolean;
-  declare windowMove: any;
-  declare windowUp: any;
-  declare windowCancel: any;
+  declare windowMove: (event: PointerEvent) => void;
+  declare windowUp: (event: PointerEvent) => void;
+  declare windowCancel: (event: PointerEvent) => void;
 
-  constructor(renderer) {
+  constructor(renderer: GraphRenderer) {
     this.renderer = renderer;
     this.pointers = new Map();   // pointerId → 最新触碰点（原版 k() 的 touches 列表）
     this.pinch = null;
@@ -58,7 +60,7 @@ export class GraphTouchController {
   }
 
   /* 原版：第一根手指按下命中节点即拖拽，否则平移；第二根手指落下进入捏合。 */
-  onPointerDown(ev) {
+  onPointerDown(ev: PointerEvent) {
     const renderer = this.renderer;
     if (!renderer || !ev || ev.pointerType === 'mouse') return;
     if (ev.button !== undefined && ev.button !== 0) return;
@@ -75,7 +77,7 @@ export class GraphTouchController {
     if (this.pointers.size === 2 && !renderer.dragNode) this.beginPinch();
   }
 
-  onPointerMove(ev) {
+  onPointerMove(ev: PointerEvent) {
     const renderer = this.renderer;
     if (!renderer || !this.pointers.has(ev.pointerId)) return;
     if (ev.cancelable) ev.preventDefault();
@@ -88,7 +90,7 @@ export class GraphTouchController {
     if (renderer.panning) renderer.onMouseMove(ev);
   }
 
-  onPointerUp(ev) {
+  onPointerUp(ev: PointerEvent) {
     const renderer = this.renderer;
     if (!renderer || !this.pointers.has(ev.pointerId)) return;
     this.lastTouchAt = performance.now();
@@ -99,6 +101,7 @@ export class GraphTouchController {
       renderer.onMouseUp(ev);
       if (this.pointers.size === 1) {
         const point = this.pointers.values().next().value;
+        if (!point) return;
         renderer.panning = true;
         renderer.panStart = { x: point.x, y: point.y };
         renderer.panOrigin = { x: renderer.panX, y: renderer.panY };
@@ -115,6 +118,7 @@ export class GraphTouchController {
       if (this.pointers.size === 1 && !renderer.dragNode) {
         /* 捏合结束后剩下一根手指：接着以它为锚点单指平移（原版同样保留 m 指针） */
         const point = this.pointers.values().next().value;
+        if (!point) return;
         renderer.panning = true;
         renderer.panStart = { x: point.x, y: point.y };
         renderer.panOrigin = { x: renderer.panX, y: renderer.panY };
@@ -132,7 +136,7 @@ export class GraphTouchController {
     if (renderer.dragNode || renderer.panning) renderer.onMouseUp(ev);
   }
 
-  onPointerCancel(ev) {
+  onPointerCancel(ev: PointerEvent) {
     if (!this.renderer || !this.pointers.has(ev.pointerId)) return;
     const wasPinch = !!this.pinch;
     this.pinch = null;
@@ -141,6 +145,7 @@ export class GraphTouchController {
     /* 捏合中取消一根手指：把剩下的一根恢复成单指平移 */
     if (wasPinch && this.pointers.size === 1 && !this.renderer.dragNode) {
       const point = this.pointers.values().next().value;
+        if (!point) return;
       this.renderer.panning = true;
       this.renderer.panStart = { x: point.x, y: point.y };
       this.renderer.panOrigin = { x: this.renderer.panX, y: this.renderer.panY };
@@ -151,9 +156,10 @@ export class GraphTouchController {
 
   beginPinch() {
     const ids = [...this.pointers.keys()];
-    if (ids.length < 2) return;
+    if (ids.length < 2 || !this.renderer) return;
     const a = this.pointers.get(ids[0]);
     const b = this.pointers.get(ids[1]);
+    if (!a || !b) return;
     this.renderer.panning = false;
     this.renderer.panvX = this.renderer.panvY = 0;
     this.pinch = {
@@ -167,6 +173,7 @@ export class GraphTouchController {
   updatePinch() {
     const renderer = this.renderer;
     const pinch = this.pinch;
+    if (!pinch || !renderer) return;
     const a = this.pointers.get(pinch.ids[0]);
     const b = this.pointers.get(pinch.ids[1]);
     if (!a || !b) return;

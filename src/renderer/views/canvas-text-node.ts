@@ -1,5 +1,5 @@
 /**
- * [INPUT]: 依赖 ./canvas-node.js 的 CanvasContentNode（正文节点基类）与 parkEditorSelection（只读光标停放）；
+ * [INPUT]: canvas-node.js 的 hasCanvasEditor 保持宿主身份并收窄编辑器；依赖 ./canvas-node.js 的 CanvasContentNode（正文节点基类）与 parkEditorSelection（只读光标停放）；
  *          依赖 @codemirror/view 的 placeholder；依赖 ../editor/editor.js 的 Editor；
  *          依赖 ../core/modals.js 的 FileNameModal；依赖 ../core/notices.js 的 Notice；依赖 ../core/i18n.js 的 t；依赖 ../core/icons.js 的 setIcon。
  * [OUTPUT]: 导出 CanvasTextNode（文本卡片：内嵌 CM6 实时预览、编辑态、转换为文件）。
@@ -11,22 +11,25 @@
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 /* Canvas text card — embedded CM6 live preview and edit lifecycle. */
+import type { CanvasPoint } from './canvas-utils.js';
 import { placeholder as cmPlaceholder } from '@codemirror/view';
-import { CanvasContentNode, parkEditorSelection } from './canvas-node.js';
+import { CanvasContentNode, hasCanvasEditor, parkEditorSelection } from './canvas-node.js';
 import { Editor } from '../editor/editor.js';
 import { FileNameModal } from '../core/modals.js';
 import { Notice } from '../core/notices.js';
 import { setIcon } from '../core/icons.js';
 import { t } from '../core/i18n.js';
+import { Menu } from '../core/menu.js';
+import { CanvasNodeData } from './canvas-types.js';
 
 export class CanvasTextNode extends CanvasContentNode {
   declare text: string;
-  declare editor: any;
-  declare editorEl: any;
-  declare sourceEl: any;
+  declare editor: Editor | null;
+  declare editorEl: HTMLDivElement | null;
+  declare sourceEl: HTMLDivElement | null;
   declare placeholderText: string;
 
-  constructor(canvas: import('./canvas-view.js').CanvasView, id?) {
+  constructor(canvas: import('./canvas-view.js').CanvasView, id?: string) {
     super(canvas, id);
     this.text = '';
     this.editor = null;      // Editor：只活在挂载期间，卸载/销毁即释放
@@ -59,7 +62,7 @@ export class CanvasTextNode extends CanvasContentNode {
    * 文本卡片是内嵌编辑器的宿主：卡片被聚焦/进入编辑时登记到工作区，
    * 命令（editor:*）作用在卡片正文而不是活动叶子；形状对齐原版 activeEditor 的 { editor, file, containerEl }。
    */
-  getActiveEditorHost() { return this.editor ? this : null; }
+  getActiveEditorHost() { return hasCanvasEditor(this) ? this : null; }
 
   /** 卡片正文视图的读取模式（原版内嵌 markdown 视图的 getMode；卡片正文始终可写）。 */
   getMode() { return 'source'; }
@@ -69,7 +72,7 @@ export class CanvasTextNode extends CanvasContentNode {
 
   /* -------------------------------------------------------------- 正文数据 */
 
-  setText(text) {
+  setText(text: string) {
     text = typeof text === 'string' ? text : '';
     if (this.text === text) return;
     this.text = text;
@@ -81,7 +84,7 @@ export class CanvasTextNode extends CanvasContentNode {
 
   getData() { return { ...super.getData(), type: 'text', text: this.text }; }
 
-  setData(data) {
+  setData(data: CanvasNodeData) {
     super.setData(data);
     if (typeof data.text === 'string') {
       this.setText(data.text);
@@ -102,7 +105,7 @@ export class CanvasTextNode extends CanvasContentNode {
   }
 
   /** 程序化写正文（导入/撤销重做/外部重载）：this.text 已先行更新，编辑器回写不会重复入栈。 */
-  setEditorValue(text) {
+  setEditorValue(text: string) {
     if (!this.editor || this.editor.getValue() === text) return;
     this.editor.setValue(text);
     if (!this.isEditing) parkEditorSelection(this.editor);
@@ -158,7 +161,7 @@ export class CanvasTextNode extends CanvasContentNode {
   }
 
   /** 兼容旧编辑面板句柄：历史上 editorEl 是 textarea（.value 即正文），现有画布自动化仍按该约定读写正文。 */
-  installEditorHandle(editorEl) {
+  installEditorHandle(editorEl: HTMLElement) {
     Object.defineProperty(editorEl, 'value', {
       configurable: true,
       get: () => (this.editor ? this.editor.getValue() : this.text),
@@ -177,7 +180,7 @@ export class CanvasTextNode extends CanvasContentNode {
     this.contentEl.addEventListener('click', (e) => this.onContentClick(e));
   }
 
-  onContentClick(e) {
+  onContentClick(e: MouseEvent) {
     if (e.defaultPrevented || e.detail > 1 || e.shiftKey) return;
     if (this.isEditing || this.canvas.readonly || this.isInteractiveTarget(e)) return;
     const active = document.activeElement;
@@ -192,7 +195,7 @@ export class CanvasTextNode extends CanvasContentNode {
     }, 10);
   }
 
-  startEditing(pos?) {
+  startEditing(pos?: CanvasPoint) {
     const canvas = this.canvas;
     if (canvas.readonly || this.isEditing) return;
     canvas.selectOnly(this);
@@ -209,7 +212,7 @@ export class CanvasTextNode extends CanvasContentNode {
   }
 
   /** 原版 showEditor(pos)：把光标落到点击位置。 */
-  placeCursor(editor, pos) {
+  placeCursor(editor: Editor, pos: CanvasPoint) {
     window.setTimeout(() => {
       if (this.editor !== editor || !this.isEditing || this.destroyed) return;
       let offset = null;
@@ -236,12 +239,12 @@ export class CanvasTextNode extends CanvasContentNode {
   }
 
   /** 画布切到只读：正在编辑的卡片立即退回阅读态（无编辑器挂载时无需处理）。 */
-  onReadonlyChange(readonly) {
+  onReadonlyChange(readonly: boolean|undefined) {
     if (readonly && this.isEditing) this.stopEditing();
   }
 
   /** 编辑器内的退出键。Escape 不阻止冒泡也不阻止默认：画布收到后取消选中，blocker 随之恢复显示。 */
-  onEditorKeydown(e) {
+  onEditorKeydown(e: KeyboardEvent) {
     if (e.isComposing) return;
     if (e.key === 'Escape') { this.stopEditing(); return; }
     if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); this.stopEditing(); }
@@ -253,7 +256,7 @@ export class CanvasTextNode extends CanvasContentNode {
   }
 
   /** 文本卡片菜单追加编辑与转换为文件（原版 P5.showMenu）。 */
-  showMenu(menu) {
+  showMenu(menu: Menu) {
     super.showMenu(menu);
     const canvas = this.canvas;
     if (canvas.readonly) return;
@@ -269,12 +272,12 @@ export class CanvasTextNode extends CanvasContentNode {
     const sourcePath = canvas.file ? canvas.file.path : '';
     const text = this.text;
     const modal = new FileNameModal(canvas.app, 'Untitled', async (name) => {
-      const parent = canvas.app.fileManager.getNewFileParent(sourcePath, name);
+      const parent = canvas.app.fileManager.getNewFileParent(sourcePath);
       let file;
       try {
         file = await canvas.app.fileManager.createNewMarkdownFile(parent, name, text);
       } catch (e) {
-        new Notice(String(e && e.message ? e.message : e));
+        new Notice(e instanceof Error ? e.message : String(e));
         return;
       }
       const node = canvas.createFileNode({ pos: this, size: this, file, save: false, focus: false });

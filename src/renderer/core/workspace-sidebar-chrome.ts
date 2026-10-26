@@ -4,6 +4,8 @@
  * [POS]: core/ 的侧栏 chrome 控制器。workspace-renderer 首次渲染后调用，Workspace.toggleSidebar 也调用；不持有模型状态，只读写 DOM 与 workspace 上的 toggle 缓存。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
+import type { Workspace } from './workspace.js';
+import type { WorkspaceNode, WorkspaceLeaf, WorkspaceSplit as WorkspaceSplit } from './workspace-model.js';
 import { WorkspaceTabs } from './workspace-model.js';
 import { createDiv } from './dom.js';
 import { setIcon } from './icons.js';
@@ -13,7 +15,7 @@ import { Desktop } from './ipc.js';
 /** 原版 DD：{duration:140, fn:--anim-motion-swing}（cubic-bezier(0,0.55,0.45,1)）。 */
 const TOGGLE_ANIM = { duration: 140, easing: 'cubic-bezier(0, 0.55, 0.45, 1)' };
 
-const togglePadLeft = (el) => {
+const togglePadLeft = (el: HTMLElement) => {
   try { const v = parseInt(getComputedStyle(el).paddingLeft, 10); return Number.isFinite(v) ? v : 0; }
   catch (e) { return 0; }
 };
@@ -23,18 +25,18 @@ const togglePadLeft = (el) => {
  * oldStyle='offset' → 克隆幽灵从 newPad 滑到 -w（并补 left 偏移）；'none' → 直接消失；'' → 不动画。
  * newStyle='offset' → 新位置的按钮从 -(w+oldPad) 滑入；'' → 不动画。
  */
-function moveToggle(toggle, target, opts: Record<string, any> = {}) {
+function moveToggle(toggle: HTMLElement | null, target: HTMLElement | null, opts: { prepend?: boolean; oldStyle?: string; newStyle?: string } = {}) {
   if (!toggle || !target || toggle.parentElement === target) return;
   const { prepend = false, oldStyle = '', newStyle = '' } = opts;
   const parent = toggle.parentElement;
   const width = toggle.offsetWidth;
   const oldPad = parent ? togglePadLeft(parent) : 0;
   const newPad = togglePadLeft(target);
-  const drop = (el) => { try { el.remove(); } catch (e) { /* ignore */ } };
+  const drop = (el: HTMLElement) => { try { el.remove(); } catch (e) { /* ignore */ } };
   // 宿主可能没有动画/克隆能力（内存 DOM 回归）：退化为纯迁移
   const canAnimate = typeof toggle.animate === 'function' && typeof toggle.cloneNode === 'function';
   if (parent && oldStyle !== '' && canAnimate) {
-    const ghost = toggle.cloneNode(true);
+    const ghost = toggle.cloneNode(true) as HTMLElement;
     toggle.replaceWith(ghost);
     if (oldStyle === 'offset') {
       ghost.animate(
@@ -70,40 +72,40 @@ function moveToggle(toggle, target, opts: Record<string, any> = {}) {
  * 整条顶栏（含功能区左上角）与中心标签栏必须由同一个变量驱动。
  * 顺带清掉平台留白类，避免折叠/展开后残留（原版每轮先 remove 再 add）。
  */
-function syncTopTabs(workspace) {
-  const groups = [];
-  const collect = (node) => {
+function syncTopTabs(workspace: Workspace) {
+  const groups: WorkspaceTabs[] = [];
+  const collect = (node: WorkspaceNode) => {
     if (node instanceof WorkspaceTabs) { groups.push(node); return; }
-    for (const child of node.children || []) collect(child);
+    for (const child of ('children' in node ? node.children : [])) collect(child);
   };
   collect(workspace.rootSplit);
   for (const tabs of groups) {
     if (tabs.containerEl) tabs.containerEl.removeClass('mod-top', 'mod-top-left-space', 'mod-top-right-space');
   }
-  const walk = (node) => {
+  const walk = (node: WorkspaceNode) => {
     if (node instanceof WorkspaceTabs) { if (node.containerEl) node.containerEl.addClass('mod-top'); return; }
-    if (!node.children || !node.children.length) return;
+    if (!('children' in node) || !node.children.length) return;
     // 横排（vertical）的每个孩子在同一个上排；纵排（horizontal）只有首个孩子在顶部
-    if (node.direction === 'vertical') for (const child of node.children) walk(child);
+    if ('direction' in node && node.direction === 'vertical') for (const child of node.children) walk(child);
     else walk(node.children[0]);
   };
   walk(workspace.rootSplit);
 }
 
 /** 左栏收起后开关移至中心标题栏，底部操作保留在功能区。 */
-export function updateSidebarChrome(workspace) {
+export function updateSidebarChrome(workspace: Workspace) {
   syncTopTabs(workspace);
-  const centerTabs = [];
-  const collect = node => {
+  const centerTabs: WorkspaceTabs[] = [];
+  const collect = (node: WorkspaceNode) => {
     if (node instanceof WorkspaceTabs) centerTabs.push(node);
-    else for (const child of node.children || []) collect(child);
+    else for (const child of ('children' in node ? node.children : [])) collect(child);
   };
   collect(workspace.centerSplit);
   const leftTabs = workspace._firstTabsIn(workspace.leftSplit);
   const rightTabs = workspace._firstTabsIn(workspace.rightSplit);
   const left = !workspace.leftSplit.collapsed && leftTabs ? leftTabs : centerTabs[0];
   const right = !workspace.rightSplit.collapsed && rightTabs ? rightTabs : centerTabs.at(-1);
-  for (const side of ['left', 'right']) {
+  for (const side of ['left', 'right'] as const) {
     const split = side === 'left' ? workspace.leftSplit : workspace.rightSplit;
     workspace.containerEl.toggleClass(`is-${side}-sidedock-open`, !split.collapsed);
     const key = side === 'left' ? 'leftSidebarToggleEl' : 'rightSidebarToggleEl';
@@ -141,7 +143,7 @@ export function updateSidebarChrome(workspace) {
   // 原版折叠时整个 split 连分隔条一起隐藏，不再占位；我们挂在根分割上，宽度一并归零，
   // 否则功能区与编辑区之间会多出 1px 竖缝，并打断顶栏底边那条 1px 横线。
   const dividers = workspace._dividerHandles || {};
-  const applyDivider = (el, collapsed) => {
+  const applyDivider = (el: HTMLElement | undefined, collapsed: boolean) => {
     if (!el) return;
     el.style.opacity = collapsed ? '0' : '1';
     el.style.pointerEvents = collapsed ? 'none' : '';   // 折叠后不可交互
@@ -154,7 +156,7 @@ export function updateSidebarChrome(workspace) {
   applyDivider(dividers.left, workspace.leftSplit.collapsed);
   applyDivider(dividers.right, workspace.rightSplit.collapsed);
   // 原版 updateFrameless：开关宿主与折叠侧首组都带平台留白类（红绿灯净空）
-  for (const [group, key] of [[leftTabs, 'mod-top-left-space'], [rightTabs, 'mod-top-right-space']]) {
+  for (const [group, key] of [[leftTabs, 'mod-top-left-space'], [rightTabs, 'mod-top-right-space']] as const) {
     if (group && group.containerEl) group.containerEl.addClass(key);
   }
   if (left?.containerEl) left.containerEl.addClass('mod-top-left-space');
@@ -163,7 +165,7 @@ export function updateSidebarChrome(workspace) {
   if (workspace.ribbonEl) workspace.ribbonEl.toggleClass('is-collapsed', workspace.leftSplit.collapsed);
   if (!workspace._ribbonSettingsFallback) {
     workspace._ribbonSettingsFallback = createDiv('sidebar-profile-fallback');
-    const actions = [
+    const actions: Array<[string, string, () => unknown]> = [
       ['open-vault', '切换仓库', () => Desktop.openStarter()],
       ['lucide-settings', tt('interface.settings', '设置'), () => workspace.app.setting.open()],
     ];
@@ -176,7 +178,7 @@ export function updateSidebarChrome(workspace) {
         if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); action(); }
       };
     }
-    workspace.ribbonSettingsEl.appendChild(workspace._ribbonSettingsFallback);
+    workspace.ribbonSettingsEl?.appendChild(workspace._ribbonSettingsFallback);
   }
   workspace._ribbonSettingsFallback.toggle(workspace.leftSplit.collapsed);
 }

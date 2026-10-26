@@ -1,6 +1,6 @@
 /**
  * [INPUT]: 标准 DOM 与 dom-types 的创建选项。
- * [OUTPUT]: 导出类型化元素工厂，并安装 DOM 原型与全局工厂。
+ * [OUTPUT]: 导出具体元素与事件回调类型的工厂，并安装 DOM 原型与全局工厂。
  * [POS]: 渲染器 DOM 创建入口；不持有工作区状态。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
@@ -12,7 +12,7 @@ import type { DomOptions, DomInfo, DomCallback } from './dom-types.js';
 (function installDomHelpers() {
   if (Element.prototype.hasOwnProperty('createEl')) return;
 
-  function applyInfo(el, o) {
+  function applyInfo(el: HTMLElement, o?: DomOptions) {
     if (!o) return;
     if (typeof o === 'string') { el.className = o; return; }
     if (o.cls) {
@@ -37,7 +37,7 @@ import type { DomOptions, DomInfo, DomCallback } from './dom-types.js';
 
   Object.defineProperties(Element.prototype, {
     createEl: {
-      value(tag, o, callback) {
+      value(this: HTMLElement, tag: string, o?: DomOptions, callback?: DomCallback<HTMLElement>) {
         const el = document.createElement(tag);
         applyInfo(el, o);
         if (callback) callback(el);
@@ -46,19 +46,19 @@ import type { DomOptions, DomInfo, DomCallback } from './dom-types.js';
       },
     },
     createDiv: {
-      value(o, callback) {
+      value(this: HTMLElement, o?: DomOptions | DomCallback<HTMLDivElement>, callback?: DomCallback<HTMLDivElement>) {
         if (typeof o === 'function') { callback = o; o = undefined; }
         return this.createEl('div', o, callback);
       },
     },
     createSpan: {
-      value(o, callback) {
+      value(this: HTMLElement, o?: DomOptions | DomCallback<HTMLSpanElement>, callback?: DomCallback<HTMLSpanElement>) {
         if (typeof o === 'function') { callback = o; o = undefined; }
         return this.createEl('span', o, callback);
       },
     },
     createSvg: {
-      value(tag, o, callback) {
+      value(this: Element, tag: string, o?: DomInfo, callback?: DomCallback<SVGElement>) {
         const el = document.createElementNS('http://www.w3.org/2000/svg', tag);
         if (o) {
           if (o.cls) el.setAttribute('class', Array.isArray(o.cls) ? o.cls.join(' ') : o.cls);
@@ -69,50 +69,50 @@ import type { DomOptions, DomInfo, DomCallback } from './dom-types.js';
         return el;
       },
     },
-    addClass: { value(...classes) { for (const c of classes) if (c) this.classList.add(c); } },
-    addClasses: { value(classes) { for (const c of classes) if (c) this.classList.add(c); } },
-    removeClass: { value(...classes) { for (const c of classes) if (c) this.classList.remove(c); } },
-    removeClasses: { value(classes) { for (const c of classes) if (c) this.classList.remove(c); } },
-    toggleClass: { value(classes, value) { for (const c of (Array.isArray(classes) ? classes : [classes])) this.classList.toggle(c, value); } },
-    hasClass: { value(c) { return this.classList.contains(c); } },
-    setText: { value(text) { this.textContent = text; } },
-    getText: { value() { return this.textContent; } },
-    setAttr: { value(name, value) { if (value === null || value === undefined) this.removeAttribute(name); else this.setAttribute(name, value); } },
-    setAttrs: { value(obj) { for (const k in obj) this.setAttr(k, obj[k]); } },
-    getAttr: { value(name) { return this.getAttribute(name); } },
-    empty: { value() { while (this.firstChild) this.removeChild(this.firstChild); } },
-    detach: { value() { if (this.parentNode) this.parentNode.removeChild(this); } },
-    appendText: { value(text) { const node = document.createTextNode(text); this.appendChild(node); return node; } },
-    insertAfter: { value(node) { this.parentNode.insertBefore(node, this.nextSibling); return this; } },
-    indexOf: { value(el) { return Array.prototype.indexOf.call(this.children, el); } },
-    find: { value(selector) { return this.querySelector(selector); } },
-    findAll: { value(selector) { return Array.from(this.querySelectorAll(selector)); } },
-    findAllSelf: { value(selector) { const arr = Array.from(this.querySelectorAll(selector)); if (this.matches && this.matches(selector)) arr.unshift(this); return arr; } },
-    setCssStyles: { value(styles) { for (const k in styles) this.style.setProperty(k.replace(/[A-Z]/g, (m) => '-' + m.toLowerCase()), styles[k]); } },
-    setCssProps: { value(props) { for (const k in props) this.style.setProperty(k, props[k]); } },
-    getCssPropertyValue: { value(prop) { return getComputedStyle(this).getPropertyValue(prop).trim(); } },
-    show: { value() { this.removeClass('is-hidden'); this.style.display = ''; } },
-    hide: { value() { this.style.display = 'none'; } },
-    isShown: { value() { return this.style.display !== 'none' && this.offsetParent !== null || this.style.display !== 'none' && getComputedStyle(this).position === 'fixed'; } },
-    toggle: { value(show) { const visible = this.style.display !== 'none'; const next = show === undefined ? !visible : show; if (next) this.show(); else this.hide(); } },
-    on: { value(type, selectorOrHandler, handler) {
+    addClass: { value(this: Element, ...classes: string[]) { for (const c of classes) if (c) this.classList.add(c); } },
+    addClasses: { value(this: Element, classes: string[]) { for (const c of classes) if (c) this.classList.add(c); } },
+    removeClass: { value(this: Element, ...classes: string[]) { for (const c of classes) if (c) this.classList.remove(c); } },
+    removeClasses: { value(this: Element, classes: string[]) { for (const c of classes) if (c) this.classList.remove(c); } },
+    toggleClass: { value(this: Element, classes: string | string[], value?: boolean) { for (const c of (Array.isArray(classes) ? classes : [classes])) this.classList.toggle(c, value); } },
+    hasClass: { value(this: Element, c: string) { return this.classList.contains(c); } },
+    setText: { value(this: HTMLElement, text: string | number) { this.textContent = text as string; } },
+    getText: { value(this: HTMLElement) { return this.textContent; } },
+    setAttr: { value(this: HTMLElement, name: string, value: string | number | boolean | null | undefined) { if (value === null || value === undefined) this.removeAttribute(name); else this.setAttribute(name, String(value)); } },
+    setAttrs: { value(this: HTMLElement, obj: DomInfo['attr']) { for (const k in obj) this.setAttr(k, obj[k]); } },
+    getAttr: { value(this: Element, name: string) { return this.getAttribute(name); } },
+    empty: { value(this: HTMLElement) { while (this.firstChild) this.removeChild(this.firstChild); } },
+    detach: { value(this: HTMLElement) { if (this.parentNode) this.parentNode.removeChild(this); } },
+    appendText: { value(this: HTMLElement, text: string | number) { const node = document.createTextNode(String(text)); this.appendChild(node); return node; } },
+    insertAfter: { value(this: Element, node: Node) { this.parentNode?.insertBefore(node, this.nextSibling); return this; } },
+    indexOf: { value(this: Element, el: Element) { return Array.prototype.indexOf.call(this.children, el); } },
+    find: { value(this: Element, selector: string) { return this.querySelector(selector); } },
+    findAll: { value(this: Element, selector: string) { return Array.from(this.querySelectorAll(selector)); } },
+    findAllSelf: { value(this: Element, selector: string) { const arr = Array.from(this.querySelectorAll(selector)); if (this.matches && this.matches(selector)) arr.unshift(this); return arr; } },
+    setCssStyles: { value(this: HTMLElement, styles: Partial<CSSStyleDeclaration>) { for (const k of Object.keys(styles) as Array<keyof CSSStyleDeclaration>) this.style.setProperty(String(k).replace(/[A-Z]/g, (m: string) => '-' + m.toLowerCase()), String(styles[k])); } },
+    setCssProps: { value(this: HTMLElement, props: Record<string, string>) { for (const k in props) this.style.setProperty(k, props[k]); } },
+    getCssPropertyValue: { value(this: Element, prop: string) { return getComputedStyle(this).getPropertyValue(prop).trim(); } },
+    show: { value(this: HTMLElement) { this.removeClass('is-hidden'); this.style.display = ''; } },
+    hide: { value(this: HTMLElement) { this.style.display = 'none'; } },
+    isShown: { value(this: HTMLElement) { return this.style.display !== 'none' && this.offsetParent !== null || this.style.display !== 'none' && getComputedStyle(this).position === 'fixed'; } },
+    toggle: { value(this: HTMLElement, show?: boolean) { const visible = this.style.display !== 'none'; const next = show === undefined ? !visible : show; if (next) this.show(); else this.hide(); } },
+    on: { value(this: HTMLElement, type: string, selectorOrHandler: string | EventListener, handler?: (this: Element, event: Event, element: Element) => void) {
       if (typeof selectorOrHandler === 'function') {
         this.addEventListener(type, selectorOrHandler);
         return;
       }
       this.addEventListener(type, (ev) => {
-        const target = ev.target && ev.target.closest ? ev.target.closest(selectorOrHandler) : null;
-        if (target && this.contains(target)) handler.call(target, ev, target);
+        const target = ev.target instanceof Element ? ev.target.closest(selectorOrHandler) : null;
+        if (target && this.contains(target)) handler?.call(target, ev, target);
       });
     } },
-    onClickEvent: { value(cb) { this.addEventListener('click', (e) => { if (e.button === 0 && !e.defaultPrevented) cb(e); }); } },
+    onClickEvent: { value(this: HTMLElement, cb: (event: MouseEvent) => void) { this.addEventListener('click', (e) => { if (e.button === 0 && !e.defaultPrevented) cb(e); }); } },
   });
 
   // Document-level createEl creators used by Obsidian
   if (!Document.prototype.hasOwnProperty('createEl')) {
     Object.defineProperties(Document.prototype, {
-      createEl: { value(tag, o, callback) { return document.body.createEl(tag, o, callback); } },
-      createDiv: { value(o, cb) { return document.body.createDiv(o, cb); } },
+      createEl: { value(this: Document, tag: string, o?: DomOptions, callback?: DomCallback<HTMLElement>) { return document.body.createEl(tag, o, callback); } },
+      createDiv: { value(this: Document, o?: DomOptions, cb?: DomCallback<HTMLDivElement>) { return document.body.createDiv(o, cb); } },
     });
   }
 })();

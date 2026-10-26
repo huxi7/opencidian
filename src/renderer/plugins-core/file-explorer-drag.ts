@@ -8,16 +8,19 @@
  *        根容器空白处移回仓库根、系统外部文件复制进库。视图只保留 DOM 与选择集，拖拽生命周期全部在此。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
+import type { FileExplorerView } from './file-explorer.js';
+import { App } from '../core/app.js';
 import { setIcon } from '../core/icons.js';
-import { TFolder } from '../core/vault.js';
+import { TFolder, type VaultEntry } from '../core/vault.js';
 import { getAvailableAttachmentPath } from '../editor/attachments.js';
 import {
   dragGhostTitle, dragPayloadFor, dragTitleFor, movableItems, moveItemsToFolder,
 } from './file-explorer-multi.js';
 
 /** 原版 dragManager.updateSource + dragFile/dragFolder/dragFiles 的源态与幽灵。 */
-export function setupItemDrag(view, el, item) {
-  el.addEventListener('dragstart', (ev) => {
+export function setupItemDrag(view: FileExplorerView, el: HTMLElement, item: VaultEntry) {
+  el.addEventListener('dragstart', (ev: DragEvent) => {
+    if (!ev.dataTransfer) return;
     const multi = dragPayloadFor(view._selection, item);
     const payload = multi || { path: item.path, type: item instanceof TFolder ? 'folder' : 'file' };
     ev.dataTransfer.setData('text/plain', JSON.stringify(payload));
@@ -35,10 +38,10 @@ export function setupItemDrag(view, el, item) {
       const ghost = createDiv('drag-ghost');
       const self = ghost.createDiv('drag-ghost-self');
       setIcon(self, multi ? 'lucide-files' : item instanceof TFolder ? 'lucide-folder-open' : 'lucide-file');
-      self.createSpan({ text: multi ? dragGhostTitle(view._draggingItems) : dragTitleFor(item) });
+      self.createSpan({ text: multi ? dragGhostTitle(view._draggingItems || []) : dragTitleFor(item) });
       ghost.createDiv('drag-ghost-action');
       document.body.appendChild(ghost);
-      if (ev.dataTransfer.setDragImage) ev.dataTransfer.setDragImage(ghost, 12, 12);
+      if (ev.dataTransfer?.setDragImage) ev.dataTransfer.setDragImage(ghost, 12, 12);
       setTimeout(() => ghost.detach(), 0);
     } catch (e) { /* 某些环境不支持 drag image */ }
   });
@@ -46,7 +49,7 @@ export function setupItemDrag(view, el, item) {
 }
 
 /** 拖拽收尾：源行、幽灵、hover 与 750ms 展开计时器全部清空。 */
-export function endItemDrag(view, fallbackEl?) {
+export function endItemDrag(view: FileExplorerView, fallbackEl?: HTMLElement) {
   for (const src of (view._draggingEls || (fallbackEl ? [fallbackEl] : []))) src.removeClass('is-being-dragged');
   if (fallbackEl) fallbackEl.removeClass('is-being-dragged');
   view._draggingEls = null;
@@ -57,14 +60,14 @@ export function endItemDrag(view, fallbackEl?) {
   if (view.treeEl) view.treeEl.findAll('.is-being-dragged-over').forEach((e) => e.removeClass('is-being-dragged-over'));
 }
 
-export function clearDragExpand(view) {
+export function clearDragExpand(view: FileExplorerView) {
   if (view._dragExpandTimer) clearTimeout(view._dragExpandTimer);
   view._dragExpandTimer = null;
   view._dragExpandPath = null;
 }
 
 /** 原版 attachDropHandler：悬停折叠文件夹 750ms 后自动展开（同目标只挂一次）。 */
-export function scheduleDragExpand(view, folder) {
+export function scheduleDragExpand(view: FileExplorerView, folder: TFolder) {
   if (!view._collapsed.has(folder.path)) { clearDragExpand(view); return; }
   if (view._dragExpandPath === folder.path) return;
   clearDragExpand(view);
@@ -78,29 +81,29 @@ export function scheduleDragExpand(view, folder) {
 }
 
 /** 原版 attachDropHandler：文件夹标题的 dragover/dragleave/drop。 */
-export function setupFolderDrop(view, titleEl, folder, folderEl) {
+export function setupFolderDrop(view: FileExplorerView, titleEl: HTMLElement, folder: TFolder, folderEl: HTMLElement) {
   titleEl.addEventListener('dragover', (ev) => {
     const types = ev.dataTransfer ? Array.from(ev.dataTransfer.types || []) : [];
     if (!view._draggingItem && types.includes('Files')) {
       ev.preventDefault();
-      ev.dataTransfer.dropEffect = 'copy';
+      if (ev.dataTransfer) ev.dataTransfer.dropEffect = 'copy';
       folderEl.addClass('is-being-dragged-over');
       return;
     }
     if (!view._draggingItem) return;
     if (!movableItems(view._draggingItems || [view._draggingItem], folder).length) return;
     ev.preventDefault();
-    ev.dataTransfer.dropEffect = 'move';
+    if (ev.dataTransfer) ev.dataTransfer.dropEffect = 'move';
     folderEl.addClass('is-being-dragged-over');
     scheduleDragExpand(view, folder);
   });
   titleEl.addEventListener('dragleave', (ev) => {
-    if (!folderEl.contains(ev.relatedTarget)) {
+    if (!folderEl.contains(ev.relatedTarget instanceof Node ? ev.relatedTarget : null)) {
       folderEl.removeClass('is-being-dragged-over');
       clearDragExpand(view);
     }
   });
-  titleEl.addEventListener('drop', async (ev) => {
+  titleEl.addEventListener('drop', async (ev: DragEvent) => {
     ev.preventDefault();
     ev.stopPropagation();
     folderEl.removeClass('is-being-dragged-over');
@@ -114,7 +117,7 @@ export function setupFolderDrop(view, titleEl, folder, folderEl) {
 }
 
 /** 系统外部文件拖入文件夹/根：复制进库（不插入链接，原版文件树行为）。 */
-export async function importExternalFiles(view, files, folderPath) {
+export async function importExternalFiles(view: { app: App; }, files: File[], folderPath: string) {
   for (const f of files) {
     let bytes = null;
     try { bytes = new Uint8Array(await f.arrayBuffer()); } catch (e) { continue; }
@@ -127,30 +130,30 @@ export async function importExternalFiles(view, files, folderPath) {
 }
 
 /** 根容器空白处：外部文件复制进库根；库内项移回仓库根（原版 navFileContainerEl 的 attachDropHandler）。 */
-export function setupRootDrop(view) {
+export function setupRootDrop(view: FileExplorerView) {
   const treeEl = view.treeEl;
   treeEl.addEventListener('dragover', (ev) => {
-    if (ev.target.closest && ev.target.closest('.nav-file-title, .nav-folder-title')) return;
+    if (ev.target instanceof Element && ev.target.closest('.nav-file-title, .nav-folder-title')) return;
     const root = view.app.vault.getRoot();
     if (view._draggingItem) {
       if (!movableItems(view._draggingItems || [view._draggingItem], root).length) return;
       ev.preventDefault();
-      ev.dataTransfer.dropEffect = 'move';
+      if (ev.dataTransfer) ev.dataTransfer.dropEffect = 'move';
       treeEl.addClass('is-being-dragged-over');
       return;
     }
     const types = ev.dataTransfer ? Array.from(ev.dataTransfer.types || []) : [];
     if (!types.includes('Files')) return;
     ev.preventDefault();
-    ev.dataTransfer.dropEffect = 'copy';
+    if (ev.dataTransfer) ev.dataTransfer.dropEffect = 'copy';
     treeEl.addClass('is-being-dragged-over');
   });
   treeEl.addEventListener('dragleave', (ev) => {
-    if (ev.target.closest && ev.target.closest('.nav-file-title, .nav-folder-title')) return;
-    if (!treeEl.contains(ev.relatedTarget)) treeEl.removeClass('is-being-dragged-over');
+    if (ev.target instanceof Element && ev.target.closest('.nav-file-title, .nav-folder-title')) return;
+    if (!treeEl.contains(ev.relatedTarget instanceof Node ? ev.relatedTarget : null)) treeEl.removeClass('is-being-dragged-over');
   });
   treeEl.addEventListener('drop', async (ev) => {
-    if (ev.target.closest && ev.target.closest('.nav-file-title, .nav-folder-title')) return;
+    if (ev.target instanceof Element && ev.target.closest('.nav-file-title, .nav-folder-title')) return;
     treeEl.removeClass('is-being-dragged-over');
     const files = ev.dataTransfer && ev.dataTransfer.files ? Array.from(ev.dataTransfer.files) : [];
     if (view._draggingItem) {

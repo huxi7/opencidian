@@ -15,7 +15,7 @@ export function syncTrafficLightPosition() {
   try { zoom = require('electron').webFrame.getZoomFactor() || 1; } catch (e) {}
   try {
     const styles = getComputedStyle(document.body);
-    const reduce = (value) => { const t = Math.floor(value * zoom / 2 - 8); return t < -5 ? 0 : t; };
+    const reduce = (value: number) => { const t = Math.floor(value * zoom / 2 - 8); return t < -5 ? 0 : t; };
     const ox = parseFloat(styles.getPropertyValue('--traffic-lights-offset-x')) || 40;
     let oy = parseFloat(styles.getPropertyValue('--traffic-lights-offset-y')) || 40;
     if (!oy) oy = 40;

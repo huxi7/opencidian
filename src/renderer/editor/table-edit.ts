@@ -8,10 +8,15 @@
  *        table-widget.js 是唯一调用方。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
+import type { TableEditState, TableViewState } from './table-types.js';
+import type { EditorView } from '@codemirror/view';
+import type { TableWidget } from './table-widget.js';
+import type { CellPosition } from './table-types.js';
+import type { TableModel } from './table-model.js';
 import { cellTextFromInput, cellTextToInput } from './table-model.js';
 
 /** 原版 getNextCell：end 指阅读顺序下一格（行末跳下一行首），start 指上一格（行首跳上一行尾）。 */
-export function nextCellIn(model, cell, direction) {
+export function nextCellIn(model: TableModel, cell: CellPosition, direction: string) {
   const { row, col } = cell;
   if (direction === 'end') {
     const rowCells = model.rows[row];
@@ -26,11 +31,11 @@ export function nextCellIn(model, cell, direction) {
 }
 
 /** 在单元格内挂 textarea 并聚焦；options.selectAll 对应原版换格后的全选。 */
-export function beginCellEdit(widget, view, row, col, options) {
+export function beginCellEdit(widget: TableWidget, view: EditorView, row: number, col: number, options: { selectAll?: boolean } = {}) {
   const model = widget.model();
   if (!model || !model.rows[row] || row < 0 || col < 0 || col >= model.alignments.length) return null;
   const cell = widget.cellElement(row, col);
-  const wrapper = cell && cell.querySelector('.table-cell-wrapper');
+  const wrapper = cell && cell.querySelector<HTMLElement>('.table-cell-wrapper');
   if (!wrapper) return null;
   if (widget.edit && widget.edit.row === row && widget.edit.col === col) return widget.edit.textarea;
   closeCellEdit(widget);
@@ -79,7 +84,7 @@ export function beginCellEdit(widget, view, row, col, options) {
 }
 
 /** 卸载 textarea 回到渲染态；不写文档。 */
-export function closeCellEdit(widget) {
+export function closeCellEdit(widget: TableWidget) {
   const state = widget.edit;
   if (!state) return;
   widget.edit = null;
@@ -89,13 +94,13 @@ export function closeCellEdit(widget) {
 }
 
 /** Esc：丢弃编辑内容，焦点回到表格容器（选区与 Tab 导航仍可用）。 */
-export function cancelCellEdit(widget) {
+export function cancelCellEdit(widget: TableWidget) {
   if (!widget.edit) return;
   closeCellEdit(widget);
   widget.focusContainer();
 }
 
-function onEditorKeyDown(widget, view, state, event) {
+function onEditorKeyDown(widget: TableWidget, view: EditorView, state: TableEditState, event: KeyboardEvent) {
   if (widget.edit !== state) return;
   event.stopPropagation();
   if (event.isComposing || state.composing) return;
@@ -116,7 +121,7 @@ function onEditorKeyDown(widget, view, state, event) {
 }
 
 /** blur / Enter / Tab 提交：trim 后写回；方向决定焦点去向（原版 cell editor 的 Tab/Enter 语义）。 */
-export function commitCellEdit(widget, view, state, direction) {
+export function commitCellEdit(widget: TableWidget, view: EditorView, state: TableEditState, direction: string|null) {
   if (widget.edit !== state) return false;
   const text = cellTextFromInput(state.textarea.value.trim());
   closeCellEdit(widget);
@@ -124,12 +129,12 @@ export function commitCellEdit(widget, view, state, direction) {
 }
 
 /** 容器（非编辑态）Tab：从选区头或最后按下的单元格出发换格。 */
-export function tabFromCell(widget, view, row, col, shift) {
+export function tabFromCell(widget: TableWidget, view: EditorView, row: number, col: number, shift: boolean) {
   return advanceFromCell(widget, view, row, col, shift ? 'prev' : 'next', undefined);
 }
 
 /** 容器（非编辑态）Enter：语义同编辑器内的 Enter。 */
-export function enterFromCell(widget, view, row, col) {
+export function enterFromCell(widget: TableWidget, view: EditorView, row: number, col: number) {
   return advanceFromCell(widget, view, row, col, 'down', undefined);
 }
 
@@ -137,7 +142,7 @@ export function enterFromCell(widget, view, row, col) {
  * direction：'next' 下一格（末格追加行到表尾）、'prev' 上一格（首格在表头前插行）、'down' 下方一格（末行追加行）、
  * null 只提交。text 为 undefined 表示没有待提交的文本（纯导航）。
  */
-function advanceFromCell(widget, view, row, col, direction, text) {
+function advanceFromCell(widget: TableWidget, view: EditorView, row: number, col: number, direction: string|null, text: string|undefined) {
   const model = widget.model();
   if (!model) return false;
   const pending = { row, col, text };
@@ -166,7 +171,7 @@ function advanceFromCell(widget, view, row, col, direction, text) {
   return applyStep(widget, view, pending, null);
 }
 
-function applyStep(widget, view, pending, plan) {
+function applyStep(widget: TableWidget, view: EditorView, pending: { row: number; col: number; text?: string }, plan: TableViewState | null) {
   const state = plan && plan.focus ? { focus: plan.focus } : undefined;
   if (plan && plan.insert !== undefined) {
     widget.insertRow(view, plan.insert, state);

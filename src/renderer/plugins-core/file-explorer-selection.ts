@@ -6,16 +6,18 @@
  *        键控动作（打开 / 折叠 / 重命名 / 删除）回落到视图方法，本类只管选择语义。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
+import type { FileExplorerView } from './file-explorer.js';
 import { IS_MAC } from '../core/keymap.js';
+import { MenuEvent } from '../core/menu.js';
 import { TFile, parentPathOf } from '../core/vault.js';
 
 /**
  * 原版 Ng.isModEvent：中键与 Mod 命中，Mod+Alt 为 split，Mod+Alt+Shift 为 window。
  * mac 上 Mod = Cmd；mac 的 Ctrl 是独立修饰键（原版 compileModifiers 下不参与 Mod 匹配）。
  */
-export function isModEvent(ev) {
+export function isModEvent(ev: MenuEvent) {
   if (!ev) return false;
-  if (ev instanceof MouseEvent && ev.button === 1) return 'tab';
+  if ('button' in ev && ev.button === 1) return 'tab';
   const mod = IS_MAC ? ev.metaKey : ev.ctrlKey;
   if (!mod) return false;
   if (!ev.altKey) return 'tab';
@@ -23,12 +25,12 @@ export function isModEvent(ev) {
 }
 
 export class FileTreeSelection {
-  declare view: any;
-  declare paths: any;
-  declare focusPath: any;
-  declare anchorPath: any;
+  declare view: FileExplorerView;
+  declare paths: Set<string>;
+  declare focusPath: string | null;
+  declare anchorPath: string | null;
 
-  constructor(view) {
+  constructor(view: FileExplorerView) {
     this.view = view;
     this.paths = new Set();
     this.focusPath = null;
@@ -37,26 +39,26 @@ export class FileTreeSelection {
 
   get size() { return this.paths.size; }
 
-  has(path) { return this.paths.has(path); }
+  has(path: string) { return !!path && this.paths.has(path); }
 
   /** 可见行（原版 KH/QH 的可见顺序展开）；排除 mod-root 的仓库名标题行，原版不渲染根节点。 */
   rows() {
     const tree = this.view.treeEl;
     if (!tree) return [];
-    return [...tree.querySelectorAll('.nav-file-title[data-path], .nav-folder-title[data-path]')]
+    return [...tree.querySelectorAll<HTMLElement>('.nav-file-title[data-path], .nav-folder-title[data-path]')]
       .filter((el) => el.getAttribute('data-path') !== '/');
   }
 
   /** 原版 S8.selectItem：showUnsupportedFiles 关闭时不可选中不受支持的文件。 */
-  select(path) {
+  select(path: string|null) {
     if (!this.view._isSelectablePath(path)) return;
     this.paths.add(path);
     const el = this.view._titleEl(path);
     if (el) el.addClass('is-selected');
   }
 
-  deselect(path) {
-    this.paths.delete(path);
+  deselect(path: string|null) {
+    if (path) this.paths.delete(path);
     const el = this.view._titleEl(path);
     if (el) el.removeClass('is-selected');
   }
@@ -73,7 +75,7 @@ export class FileTreeSelection {
   }
 
   /** 原版 setFocusedItem：has-focus 单例，可选滚动进视口。 */
-  setFocus(path, scroll = true) {
+  setFocus(path: string|null, scroll = true) {
     this.focusPath = path;
     const tree = this.view.treeEl;
     if (!tree) return;
@@ -91,7 +93,7 @@ export class FileTreeSelection {
     const out = [];
     for (const el of this.rows()) {
       const path = el.getAttribute('data-path');
-      if (!this.paths.has(path) || seen.has(path)) continue;
+      if (!path || !this.paths.has(path) || seen.has(path)) continue;
       seen.add(path);
       const item = this.view._itemByPath(path);
       if (item) out.push(item);
@@ -106,7 +108,7 @@ export class FileTreeSelection {
 
   /** 视图重绘后调用：剔除已删除项，重贴 is-selected / has-focus。 */
   apply() {
-    for (const path of [...this.paths]) if (!this.view._itemByPath(path)) this.paths.delete(path);
+    for (const path of [...this.paths]) if (!this.view._itemByPath(path)) if (path) this.paths.delete(path);
     for (const path of this.paths) {
       const el = this.view._titleEl(path);
       if (el) el.addClass('is-selected');
@@ -115,7 +117,7 @@ export class FileTreeSelection {
   }
 
   /** 原版 _H：按可见顺序取 [anchor, target] 闭区间；锚点缺失时只取目标项。 */
-  rangePaths(fromPath, toPath) {
+  rangePaths(fromPath: string | null, toPath: string|null) {
     const rows = this.rows();
     const target = rows.findIndex((el) => el.getAttribute('data-path') === toPath);
     const anchor = fromPath ? rows.findIndex((el) => el.getAttribute('data-path') === fromPath) : -1;
@@ -134,12 +136,12 @@ export class FileTreeSelection {
    * 原版 handleItemSelection：返回 true 表示点击已消费（调用方不再打开文件 / 折叠文件夹）。
    * Alt 切换、Shift 范围、点击已打开项只聚焦；Mod 与普通点击都落到清空选择集 + 更新锚点。
    */
-  handleItemSelection(ev, item) {
+  handleItemSelection(ev: MenuEvent, item: { path: string|null; }) {
     const mod = isModEvent(ev);
     if (!mod) {
       if (ev.altKey && !ev.shiftKey) {
         this.view._focusContainer();
-        if (this.paths.has(item.path)) {
+        if (item.path && this.paths.has(item.path)) {
           this.deselect(item.path);
         } else {
           if (this.anchorPath) this.select(this.anchorPath);
@@ -169,15 +171,15 @@ export class FileTreeSelection {
   }
 
   /** 原版 changeFocusedItem：焦点 / 锚点 / 选择集依次回退；越过首尾时不动。 */
-  changeFocus(direction) {
+  changeFocus(direction: string) {
     const rows = this.rows();
     if (!rows.length) return null;
-    const indexOf = (path) => (path ? rows.findIndex((el) => el.getAttribute('data-path') === path) : -1);
+    const indexOf = (path: string | null) => (path ? rows.findIndex((el) => el.getAttribute('data-path') === path) : -1);
     let index = indexOf(this.focusPath);
     if (index < 0) index = indexOf(this.anchorPath);
     if (index < 0) {
       for (let i = rows.length - 1; i >= 0; i--) {
-        if (this.paths.has(rows[i].getAttribute('data-path'))) { index = i; break; }
+        if (this.paths.has(rows[i].getAttribute('data-path') || '')) { index = i; break; }
       }
     }
     let next;
@@ -197,13 +199,13 @@ export class FileTreeSelection {
    * ArrowUp/Down 注册为 []、Shift、Mod；ArrowLeft/Right 为 []、Mod；Enter / Space / F2 / Delete 为 []；mac 另有 Mod+Enter 与 Mod+Backspace。
    * mac 的 Enter 走重命名（Finder 惯例），Mod+Enter / Space 打开。
    */
-  handleKeyDown(ev) {
-    const target = ev.target;
-    if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)) return false;
+  handleKeyDown(ev: KeyboardEvent) {
+    const target = ev.target instanceof HTMLElement ? ev.target : null;
+    if (target && (target?.tagName === 'INPUT' || target?.tagName === 'TEXTAREA' || target?.isContentEditable)) return false;
     if (ev.altKey) return false;
     const mod = IS_MAC ? ev.metaKey : ev.ctrlKey;
     if (IS_MAC ? ev.ctrlKey : ev.metaKey) return false;
-    const exact = (shift, modDown) => ev.shiftKey === shift && mod === modDown;
+    const exact = (shift: boolean, modDown: boolean) => ev.shiftKey === shift && mod === modDown;
     switch (ev.key) {
       case 'ArrowDown':
       case 'ArrowUp': {

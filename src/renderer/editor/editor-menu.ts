@@ -5,9 +5,12 @@
  *        分节表 title/correction/spellcheck/open/selection-link/selection/selection.format/selection.paragraph/selection.insert/clipboard/info.info.copy/action/view/danger；
  *        selection 节按光标下可点击 token 分流（编辑链接 / 文件链接菜单 / 编辑标签）；
  *        结束前触发 workspace 的 editor-menu 事件供插件与核心监听器（重命名小标题/块 ID）扩展。
+ *        原生菜单参数超时则保留粘贴入口，不把缺失参数误判为禁止粘贴。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 /* Editor context menu — mirrors the original source-view onContextMenu sections. */
+import type { Editor } from './editor.js';
+import type { TFile } from '../core/vault.js';
 import { Menu } from '../core/menu.js';
 import { t } from '../core/i18n.js';
 import { Desktop } from '../core/ipc.js';
@@ -16,15 +19,15 @@ import { Desktop } from '../core/ipc.js';
  * 弹出编辑器右键菜单。
  * 桌面端先向主进程申请本次 context-menu 参数（拼写建议/剪贴板状态）；90ms 内未回来则不等待。
  */
-export function showEditorContextMenu(app: App, editor, owner, ev) {
+export function showEditorContextMenu(app: App, editor: Editor, owner: { file?: TFile | null }, ev: MouseEvent) {
   if (ev.defaultPrevented) return;   // 组件自己处理过（如属性行菜单）
   ev.preventDefault();
   let armed = false;
   try { Desktop.setCustomContextMenu(); armed = true; } catch (e) { armed = false; }
-  const show = (params) => buildMenu(app, editor, owner, ev, params);
+  const show = (params: Electron.ContextMenuParams | null) => buildMenu(app, editor, owner, ev, params);
   if (!armed) { show(null); return; }
   let done = false;
-  const waiter = (params) => { if (done) return; done = true; show(params); };
+  const waiter = (params: unknown) => { if (done) return; done = true; show(params as Electron.ContextMenuParams | null); };
   (app._contextParamWaiters = app._contextParamWaiters || []).push(waiter);
   setTimeout(() => {
     if (done) return;
@@ -36,7 +39,7 @@ export function showEditorContextMenu(app: App, editor, owner, ev) {
   }, 90);
 }
 
-function buildMenu(app: App, editor, owner, ev, params) {
+function buildMenu(app: App, editor: Editor, owner: { file?: TFile | null }, ev: MouseEvent, params: Electron.ContextMenuParams | null) {
   const menu = new Menu(app);
   // 原版 onContextMenu 的分节表：决定显示顺序与分隔线位置
   menu.addSections([
@@ -63,10 +66,10 @@ function buildMenu(app: App, editor, owner, ev, params) {
 }
 
 // ------------------------------------------------------------- 拼写（主进程参数）
-function addSpellcheckItems(menu, app: App, editor, ev, params) {
+function addSpellcheckItems(menu: Menu, app: App, editor: Editor, ev: MouseEvent, params: Electron.ContextMenuParams | null) {
   const word = params && params.misspelledWord;
   if (!word) return;
-  const suggestions = (params.dictionarySuggestions || []).slice(0, 6);
+  const suggestions = (params?.dictionarySuggestions || []).slice(0, 6);
   if (!suggestions.length) {
     menu.addItem((i) => i.setSection('correction').setDisabled(true)
       .setTitle(t('editor.spellcheck.no-suggestion') || 'No suggestions'));
@@ -83,7 +86,7 @@ function addSpellcheckItems(menu, app: App, editor, ev, params) {
     }));
 }
 
-function replaceWordAt(app: App, editor, ev, replacement) {
+function replaceWordAt(app: App, editor: Editor, ev: MouseEvent, replacement: string) {
   const view = editor.cm;
   const pos = view.posAtCoords({ x: ev.clientX, y: ev.clientY });
   if (pos == null) return;
@@ -102,12 +105,12 @@ function replaceWordAt(app: App, editor, ev, replacement) {
 
 // ------------------------------------------------------------- 可点击 token（链接 / 标签）
 /** 原版 getClickableTokenAt 的菜单子集；未识别的类型返回 null。 */
-function clickableTokenAt(editor, ev) {
+function clickableTokenAt(editor: Editor, ev: MouseEvent) {
   const target = ev.target;
   const view = editor.cm;
   const pos = view.posAtCoords({ x: ev.clientX, y: ev.clientY });
   if (pos == null) return null;
-  if (!target || !target.closest) return null;
+  if (!(target instanceof Element)) return null;
   // 原版：右键落在普通文本行上不提供链接/标签菜单
   if (target.classList && target.classList.contains('cm-line')) return null;
   const line = view.state.doc.lineAt(pos);
@@ -136,7 +139,7 @@ function clickableTokenAt(editor, ev) {
   return null;
 }
 
-function addClickableTokenItems(menu, app: App, editor, ev, sourcePath) {
+function addClickableTokenItems(menu: Menu, app: App, editor: Editor, ev: MouseEvent, sourcePath: string) {
   const token = clickableTokenAt(editor, ev);
   if (!token) return;
   if (token.type === 'internal-link' || token.type === 'external-link') {
@@ -164,8 +167,8 @@ function addClickableTokenItems(menu, app: App, editor, ev, sourcePath) {
 }
 
 // ------------------------------------------------------------- 剪贴板
-function addClipboardItems(menu, app: App, editor, params) {
-  const flags = (params && params.editFlags) || {};
+function addClipboardItems(menu: Menu, app: App, editor: Editor, params: Electron.ContextMenuParams | null) {
+  const flags: Partial<Electron.ContextMenuParams['editFlags']> = params?.editFlags || {};
   // 本复刻 editor.getSelection() 返回 {anchor, head}（与原版返回文本不同）；选中文本统一经 getRange 取。
   const range = editor.getSelection();
   const selection = range && range.anchor ? editor.getRange(range.anchor, range.head) : '';
@@ -188,7 +191,7 @@ function addClipboardItems(menu, app: App, editor, params) {
 }
 
 // ------------------------------------------------------------- 链接插入（selection-link）
-function addLinkInsertItems(menu, app: App, editor) {
+function addLinkInsertItems(menu: Menu, app: App, editor: Editor) {
   const linkRange = editor.getSelection();
   const linkSelection = linkRange && linkRange.anchor ? editor.getRange(linkRange.anchor, linkRange.head) : '';
   const oneLine = !/[\r\n]/.test(linkSelection);
@@ -199,7 +202,7 @@ function addLinkInsertItems(menu, app: App, editor) {
 }
 
 // ------------------------------------------------------------- 文本格式（selection.format）
-function formatState(editor) {
+function formatState(editor: Editor) {
   const view = editor.cm;
   const sel = view.state.selection.main;
   const doc = view.state.doc;
@@ -208,7 +211,7 @@ function formatState(editor) {
   const text = doc.sliceString(lineStart, lineEnd);
   const a = sel.from - lineStart;
   const b = sel.to - lineStart;
-  const inside = (marker) => {
+  const inside = (marker: string) => {
     const open = text.lastIndexOf(marker, Math.max(0, a - 1));
     if (open < 0) return false;
     return text.indexOf(marker, b) >= 0;
@@ -224,7 +227,7 @@ function formatState(editor) {
   };
 }
 
-function headingState(editor) {
+function headingState(editor: Editor) {
   const view = editor.cm;
   const sel = view.state.selection.main;
   const doc = view.state.doc;
@@ -242,10 +245,10 @@ function headingState(editor) {
 }
 
 /** 原版 NV()：Formatting 子菜单的 basic/advanced/danger 三节。 */
-function addFormattingItems(menu, app: App, editor) {
+function addFormattingItems(menu: Menu, app: App, editor: Editor) {
   const fmt = formatState(editor);
   const sub = menu.addItem((i) => i.setSection('selection.format')
-    .setTitle(t('interface.formatting.label-formatting') || 'Formatting').setIcon('lucide-paintbrush').setSubmenu()).submenu;
+    .setTitle(t('interface.formatting.label-formatting') || 'Formatting').setIcon('lucide-paintbrush').setSubmenu()).submenu!;
   // 原版 NV() 的分节表：basic / advanced / danger 三节，子菜单内插分隔线
   sub._sectioned = true;
   sub.addItem((i) => i.setSection('selection.format.basic').setTitle(t('interface.formatting.toggle-bold') || 'Bold').setIcon('lucide-bold').setChecked(fmt.bold).onClick(() => run(app, 'editor:toggle-bold')));
@@ -259,7 +262,7 @@ function addFormattingItems(menu, app: App, editor) {
 }
 
 // ------------------------------------------------------------- 段落设置（selection.paragraph）
-function addParagraphItems(menu, app: App, editor) {
+function addParagraphItems(menu: Menu, app: App, editor: Editor) {
   menu.setSectionSubmenu('selection.paragraph', {
     title: t('interface.formatting.label-paragraph') || 'Paragraph',
     disabled: editor.inTableCell === true,
@@ -282,7 +285,7 @@ function addParagraphItems(menu, app: App, editor) {
 }
 
 // ------------------------------------------------------------- 插入（selection.insert）
-function addInsertItems(menu, app: App, editor) {
+function addInsertItems(menu: Menu, app: App, editor: Editor) {
   menu.setSectionSubmenu('selection.insert', {
     title: t('interface.formatting.label-insert') || 'Insert',
     disabled: editor.inTableCell === true,
@@ -296,6 +299,6 @@ function addInsertItems(menu, app: App, editor) {
   menu.addItem((i) => i.setSection('selection.insert.advanced').setTitle(t('interface.formatting.insert-math-block') || 'Math block').setIcon('lucide-sigma-square').onClick(() => run(app, 'editor:insert-mathblock')));
 }
 
-function run(app: App, id) {
+function run(app: App, id: string) {
   app.commands.executeCommandById(id);
 }

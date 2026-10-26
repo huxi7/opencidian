@@ -11,7 +11,9 @@ import { SettingGroup } from '../core/setting.js';
 import { normalizePath } from '../core/vault.js';
 import { applyTemplate, createMarkdownNote } from './daily-notes.js';
 
-const moment = require('moment');
+import moment from 'moment';
+import type { TFile } from '../core/vault.js';
+import type { EventRef } from '../core/events.js';
 
 export const nameKey = 'plugins.unique-note-creator';
 export const DATA_FILE = 'zk-prefixer.json';
@@ -23,11 +25,11 @@ export const DEFAULT_OPTIONS = { folder: '', template: '', format: '' };
  * ------------------------------------------------------------------------ */
 class ZkPrefixer {
   declare app: App;
-  declare options: any;
-  declare _ribbonEl: any;
-  declare _commandIds: any[];
-  declare _creation: any;
-  declare _settingsRef: any;
+  declare options: typeof DEFAULT_OPTIONS;
+  declare _ribbonEl: HTMLDivElement | null;
+  declare _commandIds: string[];
+  declare _creation: Promise<TFile | null | void>;
+  declare _settingsRef: EventRef | null;
 
   constructor(app: App) {
     this.app = app;
@@ -45,15 +47,15 @@ class ZkPrefixer {
   /* 原版 getUniquePath：格式串生成的名称已存在时逐单位递增。 */
   getUniquePath(suffix = '') {
     const files = this.app.vault.getFiles();
-    const exists = (name) => files.some((f) => f.name.toLowerCase().startsWith(name.toLowerCase()));
+    const exists = (name: string) => files.some((f) => f.name.toLowerCase().startsWith(name.toLowerCase()));
     const now = moment();
     const format = this.getFormat();
     const base = now.format(format);
-    const withSuffix = (prefix) => prefix + (suffix ? ' ' + suffix : '');
+    const withSuffix = (prefix: string) => prefix + (suffix ? ' ' + suffix : '');
     let name = withSuffix(base);
     if (exists(name)) {
-      let unit = '';
-      for (const u of ['m', 'h', 'd', 'w', 'M', 'y']) {
+      let unit: moment.unitOfTime.DurationConstructor | null = null;
+      for (const u of ['m', 'h', 'd', 'w', 'M', 'y'] as const) {
         if (now.clone().add(1, u).format(format) !== base) { unit = u; break; }
       }
       if (!unit) {
@@ -77,13 +79,13 @@ class ZkPrefixer {
   }
 
   /** 原版 onCreateNote：解析目标文件夹/模板，创建并打开笔记。 */
-  async onCreateNote(ev) {
+  async onCreateNote(ev: Event | Pick<MouseEvent, 'metaKey' | 'ctrlKey'> | undefined) {
     const result = this._creation.then(() => this.createNote(ev));
     this._creation = result.catch(() => null);
     return result;
   }
 
-  async createNote(ev) {
+  async createNote(ev: Event | Pick<MouseEvent, 'metaKey' | 'ctrlKey'> | undefined) {
     const name = this.getUniquePath();
     if (!name) return null;
     let folder = null;
@@ -114,10 +116,10 @@ class ZkPrefixer {
       } else {
         file = await createMarkdownNote(this.app, folder, name);
       }
-      await this.app.workspace.openFile(file, { newLeaf: !!(ev?.metaKey || ev?.ctrlKey), eState: { mode: 'source' } });
+      await this.app.workspace.openFile(file, { newLeaf: !!(ev && (('metaKey' in ev && ev.metaKey) || ('ctrlKey' in ev && ev.ctrlKey))), eState: { mode: 'source' } });
       return file;
     } catch (e) {
-      new Notice(String(e && e.message ? e.message : e));
+      new Notice(String(e instanceof Error ? e.message : e));
       return null;
     }
   }
@@ -173,7 +175,7 @@ class ZkPrefixer {
 /* --------------------------------------------------------------------------
  * 设置页（原版 Mee：文件夹 → 模板 → 时间戳格式）
  * ------------------------------------------------------------------------ */
-export function settingTab(app: App, containerEl) {
+export function settingTab(app: App, containerEl: HTMLElement) {
   const options = app.settings.loadPluginData(DATA_FILE, DEFAULT_OPTIONS);
   const save = () => app.settings.savePluginData(DATA_FILE, options);
   const group = new SettingGroup(containerEl);
@@ -236,8 +238,8 @@ export function create(app: App) {
     deregisterCommands() { plugin.deregisterCommands(); },
     deregister() { plugin.onunload(); },
     // 公开 API
-    onCreateNote: (ev) => plugin.onCreateNote(ev),
-    getUniquePath: (suffix) => plugin.getUniquePath(suffix),
+    onCreateNote: (ev: Event | Pick<MouseEvent, 'metaKey' | 'ctrlKey'> | undefined) => plugin.onCreateNote(ev),
+    getUniquePath: (suffix: string|undefined) => plugin.getUniquePath(suffix),
     getFormat: () => plugin.getFormat(),
     getOptions: () => plugin.options,
   };

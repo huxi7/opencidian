@@ -6,11 +6,14 @@
  */
 /* Settings: vault .obsidian config files with merge-preserving writes. */
 import { Events } from './events.js';
+import { isJsonRecord, type AppSettings, type AppearanceSettings, type JsonRecord, type HotkeyBinding } from './settings-types.js';
+interface SettingsHost { workspace?: { trigger(name: 'settings-changed'): void } | null; }
+interface SettingsEvents { change: []; 'hotkeys-changed': []; }
 
-const fs = require('fs');
-const nodePath = require('path');
+const fs: typeof import('node:fs') = require('fs');
+const nodePath: typeof import('node:path') = require('path');
 
-export const DEFAULT_APP_SETTINGS = {
+export const DEFAULT_APP_SETTINGS: AppSettings = {
   // —— 原版桌面默认配置（app.js 中 DC 对象逐字对齐）——
   alwaysUpdateLinks: false,           // 重命名时始终自动更新内部链接
   spellcheck: true,
@@ -59,7 +62,7 @@ export const DEFAULT_APP_SETTINGS = {
   newFileLocationMobile: 'root',
 };
 
-export const DEFAULT_APPEARANCE_SETTINGS = {
+export const DEFAULT_APPEARANCE_SETTINGS: AppearanceSettings = {
   // 原版 appearance.json 同步键（app.js 的同步键列表）
   accentColor: '',
   theme: 'obsidian',                  // 'obsidian' | 'moonstone' | 'system'
@@ -87,7 +90,7 @@ export const DEFAULT_APPEARANCE_SETTINGS = {
   showStatusBar: true,
 };
 
-export const DEFAULT_CORE_PLUGINS = {
+export const DEFAULT_CORE_PLUGINS: Record<string, boolean> = {
   'file-explorer': true,
   'global-search': true,
   'switcher': true,
@@ -121,17 +124,17 @@ export const DEFAULT_CORE_PLUGINS = {
   'unique-note-creator': false,
 };
 
-export class Settings extends Events {
-  declare app: App;
-  declare dir: string;
-  declare appSettings: any;
-  declare appearance: any;
-  declare hotkeys: any;
-  declare corePlugins: any;
-  declare _desktopPreferenceContents: Map<any, any> | undefined;
-  declare _desktopPreferenceStop: any;
+export class Settings extends Events<SettingsEvents> {
+  app: SettingsHost;
+  dir: string;
+  appSettings: AppSettings;
+  appearance: AppearanceSettings;
+  hotkeys: Record<string, HotkeyBinding[]>;
+  corePlugins: Record<string, boolean>;
+  _desktopPreferenceContents?: Map<string, string | null>;
+  _desktopPreferenceStop: (() => void) | null = null;
 
-  constructor(app: App) {
+  constructor(app: SettingsHost) {
     super();
     this.app = app;
     this.dir = '';
@@ -141,7 +144,7 @@ export class Settings extends Events {
     this.corePlugins = { ...DEFAULT_CORE_PLUGINS };
   }
 
-  setDir(vaultPath) {
+  setDir(vaultPath: string) {
     this.dir = nodePath.join(vaultPath, '.obsidian');
   }
 
@@ -150,18 +153,19 @@ export class Settings extends Events {
     return { ...this.appSettings, ...this.appearance };
   }
 
-  readJson(name) {
+  readJson(name: 'core-plugins.json'): JsonRecord | unknown[] | null;
+  readJson(name: string): JsonRecord | null;
+  readJson(name: string): JsonRecord | unknown[] | null {
     try {
       const raw = fs.readFileSync(nodePath.join(this.dir, name), 'utf8');
-      const data = JSON.parse(raw);
-      if (data && typeof data === 'object') return data;
+      const data: unknown = JSON.parse(raw);
+      if (isJsonRecord(data) || name === 'core-plugins.json' && Array.isArray(data)) return data;
     } catch (e) {}
     return null;
   }
 
-  writeJsonMerged(name, patch) {
-    let current = this.readJson(name) || {};
-    if (Array.isArray(current) || typeof current !== 'object') current = {};
+  writeJsonMerged(name: string, patch: JsonRecord) {
+    const current = this.readJson(name) || {};
     const merged = { ...current, ...patch };
     try {
       fs.mkdirSync(this.dir, { recursive: true });
@@ -179,17 +183,17 @@ export class Settings extends Events {
     const appearance = this.readJson('appearance.json');
     if (appearance) this.appearance = { ...DEFAULT_APPEARANCE_SETTINGS, ...appearance };
     const hotkeys = this.readJson('hotkeys.json');
-    if (hotkeys && typeof hotkeys === 'object') this.hotkeys = hotkeys;
+    if (hotkeys && typeof hotkeys === 'object') this.hotkeys = Object.fromEntries(Object.entries(hotkeys).filter((entry): entry is [string, HotkeyBinding[]] => Array.isArray(entry[1]) && entry[1].every(isHotkey)));
     const core = this.readJson('core-plugins.json');
     if (core) {
       if (Array.isArray(core)) {
         // legacy format: array of enabled plugin ids
-        const map = {};
-        for (const id of core) map[id] = true;
+        const map: Record<string, boolean> = {};
+        for (const id of core) if (typeof id === 'string') map[id] = true;
         this.corePlugins = { ...DEFAULT_CORE_PLUGINS, ...map };
       } else if (typeof core === 'object') {
         // object format may only contain enabled:true entries
-        this.corePlugins = { ...DEFAULT_CORE_PLUGINS, ...core };
+        this.corePlugins = { ...DEFAULT_CORE_PLUGINS, ...Object.fromEntries(Object.entries(core).filter((entry): entry is [string, boolean] => typeof entry[1] === 'boolean')) };
       }
     }
     this.trigger('change');
@@ -198,19 +202,18 @@ export class Settings extends Events {
   /** 设置独立窗口写盘后，主窗同步外观与反链默认值。 */
   watchDesktopPreferences() {
     if (this._desktopPreferenceStop) return this._desktopPreferenceStop;
-    const watched = [];
-    const contents = this._desktopPreferenceContents = new Map();
-    const read = (file) => { try { return fs.readFileSync(file, 'utf8'); } catch (_) { return null; } };
+    const watched: (() => void)[] = [];
+    const contents = this._desktopPreferenceContents = new Map<string, string | null>();
+    const read = (file: string) => { try { return fs.readFileSync(file, 'utf8'); } catch (_) { return null; } };
     for (const name of ['appearance.json', 'backlink.json']) {
       const file = nodePath.join(this.dir, name);
       contents.set(name, read(file));
       const update = () => {
         const current = read(file);
         if (contents.get(name) === current) return;
-        let data = {};
+        let data: JsonRecord = {};
         if (current !== null) {
-          try { data = JSON.parse(current); } catch (_) { return; }
-          if (!data || typeof data !== 'object' || Array.isArray(data)) return;
+          try { const parsed: unknown = JSON.parse(current); if (!isJsonRecord(parsed)) return; data = parsed; } catch (_) { return; }
         }
         contents.set(name, current);
         if (name === 'appearance.json') {
@@ -230,21 +233,21 @@ export class Settings extends Events {
     return stop;
   }
 
-  updateAppSettings(patch) {
+  updateAppSettings(patch: Partial<AppSettings>) {
     Object.assign(this.appSettings, patch);
     this.writeJsonMerged('app.json', patch);
     this.trigger('change');
     this.app.workspace && this.app.workspace.trigger('settings-changed');
   }
 
-  updateAppearance(patch) {
+  updateAppearance(patch: Partial<AppearanceSettings>) {
     Object.assign(this.appearance, patch);
     this.writeJsonMerged('appearance.json', patch);
     this.trigger('change');
     this.app.workspace && this.app.workspace.trigger('settings-changed');
   }
 
-  setHotkey(commandId, hotkeys) {
+  setHotkey(commandId: string, hotkeys: HotkeyBinding[] | null | undefined) {
     // 数组（含空数组）表示自定义覆盖；空数组用于压制默认快捷键。
     // null/undefined 表示删除覆盖，恢复默认。
     const value = Array.isArray(hotkeys) ? hotkeys : null;
@@ -260,20 +263,26 @@ export class Settings extends Events {
     this.trigger('hotkeys-changed');
   }
 
-  setCorePluginEnabled(id, enabled) {
+  setCorePluginEnabled(id: string, enabled: boolean) {
     this.corePlugins[id] = enabled;
     this.writeJsonMerged('core-plugins.json', { [id]: enabled });
     this.trigger('change');
   }
 
   // per-plugin data files (data.json inside the plugin folder, or provided name)
-  loadPluginData(name, defaults = {}) {
+  loadPluginData<T extends object>(name: string, defaults: T): T & JsonRecord;
+  loadPluginData(name: string): JsonRecord;
+  loadPluginData(name: string, defaults: object = {}): object {
     const data = this.readJson(name);
     return data ? { ...defaults, ...data } : { ...defaults };
   }
 
-  savePluginData(name, data) {
+  savePluginData(name: string, data: JsonRecord) {
     this.writeJsonMerged(name, data);
     this.trigger('change');
   }
+}
+
+function isHotkey(value: unknown): value is HotkeyBinding {
+  return isJsonRecord(value) && typeof value.key === 'string' && Array.isArray(value.modifiers) && value.modifiers.every(item => typeof item === 'string');
 }

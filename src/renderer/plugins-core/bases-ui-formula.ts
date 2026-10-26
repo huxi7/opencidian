@@ -6,7 +6,7 @@
  */
 import { EditorState, StateField } from '@codemirror/state';
 import { EditorView, keymap, placeholder, showTooltip } from '@codemirror/view';
-import { autocompletion, completionKeymap, closeBrackets, closeBracketsKeymap, startCompletion } from '@codemirror/autocomplete';
+import { autocompletion, type Completion, type CompletionContext, type CompletionSource, completionKeymap, closeBrackets, closeBracketsKeymap, startCompletion } from '@codemirror/autocomplete';
 import { history, historyKeymap, defaultKeymap } from '@codemirror/commands';
 import { StreamLanguage, syntaxHighlighting } from '@codemirror/language';
 import { codeHighlighter } from '../markdown/highlight.js';
@@ -27,19 +27,19 @@ const formulaLanguage = StreamLanguage.define({
     stream.next(); return 'punctuation';
   },
 });
-function docElement(doc, entries) {
+function docElement(doc: Document, entries: { type: string; name: string; signature: string; description: string; sourceKey: string; params: { name: string; types: string[]; optional: boolean; variadic: boolean; }[]; }[]) {
   const root = doc.createElement('div'); root.className = 'bases-formula-function-info';
   for (const entry of entries) { const signature = doc.createElement('code'); signature.textContent = entry.signature; root.appendChild(signature); const description = doc.createElement('div'); description.textContent = entry.description; root.appendChild(description); }
   return root;
 }
-function callable(label) {
+function callable(label: string): Completion {
   const docs = baseFormulaDocs(label);
-  return { label, type: 'function', detail: docs[0]?.signature || label + '()', info: docs.length ? () => docElement(globalThis.document, docs) : undefined, apply(view, completion, from, to) {
+  return { label, type: 'function', detail: docs[0]?.signature || label + '()', info: docs.length ? () => docElement(globalThis.document, docs) : undefined, apply(view: EditorView, completion: Completion, from: number, to: number) {
     const insert = completion.label + '()'; view.dispatch({ changes: { from, to, insert }, selection: { anchor: from + insert.length - 1 } });
   } };
 }
-export function basesFormulaCompletions(properties = []) {
-  return context => {
+export function basesFormulaCompletions(properties: string[] = []): CompletionSource {
+  return (context: CompletionContext) => {
     const word = context.matchBefore(/[\p{L}\p{N}_$.[\]]*/u);
     if (!word || !context.explicit && !word.text) return null;
     const token = word.text, dot = token.lastIndexOf('.');
@@ -55,7 +55,7 @@ export function basesFormulaCompletions(properties = []) {
     ], validFor: /^[\p{L}\p{N}_$]*$/u };
   };
 }
-function functionTooltips(state) {
+function functionTooltips(state: EditorState) {
   const cursor = state.selection.main.head, source = state.doc.sliceString(0, cursor);
   const stack = []; let quoted = '', escaped = false;
   for (let index = 0; index < source.length; index++) {
@@ -66,7 +66,7 @@ function functionTooltips(state) {
     else if (character === ')') stack.pop();
   }
   const current = [...stack].reverse().find(Boolean); if (!current) return [];
-  const parts = current.name.split('.'), name = parts.at(-1), type = parts.length === 1 ? 'global' : parts[0] === 'file' && parts.length === 2 ? 'file' : '';
+  const parts = current.name.split('.'), name = parts.at(-1) || '', type = parts.length === 1 ? 'global' : parts[0] === 'file' && parts.length === 2 ? 'file' : '';
   const docs = baseFormulaDocs(name, type); if (!docs.length) return [];
   let active = 0, depth = 0, quote = '', escape = false;
   for (const character of source.slice(current.pos + 1)) {
@@ -77,7 +77,7 @@ function functionTooltips(state) {
   }
   const entry = docs[0], params = entry.params || [];
   if (active >= params.length && params.at(-1)?.variadic) active = params.length - 1;
-  return [{ pos: current.pos - name.length, above: true, strictSide: true, arrow: true, create(view) {
+  return [{ pos: current.pos - name.length, above: true, strictSide: true, arrow: true, create(view: EditorView) {
     const doc = view.dom.ownerDocument, dom = doc.createElement('div'); dom.className = 'cm-tooltip-docstring bases-formula-function-signature';
     dom.appendChild(doc.createTextNode(name + '('));
     params.forEach((parameter, index) => {
@@ -89,10 +89,18 @@ function functionTooltips(state) {
 const signatureField = StateField.define({ create: functionTooltips, update: (value, transaction) => transaction.docChanged || transaction.selection ? functionTooltips(transaction.state) : value,
   provide: field => showTooltip.computeN([field], state => state.field(field)),
 });
-export function mountBasesFormulaEditor(parent, value, options: Record<string, any> = {}) {
-  const root = parent.ownerDocument.createElement('div'); root.className = 'formula-editor'; parent.appendChild(root);
+interface FormulaEditorHandle {
+  view: EditorView;
+  setValue(value: string): void;
+  getValue(): string;
+  focus(): void;
+  destroy(): void;
+  complete(): boolean;
+}
+export function mountBasesFormulaEditor(parent: HTMLElement, value: string, options: { properties?: string[]; onChange?: (value: string) => unknown } = {}) {
+  const root: HTMLDivElement & { basesFormulaEditor?: FormulaEditorHandle } = parent.ownerDocument.createElement('div'); root.className = 'formula-editor'; parent.appendChild(root);
   const status = parent.ownerDocument.createElement('div'); status.className = 'formula-editor-status'; status.setAttribute('role', 'status'); parent.appendChild(status);
-  const validate = source => { try { compileExpression(source); status.textContent = '✓ 公式有效'; status.classList.remove('mod-error'); } catch (error) { status.textContent = error.message; status.classList.add('mod-error'); } };
+  const validate = (source: string) => { try { compileExpression(source); status.textContent = '✓ 公式有效'; status.classList.remove('mod-error'); } catch (error) { status.textContent = error instanceof Error ? error.message : String(error); status.classList.add('mod-error'); } };
   const source = basesFormulaCompletions(options.properties);
   const editor = new EditorView({ parent: root, state: EditorState.create({ doc: String(value), extensions: [
     history(), closeBrackets(), signatureField, formulaLanguage, syntaxHighlighting(codeHighlighter), placeholder('例如：file.inFolder("项目") && score >= 4'),
@@ -104,7 +112,7 @@ export function mountBasesFormulaEditor(parent, value, options: Record<string, a
     EditorView.theme({ '&': { fontSize: 'var(--font-ui-small)' }, '.cm-scroller': { fontFamily: 'var(--font-monospace)', overflow: 'auto' }, '.cm-content': { padding: '5px 6px', minHeight: '28px' }, '&.cm-focused': { outline: 'none' } }),
   ] }) });
   const api = {
-    view: editor, setValue(next) { editor.dispatch({ changes: { from: 0, to: editor.state.doc.length, insert: String(next) } }); },
+    view: editor, setValue(next: string) { editor.dispatch({ changes: { from: 0, to: editor.state.doc.length, insert: String(next) } }); },
     getValue: () => editor.state.doc.toString(), focus: () => editor.focus(), destroy: () => { editor.destroy(); delete root.basesFormulaEditor; },
     complete: () => startCompletion(editor),
   };

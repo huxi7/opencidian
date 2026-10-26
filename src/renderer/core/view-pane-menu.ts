@@ -5,31 +5,34 @@
  * 文件菜单保留默认应用入口，视图头只提供视图动作与竖三点。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
-import { Menu } from './menu.js';
+import { Menu, MenuEvent } from './menu.js';
 import { t } from './i18n.js';
 import { setIcon } from './icons.js';
 import { FileNameModal } from './modals.js';
+import { CanvasView } from '../views/canvas-view.js';
+import { View } from './view.js';
+import { WorkspaceLeaf } from './workspace-model.js';
 
 /** 原版 View.addAction：button、mousedown 不抢焦点、左键及中键动作。 */
-export function addViewAction(actions, icon, label, callback, className = '') {
+export function addViewAction(actions: HTMLElement, icon: string, label: string, callback: (event: MouseEvent) => unknown, className = '') {
   const button = actions.createEl('button', {
     cls: 'clickable-icon view-action' + (className ? ' ' + className : ''),
     attr: { type: 'button', 'aria-label': label },
   });
   setIcon(button, icon);
   button.addEventListener('mousedown', event => event.preventDefault());
-  button.addEventListener('click', event => { if (event.button === 0) callback(event); });
-  button.addEventListener('auxclick', event => { if (event.button === 1) callback(event); });
+  button.addEventListener('click', (event: MouseEvent) => { if (event.button === 0) callback(event); });
+  button.addEventListener('auxclick', (event: MouseEvent) => { if (event.button === 1) callback(event); });
   return button;
 }
 
 /** 原版 ItemView/FileView.onPaneMenu；标签菜单已提供拆分项，避免重复。 */
-export function fillFilePaneMenu(view, menu, source) {
+export function fillFilePaneMenu(view: View, menu: Menu, source: string) {
   const { app, leaf, file } = view;
   if (!file) return;
   const workspace = app.workspace;
   if (source !== 'tab-header') {
-    const split = async direction => {
+    const split = async (direction: 'horizontal' | 'vertical') => {
       const state = { ...view.getState() };
       const target = workspace.createLeafBySplit(leaf, direction);
       await target.setViewState({ type: view.getViewType(), state });
@@ -55,10 +58,10 @@ export function fillFilePaneMenu(view, menu, source) {
 }
 
 /** 原版 View.onMoreOptions：按钮锚点、分节与菜单扩展链。 */
-export function installViewMoreAction(view, actions) {
+export function installViewMoreAction(view: View, actions: HTMLElement) {
   const existing = actions.querySelector('.mod-more-options');
   if (existing) return existing;
-  const button = addViewAction(actions, 'lucide-more-vertical', t('interface.menu.more-options'), event => {
+  const button = addViewAction(actions, 'lucide-more-vertical', t('interface.menu.more-options'), (event: MouseEvent) => {
     event.preventDefault();
     if (button.classList.contains('has-active-menu')) return;
     const menu = new Menu(view.app).addSections(['close', 'pane', 'open', 'action', 'find', 'info', 'info.copy', 'view', 'view.linked', 'system', '', 'danger']);

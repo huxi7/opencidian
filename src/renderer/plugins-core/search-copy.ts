@@ -6,17 +6,19 @@
  *        勾选“显示路径”时用完整路径（含扩展名）。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
+import type { TFile } from '../core/vault.js';
+import type { SearchView } from './global-search.js';
 import { t, tt } from '../core/i18n.js';
 import { Modal } from '../core/modals.js';
 import { Setting } from '../core/setting.js';
 import { Notice } from '../core/notices.js';
 
 /** 原版 TFile.getShortName：md 用不含扩展名的短名，其余文件用全名。 */
-function shortName(file) {
+function shortName(file: TFile) {
   return file.extension === 'md' ? file.basename : file.name;
 }
 
-async function copyText(value) {
+async function copyText(value: string) {
   try {
     if (navigator.clipboard && navigator.clipboard.writeText) {
       await navigator.clipboard.writeText(value);
@@ -37,13 +39,13 @@ async function copyText(value) {
 }
 
 export class CopySearchResultsModal extends Modal {
-  declare view: any;
+  declare view: SearchView;
   declare showPath: boolean;
   declare linkStyle: string;
   declare listStyle: string;
-  declare textareaEl: any;
+  declare textareaEl: HTMLTextAreaElement;
 
-  constructor(app: App, view) {
+  constructor(app: App, view: SearchView) {
     super(app);
     this.view = view;
     this.showPath = false;
@@ -98,7 +100,7 @@ export class CopySearchResultsModal extends Modal {
 
   update() {
     const files = this.view.getFiles();
-    this.textareaEl.value = files.map((file, index) => {
+    this.textareaEl.value = files.map((file, index: number) => {
       let name = this.showPath ? file.path : shortName(file);
       if (this.linkStyle === 'wikilink') name = '[[' + name + ']]';
       else if (this.linkStyle === 'markdown') name = '[' + file.basename + '](' + name + ')';

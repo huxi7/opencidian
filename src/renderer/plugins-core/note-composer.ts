@@ -13,6 +13,11 @@ import { SettingGroup } from '../core/setting.js';
 import { applyTemplate, createMarkdownNote } from './daily-notes.js';
 import { parseNote, mergeProperties, joinNote } from './templates.js';
 import { parseMarkdown } from '../core/metadata.js';
+import { TFile, VaultEntry } from '../core/vault.js';
+import { Command,CommandDefinition } from '../core/commands.js';
+import { MarkdownView } from '../views/markdown-view.js';
+import type { EventRef } from '../core/events.js';
+import { Editor } from '../editor/editor.js';
 
 export const nameKey = 'plugins.note-composer';
 
@@ -24,15 +29,15 @@ const DATA_FILE = 'note-composer.json';
  * 文件选择弹窗基类 — 对齐原版合并/提取弹窗：
  *   ↵ 追加 / shift ↵ 前插 / mod ↵ 新建笔记后合并
  * ------------------------------------------------------------------------ */
-class FileSuggestModal extends SuggestModal {
+class FileSuggestModal extends SuggestModal<TFile> {
   declare onClose: () => void;
 
-  declare plugin: any;
-  declare currentFile: any;
-  declare emptyStateText: any;
+  declare plugin: NoteComposer;
+  declare currentFile: TFile | null;
+  declare emptyStateText: string;
 
   getInstructions() { return this.instructions || super.getInstructions(); }
-  constructor(app: App, plugin) {
+  constructor(app: App, plugin: NoteComposer) {
     super(app);
     this.plugin = plugin;
     this.currentFile = null;
@@ -46,13 +51,13 @@ class FileSuggestModal extends SuggestModal {
       { command: 'esc', purpose: t('plugins.note-composer.instruction-dismiss') || 'to dismiss' },
     ]);
   }
-  setCurrentFile(file) { this.currentFile = file; }
+  setCurrentFile(file: TFile) { this.currentFile = file; }
   getFiles() {
     return this.app.vault.getMarkdownFiles()
       .filter((f) => !this.currentFile || f.path !== this.currentFile.path)
       .sort((a, b) => a.path.localeCompare(b.path));
   }
-  getSuggestions(query) {
+  getSuggestions(query: string) {
     const files = this.getFiles();
     if (!query) return files.slice(0, this.limit);
     const out = [];
@@ -63,12 +68,12 @@ class FileSuggestModal extends SuggestModal {
     out.sort((a, b) => b.score - a.score);
     return out.slice(0, this.limit).map((o) => o.file);
   }
-  renderSuggestion(file, el, query) {
+  renderSuggestion(file: TFile, el: HTMLElement, query: string) {
     const match = query ? fuzzyMatch(query, file.path) : null;
     if (match) renderHighlightedText(el, file.path, match.matches);
     else el.setText(file.path);
   }
-  onInputKeyDown(ev) {
+  onInputKeyDown(ev: KeyboardEvent) {
     if (ev.key === 'Enter' && (ev.metaKey || ev.ctrlKey || !this.results.length)) {
       ev.preventDefault();
       this.createNewAndChoose(ev.shiftKey);
@@ -76,7 +81,7 @@ class FileSuggestModal extends SuggestModal {
     }
     super.onInputKeyDown(ev);
   }
-  async createNewAndChoose(prepend) {
+  async createNewAndChoose(prepend: boolean) {
     const name = this.inputEl.value.trim();
     if (!name || !this.currentFile) return;
     this.close();
@@ -85,11 +90,11 @@ class FileSuggestModal extends SuggestModal {
       const file = await createMarkdownNote(this.app, folder, name);
       await this.onChooseTarget(file, { shiftKey: !!prepend });
     } catch (e) {
-      new Notice(String(e && e.message ? e.message : e));
+      new Notice(String(e instanceof Error ? e.message : e));
     }
   }
-  async onChooseTarget(file, ev) {}
-  onChooseSuggestion(file, ev) {
+  async onChooseTarget(file: TFile, ev: { shiftKey: boolean }): Promise<TFile | void> {}
+  onChooseSuggestion(file: TFile, ev: MouseEvent|KeyboardEvent) {
     this.onChooseTarget(file, ev || {});
   }
 }
@@ -99,9 +104,9 @@ class FileSuggestModal extends SuggestModal {
  * ------------------------------------------------------------------------ */
 class NoteComposer {
   declare app: App;
-  declare options: any;
-  declare _commandIds: any[];
-  declare _settingsRef: any;
+  declare options: typeof DEFAULT_OPTIONS;
+  declare _commandIds: string[];
+  declare _settingsRef: EventRef | null;
 
   constructor(app: App) {
     this.app = app;
@@ -114,7 +119,7 @@ class NoteComposer {
     this._settingsRef = this.app.settings.on('change', () => {
       Object.assign(this.options, this.app.settings.loadPluginData(DATA_FILE, DEFAULT_OPTIONS));
     });
-    const add = (command) => {
+    const add = (command: Command|CommandDefinition) => {
       this.app.commands.addCommand(command);
       this._commandIds.push(command.id);
     };
@@ -168,7 +173,7 @@ class NoteComposer {
   }
 
   /* ---------------------------------------------------------------- 弹窗 */
-  openMergeModal(currentFile) {
+  openMergeModal(currentFile: TFile) {
     const modal = new FileSuggestModal(this.app, this);
     modal.setCurrentFile(currentFile);
     modal.onChooseTarget = (target, ev) => {
@@ -178,7 +183,7 @@ class NoteComposer {
     modal.open();
   }
 
-  openSplitModal(editor, currentFile, defaultName?) {
+  openSplitModal(editor: Editor, currentFile: TFile, defaultName?: string|undefined) {
     const modal = new FileSuggestModal(this.app, this);
     modal.setCurrentFile(currentFile);
     modal.inputEl.value = defaultName || editor.getRange(editor.getCursor('from'), editor.getCursor('to'))
@@ -192,7 +197,7 @@ class NoteComposer {
 
   /* ---------------------------------------------------------------- 合并 */
   /** 把 current 的内容追加/前插到 target，然后删除 current。 */
-  async mergeFile(target, current, mode = 'append', skipConfirm = false) {
+  async mergeFile(target: TFile|null|undefined, current: TFile, mode = 'append', skipConfirm = false) {
     if (!target || !current || target.path === current.path) return;
     if (this.options.askBeforeMerging && !skipConfirm) {
       const ok = await confirmDialog(
@@ -215,13 +220,13 @@ class NoteComposer {
       await this.deleteFile(current);
       return target;
     } catch (e) {
-      new Notice(String(e && e.message ? e.message : e));
+      new Notice(String(e instanceof Error ? e.message : e));
     }
   }
 
   /* ---------------------------------------------------------------- 提取 */
   /** 把编辑器选中内容写入 target，原处替换为链接/嵌入/无。 */
-  async splitSelection(target, editor, currentFile, mode = 'append') {
+  async splitSelection(target: TFile, editor: Editor, currentFile: TFile, mode = 'append') {
     if (!target || !editor || !currentFile || target.path === currentFile.path) return;
     /* 本复刻 editor.getSelection() 返回 {anchor,head}；选中文本用 getRange 取。 */
     const from = editor.getCursor('from');
@@ -243,11 +248,11 @@ class NoteComposer {
       await this.saveEditor(currentFile, editor);
       return target;
     } catch (e) {
-      new Notice(String(e && e.message ? e.message : e));
+      new Notice(String(e instanceof Error ? e.message : e));
     }
   }
 
-  extractHeading(file, editor) {
+  extractHeading(file: TFile, editor: Editor) {
     const range = this.getSelectionUnderHeading(file, editor);
     if (!range) {
       new Notice(t('plugins.note-composer.msg-fail-to-find-heading') || 'Failed to find heading');
@@ -258,7 +263,7 @@ class NoteComposer {
   }
 
   /** 光标所在小节的起止范围（原版 getSelectionUnderHeading）。 */
-  getSelectionUnderHeading(file, editor) {
+  getSelectionUnderHeading(file: TFile, editor: Editor) {
     const cache = parseMarkdown(editor.getValue(), file);
     const headings = cache && cache.headings;
     if (!headings || !headings.length) return null;
@@ -285,7 +290,7 @@ class NoteComposer {
 
   /* ---------------------------------------------------------------- 工具 */
   /** 模板套用（原版 applyTemplate）：{{content}}/{{fromTitle}}/{{newTitle}} + 日期时间。 */
-  async applyComposerTemplate(content, fromTitle, newTitle) {
+  async applyComposerTemplate(content: string, fromTitle: string, newTitle: string) {
     if (!this.options.template) return content;
     /* getFirstLinkpathDest 返回路径字符串，须经 getFileByPath 转 TFile。 */
     const dest = this.app.metadataCache.getFirstLinkpathDest(this.options.template, '');
@@ -300,26 +305,27 @@ class NoteComposer {
     return applyTemplate(template, { fromTitle, newTitle, content }, {});
   }
 
-  getFileView(file) {
+  getFileView(file: { path: string|undefined; }) {
     return this.app.workspace.getLeavesOfType('markdown')
-      .map((leaf) => leaf.view).find((view) => view.file?.path === file.path && view.editor);
+      .map((leaf) => leaf.view).find((view): view is MarkdownView & { editor: Editor } => view instanceof MarkdownView && view.file?.path === file.path && !!view.editor);
   }
 
-  async readCurrentText(file) {
+  async readCurrentText(file: TFile) {
     const view = this.getFileView(file);
     if (!view) return this.app.vault.read(file);
     await view.save();
     return view.editor.getValue();
   }
 
-  async saveEditor(file, editor) {
+  async saveEditor(file: TFile, editor: Editor|undefined) {
     const view = this.getFileView(file);
-    if (view?.editor === editor) await view.save();
+    if (!editor) return;
+    if (view && view.editor === editor) await view.save();
     else await this.app.vault.modify(file, editor.getValue());
   }
 
   /** 属性合并后连接正文；打开的目标先写编辑器，避免防抖保存覆盖结果。 */
-  async insertIntoFile(file, text, mode = 'append') {
+  async insertIntoFile(file: TFile, text: string, mode = 'append') {
     const current = await this.readCurrentText(file);
     const before = parseNote(current);
     const incoming = parseNote(text);
@@ -338,7 +344,7 @@ class NoteComposer {
   }
 
   /** 合并后删除源文件（走回收站策略，不再二次确认）。 */
-  async deleteFile(file) {
+  async deleteFile(file: TFile) {
     const trashOption = this.app.settings.appSettings.trashOption;
     if (trashOption === 'local') {
       const adapter = this.app.vault.adapter;
@@ -355,7 +361,7 @@ class NoteComposer {
 /* --------------------------------------------------------------------------
  * 设置页（设置宿主经 module.settingTab(app, containerEl) 调用）
  * ------------------------------------------------------------------------ */
-export function settingTab(app: App, containerEl) {
+export function settingTab(app: App, containerEl: HTMLElement) {
   const options = app.settings.loadPluginData(DATA_FILE, DEFAULT_OPTIONS);
   const save = () => app.settings.savePluginData(DATA_FILE, options);
   const group = new SettingGroup(containerEl);
@@ -407,9 +413,9 @@ export function create(app: App) {
     deregisterCommands() { plugin.deregisterCommands(); },
     deregister() { plugin.onunload(); },
     // public API
-    mergeFile: (target, current, mode, skipConfirm) => plugin.mergeFile(target, current, mode, skipConfirm),
-    splitSelection: (target, editor, currentFile, mode) => plugin.splitSelection(target, editor, currentFile, mode),
-    insertIntoFile: (file, text, mode) => plugin.insertIntoFile(file, text, mode),
+    mergeFile: (target: TFile|null|undefined, current: TFile, mode: string|undefined, skipConfirm: boolean|undefined) => plugin.mergeFile(target, current, mode, skipConfirm),
+    splitSelection: (target: TFile, editor: Editor, currentFile: TFile, mode: string|undefined) => plugin.splitSelection(target, editor, currentFile, mode),
+    insertIntoFile: (file: TFile, text: string, mode: string|undefined) => plugin.insertIntoFile(file, text, mode),
     getOptions: () => plugin.options,
   };
 }

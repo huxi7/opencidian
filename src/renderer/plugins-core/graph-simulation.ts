@@ -5,33 +5,43 @@
  *        app:// 直载 → 失败退 fetch + Blob URL（原版 Rz 手法）→ 再失败退本地线程，物理交给共享内核 graph-force.js。
  *        对外方法名与旧实现一致（setData/setForceNode/setForces/run/tick/finished/nodeById），graph-renderer 只新增 onUpdate 与 destroy 接线。
  *        位置在收到 worker 结果时写入 nodeById 并回调；SAB 用 buffer 末尾 Uint32 版本守卫，transfer 的 ArrayBuffer 应用后清空结果。
+ *        位置回执先校验缓冲区长度与节点 ID；零坐标固定点同样阻止 Worker 覆盖。
  *        更换 worker（直载失败或运行中崩溃）时重发镜像状态（nodes/links/钉住/力参数），避免替补 worker 空图。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
-import { ForceKernel, ALPHA_START, ALPHA_MIN } from './graph-force.js';
+import type { GraphWorkerCommand, GraphPositionFrame, GraphForceOptions } from './graph-types.js';
+import { ForceKernel, ALPHA_START, ALPHA_MIN, type ForceNode } from './graph-force.js';
 
 export const GRAPH_WORKER_URL = 'app://opensidian.app/dist/graph-sim-worker.js';
 const WORKER_NAME = 'Graph Worker';   // 原版 new Worker("/sim.js", { name: "Graph Worker" })
 const IDLE_MS = 250;                  // worker 后端沉降判定：连续静默超过该时长即视为停摆
 
+function isPositionFrame(value: object): value is GraphPositionFrame {
+  if (!('buffer' in value) || !('id' in value) || !Array.isArray(value.id) || !value.id.every(id => typeof id === 'string')) return false;
+  const buffer = value.buffer;
+  const shared = typeof SharedArrayBuffer === 'function' && buffer instanceof SharedArrayBuffer;
+  if (!(buffer instanceof ArrayBuffer) && !shared) return false;
+  return buffer.byteLength >= value.id.length * 8 + (shared ? 4 : 0) && buffer.byteLength % 4 === 0;
+}
+
 export class ForceSim {
   declare kernel: ForceKernel;
-  declare nodeById: any;
-  declare backend: string;
-  declare worker: any;
+  declare nodeById: Map<string, ForceNode>;
+  declare backend: 'local' | 'worker';
+  declare worker: Worker | null;
   declare workerActive: boolean;
   declare workerShared: boolean;
   declare fallbackReason: string;
   declare destroyed: boolean;
   declare localTicks: number;
-  declare onUpdate: any;
-  declare workerResults: any;
-  declare pendingMessages: any[];
+  declare onUpdate: (() => void) | null;
+  declare workerResults: GraphPositionFrame | null;
+  declare pendingMessages: GraphWorkerCommand[];
   declare attempts: number;
   declare attachedOnce: boolean;
   declare lastActivity: number;
 
-  constructor(options: Record<string, any> = {}) {
+  constructor(options: { forceLocal?: boolean } = {}) {
     this.kernel = new ForceKernel();
     this.nodeById = this.kernel.nodeById;
     this.backend = 'local';           // 'worker' | 'local'（worker 创建期间先置 'worker'，失败回退改回）
@@ -84,7 +94,7 @@ export class ForceSim {
       .catch(() => { if (!this.destroyed) this.useLocal('worker 脚本不可用'); });
   }
 
-  attachWorker(worker) {
+  attachWorker(worker: Worker) {
     this.worker = worker;
     this.workerActive = true;
     this.backend = 'worker';
@@ -100,9 +110,9 @@ export class ForceSim {
   }
 
   /** 镜像状态重发：nodes/links/钉住节点/力参数。只用于 worker 更换（原版没有这条路径）。 */
-  resendState(worker) {
+  resendState(worker: Worker) {
     const kernel = this.kernel;
-    const nodes = {};
+    const nodes: NonNullable<GraphWorkerCommand['nodes']> = {};
     for (const node of kernel.nodes) nodes[node.id] = [node.x, node.y];
     const links = kernel.links.map((link) => [link.source.id, link.target.id]);
     worker.postMessage({ nodes, links, alpha: ALPHA_START, run: true });
@@ -122,7 +132,7 @@ export class ForceSim {
   }
 
   /** worker 失败：直载失败还有一次 Blob 机会，否则退回本地线程（图谱不因 worker 失败中断）。 */
-  workerFailed(reason) {
+  workerFailed(reason: string) {
     const worker = this.worker;
     this.worker = null;
     this.workerActive = false;
@@ -132,7 +142,7 @@ export class ForceSim {
   }
 
   /** 本地回退：终止 worker，物理改由渲染回调驱动 tick()。镜像状态已一致，无需搬运。 */
-  useLocal(reason) {
+  useLocal(reason: string) {
     if (this.destroyed) return;
     if (reason) this.fallbackReason = reason;
     this.backend = 'local';
@@ -146,7 +156,7 @@ export class ForceSim {
   }
 
   /** 发送消息；worker 未就绪时排队（视图打开时 setData 可能早于 worker 创建完成）。 */
-  send(message) {
+  send(message: GraphWorkerCommand) {
     if (this.destroyed) return;
     if (this.workerActive && this.worker) {
       try {
@@ -168,10 +178,11 @@ export class ForceSim {
    * ------------------------------------------------------------------------ */
 
   /** ignore 是 SAB 探测消息；其余是位置帧。冻结（alpha 归零）时既不写坐标也不回调。 */
-  onWorkerMessage(data) {
+  onWorkerMessage(data: unknown) {
     if (this.destroyed || !data) return;
-    if (data.ignore) { this.workerShared = !!data.shared; return; }
-    if (!data.buffer) return;
+    if (typeof data !== 'object') return;
+    if ('ignore' in data && data.ignore) { this.workerShared = 'shared' in data && !!data.shared; return; }
+    if (!isPositionFrame(data)) return;
     this.workerResults = data;
     this.noteActivity();
     if (this.frozen) return;
@@ -183,7 +194,7 @@ export class ForceSim {
    * 应用位置缓冲区（原版渲染回调里的消费逻辑）：
    * SAB 用 buffer 末尾 Uint32 版本号守卫，与消息携带的 v 相同即跳过；transfer 的 ArrayBuffer 应用后清空。
    */
-  applyResult(data) {
+  applyResult(data: GraphPositionFrame) {
     const buffer = data.buffer;
     if (buffer instanceof ArrayBuffer) {
       this.workerResults = null;
@@ -199,8 +210,8 @@ export class ForceSim {
       if (!node) continue;
       node.x = positions[2 * i];
       node.y = positions[2 * i + 1];
-      if (node.fx) node.x = node.fx;
-      if (node.fy) node.y = node.fy;
+      if (node.fx !== null) node.x = node.fx;
+      if (node.fy !== null) node.y = node.fy;
     }
     return true;
   }
@@ -210,11 +221,11 @@ export class ForceSim {
    * ------------------------------------------------------------------------ */
 
   /** 原版渲染端 setData：{nodes:{id:[x,y]},links,alpha:.3,run:true}。已有节点传 false（保留 worker 自身坐标与速度），新节点才带初值。 */
-  setData(nodeRefs, links) {
+  setData(nodeRefs: Array<{ id: string; x: number | null; y: number | null }>, links: [string, string][]) {
     if (this.destroyed) return;
-    const nodes = {};
-    for (const ref of nodeRefs) nodes[ref.id] = this.kernel.nodeById.has(ref.id) ? false : [ref.x, ref.y];
-    const pairs = links.map((pair) => [pair[0], pair[1]]);
+    const nodes: NonNullable<GraphWorkerCommand['nodes']> = {};
+    for (const ref of nodeRefs) nodes[ref.id] = this.kernel.nodeById.has(ref.id) ? false : [ref.x ?? 0, ref.y ?? 0];
+    const pairs = links.map((pair): [string, string] => [pair[0], pair[1]]);
     this.kernel.setNodes(nodes);
     this.kernel.setLinks(pairs);
     this.kernel.raiseAlpha(ALPHA_START);
@@ -223,12 +234,12 @@ export class ForceSim {
   }
 
   /** 原版拖拽：{alpha:.3,alphaTarget:.3,run:true,forceNode}；解钉是 {alphaTarget:0,forceNode:{x:null,y:null}}。 */
-  setForceNode(id, x, y, alpha, alphaTarget) {
+  setForceNode(id: string, x: number|null, y: number|null, alpha: number|undefined, alphaTarget: number|undefined) {
     if (this.destroyed) return;
     this.kernel.forceNode(id, x, y);
     if (alpha !== undefined) this.kernel.raiseAlpha(alpha);
     if (alphaTarget !== undefined) this.kernel.setAlphaTarget(alphaTarget);
-    const message: { forceNode: { id: string; x: number; y: number }; alpha?: number; run?: boolean; alphaTarget?: number } = { forceNode: { id, x, y } };
+    const message: GraphWorkerCommand = { forceNode: { id, x, y } };
     if (alpha !== undefined) { message.alpha = alpha; message.run = true; }
     if (alphaTarget !== undefined) message.alphaTarget = alphaTarget;
     this.send(message);
@@ -236,7 +247,7 @@ export class ForceSim {
   }
 
   /** 原版 setForces：{forces,alpha:.3,run:true}。 */
-  setForces(forces) {
+  setForces(forces: GraphForceOptions) {
     if (this.destroyed) return;
     this.kernel.setForces(forces);
     this.kernel.raiseAlpha(ALPHA_START);

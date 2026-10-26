@@ -5,10 +5,14 @@
 应用内核。依赖方向：dom/events/i18n/icons/ipc/tooltip 为叶子；vault/settings 之上是 metadata/fileManager；workspace/app 为装配层；plugins 提供宿主与 obsidian API shim。
 
 成员清单
+metadata-types.ts: 元数据共享契约。正文位置、链接与属性值供解析器和查询模块共用。
+settings-types.ts: 配置边界。已知偏好保持具体类型，未知扩展值保留为 unknown。
+workspace-types.ts: 标签拖拽会话与功能区动作协议。鼠标和键盘共用修饰键。
+workspace-events.ts: 工作区事件表与悬停预览协议。名称绑定参数元组，发布和订阅共用。
 update-check.ts: 配置更新源后检查版本，仅提示和打开下载页。
 dom-types.d.ts: DOM 工厂、元素扩展与窗口全局入口的类型边界。
 dom.ts: Element/Document 原型的 createEl/setText/addClass 等助手(安装即生效)，并导出 createEl/createDiv/createSpan。
-events.ts: 泛型事件表与订阅释放。无原型字典接受任意名称；防抖保留参数与宿主类型，结算后释放引用。未声明事件表的旧宿主保留动态兼容边界。
+events.ts: 泛型事件表与订阅释放。无原型字典接受任意名称；防抖保留参数与宿主类型，结算后释放引用。未声明事件表的载荷为 unknown；工作区使用独立事件表。
 i18n.ts: setLanguage/detectLanguage(systemLocale)/t(带 {{var}} 与 _plural 处理)/tt(key,fallback,vars)(设置界面兜底)/getNouns(连字符 key)。
 icons.ts: resolveIcon/createIcon/setIcon/getIconData/iconExists/getIconIds/addIcon/removeIcon。解析链逐字复刻原版 Zm()：lucide- 前缀 → 运行时图标 → 36 个自有图标(assets/icons-obsidian.json) → 152 条别名映射(assets/icon-aliases.json) → 1874 个 Lucide 图标(assets/icons.json)。
 ipc.ts: 按共享通道表校验参数元组和回执。Desktop 门面保留同步与异步区别，不接受拼错通道。文档窗口等待就绪，属性写回经跨窗口 CAS。
@@ -45,7 +49,7 @@ workspace-interactions.ts: 仅中心文档可关闭、新建、拆分或拖拽�
 plugins.ts: 核心插件宿主。启停写配置；卸载拒绝时保留命令、设置页及真实开关状态，不加载第三方。
 plugins-registry.ts: corePluginModules 汇总表(id → 模块)。新增核心插件必须登记在此；已含数据库(bases)、出链(outgoing-link)、属性(properties)与录音机(audio-recorder)。对象顺序即功能区按钮顺序；1.14.4 顺序 switcher→graph→canvas→bases→daily→templates→command-palette。
 app-commands.ts: 导航、设置与文档命令。新建和恢复关闭标签显式激活目标。文档弹出与移动委托 document-window；新窗口就绪后移除来源。关闭、固定标签操作只作用于中心文档。堆叠命令 workspace:toggle-stacked-tabs 作用于当前中心标签组，侧栏组拒绝执行。
-app.ts: App 装配。文档窗口只加载来源视图，跳过主布局持久化及启动打开行为。监听库根 CSS；外观偏好驱动原生半透明。新建与修改均进入元数据解析。initialize 顺序：bootTime → language(须最先，界面模块构造前) → 非 macOS 加 body.styled-scrollbars → vault 身份 → settings → vault+watch → metadata/fileManager/hotkeyManager/plugins → workspace.mount → 插件加载 → _loadWorkspace → _applyTheme → settings 'change' 监听 → Ctrl+滚轮/捏合字号监听（仅外观「快速调整字体大小」开启时改字号，默认关；ctrl+wheel 恒 preventDefault，配合主进程 setVisualZoomLevelLimits(1,1) 锁死整页视觉缩放）→ _runOpeningBehavior。_applyTheme 应用 theme/accent/字体/--indent-size/根字号并调 _applyCustomCss(注入主题与启用的 snippets：现代主题 themes/<x>/theme.css，回退旧版主题 themes/<x>.css，与原版 getThemePath 同规则；style 元素带 data-css-theme)。ipcOn('context-menu') 保存主进程菜单参数并唤醒 _contextParamWaiters（编辑器右键菜单取拼写建议/剪贴板状态）。OBS_ACT 调试钩子支持 open/open-settings/exec(命令)。设置窗口以 app.isSettingsWindow(URL #settings-window) 分流：只跳过看门狗/后台索引/布局加载，其余照常装配。新库默认右栏收起；body 补 obsidian-app/show-inline-title。
+app.ts: App 装配。服务未初始化时拒绝读取；插件注册表先于页签构造存在。文档窗口只加载来源视图，跳过主布局持久化及启动打开行为。监听库根 CSS；外观偏好驱动原生半透明。新建与修改均进入元数据解析。initialize 顺序：bootTime → language(须最先，界面模块构造前) → 非 macOS 加 body.styled-scrollbars → vault 身份 → settings → vault+watch → metadata/fileManager/hotkeyManager/plugins → workspace.mount → 插件加载 → _loadWorkspace → _applyTheme → settings 'change' 监听 → Ctrl+滚轮/捏合字号监听（仅外观「快速调整字体大小」开启时改字号，默认关；ctrl+wheel 恒 preventDefault，配合主进程 setVisualZoomLevelLimits(1,1) 锁死整页视觉缩放）→ _runOpeningBehavior。_applyTheme 应用 theme/accent/字体/--indent-size/根字号并调 _applyCustomCss(注入主题与启用的 snippets：现代主题 themes/<x>/theme.css，回退旧版主题 themes/<x>.css，与原版 getThemePath 同规则；style 元素带 data-css-theme)。ipcOn('context-menu') 保存主进程菜单参数并唤醒 _contextParamWaiters（编辑器右键菜单取拼写建议/剪贴板状态）。OBS_ACT 调试钩子支持 open/open-settings/exec(命令)。设置窗口以 app.isSettingsWindow(URL #settings-window) 分流：只跳过看门狗/后台索引/布局加载，其余照常装配。新库默认右栏收起；body 补 obsidian-app/show-inline-title。
 
 workspace-file-view.ts: 严格类型的文件视图分派。仅依赖偏好和注册表窄接口，不依赖 App 实现。
 workspace-layout.ts: 未信任布局的迭代校验边界。叶子、标签组和分栏使用判别联合；拒绝祖先循环与坏比例，保留无 ID 共享节点。
@@ -59,7 +63,7 @@ native-menu.ts: 菜单动作树适配系统菜单。保留分节与子菜单，�
 frontmatter-write.ts: 属性写回事务。坏 YAML 拒写，按文件串行，跨窗口冲突重读重算，保留正文与换行。
 window-save.ts: 文档保存协议。Markdown/Canvas 使用 CAS；窗口关闭检查 Markdown/Canvas/Bases，失败保留输入。
 
-window-save-conflict.ts: 保存冲突恢复。读盘后复核文件与草稿；确认载入磁盘，副本成功后才解除原草稿。
+window-save-conflict.ts: 保存冲突恢复。错误码只扩展本地错误，不改写全局 Error。读盘后复核文件与草稿；确认载入磁盘，副本成功后才解除原草稿。
 workspace-close.ts: 叶子关闭事务。布局先隔离校验和反序列化；同步视图同步关闭，异步等待，失败保留原树。 布局先交 workspace-layout 校验；关闭异常为 unknown，拒绝关闭时保留草稿。
 view-pane-menu.ts: 共用原生动作按钮、竖三点及 onPaneMenu/file-menu/leaf-menu 链；文件菜单保留原版系统项。
 workspace-resize.ts: 根侧栏只改自身宽度，内部按轴拖动并保存比例；取消或重建释放全局监听。

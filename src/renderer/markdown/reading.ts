@@ -8,8 +8,13 @@
  * Reading view renderer — markdown-it with Obsidian-flavored extensions:
  * wikilinks/embeds, tags, highlights, callouts, math, footnotes, task lists.
  */
-import MarkdownIt from 'markdown-it';
-import footnote from 'markdown-it-footnote';
+import MarkdownIt, { type PluginSimple } from 'markdown-it';
+import type Token from 'markdown-it/lib/token.mjs';
+import type { RenderRule } from 'markdown-it/lib/renderer.mjs';
+import type { ReadingEnvironment, MarkdownRenderOptions, MarkdownInteractionOptions, PendingEmbed } from './reading-types.js';
+import { decorateReadingDom, addCodeBlockCopyButtons, annotateHeadings } from './reading-dom.js';
+// 上游插件声明固定指向 CJS；此处按实际插件入口连接 ESM 渲染器。
+const footnote: PluginSimple = require('markdown-it-footnote');
 import taskLists from 'markdown-it-task-lists';
 import { Desktop } from '../core/ipc.js';
 import { createIcon, setIcon } from '../core/icons.js';
@@ -34,7 +39,7 @@ const AUDIO_EXTS = ['mp3', 'wav', 'm4a', 'ogg', '3gp', 'flac', 'opus'];
 const VIDEO_EXTS = ['mp4', 'webm', 'ogv', 'mov', 'mkv'];
 const MAX_EMBED_DEPTH = 5;
 
-let mdInstance = null;
+let mdInstance: MarkdownIt|null = null;
 
 export function getMarkdownIt() {
   if (mdInstance) return mdInstance;
@@ -45,7 +50,7 @@ export function getMarkdownIt() {
     typographer: false,
   });
   md.use(footnote);
-  md.use(taskLists, { disabled: false });
+  md.use(taskLists, { enabled: false });
 
   installWikilinks(md);
   installHighlight(md);
@@ -110,7 +115,7 @@ export function getMarkdownIt() {
 // ---------------------------------------------------------------------------
 // Extensions
 // ---------------------------------------------------------------------------
-function installWikilinks(md) {
+function installWikilinks(md: MarkdownIt) {
   md.inline.ruler.before('link', 'wikilink', (state, silent) => {
     const start = state.pos;
     const src = state.src;
@@ -132,7 +137,7 @@ function installWikilinks(md) {
     return true;
   });
 
-  const renderWiki = (embed) => (tokens, idx, options, env) => {
+  const renderWiki = (embed: boolean): RenderRule => (tokens, idx, options, env: ReadingEnvironment) => {
     const token = tokens[idx];
     const inner = token.content;
     const parts = inner.split('|');
@@ -154,7 +159,7 @@ function installWikilinks(md) {
   md.renderer.rules.wikilink_embed = renderWiki(true);
 }
 
-function installHighlight(md) {
+function installHighlight(md: MarkdownIt) {
   md.inline.ruler.before('emphasis', 'highlight', (state, silent) => {
     const start = state.pos;
     if (state.src.slice(start, start + 2) !== '==') return false;
@@ -171,7 +176,7 @@ function installHighlight(md) {
   });
 }
 
-function installComments(md) {
+function installComments(md: MarkdownIt) {
   md.inline.ruler.before('emphasis', 'obsidian_comment', (state, silent) => {
     const start = state.pos;
     if (state.src.slice(start, start + 2) !== '%%') return false;
@@ -186,7 +191,7 @@ function installComments(md) {
   md.renderer.rules.obsidian_comment = () => '';
 }
 
-function installMath(md) {
+function installMath(md: MarkdownIt) {
   md.inline.ruler.after('escape', 'math_inline', (state, silent) => {
     const start = state.pos;
     if (state.src[start] !== '$') return false;
@@ -245,17 +250,18 @@ function installMath(md) {
   md.renderer.rules.math_block = (tokens, idx) => mathPlaceholder(tokens[idx].content, true);
 }
 
-function mathPlaceholder(content, display) {
+function mathPlaceholder(content: unknown, display: boolean) {
   const tag = display ? 'div' : 'span';
   const mode = display ? 'math-block' : 'math-inline';
   return `<${tag} class="math ${mode}" data-math="${escapeAttr(content)}">${escapeHtml(content)}</${tag}>`;
 }
 
-function installTags(md) {
+function installTags(md: MarkdownIt) {
   md.core.ruler.push('obsidian_tags', (state) => {
     for (const token of state.tokens) {
       if (token.type !== 'inline') continue;
       const children = token.children;
+      if (!children) continue;
       for (let i = 0; i < children.length; i++) {
         const child = children[i];
         if (child.type !== 'text') continue;
@@ -303,7 +309,7 @@ function installTags(md) {
 
 const CALLOUT_RE = /^\[!([\w-]+)\]([+-])?\s*(.*)$/;
 
-function installCallouts(md) {
+function installCallouts(md: MarkdownIt) {
   md.core.ruler.after('inline', 'callouts', (state) => {
     const tokens = state.tokens;
     for (let i = 0; i < tokens.length; i++) {
@@ -312,7 +318,7 @@ function installCallouts(md) {
       const paraOpen = tokens[i + 1];
       if (!paraOpen || paraOpen.type !== 'paragraph_open') continue;
       const inline = tokens[i + 2];
-      if (!inline || inline.type !== 'inline' || !inline.children.length) continue;
+      if (!inline || inline.type !== 'inline' || !inline.children?.length) continue;
       const first = inline.children[0];
       if (first.type !== 'text') continue;
       const m = first.content.match(CALLOUT_RE);
@@ -405,8 +411,8 @@ function fileEmbedIcon() {
   try { return createIcon('file').outerHTML; } catch (e) { return ''; }
 }
 
-function defaultCalloutTitle(type) {
-  const names = {
+function defaultCalloutTitle(type: string) {
+  const names: Record<string, string> = {
     note: 'Note', abstract: 'Abstract', summary: 'Summary', tldr: 'Tldr', info: 'Info', todo: 'Todo', tip: 'Tip',
     hint: 'Hint', important: 'Important', success: 'Success', check: 'Check', done: 'Done', question: 'Question',
     help: 'Help', faq: 'Faq', warning: 'Warning', caution: 'Caution', attention: 'Attention', failure: 'Failure',
@@ -415,8 +421,8 @@ function defaultCalloutTitle(type) {
   return names[type] || type.charAt(0).toUpperCase() + type.slice(1);
 }
 
-function calloutIcon(type) {
-  const icons = {
+function calloutIcon(type: string) {
+  const icons: Record<string, string> = {
     note: 'pencil', abstract: 'clipboard-list', info: 'info', todo: 'check-circle-2', tip: 'flame', success: 'check',
     question: 'help-circle', warning: 'alert-triangle', failure: 'x', danger: 'zap', bug: 'bug', example: 'list', quote: 'quote',
   };
@@ -430,7 +436,7 @@ function calloutIcon(type) {
 // ---------------------------------------------------------------------------
 // Path resolution
 // ---------------------------------------------------------------------------
-export function resolvePath(env, target) {
+export function resolvePath(env: ReadingEnvironment, target: string) {
   if (!target) return null;
   if (!env.app || !env.sourcePath) return target;
   let clean = target;
@@ -438,17 +444,18 @@ export function resolvePath(env, target) {
   return env.app.metadataCache.getFirstLinkpathDest(clean, env.sourcePath, true);
 }
 
-export function resolveFileUrl(app: App, target, sourcePath) {
-  const dest = app.metadataCache.getFirstLinkpathDest(target, sourcePath, true);
+export function resolveFileUrl(app: App | undefined, target: string, sourcePath: string | undefined) {
+  if (!app) return null;
+  const dest = app.metadataCache.getFirstLinkpathDest(target, sourcePath || '', true);
   const file = dest && app.vault.getFileByPath(dest);
   if (file) return app.vault.adapter.getResourcePath(file.path);
   return null;
 }
 
-function renderEmbed(env, target, subpath, alias, token, inner) {
+function renderEmbed(env: ReadingEnvironment, target: string, subpath: string, alias: string | null | undefined, token: Token, inner: string) {
   const app = env.app;
   if (!app) return `<span>${escapeHtml(target)}</span>`;
-  const dest = app.metadataCache.getFirstLinkpathDest(target, env.sourcePath, true);
+  const dest = app.metadataCache.getFirstLinkpathDest(target, env.sourcePath || '', true);
   const file = dest && app.vault.getFileByPath(dest);
   if (!file) {
     // 原版画布嵌入缺文件时落到通用附件嵌块（.file-embed.mod-empty + 「未创建，点击以创建。」）
@@ -490,7 +497,7 @@ function renderEmbed(env, target, subpath, alias, token, inner) {
     }
     // nested content is rendered asynchronously by the caller's post-process step
     const id = 'embed-' + Math.random().toString(36).slice(2);
-    pendingEmbeds.push({ id, path: file.path, subpath, depth });
+    pendingEmbeds.push({ id, kind: 'markdown', path: file.path, subpath, depth });
     // 原版阅读视图 embeds 走 inline-embed 分支（app.css 10955-10966）：标题 + 内容 + 右上角链接按钮
     return `<span class="internal-embed markdown-embed is-loaded inline-embed" data-embed-id="${id}" data-href="${escapeAttr(file.path)}">` +
       `<span class="embed-title markdown-embed-title">${escapeHtml(file.basename)}</span>` +
@@ -501,18 +508,18 @@ function renderEmbed(env, target, subpath, alias, token, inner) {
     `<span class="file-embed-title"><span class="file-embed-icon">${fileEmbedIcon()}</span>${escapeHtml(file.basename)}</span></span>`;
 }
 
-let pendingEmbeds = [];
+let pendingEmbeds: PendingEmbed[] = [];
 
 // ---------------------------------------------------------------------------
 // Main render entry
 // ---------------------------------------------------------------------------
-export async function renderMarkdown(app: App, markdown, el, sourcePath, options: Record<string, any> = {}) {
+export async function renderMarkdown(app: App, markdown: string, el: HTMLElement, sourcePath: string, options: MarkdownRenderOptions = {}) {
   const signal = options.signal;
   const cancelled = () => ({ el, cancelled: true });
   if (signal?.aborted) return cancelled();
   const stop = () => {
-    for (const math of el.querySelectorAll('.math')) cancelMath(math);
-    for (const code of el.querySelectorAll('pre > code')) cancelCodeHighlight(code);
+    for (const math of el.querySelectorAll<HTMLElement>('.math')) cancelMath(math);
+    for (const code of el.querySelectorAll<HTMLElement>('pre > code')) cancelCodeHighlight(code);
     cancelMermaidBlocks(el);
     for (const embedded of el.querySelectorAll('[data-base-embed]')) embedded._baseEmbedCleanup?.();
   };
@@ -533,7 +540,7 @@ export async function renderMarkdown(app: App, markdown, el, sourcePath, options
     for (const emb of embeds) {
       if (signal?.aborted) return cancelled();
       if (emb.kind === 'base') {
-        const mount = el.querySelector(`[data-base-embed="${emb.id}"]`);
+        const mount = el.querySelector<HTMLElement>(`[data-base-embed="${emb.id}"]`);
         const file = app.vault.getFileByPath(emb.path);
         if (mount && file) {
           mount._baseEmbedCleanup = mountBaseEmbed(app, mount, file, { viewName: emb.viewName, sourcePath: emb.sourcePath });
@@ -545,7 +552,7 @@ export async function renderMarkdown(app: App, markdown, el, sourcePath, options
         if (await waitForRender(mountCanvasEmbed(app, el, emb), signal) === RENDER_ABORTED) return cancelled();
         continue;
       }
-      const mount = el.querySelector(`[data-embed-mount="${emb.id}"]`);
+      const mount = el.querySelector<HTMLElement>(`[data-embed-mount="${emb.id}"]`);
       if (!mount) continue;
       const file = app.vault.getFileByPath(emb.path);
       if (!file) { mount.setText(''); continue; }
@@ -570,70 +577,14 @@ export async function renderMarkdown(app: App, markdown, el, sourcePath, options
   } finally { signal?.removeEventListener('abort', stop); }
 }
 
-/**
- * 原版阅读 DOM 修正（app.css 12149-12191 / 12984-13003）：
- * 1. 无序列表挂 has-list-bullet，并在每个 li 首位插入 .list-bullet（0.3em 圆点由 CSS 绘制）；
- * 2. 任务项按原版写 data-task / is-checked 并去掉 disabled，复选框因此可点击改源文本。
- */
-function decorateReadingDom(el) {
-  for (const ul of el.querySelectorAll('ul')) {
-    ul.addClass('has-list-bullet');
-    for (const li of ul.children) {
-      if (li.tagName !== 'LI') continue;
-      if (li.querySelector(':scope > .list-bullet')) continue;
-      li.insertBefore(createDiv('list-bullet'), li.firstChild);
-    }
-  }
-  for (const li of el.querySelectorAll('li.task-list-item')) {
-    const box = li.querySelector(':scope > .task-list-item-checkbox, :scope > p > .task-list-item-checkbox');
-    if (!box) continue;
-    const done = box.checked || box.hasAttribute('checked');
-    box.removeAttribute('disabled');
-    li.setAttr('data-task', done ? 'x' : ' ');
-    li.toggleClass('is-checked', done);
-  }
-  // 脚注引用与回跳同挂 .footnote-link（app.css 11091）
-  for (const a of el.querySelectorAll('.footnote-ref > a, a.footnote-backref')) a.addClass('footnote-link');
-}
-
-/** 原版 post-processor：为每个 pre > code 添加 .copy-code-button（悬停显示，点击复制）。 */
-function addCodeBlockCopyButtons(el) {
-  for (const code of el.querySelectorAll('pre > code')) {
-    const pre = code.parentElement;
-    if (!pre || pre.querySelector(':scope > .copy-code-button')) continue;
-    const button = createEl('button', { cls: 'copy-code-button' });
-    setIcon(button, 'lucide-copy');
-    button.setAttr('aria-label', tt('interface.menu.copy', '复制'));
-    button.onclick = (ev) => {
-      ev.preventDefault();
-      try { const p = navigator.clipboard.writeText(code.textContent || ''); if (p && p.catch) p.catch(() => {}); } catch (e) {}
-    };
-    pre.appendChild(button);
-  }
-}
-
-function annotateHeadings(el) {
-  const used = new Set();
-  for (const h of el.findAll('h1, h2, h3, h4, h5, h6')) {
-    const text = h.textContent;
-    let slug = text.toLowerCase().trim().replace(/[^\w\u4e00-\u9fff- ]/g, '').replace(/\s+/g, '-');
-    let candidate = slug, i = 1;
-    while (used.has(candidate)) candidate = slug + '-' + i++;
-    used.add(candidate);
-    h.setAttr('data-heading', text);
-    h.id = candidate;
-    h.addClass('heading');
-  }
-}
-
 // ---------------------------------------------------------------------------
 // Interactivity: clicks inside a rendered markdown container
 // ---------------------------------------------------------------------------
-export function attachMarkdownInteractions(app: App, container, getSourcePath, options: Record<string, any> = {}) {
-  const listen = (type, callback) => container.addEventListener(type, callback, options.signal ? { signal: options.signal } : undefined);
+export function attachMarkdownInteractions(app: App, container: HTMLElement, getSourcePath?: () => string, options: MarkdownInteractionOptions = {}) {
+  const listen = <K extends 'click' | 'contextmenu'>(type: K, callback: (event: HTMLElementEventMap[K]) => void) => container.addEventListener(type, callback, options.signal ? { signal: options.signal } : undefined);
   listen('click', async (ev) => {
     const target = ev.target;
-    if (!target || !target.closest) return;
+    if (!(target instanceof Element)) return;
 
     const tagEl = target.closest('.tag[data-tag]');
     if (tagEl) {
@@ -656,7 +607,7 @@ export function attachMarkdownInteractions(app: App, container, getSourcePath, o
     const fileEmbed = target.closest('.file-embed[data-href]');
     if (fileEmbed) {
       ev.preventDefault();
-      app.workspace.openLinkText(fileEmbed.getAttr('data-href'), getSourcePath ? getSourcePath() : '', false);
+      app.workspace.openLinkText(fileEmbed.getAttr('data-href') || '', getSourcePath ? getSourcePath() : '', false);
       return;
     }
 
@@ -674,7 +625,7 @@ export function attachMarkdownInteractions(app: App, container, getSourcePath, o
     const ext = target.closest('a.external-link');
     if (ext) {
       ev.preventDefault();
-      Desktop.openExternal(ext.getAttribute('href'));
+      Desktop.openExternal(ext.getAttribute('href') || '');
       return;
     }
 
@@ -709,14 +660,14 @@ export function attachMarkdownInteractions(app: App, container, getSourcePath, o
 
   // callout folding
   listen('click', (ev) => {
-    const fold = ev.target.closest && ev.target.closest('.callout-title .callout-fold');
+    const fold = ev.target instanceof Element ? ev.target.closest('.callout-title .callout-fold') : null;
     if (fold) {
       const callout = fold.closest('.callout');
       if (callout) {
         const collapsed = !callout.hasClass('is-collapsed');
         callout.toggleClass('is-collapsed', collapsed);
         fold.toggleClass('is-collapsed', collapsed);
-        const content = callout.querySelector(':scope > .callout-content');
+        const content = callout.querySelector<HTMLElement>(':scope > .callout-content');
         if (content) content.style.display = collapsed ? 'none' : '';
       }
     }
@@ -725,9 +676,9 @@ export function attachMarkdownInteractions(app: App, container, getSourcePath, o
   // 原版阅读视图右键：内部链接 / 外部链接 / 图片（复制图片 + 重置大小 + 删除图片）
   listen('contextmenu', (ev) => {
     const target = ev.target;
-    if (!target || !target.closest) return;
+    if (!(target instanceof Element)) return;
     const sourcePath = getSourcePath ? getSourcePath() : '';
-    const img = target.closest('.internal-embed.image-embed img, img.cm-inline-image');
+    const img = target.closest<HTMLImageElement>('.internal-embed.image-embed img, img.cm-inline-image');
     if (img) {
       ev.preventDefault();
       const menu = app.workspace.buildLinkMenu();
@@ -739,7 +690,7 @@ export function attachMarkdownInteractions(app: App, container, getSourcePath, o
     if (link) {
       ev.preventDefault();
       const menu = app.workspace.buildLinkMenu();
-      app.workspace.handleLinkContextMenu(menu, link.getAttr('data-href'), sourcePath, ev);
+      app.workspace.handleLinkContextMenu(menu, link.getAttr('data-href') || '', sourcePath, ev);
       menu.showAtMouseEvent(ev);
       return;
     }
@@ -749,7 +700,7 @@ export function attachMarkdownInteractions(app: App, container, getSourcePath, o
     if (embed) {
       ev.preventDefault();
       const menu = app.workspace.buildLinkMenu();
-      app.workspace.handleLinkContextMenu(menu, embed.getAttr('data-href'), sourcePath, ev);
+      app.workspace.handleLinkContextMenu(menu, embed.getAttr('data-href') || '', sourcePath, ev);
       menu.showAtMouseEvent(ev);
       return;
     }
@@ -757,16 +708,17 @@ export function attachMarkdownInteractions(app: App, container, getSourcePath, o
     if (ext) {
       ev.preventDefault();
       const menu = app.workspace.buildLinkMenu();
-      app.workspace.handleExternalLinkContextMenu(menu, ext.getAttribute('href'));
+      app.workspace.handleExternalLinkContextMenu(menu, ext.getAttribute('href') || '');
       menu.showAtMouseEvent(ev);
     }
   });
 }
 
-function openTagSearch(app: App, tag) {
+function openTagSearch(app: App, tag: string | null) {
   const leaf = app.workspace.getLeavesOfType('search')[0];
   if (leaf) {
-    leaf.view.setQuery && leaf.view.setQuery(`tag:${tag}`);
+    const view = leaf.view;
+    if (view && 'setQuery' in view && typeof view.setQuery === 'function') view.setQuery(`tag:${tag}`);
     app.workspace.revealLeaf(leaf);
   } else {
     app.workspace.ensureSideLeaf('search', 'left', { state: { query: `tag:${tag}` } });

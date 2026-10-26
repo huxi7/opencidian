@@ -4,6 +4,9 @@
  * [POS]: 图谱选项契约；全局视图持久化，局部视图由布局保存。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
+
+import { JsonRecord } from "../core/settings-types";
+
 /* 原版 yQ */
 export const FILTER_DEFAULTS = {
   showAttachments: false,
@@ -24,10 +27,10 @@ export const DISPLAY_DEFAULTS = {
   lineSizeMultiplier: 1,
 };
 /* 原版 CJ/EJ：滑块值∈[0,1] 与力学强度之间的映射，min 为强度下限（原版传 0.01） */
-export function strengthFromSlider(slider, min) {
+export function strengthFromSlider(slider: number, min: number) {
   return (Math.pow(min, 1 - slider) - min) / (1 - min);
 }
-export function inverseStrength(strength, min) {
+export function inverseStrength(strength: number, min: number) {
   return 1 - Math.log(strength * (1 - min) + min) / Math.log(min);
 }
 /* 原版 PJ：默认值同样以滑块单位存储 */
@@ -44,6 +47,6 @@ export function readGraphOptions(app: App) {
   const data = app.settings.readJson(GRAPH_OPTIONS_FILE);
   return data && typeof data === 'object' ? data : {};
 }
-export function writeGraphOptions(app: App, options) {
+export function writeGraphOptions(app: App, options: JsonRecord) {
   app.settings.writeJsonMerged(GRAPH_OPTIONS_FILE, options);
 }

@@ -1,6 +1,6 @@
 /**
- * [INPUT]: 依赖 ../core/i18n.js 的 t/tt；依赖 ../core/setting.js 的 SettingGroup；依赖 ../markdown/reading.js 的 renderMarkdown/stripFrontmatter。
- * [OUTPUT]: 导出 nameKey、create(app)（page-preview 核心插件实例）与 settingTab(app, containerEl)。
+ * [INPUT]: 复用 workspace-events 的悬停协议；依赖 ../core/i18n.js 的 t/tt；依赖 ../core/setting.js 的 SettingGroup；依赖 ../markdown/reading.js 的 renderMarkdown/stripFrontmatter。
+ * [OUTPUT]: 导出 HoverHandle 预览句柄契约、nameKey、create(app)（page-preview 核心插件实例）与 settingTab(app, containerEl)。
  * [POS]: plugins-core/ 的页面预览。对齐原版 p7：悬停内部链接（阅读模式 a.internal-link[data-href]、实时预览 span.cm-wikilink[data-href]）
  *        显示 .popover.hover-popover；五类来源 editor/preview/search/tab-header/graph 各自可配置是否需按住 Mod。
  *        workspace 的 hover-link 事件带 targetEl 时（搜索结果行/出链/大纲等）贴目标元素定位，指针离开即收起，
@@ -12,6 +12,9 @@
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 /* Core plugin: page-preview — hover popovers for internal links. */
+import type { HoverLinkInfo as HoverInfo, HoverPopover as HoverHandle } from '../core/workspace-events.js';
+export type { HoverPopover as HoverHandle } from '../core/workspace-events.js';
+import { EventRef } from '../core/events.js';
 import { t, tt } from '../core/i18n.js';
 import { SettingGroup } from '../core/setting.js';
 import { renderMarkdown, stripFrontmatter } from '../markdown/reading.js';
@@ -22,8 +25,8 @@ const DATA_FILE = 'page-preview.json';
 const SHOW_DELAY = 300;
 /* 原版 workspace.registerHoverLinkSource：search/editor/tab-header 为 defaultMod:true，preview 为 false。
    graph 是本复刻的第五来源（原版无），沿用 Mod 门控。 */
-const SOURCE_DEFAULT_MOD = { editor: true, preview: false, search: true, 'tab-header': true, graph: true };
-const SOURCE_LABEL = {
+const SOURCE_DEFAULT_MOD: Record<string, boolean> = { editor: true, preview: false, search: true, 'tab-header': true, graph: true };
+const SOURCE_LABEL: Record<string, [string, string]> = {
   editor: ['plugins.page-preview.label-source-editor', '编辑模式'],
   preview: ['plugins.page-preview.label-source-preview', '预览模式'],
   search: ['plugins.page-preview.label-source-search', '搜索页、反向链接列表和出链列表'],
@@ -31,13 +34,13 @@ const SOURCE_LABEL = {
   graph: ['plugins.graph-view.name', '关系图谱'],
 };
 
-let overrides = {};
+let overrides: Record<string, boolean> = {};
 let persist = () => {};
 
 /** 设置页（设置宿主经 module.settingTab(app, containerEl) 调用）。 */
-export function settingTab(app: App, containerEl) {
+export function settingTab(app: App, containerEl: HTMLElement) {
   containerEl.empty();
-  overrides = app.settings.loadPluginData(DATA_FILE, {});
+  overrides = Object.fromEntries(Object.entries(app.settings.loadPluginData(DATA_FILE, {})).filter((entry): entry is [string, boolean] => typeof entry[1] === 'boolean'));
   persist = () => app.settings.savePluginData(DATA_FILE, overrides);
   const group = new SettingGroup(containerEl);
   group.setHeading(tt('plugins.page-preview.label-require-mod', '需要按住 {{key}} 来触发页面预览的情景', { key: 'Ctrl/Cmd' }));
@@ -54,28 +57,30 @@ export function settingTab(app: App, containerEl) {
   }
 }
 
+type HoverParent = NonNullable<HoverInfo['hoverParent']>;
+interface ModWatch { anchor: HTMLElement | null; show: (() => void) | null; timer: ReturnType<typeof setTimeout> | null; onMove?: (event: MouseEvent) => void; onOver?: (event: MouseEvent) => void; }
 export function create(app: App) {
-  overrides = app.settings.loadPluginData(DATA_FILE, {});
+  overrides = Object.fromEntries(Object.entries(app.settings.loadPluginData(DATA_FILE, {})).filter((entry): entry is [string, boolean] => typeof entry[1] === 'boolean'));
   persist = () => app.settings.savePluginData(DATA_FILE, overrides);
 
-  let popoverEl = null;
-  let targetEl = null;
-  let showTimer = null;
-  let hideTimer = null;
-  let hoverHandle = null;
-  let hoverParent = null;
-  let lastPointer = null;
-  let modWatch = null;           // 悬停但未按 Mod：只在悬停期间挂临时键盘/移动监听
+  let popoverEl: HTMLDivElement | null = null;
+  let targetEl: HTMLElement | null = null;
+  let showTimer: ReturnType<typeof setTimeout> | null = null;
+  let hideTimer: ReturnType<typeof setTimeout> | null = null;
+  let hoverHandle: HoverHandle | null = null;
+  let hoverParent: HoverParent | null = null;
+  let lastPointer: { x: number; y: number } | null = null;
+  let modWatch: ModWatch | null = null;
   let keysAttached = false;      // 全局 keydown/keyup 仅在等待 Mod 或 popover 存在时挂载
-  let targetWatch = null;        // hover-link 带 targetEl 时：指针离开目标即收起
+  let targetWatch: { target: HTMLElement; onOut: (event: PointerEvent) => void } | null = null;        // hover-link 带 targetEl 时：指针离开目标即收起
 
-  const modPressed = (ev) => !!(ev && (ev.metaKey || ev.ctrlKey));
+  const modPressed = (ev: { metaKey?: boolean; ctrlKey?: boolean } | null | undefined) => !!(ev && (ev.metaKey || ev.ctrlKey));
 
-  function modRequired(source) {
+  function modRequired(source: string) {
     return Object.prototype.hasOwnProperty.call(overrides, source) ? !!overrides[source] : !!SOURCE_DEFAULT_MOD[source];
   }
 
-  function sourceOf(el) {
+  function sourceOf(el: Element) {
     if (el.closest('.markdown-source-view')) return 'editor';
     if (el.closest('.markdown-reading-view, .markdown-preview-view')) return 'preview';
     if (el.closest('.workspace-tab-header')) return 'tab-header';
@@ -83,20 +88,20 @@ export function create(app: App) {
     return 'preview';
   }
 
-  function findSourcePath(el) {
+  function findSourcePath(el: Element) {
     const leafEl = el.closest('.workspace-leaf');
     const leaf = leafEl && leafEl._leaf;
     const file = leaf && leaf.view && leaf.view.file;
     return file ? file.path : '';
   }
 
-  function linkAnchor(t) {
-    if (!t || !t.closest) return null;
-    return t.closest('a.internal-link[data-href], span.cm-wikilink[data-href]');
+  function linkAnchor(t: EventTarget | null) {
+    if (!(t instanceof Element)) return null;
+    return t.closest<HTMLElement>('a.internal-link[data-href], span.cm-wikilink[data-href]');
   }
 
   function hidePopover() {
-    clearTimeout(showTimer); clearTimeout(hideTimer);
+    clearTimeout(showTimer ?? undefined); clearTimeout(hideTimer ?? undefined);
     showTimer = null; hideTimer = null;
     cleanupModWatch();
     releaseTargetWatch();
@@ -124,19 +129,19 @@ export function create(app: App) {
 
   function cleanupModWatch() {
     if (!modWatch) { releaseKeysIfIdle(); return; }
-    clearTimeout(modWatch.timer);
-    document.removeEventListener('mousemove', modWatch.onMove, true);
-    document.removeEventListener('mouseover', modWatch.onOver, true);
+    clearTimeout(modWatch.timer ?? undefined);
+    modWatch.onMove && document.removeEventListener('mousemove', modWatch.onMove, true);
+    modWatch.onOver && document.removeEventListener('mouseover', modWatch.onOver, true);
     modWatch = null;
     releaseKeysIfIdle();
   }
 
-  function armModWatch(target) {
+  function armModWatch(target: { anchor: HTMLElement; show?: () => void }) {
     cleanupModWatch();
-    modWatch = { anchor: target.anchor || null, show: target.show || null, timer: 0 };
+    modWatch = { anchor: target.anchor || null, show: target.show || null, timer: null };
     const reset = () => {
       if (!modWatch) return;
-      clearTimeout(modWatch.timer);
+      clearTimeout(modWatch.timer ?? undefined);
       modWatch.timer = setTimeout(() => cleanupModWatch(), 2000);
     };
     modWatch.onMove = (ev) => {
@@ -145,7 +150,7 @@ export function create(app: App) {
     };
     modWatch.onOver = (ev) => {
       const anchor = modWatch && modWatch.anchor;
-      if (anchor && ev.target !== anchor && !anchor.contains(ev.target)) cleanupModWatch();
+      if (anchor && ev.target !== anchor && !anchor.contains(ev.target instanceof Node ? ev.target : null)) cleanupModWatch();
     };
     document.addEventListener('mousemove', modWatch.onMove, true);
     document.addEventListener('mouseover', modWatch.onOver, true);
@@ -154,7 +159,7 @@ export function create(app: App) {
   }
 
   /* hover-link 来源（图谱引擎）持有的句柄，对齐原版 parent.hoverPopover：onTarget/onHover + transition() */
-  function attachHandle(parent) {
+  function attachHandle(parent: HoverParent | null | undefined) {
     if (!parent) return null;
     const handle = {
       onTarget: true,
@@ -183,9 +188,9 @@ export function create(app: App) {
     hoverParent = null;
   }
 
-  function keepAlive() { clearTimeout(hideTimer); hideTimer = null; }
+  function keepAlive() { clearTimeout(hideTimer ?? undefined); hideTimer = null; }
   function scheduleHide() {
-    clearTimeout(hideTimer);
+    clearTimeout(hideTimer ?? undefined);
     hideTimer = setTimeout(hidePopover, 200);
   }
 
@@ -201,7 +206,7 @@ export function create(app: App) {
   }
 
   /* 原版 JZ.show：Gw(hoverEl, 80ms, --anim-motion-swing, opacity 0→1) */
-  function fadeIn(el) {
+  function fadeIn(el: HTMLDivElement) {
     let easing = 'cubic-bezier(0, 0.55, 0.45, 1)';
     try {
       const token = getComputedStyle(document.body).getPropertyValue('--anim-motion-swing').trim();
@@ -214,7 +219,7 @@ export function create(app: App) {
   /* 填充内容：未解析链接显示空态；已创建文件按原版嵌块结构渲染（inline title + 正文）。
      原版 E1.create：hoverEl.createDiv() → embedRegistry.load() → .markdown-embed > .markdown-embed-content，
      预览头部的 .inline-title 是文件名，正文随嵌块滚动（max-height 400）。 */
-  async function fillBody(el, href, sourcePath) {
+  async function fillBody(el: HTMLDivElement, href: string, sourcePath: string|undefined) {
     const dest = app.metadataCache.getFirstLinkpathDest(href, sourcePath);
     const file = dest ? app.vault.getFileByPath(dest) : null;
     if (!file) {
@@ -231,13 +236,13 @@ export function create(app: App) {
     const body = sizer.createDiv('markdown-content');
     try {
       const text = await app.vault.read(file);
-      await renderMarkdown(app, stripFrontmatter(text), body, file.path, { preview: true });
+      await renderMarkdown(app, stripFrontmatter(text), body, file.path, {});
     } catch (e) {
       console.error(e);
     }
   }
 
-  function position(el, anchor) {
+  function position(el: HTMLDivElement, anchor: HTMLElement) {
     const rect = anchor.getBoundingClientRect();
     const w = el.offsetWidth || 300;
     const h = el.offsetHeight || 200;
@@ -250,7 +255,7 @@ export function create(app: App) {
   }
 
   /* 图谱画布没有逐节点 DOM：按 hover-link 事件携带的鼠标坐标定位（原版 nX.position 的 staticPos 分支） */
-  function positionAtPoint(el, x, y) {
+  function positionAtPoint(el: HTMLDivElement, x: number, y: number) {
     const w = el.offsetWidth || 300;
     const h = el.offsetHeight || 200;
     const left = Math.max(8, Math.min(x, Math.max(8, window.innerWidth - w - 8)));
@@ -260,7 +265,7 @@ export function create(app: App) {
     el.style.top = Math.round(top) + 'px';
   }
 
-  async function showFor(anchor) {
+  async function showFor(anchor: HTMLElement) {
     const href = anchor.getAttribute('data-href');
     if (!href) return;
     hidePopover();
@@ -273,7 +278,7 @@ export function create(app: App) {
   }
 
   /* 原版 onHoverLink → onLinkHover：来源默认门控为需按住 Mod 时，不按 Mod 不显示 */
-  async function showForHoverLink(info) {
+  async function showForHoverLink(info: HoverInfo) {
     const parent = info.hoverParent;
     /* 延迟期间悬停已结束（合成事件、快速划过、画布重排）：不再打开预览 */
     if (parent && typeof parent.isHoveringLink === 'function' && !parent.isHoveringLink(info.linktext)) return;
@@ -296,12 +301,12 @@ export function create(app: App) {
 
   /* 原版 hoverPopover 的 onTarget/onHover 语义：指针离开目标元素即收起，
      移进浮层本身不算离开（浮层自身 hover 会 keepAlive）。 */
-  function watchTarget(target) {
+  function watchTarget(target: HTMLElement) {
     releaseTargetWatch();
-    const onOut = (ev) => {
+    const onOut = (ev: PointerEvent) => {
       const to = ev.relatedTarget;
-      if (to && popoverEl && popoverEl.contains(to)) return;
-      if (to && target.contains(to)) return;
+      if (to && popoverEl && popoverEl.contains(to instanceof Node ? to : null)) return;
+      if (to && target.contains(to instanceof Node ? to : null)) return;
       scheduleHide();
     };
     target.addEventListener('pointerout', onOut, true);
@@ -314,16 +319,16 @@ export function create(app: App) {
     targetWatch = null;
   }
 
-  const onPointerOver = (ev) => {
+  const onPointerOver = (ev: PointerEvent) => {
     const anchor = linkAnchor(ev.target);
     if (!anchor) return;
     if (anchor === targetEl) return;
-    if (popoverEl && popoverEl.contains(ev.target)) { keepAlive(); return; }
+    if (popoverEl && popoverEl.contains(ev.target instanceof Node ? ev.target : null)) { keepAlive(); return; }
     const source = sourceOf(anchor);
     /* 原版：未按 Mod 时先不弹，只挂临时监听；已悬停后再按 Mod 也能补弹 */
     if (modRequired(source) && !modPressed(ev)) { armModWatch({ anchor }); return; }
     cleanupModWatch();
-    clearTimeout(showTimer);
+    clearTimeout(showTimer ?? undefined);
     showTimer = setTimeout(() => {
       showTimer = null;
       if (anchor.isConnected) showFor(anchor).catch((e) => console.error(e));
@@ -334,14 +339,14 @@ export function create(app: App) {
      （原版 app.workspace.on('hover-link') → onLinkHover）。
      原版：来源默认门控为需按住 Mod 时，不按 Mod 不显示；有 targetEl 时可「先悬停、再按 Mod」补弹，
      图谱节点没有 targetEl，所以没有补弹路径。 */
-  const onHoverLink = (info) => {
+  const onHoverLink = (info: HoverInfo) => {
     if (!info || !info.event || !info.linktext) return;
     if (modRequired(info.source) && !modPressed(info.event)) {
       if (!info.targetEl) return;
       armModWatch({
         anchor: info.targetEl,
         show: () => {
-          clearTimeout(showTimer);
+          clearTimeout(showTimer ?? undefined);
           showTimer = setTimeout(() => {
             showTimer = null;
             showForHoverLink(info).catch((e) => console.error(e));
@@ -351,35 +356,35 @@ export function create(app: App) {
       return;
     }
     cleanupModWatch();
-    clearTimeout(showTimer);
+    clearTimeout(showTimer ?? undefined);
     showTimer = setTimeout(() => {
       showTimer = null;
       showForHoverLink(info).catch((e) => console.error(e));
     }, SHOW_DELAY);
   };
 
-  const onPointerOut = (ev) => {
+  const onPointerOut = (ev: PointerEvent) => {
     const anchor = linkAnchor(ev.target);
     if (anchor && anchor === targetEl) scheduleHide();
     if (anchor && modWatch && modWatch.anchor === anchor) {
-      const intoPopover = popoverEl && ev.relatedTarget && popoverEl.contains(ev.relatedTarget);
+      const intoPopover = popoverEl && ev.relatedTarget && popoverEl.contains(ev.relatedTarget instanceof Node ? ev.relatedTarget : null);
       if (!intoPopover) cleanupModWatch();
     }
   };
 
-  const onDocMouseDown = (ev) => {
+  const onDocMouseDown = (ev: MouseEvent) => {
     cleanupModWatch();
-    if (popoverEl && !popoverEl.contains(ev.target)) hidePopover();
+    if (popoverEl && !popoverEl.contains(ev.target instanceof Node ? ev.target : null)) hidePopover();
   };
-  const onScroll = (ev) => {
+  const onScroll = (ev: Event) => {
     cleanupModWatch();
     if (!popoverEl) return;
     // 嵌块自身在 400px 高度内滚动时不能关闭预览
     const target = ev && ev.target;
-    if (target && target.nodeType === 1 && popoverEl.contains(target)) return;
+    if (target instanceof Element && popoverEl.contains(target)) return;
     hidePopover();
   };
-  const onKeyDown = (ev) => {
+  const onKeyDown = (ev: KeyboardEvent) => {
     if (ev.key === 'Escape') { hidePopover(); return; }
     if (!modWatch) return;
     /* 原版：方向键或普通字符输入立即取消等待；Mod 按下则补弹 */
@@ -395,15 +400,15 @@ export function create(app: App) {
   };
 
   /* 松开 Mod：Mod 门控来源的预览随之收起（原版语义） */
-  const onKeyUp = (ev) => {
+  const onKeyUp = (ev: KeyboardEvent) => {
     if (ev.key !== 'Meta' && ev.key !== 'Control') return;
     if (!popoverEl) return;
     if (targetEl && modRequired(sourceOf(targetEl)) && !modPressed(ev)) hidePopover();
     else if (!targetEl && hoverParent) hidePopover();
   };
-  const onPointerMove = (ev) => { lastPointer = { x: ev.clientX, y: ev.clientY }; };
+  const onPointerMove = (ev: MouseEvent) => { lastPointer = { x: ev.clientX, y: ev.clientY }; };
 
-  let hoverLinkRef = null;
+  let hoverLinkRef: EventRef | null = null;
   return {
     onload() {
       document.addEventListener('pointerover', onPointerOver, true);

@@ -11,12 +11,17 @@ import { t } from '../core/i18n.js';
 import { Notice } from '../core/notices.js';
 import { SuggestModal, fuzzyMatch, renderHighlightedText } from '../core/suggest.js';
 import { SettingGroup } from '../core/setting.js';
-import { normalizePath } from '../core/vault.js';
+import { normalizePath, TFile, TFolder, VaultEntry } from '../core/vault.js';
 import { parseFrontmatterText } from '../core/metadata.js';
 import { applyTemplate, DEFAULT_DATE_FORMAT, DEFAULT_TIME_FORMAT } from './daily-notes.js';
+import { FrontMatter } from '../core/metadata-types.js';
+import { Command,CommandDefinition } from '../core/commands.js';
+import { Editor } from '../editor/editor.js';
 
-const moment = require('moment');
-const yaml = require('js-yaml');
+import moment from 'moment';
+import type { EventRef } from '../core/events.js';
+import { isJsonRecord } from '../core/settings-types.js';
+import * as yaml from 'js-yaml';
 
 export const nameKey = 'plugins.templates';
 
@@ -25,7 +30,7 @@ export const DEFAULT_OPTIONS = { folder: '', dateFormat: '', timeFormat: '' };
 const DATA_FILE = 'templates.json';
 
 /** 复用宿主 YAML 解析，但禁止将非法属性静默丢弃。 */
-export function parseNote(text) {
+export function parseNote(text: string) {
   const note = parseFrontmatterText(text);
   if (note.error) throw note.error;
   if (Array.isArray(note.frontmatter) || note.frontmatter instanceof Date) {
@@ -35,14 +40,14 @@ export function parseNote(text) {
 }
 
 /** 属性按键合并；列表去重，已有非空值不被 null 覆盖。 */
-export function mergeProperties(target, source) {
+export function mergeProperties(target: FrontMatter, source: FrontMatter) {
   for (const key of Object.keys(source)) {
     const before = Object.hasOwn(target, key) ? target[key] : undefined;
     const after = source[key];
     let value = after;
     if (before && after === null) continue;
     if (Array.isArray(before) && Array.isArray(after)) value = [...new Set([...before, ...after])];
-    else if (before && after && before.constructor === Object && after.constructor === Object) {
+    else if (isJsonRecord(before) && isJsonRecord(after) && before.constructor === Object && after.constructor === Object) {
       value = mergeProperties({ ...before }, after);
     }
     Object.defineProperty(target, key, { value, enumerable: true, writable: true, configurable: true });
@@ -50,7 +55,7 @@ export function mergeProperties(target, source) {
   return target;
 }
 
-export function joinNote(properties, body) {
+export function joinNote(properties: object, body: string) {
   return Object.keys(properties).length
     ? '---\n' + yaml.dump(properties, { lineWidth: -1, noRefs: true }).trimEnd() + '\n---\n' + body
     : body;
@@ -59,14 +64,14 @@ export function joinNote(properties, body) {
 /* --------------------------------------------------------------------------
  * 模板选择弹窗 — 对齐原版 bee 弹窗：列出模板文件夹内 md，按路径排序
  * ------------------------------------------------------------------------ */
-class TemplateSuggestModal extends SuggestModal {
-  declare plugin: any;
-  declare folderPath: any;
-  declare templateFiles: any;
-  declare emptyStateText: any;
+class TemplateSuggestModal extends SuggestModal<TFile> {
+  declare plugin: Templates;
+  declare folderPath: string;
+  declare templateFiles: TFile[];
+  declare emptyStateText: string;
 
   getInstructions() { return this.instructions || super.getInstructions(); }
-  constructor(app: App, plugin, folderPath) {
+  constructor(app: App, plugin: Templates, folderPath: string) {
     super(app);
     this.plugin = plugin;
     this.folderPath = folderPath;
@@ -79,12 +84,12 @@ class TemplateSuggestModal extends SuggestModal {
       { command: 'esc', purpose: t('plugins.templates.instruction-dismiss') || 'to dismiss' },
     ]);
   }
-  getItemText(file) {
+  getItemText(file: { path: string; }) {
     const prefix = this.folderPath === '/' ? '' : this.folderPath + '/';
     const rel = file.path.startsWith(prefix) ? file.path.slice(prefix.length) : file.path;
     return rel.replace(/\.md$/i, '');
   }
-  getSuggestions(query) {
+  getSuggestions(query: string) {
     if (!query) return this.templateFiles.slice();
     const out = [];
     for (const file of this.templateFiles) {
@@ -94,13 +99,13 @@ class TemplateSuggestModal extends SuggestModal {
     out.sort((a, b) => b.score - a.score);
     return out.map((o) => o.file);
   }
-  renderSuggestion(file, el, query) {
+  renderSuggestion(file: TFile, el: HTMLElement, query: string) {
     const text = this.getItemText(file);
     const match = query ? fuzzyMatch(query, text) : null;
     if (match) renderHighlightedText(el, text, match.matches);
     else el.setText(text);
   }
-  onChooseSuggestion(file) {
+  onChooseSuggestion(file: TFile) {
     this.plugin.insertTemplate(file);
   }
 }
@@ -110,10 +115,10 @@ class TemplateSuggestModal extends SuggestModal {
  * ------------------------------------------------------------------------ */
 class Templates {
   declare app: App;
-  declare options: any;
-  declare _commandIds: any[];
-  declare _ribbonEl: any;
-  declare _settingsRef: any;
+  declare options: typeof DEFAULT_OPTIONS;
+  declare _commandIds: string[];
+  declare _ribbonEl: HTMLDivElement | null;
+  declare _settingsRef: EventRef | null;
 
   constructor(app: App) {
     this.app = app;
@@ -128,7 +133,7 @@ class Templates {
     this._settingsRef = this.app.settings.on('change', () => {
       Object.assign(this.options, this.app.settings.loadPluginData(DATA_FILE, DEFAULT_OPTIONS));
     });
-    const add = (command) => {
+    const add = (command: Command|CommandDefinition) => {
       this.app.commands.addCommand(command);
       this._commandIds.push(command.id);
     };
@@ -202,10 +207,10 @@ class Templates {
       ? this.app.vault.getFolderByPath(normalizePath(this.options.folder))
       : null;
     if (!folder) return [];
-    const files = [];
-    const walk = (node) => {
+    const files: TFile[] = [];
+    const walk = (node: TFolder) => {
       for (const child of node.children || []) {
-        if (child.children) { walk(child); continue; }
+        if (child instanceof TFolder) { walk(child); continue; }
         if (child.extension === 'md') files.push(child);
       }
     };
@@ -230,7 +235,7 @@ class Templates {
    * 把模板文件内容插入当前编辑器光标处。
    * editor/file 省略时取活动 markdown 视图。返回替换后的完整文本。
    */
-  async insertTemplate(templateFile, editor, file) {
+  async insertTemplate(templateFile: TFile, editor?: Editor | null, file?: TFile | null) {
     const view = this.app.workspace.getActiveViewOfType('markdown');
     const ed = editor || (view && view.editor);
     const sourceFile = file || (view && view.file);
@@ -262,24 +267,24 @@ class Templates {
       ed.focus();
       return text;
     } catch (error) {
-      new Notice(String(error.message || error));
+      new Notice(String(error instanceof Error ? error.message : error));
       return '';
     }
   }
 
-  insertCurrentDate(editor) {
+  insertCurrentDate(editor: Editor|undefined) {
     const ed = editor || (this.app.workspace.getActiveViewOfType('markdown') || {}).editor;
     if (!ed) return;
     this.insertText(ed, moment().format(this.options.dateFormat || DEFAULT_DATE_FORMAT));
   }
 
-  insertCurrentTime(editor) {
+  insertCurrentTime(editor: Editor|undefined) {
     const ed = editor || (this.app.workspace.getActiveViewOfType('markdown') || {}).editor;
     if (!ed) return;
     this.insertText(ed, moment().format(this.options.timeFormat || DEFAULT_TIME_FORMAT));
   }
 
-  insertText(editor, text) {
+  insertText(editor: Editor, text: string) {
     const head = editor.getCursor('head');
     const offset = editor.posToOffset(head);
     editor.replaceRange(text, head);
@@ -290,7 +295,7 @@ class Templates {
 /* --------------------------------------------------------------------------
  * 设置页（设置宿主经 module.settingTab(app, containerEl) 调用）
  * ------------------------------------------------------------------------ */
-export function settingTab(app: App, containerEl) {
+export function settingTab(app: App, containerEl: HTMLElement) {
   const options = app.settings.loadPluginData(DATA_FILE, DEFAULT_OPTIONS);
   const save = () => app.settings.savePluginData(DATA_FILE, options);
   const group = new SettingGroup(containerEl);
@@ -344,7 +349,7 @@ export function create(app: App) {
     deregisterCommands() { plugin.deregisterCommands(); },
     deregister() { plugin.onunload(); },
     // public API
-    insertTemplate: (file, editor, sourceFile) => plugin.insertTemplate(file, editor, sourceFile),
+    insertTemplate: (file: TFile, editor: Editor|null|undefined, sourceFile: TFile|null) => plugin.insertTemplate(file, editor, sourceFile),
     collectTemplates: () => plugin.collectTemplates(),
     getOptions: () => plugin.options,
   };

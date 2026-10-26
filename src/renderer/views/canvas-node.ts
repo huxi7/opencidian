@@ -1,6 +1,6 @@
 /**
  * [INPUT]: 依赖 ./canvas-utils.js 的 genId/bboxOf/nearestSide/applyCanvasColor/parseCanvasColor；依赖 ../core/i18n.js 的 t；依赖 ../core/menu.js 的 Menu；依赖 ../core/keymap.js 的 IS_MAC
- * [OUTPUT]: 导出 CanvasNode（基类）、CanvasContentNode、CanvasDummyNode、parkEditorSelection；CanvasTextNode 见 canvas-text-node.js，CanvasFileNode 见 canvas-file-node.js，CanvasGroupNode 见 canvas-group-node.js，CanvasLinkNode 见 canvas-link-node.js
+ * [OUTPUT]: 导出 CanvasNode（基类）、CanvasContentNode、CanvasDummyNode、parkEditorSelection、hasCanvasEditor；CanvasTextNode 见 canvas-text-node.js，CanvasFileNode 见 canvas-file-node.js，CanvasGroupNode 见 canvas-group-node.js，CanvasLinkNode 见 canvas-link-node.js
  * [POS]: views/ 画布三件套的节点层。DOM 对齐原版：nodeEl(.canvas-node) > containerEl(.canvas-node-container) > contentEl(.canvas-node-content)
  *        + contentBlockerEl + placeholderEl；8 个 resizer（data-resize）挂在 nodeEl 上，连接点（data-side）嵌在对应边的 resizer 内（原版结构）。
  *        手柄显隐由 canvas-interactions 的悬停命中加 .mod-handles 门控：只有指针下的卡片手柄可命中，未命中卡片的手柄一律让位给框选与拖动。
@@ -20,6 +20,12 @@ import { uniqueSnapPoints, findSnapMatches } from './canvas-viewport.js';
 import { t } from '../core/i18n.js';
 import { Menu } from '../core/menu.js';
 import { IS_MAC } from '../core/keymap.js';
+import { Editor } from '../editor/editor.js';
+import { CanvasEdge, type CanvasEndpoint } from './canvas-edge.js';
+import { CanvasTextNode } from './canvas-text-node.js';
+import type { ActiveEditorHost } from '../core/commands.js';
+import type { CanvasPoint, CanvasRect, CanvasBBox } from './canvas-utils.js';
+import { CanvasNodeData } from './canvas-types.js';
 
 const RESIZE_SIDES = ['top', 'right', 'bottom', 'left', 'topright', 'bottomright', 'bottomleft', 'topleft'];
 const CONNECT_SIDES = ['top', 'right', 'bottom', 'left'];
@@ -28,7 +34,7 @@ const CONNECT_SIDES = ['top', 'right', 'bottom', 'left'];
  * 原版未编辑的卡片是阅读视图，不显示 markdown 记号。本复刻的正文是常驻 CM6 编辑器，
  * 光标所在行会把语法记号还原成源码；把只读光标停在没有记号的行上，视觉上等价于阅读视图。
  */
-export function parkEditorSelection(editor) {
+export function parkEditorSelection(editor: Editor) {
   if (!editor) return;
   const doc = editor.getDoc();
   let line = 0;
@@ -40,6 +46,10 @@ export function parkEditorSelection(editor) {
   editor.setCursor(line, 0);
 }
 
+export function hasCanvasEditor<T extends { editor: Editor | null }>(host: T): host is T & { editor: Editor } {
+  return host.editor !== null;
+}
+
 export class CanvasNode {
   onReadonlyChange(readonly: boolean): void {}
   declare contentEl: HTMLElement;
@@ -47,26 +57,26 @@ export class CanvasNode {
   declare placeholderEl: HTMLElement;
   declare canvas: import('./canvas-view.js').CanvasView;
   declare app: App;
-  declare id: any;
+  declare id: string;
   declare x: number;
   declare y: number;
   declare width: number;
   declare height: number;
   declare color: string;
-  declare unknownData: any;
+  declare unknownData: Record<string, unknown>;
   declare initialized: boolean;
   declare zIndex: number;
   declare renderedZIndex: number;
   declare aspectRatio: number;
   declare isEditing: boolean;
   declare destroyed: boolean;
-  declare isSmall: any;
+  declare isSmall: boolean | null;
   declare isContentMounted: boolean;
   declare isGroup: boolean;
-  declare nodeEl: any;
-  declare containerEl: any;
+  declare nodeEl: HTMLDivElement;
+  declare containerEl: HTMLDivElement;
 
-  constructor(canvas: import('./canvas-view.js').CanvasView, id?) {
+  constructor(canvas: import('./canvas-view.js').CanvasView, id?: string) {
     this.canvas = canvas;
     this.app = canvas.app;
     this.id = id || genId();
@@ -109,20 +119,20 @@ export class CanvasNode {
   initialize() {
     const nodeEl = this.nodeEl;
     nodeEl.addEventListener('click', (e) => this.onClick(e));
-    nodeEl.addEventListener('contextmenu', (e) => this.onContextMenu(e));
+    nodeEl.addEventListener('contextmenu', (e: MouseEvent) => this.onContextMenu(e));
     const containerEl = this.containerEl = nodeEl.createDiv('canvas-node-container');
-    containerEl.addEventListener('pointerdown', (e) => this.onPointerdown(e));
+    containerEl.addEventListener('pointerdown', (e: PointerEvent) => this.onPointerdown(e));
 
     // 8 个缩放手柄（原版 4 边 + 4 角）；连接点嵌在对应边的 resizer 里（原版结构），
     // 这样「悬停某侧手柄 ⇒ 该侧圆点显形」可以用原版那条 :hover 规则表达。
     for (const side of RESIZE_SIDES) {
       const el = nodeEl.createDiv({ cls: 'canvas-node-resizer', attr: { 'data-resize': side } });
-      el.addEventListener('pointerdown', (e) => {
+      el.addEventListener('pointerdown', (e: PointerEvent) => {
         if (e.target === el && e.pointerType === 'mouse') this.onResizePointerdown(e, side);
       });
       if (CONNECT_SIDES.includes(side)) {
         const point = el.createDiv({ cls: 'canvas-node-connection-point', attr: { 'data-side': side } });
-        point.addEventListener('pointerdown', (e) => this.onConnectionPointerdown(e, side));
+        point.addEventListener('pointerdown', (e: PointerEvent) => this.onConnectionPointerdown(e, side));
       }
     }
   }
@@ -151,7 +161,7 @@ export class CanvasNode {
     this.updateBreakpoint(this.canvas.zoom > this.canvas.zoomBreakpoint || this.isEditing);
   }
 
-  updateBreakpoint(showContent) {
+  updateBreakpoint(showContent: boolean) {
     this.isSmall = !showContent;
     if (showContent) this.mountContent();
     else this.unmountContent();
@@ -190,7 +200,7 @@ export class CanvasNode {
   }
 
   /** 原版 setColor：自定义色按 R3 归一化为 "r,g,b"；immediate 为真立刻重绘，否则交给帧渲染（拖动取色器时用）。 */
-  setColor(color, immediate) {
+  setColor(color: string, immediate?: boolean) {
     const raw = String(color || '').trim();
     const rgb = /^\s*\d+\s*,\s*\d+\s*,\s*\d+\s*$/.test(raw) ? null : parseCanvasColor(raw);
     const next = rgb ? `${rgb.r},${rgb.g},${rgb.b}` : raw;
@@ -217,13 +227,13 @@ export class CanvasNode {
    * 命令层要作用的编辑器宿主（原版 workspace.activeEditor 的形状：{ editor, file, containerEl }）。
    * 基类没有内嵌编辑器，返回 null；文本卡片重写为自身（见 CanvasTextNode.getActiveEditorHost）。
    */
-  getActiveEditorHost() { return null; }
+  getActiveEditorHost(): ActiveEditorHost | null { return null; }
 
   registerActiveEditor() { this.app.workspace.setActiveEditor(this.getActiveEditorHost()); }
 
   clearActiveEditor() { this.app.workspace.unsetActiveEditor(this.getActiveEditorHost()); }
 
-  setIsEditing(isEditing) {
+  setIsEditing(isEditing: boolean) {
     if (this.isEditing === isEditing) return;
     this.isEditing = isEditing;
     this.nodeEl.toggleClass('is-editing', isEditing);
@@ -236,13 +246,13 @@ export class CanvasNode {
 
   getBBox() { return bboxOf(this); }
 
-  moveTo(pos) {
+  moveTo(pos: CanvasPoint) {
     this.x = Math.round(pos.x);
     this.y = Math.round(pos.y);
     this.canvas.markMoved(this);
   }
 
-  moveAndResize(rect) {
+  moveAndResize(rect: CanvasRect) {
     this.x = Math.round(rect.x);
     this.y = Math.round(rect.y);
     this.width = Math.round(rect.width);
@@ -251,26 +261,26 @@ export class CanvasNode {
   }
 
   /** 原版 E5.resize：只改尺寸，位置保持（媒体宽高比回写用）。 */
-  resize(rect) {
+  resize(rect: { width: number; height: number }) {
     this.moveAndResize({ x: this.x, y: this.y, width: rect.width, height: rect.height });
   }
 
   /* ---------------------------------------------------------------- 事件 */
 
-  onPointerdown(e) {
+  onPointerdown(e: PointerEvent) {
     if (!e.isPrimary || e.button !== 0 || this.isEditing || e.pointerType !== 'mouse' || this.canvas.readonly) return;
     if (e.target instanceof Element && e.target.closest('button, input, .canvas-group-label[contenteditable="true"]')) return;
     this.canvas.handleSelectionDrag(e, this.nodeEl, this);
   }
 
-  onClick(e) {
+  onClick(e: MouseEvent) {
     if (this.isEditing) return;
     const canvas = this.canvas;
     if (e.shiftKey) canvas.toggleSelect(this);
     else canvas.selectOnly(this);
   }
 
-  onContextMenu(e) {
+  onContextMenu(e: MouseEvent) {
     if (this.isEditing || e.defaultPrevented) return;
     const canvas = this.canvas;
     if (canvas.selection.has(this) && canvas.selection.size > 1) { canvas.onSelectionContextMenu(e); return; }
@@ -281,7 +291,7 @@ export class CanvasNode {
     menu.showAtMouseEvent(e);
   }
 
-  showMenu(menu) {
+  showMenu(menu: Menu) {
     const canvas = this.canvas;
     if (!canvas.readonly) {
       menu.addItem((item) => item.setSection('danger').setTitle(t('plugins.canvas.action-remove')).setIcon('lucide-trash-2').setWarning(true)
@@ -297,7 +307,7 @@ export class CanvasNode {
    * 吸附顺序与拖动一致（先物体后网格，参考线由 getSnapping 那条链路之外的 renderSnapPoints 画），
    * 有 aspectRatio（媒体卡片）时先按比例定尺寸再按方位回推另一条边。
    */
-  onResizePointerdown(e, side) {
+  onResizePointerdown(e: PointerEvent, side: string) {
     if (!e.isPrimary || e.button !== 0) return;
     if (e.pointerType !== 'mouse' && !this.canvas.selection.has(this)) return;
     e.preventDefault();
@@ -307,7 +317,7 @@ export class CanvasNode {
     canvas.selectOnly(this);
     this.nodeEl.addClass('is-dragging');
     canvas.handleDragWithPan(e, {
-      move: (ev) => {
+      move: (ev: PointerEvent) => {
         const pos = canvas.posFromEvt(ev);
         canvas.clearSnapPoints();
         let dx = 0;
@@ -384,16 +394,16 @@ export class CanvasNode {
    * 原版 onConnectionPointerdown（app.js 3371857）把虚影与临时边都建在 oM 的工厂里：
    * 只有拖拽真正开始才建，纯点击不留 .is-dummy 蓝框，也不留悬空边。
    */
-  onConnectionPointerdown(e, side) {
+  onConnectionPointerdown(e: PointerEvent, side: string) {
     if (!e.isPrimary || e.button !== 0) return;
     const canvas = this.canvas;
     const opposite = { right: 'left', left: 'right', top: 'bottom', bottom: 'top' }[side] || 'top';
     e.preventDefault();
-    let dummy = null;
-    let edge = null;
-    let from = null;
-    let to = null;
-    let snapped = null;
+    let dummy: CanvasDummyNode | null = null;
+    let edge: CanvasEdge | null = null;
+    let from: CanvasEndpoint | null = null;
+    let to: { side: string; node: CanvasNode; end: string; }|null = null;
+    let snapped: { node: CanvasNode; side: string } | null = null;
     canvas.handleDragWithPan(e, {
       start: () => {
         // 原版：连线手柄拖动只建不挂载的几何占位，不能出现可见虚影。
@@ -404,8 +414,8 @@ export class CanvasNode {
         canvas.canvasEl.addClass('is-connecting');
         canvas.deselectAll();
       },
-      move: (ev) => {
-        if (!dummy) return;
+      move: (ev: PointerEvent) => {
+        if (!dummy || !edge || !from || !to) return;
         const pos = canvas.posFromEvt(ev);
         dummy.x = pos.x;
         dummy.y = pos.y;
@@ -418,7 +428,7 @@ export class CanvasNode {
         else edge.update(from, to);
       },
       end: () => {
-        if (!edge) return;
+        if (!edge || !from || !to) return;
         if (snapped) canvas.requestSave();
         else this.onConnectionDrop(e, edge, from, to);
       },
@@ -431,12 +441,12 @@ export class CanvasNode {
   }
 
   /** 松手在空白处：菜单选「添加卡片」建文本节点并连上，否则删除这条临时边。 */
-  onConnectionDrop(e, edge, from, to) {
+  onConnectionDrop(e: MouseEvent, edge: CanvasEdge, from: CanvasEndpoint, to: CanvasEndpoint) {
     const canvas = this.canvas;
     const menu = new Menu(this.app);
     let handled = false;
     const cleanup = () => { window.setTimeout(() => { if (!handled) canvas.removeEdge(edge); handled = false; }, 50); };
-    const attach = (node) => {
+    const attach = (node: CanvasNode) => {
       handled = true;
       edge.update(from, { side: to.side, node, end: 'arrow' });
       canvas.requestSave();
@@ -460,13 +470,13 @@ export class CanvasNode {
 
   /* ---------------------------------------------------------------- 数据 */
 
-  getData() {
-    const data = { ...this.unknownData, id: this.id, x: this.x, y: this.y, width: this.width, height: this.height };
+  getData(): CanvasNodeData {
+    const data: CanvasNodeData = { ...this.unknownData, id: this.id, x: this.x, y: this.y, width: this.width, height: this.height };
     if (this.color) data.color = this.color;
     return data;
   }
 
-  setData(data) {
+  setData(data: CanvasNodeData) {
     const { x, y, width, height, color, id, ...rest } = data;
     let moved = false;
     let dirty = false;
@@ -481,12 +491,12 @@ export class CanvasNode {
   }
 }
 
-function expandBox(box, d) {
+function expandBox(box: CanvasBBox, d: number) {
   return { minX: box.minX - d, minY: box.minY - d, maxX: box.maxX + d, maxY: box.maxY + d };
 }
 
 /** 缩放吸附候选：选中集合之外的全部节点（本复刻不做视口虚拟化，原版取视口内节点）。 */
-function candidateBoxes(canvas: import('./canvas-view.js').CanvasView, self) {
+function candidateBoxes(canvas: import('./canvas-view.js').CanvasView, self: CanvasNode) {
   const out = [];
   for (const node of canvas.nodes.values()) {
     if (node === self || canvas.selection.has(node)) continue;
@@ -501,12 +511,12 @@ function candidateBoxes(canvas: import('./canvas-view.js').CanvasView, self) {
 export class CanvasContentNode extends CanvasNode {
   declare isContentMounted: boolean;
   declare placeholderText: string;
-  declare labelEl: any;
-  declare contentEl: any;
-  declare contentBlockerEl: any;
-  declare placeholderEl: any;
+  declare labelEl: HTMLDivElement | null;
+  declare contentEl: HTMLElement;
+  declare contentBlockerEl: HTMLElement;
+  declare placeholderEl: HTMLElement;
 
-  constructor(canvas: import('./canvas-view.js').CanvasView, id) {
+  constructor(canvas: import('./canvas-view.js').CanvasView, id: string|undefined) {
     super(canvas, id);
     this.isContentMounted = false;
     this.placeholderText = '';
@@ -527,7 +537,7 @@ export class CanvasContentNode extends CanvasNode {
    * 卡片外上方的小标签（原版 D5/I5.updateNodeLabel）：受插件选项 cardLabelVisibility 控制，
    * always 常显、hover 由 .mod-hover-label 交给 CSS 悬停显隐、never 直接摘除。
    */
-  updateNodeLabel(text) {
+  updateNodeLabel(text: string) {
     const visibility = this.canvas.options.cardLabelVisibility || 'always';
     if (visibility === 'never') {
       if (this.labelEl) { this.labelEl.detach(); this.labelEl = null; }
@@ -537,15 +547,15 @@ export class CanvasContentNode extends CanvasNode {
     if (!labelEl) {
       labelEl = this.labelEl = this.nodeEl.createDiv('canvas-node-label');
       labelEl.addEventListener('click', (e) => this.onLabelClick(e));
-      labelEl.addEventListener('dblclick', (e) => this.onLabelDblClick(e));
-      labelEl.addEventListener('pointerdown', (e) => this.onPointerdown(e));
+      labelEl.addEventListener('dblclick', (e: MouseEvent) => this.onLabelDblClick(e));
+      labelEl.addEventListener('pointerdown', (e: PointerEvent) => this.onPointerdown(e));
     }
     labelEl.toggleClass('mod-hover-label', visibility === 'hover');
     labelEl.setText(text);
   }
 
   /** 原版 Ng.isModEvent：中键或 Mod 单击开新标签，Mod+Alt 开分栏。 */
-  static modLeafType(e) {
+  static modLeafType(e: MouseEvent) {
     if (e.button === 1) return 'tab';
     const mod = IS_MAC ? e.metaKey : e.ctrlKey;
     if (!mod) return false;
@@ -553,7 +563,7 @@ export class CanvasContentNode extends CanvasNode {
     return e.shiftKey ? 'window' : 'split';
   }
 
-  onLabelClick(e) {
+  onLabelClick(e: MouseEvent) {
     const leafType = CanvasContentNode.modLeafType(e);
     if (!leafType) return;
     this.openFromLabel(leafType);
@@ -571,7 +581,7 @@ export class CanvasContentNode extends CanvasNode {
   }
 
   /** 原版 n(e)：落点在这些交互控件上时不进入编辑（按钮、输入框、折叠指示器、属性面板）。 */
-  isInteractiveTarget(e) {
+  isInteractiveTarget(e: MouseEvent) {
     const target = e.target;
     if (!(target instanceof Element)) return false;
     return !!target.closest('button, input, .collapse-indicator, .interactive-child, .metadata-container');

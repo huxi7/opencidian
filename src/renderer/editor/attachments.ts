@@ -8,7 +8,7 @@
 import { normalizePath } from '../core/vault.js';
 
 /** 解析附件存放目录（返回库内相对路径，根目录为空串）。 */
-export function resolveAttachmentFolder(app: App, sourcePath) {
+export function resolveAttachmentFolder(app: App, sourcePath: string) {
   const setting = (app.settings && app.settings.appSettings.attachmentFolderPath) || '/';
   const sourceFolder = (sourcePath || '').split('/').slice(0, -1).join('/');
   if (setting === '/') return '';
@@ -20,8 +20,8 @@ export function resolveAttachmentFolder(app: App, sourcePath) {
 }
 
 /** 原版 app.getAvailablePathForAttachment：重名追加 " 1"、" 2"…。 */
-export function getAvailableAttachmentPath(app: App, folder, name, ext) {
-  const build = (suffix) => normalizePath((folder ? folder + '/' : '') + name + suffix + (ext ? '.' + ext : ''));
+export function getAvailableAttachmentPath(app: App, folder: string, name: string, ext: string) {
+  const build = (suffix: string) => normalizePath((folder ? folder + '/' : '') + name + suffix + (ext ? '.' + ext : ''));
   if (!app.vault.getAbstractFileByPath(build(''))) return build('');
   for (let i = 1; i < 1000; i += 1) {
     const candidate = build(' ' + i);
@@ -33,7 +33,7 @@ export function getAvailableAttachmentPath(app: App, folder, name, ext) {
 /** 原版命名：'Pasted image <YYYYMMDDHHmmss>'（saveAttachment 时再拼扩展名）。 */
 export function pastedImageBaseName() {
   const d = new Date();
-  const p = (n) => String(n).padStart(2, '0');
+  const p = (n: number) => String(n).padStart(2, '0');
   return 'Pasted image ' + d.getFullYear() + p(d.getMonth() + 1) + p(d.getDate()) + p(d.getHours()) + p(d.getMinutes()) + p(d.getSeconds());
 }
 
@@ -45,7 +45,7 @@ export function pastedImageBaseName() {
  * @param {ArrayBuffer|Uint8Array|string} data
  * @param {string} sourcePath 当前笔记路径（决定 './' 相对目录）
  */
-export async function saveAttachment(app: App, name, ext, data, sourcePath) {
+export async function saveAttachment(app: App, name: string, ext: string, data: ArrayBuffer | NodeJS.ArrayBufferView | string, sourcePath: string) {
   const folder = resolveAttachmentFolder(app, sourcePath);
   if (folder && !app.vault.getFolderByPath(folder)) {
     try { await app.vault.createFolder(folder); } catch (e) { /* 目录已存在 */ }

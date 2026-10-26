@@ -7,6 +7,8 @@
  */
 /* Global tooltip layer — mirrors the original app.js tooltip delegation. */
 
+interface TooltipOptions { text: string; delay?: number; placement?: string; classes?: string[]; }
+
 const GAP = 8; // 原版 iv：tooltip 与目标的间距
 const ARROW_GAP = 5; // 原版 rv：箭头半宽，用于 top 位置的纵向修正
 const DEFAULT_DELAY = 1000; // 原版 av：data-tooltip-delay 缺省
@@ -15,14 +17,14 @@ const NATURAL_MAX_WIDTH = 300; // 原版 .tooltip max-width
 const WIDE_MAX_WIDTH = 450; // 原版 .tooltip.mod-wide 的 max-width
 
 // 元素 → (el) => string：原版 setTooltipGenerator 的 WeakMap
-const generators = new WeakMap();
+const generators = new WeakMap<Element, (element: Element) => string>();
 // 元素 → 暂存的 title 原值：pointerover 移除，pointerout 还原
-const stashedTitles = new WeakMap();
+const stashedTitles = new WeakMap<Element, string>();
 
-let tooltipEl = null;
-let arrowEl = null;
-let currentTarget = null;
-let showTimer = null;
+let tooltipEl: HTMLDivElement | null = null;
+let arrowEl: HTMLDivElement | null = null;
+let currentTarget: Element | null = null;
+let showTimer: ReturnType<typeof setTimeout> | null = null;
 let lastHideAt = 0;
 
 // ---------------------------------------------------------------------------
@@ -30,27 +32,27 @@ let lastHideAt = 0;
 // ---------------------------------------------------------------------------
 
 /** 元素是否声明 --no-tooltip(原版 dv)。 */
-function suppressesTooltip(el) {
+function suppressesTooltip(el: Element) {
   const value = getComputedStyle(el).getPropertyValue('--no-tooltip').trim();
   return value === 'true';
 }
 
 /** pointerover 代理目标：自身或最近带 aria-label / title 的祖先。 */
-function tooltipCandidate(el) {
-  if (!el || !el.closest) return null;
+function tooltipCandidate(el: EventTarget | null) {
+  if (!(el instanceof Element)) return null;
   return el.closest('[aria-label]') || el.closest('[title]');
 }
 
 /** 文案：aria-label 优先，其次生成器，最后暂存的 title。 */
-function resolveTooltipText(el) {
+function resolveTooltipText(el: Element) {
   const label = el.getAttribute('aria-label') || '';
   if (label) return label;
-  if (generators.has(el)) return generators.get(el)(el) || '';
+  if (generators.has(el)) return generators.get(el)?.(el) || '';
   return stashedTitles.get(el) || '';
 }
 
 /** 抑制原生提示：暂存 title 并移除(原版的 aria-label 化，此处兼容 title 源)。 */
-function stashTitle(el) {
+function stashTitle(el: Element) {
   const title = el.getAttribute('title');
   if (!title || stashedTitles.has(el)) return;
   stashedTitles.set(el, title);
@@ -58,7 +60,7 @@ function stashTitle(el) {
   el.removeAttribute('title');
 }
 
-function restoreTitle(el) {
+function restoreTitle(el: Element) {
   const original = stashedTitles.get(el);
   if (original === undefined) return;
   stashedTitles.delete(el);
@@ -93,7 +95,7 @@ function hideTooltip() {
 }
 
 /** 延迟入口：tooltip 已显示或刚隐藏则立刻显示，否则按 delay 计时(原版 bv 头部)。 */
-function scheduleShow(el, options) {
+function scheduleShow(el: Element, options: TooltipOptions) {
   const delay = options.delay || 0;
   if (delay > 0 && (tooltipEl || Date.now() > lastHideAt + REUSE_WINDOW)) {
     cancelShow();
@@ -107,7 +109,7 @@ function scheduleShow(el, options) {
 }
 
 /** 复用条件：tooltip 已挂载且目标未变；否则重建以重放弹出的位移动画。 */
-function ensureTooltipElement(el, text, wide) {
+function ensureTooltipElement(el: Element, text: string, wide: boolean) {
   if (tooltipEl && currentTarget === el) {
     tooltipEl.setText(text);
     return;
@@ -123,7 +125,8 @@ function ensureTooltipElement(el, text, wide) {
  * 定位：默认目标下方居中；下方放不下翻到上方(mod-top)；显式 position 不翻转。
  * 横向按视口夹取，并让箭头保持在目标中心(原版 bv 尾部)。
  */
-function place(el, placement) {
+function place(el: Element, placement: string) {
+  if (!tooltipEl) return;
   const rect = el.getBoundingClientRect();
   const body = document.body;
   const viewportHeight = body.clientHeight;
@@ -185,7 +188,7 @@ function place(el, placement) {
   }
 }
 
-function show(el, options) {
+function show(el: Element, options: TooltipOptions) {
   if (!el || !el.isConnected) return;
   const text = options.text;
   if (!text) return;
@@ -194,6 +197,7 @@ function show(el, options) {
   const requested = options.placement || 'bottom';
   ensureTooltipElement(el, text, classes.includes('mod-wide'));
   currentTarget = el;
+  if (!tooltipEl) return;
 
   // 下方放不下则翻到上方(原版 popper 的 flip)；显式 top 保持在上方
   let placement = requested;
@@ -215,9 +219,9 @@ function show(el, options) {
 // 参数读取(原版 gv)
 // ---------------------------------------------------------------------------
 
-function readOptions(el, text) {
+function readOptions(el: Element, text: string) {
   let placement = 'bottom';
-  if (el.hasAttribute('data-tooltip-position')) placement = el.getAttribute('data-tooltip-position');
+  if (el.hasAttribute('data-tooltip-position')) placement = el.getAttribute('data-tooltip-position') || 'bottom';
   const classes = [];
   if (el.hasAttribute('data-tooltip-classes')) {
     for (const cls of (el.getAttribute('data-tooltip-classes') || '').split(' ')) if (cls) classes.push(cls);
@@ -234,19 +238,19 @@ function readOptions(el, text) {
 // 事件委托
 // ---------------------------------------------------------------------------
 
-function onPointerOver(ev) {
+function onPointerOver(ev: PointerEvent) {
   if (ev.pointerType !== 'mouse') return;
   const el = tooltipCandidate(ev.target);
   if (!el || suppressesTooltip(el)) return;
   // 在同一条链内部移动时不重开(原版 Ac)
-  if (ev.relatedTarget && el.contains(ev.relatedTarget)) return;
+  if (ev.relatedTarget instanceof Node && el.contains(ev.relatedTarget)) return;
   stashTitle(el);
   const text = resolveTooltipText(el);
   if (!text) return;
   scheduleShow(el, readOptions(el, text));
 }
 
-function onPointerOut(ev) {
+function onPointerOut(ev: PointerEvent) {
   if (ev.pointerType !== 'mouse') return;
   if (!currentTarget && showTimer === null) return;
   // 目标链内部的切换由下一个 pointerover 接管，此处不收起
@@ -266,14 +270,14 @@ window.addEventListener('keydown', (ev) => { if (ev.key === 'Escape') hideToolti
 // 元素级 API(原版 Cv / Ev / kv)
 // ---------------------------------------------------------------------------
 
-function applyOptions(el, options) {
+function applyOptions(el: Element, options?: Partial<TooltipOptions>) {
   const opts = options || {};
   if (opts.placement && opts.placement !== 'bottom') el.setAttribute('data-tooltip-position', opts.placement);
   if (opts.classes && opts.classes.length) el.setAttribute('data-tooltip-classes', opts.classes.join(' '));
   if (opts.delay) el.setAttribute('data-tooltip-delay', String(opts.delay));
 }
 
-function showFor(el, text, options) {
+function showFor(el: Element, text: string, options?: Partial<TooltipOptions>) {
   const opts = options || {};
   show(el, {
     text,
@@ -283,13 +287,13 @@ function showFor(el, text, options) {
   });
 }
 
-export function setTooltip(el, text, options?) {
+export function setTooltip(el: Element, text: string, options?: Partial<TooltipOptions>) {
   el.setAttribute('aria-label', text);
   applyOptions(el, options);
   if (currentTarget === el) showFor(el, text, options);
 }
 
-export function setTooltipGenerator(el, generator, options) {
+export function setTooltipGenerator(el: Element, generator: (element: Element) => string, options?: Partial<TooltipOptions>) {
   el.setAttribute('aria-label', '');
   generators.set(el, generator);
   applyOptions(el, options);
@@ -298,7 +302,7 @@ export function setTooltipGenerator(el, generator, options) {
 
 if (!Element.prototype.hasOwnProperty('setTooltip')) {
   Object.defineProperties(Element.prototype, {
-    setTooltip: { value(text, options) { setTooltip(this, text, options); return this; } },
-    setTooltipGenerator: { value(generator, options) { setTooltipGenerator(this, generator, options); return this; } },
+    setTooltip: { value(this: Element, text: string, options?: Partial<TooltipOptions>) { setTooltip(this, text, options); return this; } },
+    setTooltipGenerator: { value(this: Element, generator: (element: Element) => string, options?: Partial<TooltipOptions>) { setTooltipGenerator(this, generator, options); return this; } },
   });
 }

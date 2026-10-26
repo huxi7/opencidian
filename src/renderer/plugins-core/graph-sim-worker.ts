@@ -8,14 +8,15 @@
  */
 declare function postMessage(message: unknown, transfer?: Transferable[]): void;
 
+import type { GraphWorkerCommand } from './graph-types.js';
 import { ForceKernel, ALPHA_MIN } from './graph-force.js';
 
 const FRAME_MS = 1000 / 60; // 原版 X
 const kernel = new ForceKernel();
-let timer = null;
+let timer: NodeJS.Timeout|null = null;
 
 /* SAB 探测（原版：try { new SharedArrayBuffer(1); postMessage({ignore:true,shared}) } 成功即用 SAB） */
-let sharedBuffer = null;
+let sharedBuffer: SharedArrayBuffer|null = null;
 let useShared = false;
 if (typeof SharedArrayBuffer === 'function') {
   try {
@@ -28,9 +29,9 @@ if (typeof SharedArrayBuffer === 'function') {
 }
 
 /** 填位置：ids[i] 对应 buffer 的 [2i, 2i+1]（原版 L）。 */
-function fillPositions(buffer) {
+function fillPositions(buffer: ArrayBuffer|SharedArrayBuffer) {
   const positions = new Float32Array(buffer);
-  const ids = new Array(kernel.nodes.length);
+  const ids = new Array<string>(kernel.nodes.length);
   for (let i = 0; i < kernel.nodes.length; i += 1) {
     const node = kernel.nodes[i];
     ids[i] = node.id;
@@ -73,7 +74,7 @@ function frame() {
 }
 
 /* 原版 onmessage 逐条复刻 */
-self.onmessage = (event) => {
+self.onmessage = (event: MessageEvent<GraphWorkerCommand>) => {
   const data = event.data || {};
   if (data.nodes) kernel.setNodes(data.nodes);
   if (data.links) kernel.setLinks(data.links);

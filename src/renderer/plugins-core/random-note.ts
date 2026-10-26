@@ -10,13 +10,13 @@ import { tt } from '../core/i18n.js';
 export const nameKey = 'plugins.random-note';
 
 export function create(app: App) {
-  let ribbonEl = null;
+  let ribbonEl: HTMLDivElement|null = null;
 
-  async function openRandomNote(ev) {
+  async function openRandomNote(ev: Event | Pick<MouseEvent, 'metaKey' | 'ctrlKey'> | undefined) {
     const files = app.vault.getMarkdownFiles().filter(file => !app.metadataCache.isUserIgnored(file.path));
     if (!files.length) return;
     const file = files[Math.floor(Math.random() * files.length)];
-    const mod = !!(ev && (ev.metaKey || ev.ctrlKey));
+    const mod = !!(ev && (('metaKey' in ev && ev.metaKey) || ('ctrlKey' in ev && ev.ctrlKey)));
     return app.workspace.openFile(file, { newLeaf: mod });
   }
 

@@ -9,19 +9,28 @@
 import { t } from './i18n.js';
 import { corePluginModules } from './plugins-registry.js';
 
+interface CorePluginInstance {
+  onload?(): void | Promise<void>;
+  onunload?(): unknown | Promise<unknown>;
+  deregisterCommands?(): void;
+}
 interface CorePluginModule {
   nameKey?: string;
   name?: string;
   description?: string;
-  create(app: App): Record<string, any>;
-  [capability: string]: any;
+  create(app: App): CorePluginInstance;
+  deregister?(app: App): void;
+  settingTab?(app: App, containerEl: HTMLElement): void;
 }
+interface PluginEntry<Instance = CorePluginInstance> {
+  manifest: { id: string; name: string; description: string; module: CorePluginModule };
+  instance: Instance | null; enabled: boolean;
+}
+type Registry = typeof corePluginModules;
+type PluginInstance<Id extends keyof Registry> = ReturnType<Registry[Id]['create']>;
 export class PluginManager {
-  declare app: App;
-  declare internalPlugins: Record<string, {
-    manifest: { id: string; name: string; description: string; module: CorePluginModule };
-    instance: Record<string, any>; enabled: boolean;
-  }>;
+  app: App;
+  internalPlugins: Record<string, PluginEntry>;
 
   constructor(app: App) {
     this.app = app;
@@ -51,7 +60,7 @@ export class PluginManager {
     }
   }
 
-  async enableInternalPlugin(id) {
+  async enableInternalPlugin(id: string) {
     const entry = this.internalPlugins[id];
     if (!entry || entry.enabled) return true;
     try {
@@ -70,7 +79,7 @@ export class PluginManager {
     }
   }
 
-  async disableInternalPlugin(id) {
+  async disableInternalPlugin(id: string) {
     const entry = this.internalPlugins[id];
     if (!entry || !entry.enabled) return true;
     try {
@@ -93,7 +102,9 @@ export class PluginManager {
     }
   }
 
-  getInternalPlugin(id) { return this.internalPlugins[id]; }
+  getInternalPlugin<Id extends keyof Registry>(id: Id): PluginEntry<PluginInstance<Id>> | undefined;
+  getInternalPlugin(id: string): PluginEntry | undefined;
+  getInternalPlugin(id: string): PluginEntry | undefined { return this.internalPlugins[id]; }
 }
 
 async function loadCoreModules(app: App): Promise<Record<string, CorePluginModule>> {

@@ -6,49 +6,55 @@
  *        悬停预览走 workspace 的 hover-link 事件（source=graph、targetEl=null），需按住 Mod 才弹。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
+import type { GraphColorQuery, GraphColor, GraphData, GraphOptions } from './graph-types.js';
+import type { GraphRenderer } from '../views/graph-renderer.js';
+import type { GraphViewBase } from '../views/graph-view.js';
 import { t } from '../core/i18n.js';
 import { setIcon } from '../core/icons.js';
 import { Menu } from '../core/menu.js';
 import { debounce } from '../core/events.js';
 import { has, clamp, isModEvent } from './graph-utils.js';
-import { FILTER_DEFAULTS } from './graph-options.js';
+import { FILTER_DEFAULTS, DISPLAY_DEFAULTS, FORCE_DEFAULTS } from './graph-options.js';
 import { GraphQuery } from './graph-query.js';
 import { buildGraphData, filterLocalGraph, removeOrphans } from './graph-data.js';
 import { FilterSection, ColorGroupSection, DisplaySection, ForceSection } from './graph-controls.js';
+import type { TFile, VaultEntry } from '../core/vault.js';
+import { SearchView } from './global-search.js';
+import type { WorkspaceLeaf } from '../core/workspace-model.js';
 
-const KEYBOARD_ACTIONS = { 38: 'up', 40: 'down', 37: 'left', 39: 'right', 187: 'zoomin', 189: 'zoomout' };
+const KEYBOARD_ACTIONS: Record<number, string> = { 38: 'up', 40: 'down', 37: 'left', 39: 'right', 187: 'zoomin', 189: 'zoomout' };
 
 export class GraphEngine {
   declare app: App;
-  declare view: any;
-  declare renderer: any;
-  declare isLocal: any;
-  declare options: any;
-  declare searchQueries: any;
-  declare fileFilter: any;
+  declare view: GraphViewBase;
+  declare renderer: GraphRenderer;
+  declare isLocal: boolean;
+  declare options: GraphOptions;
+  declare searchQueries: Array<{ query: GraphQuery; color: GraphColor | null }> | null;
+  declare fileFilter: Record<string, boolean | GraphColor>;
   declare hasFilter: boolean;
-  declare queue: any;
+  declare queue: { timer: ReturnType<typeof setTimeout> | null } | null;
   declare progression: number;
   declare progressionSpeed: number;
   declare currentFocusFile: string;
   declare destroyed: boolean;
   declare animationId: number;
-  declare lastHoverLink: any;
-  declare hoverPopover: any;
-  declare onOptionsChange: any;
-  declare requestUpdateSearch: any;
-  declare controlsEl: any;
+  declare lastHoverLink: string | null;
+  declare hoverPopover: import('./page-preview.js').HoverHandle | null;
+  declare onOptionsChange: import('../core/events.js').Debounced<[], unknown, void>;
+  declare requestUpdateSearch: import('../core/events.js').Debounced<[], unknown, void>;
+  declare controlsEl: HTMLDivElement;
   declare filterOptions: FilterSection;
   declare colorGroupOptions: ColorGroupSection;
   declare displayOptions: DisplaySection;
   declare forceOptions: ForceSection;
 
-  constructor(app: App, view, renderer, isLocal) {
+  constructor(app: App, view: GraphViewBase, renderer: GraphRenderer, isLocal: boolean) {
     this.app = app;
     this.view = view;
     this.renderer = renderer;
     this.isLocal = isLocal;
-    this.options = { ...FILTER_DEFAULTS };
+    this.options = { ...FILTER_DEFAULTS, ...DISPLAY_DEFAULTS, ...FORCE_DEFAULTS };
     this.searchQueries = null;
     this.fileFilter = {};
     this.hasFilter = false;
@@ -62,30 +68,30 @@ export class GraphEngine {
     this.hoverPopover = null;
     this.onOptionsChange = debounce(() => { if (!this.destroyed) this.view.onOptionsChange(); }, 100, true);
     this.requestUpdateSearch = debounce(() => this.updateSearch(), 250, true);
-    renderer.onNodeClick = (ev, id, type) => this.onNodeClick(ev, id, type);
-    renderer.onNodeRightClick = (ev, id, type) => this.onNodeRightClick(ev, id, type);
-    renderer.onNodeHover = (ev, id, type) => this.onNodeHover(ev, id, type);
+    renderer.onNodeClick = (ev: MouseEvent, id: string, type: string) => this.onNodeClick(ev, id, type);
+    renderer.onNodeRightClick = (ev: MouseEvent, id: string, type: string) => this.onNodeRightClick(ev, id, type);
+    renderer.onNodeHover = (ev, id, type: string) => this.onNodeHover(ev, id, type);
     renderer.onNodeUnhover = () => this.onNodeUnhover();
     const controlsEl = this.controlsEl = renderer.containerEl.createDiv('graph-controls');
     controlsEl.dataset.ignoreSwipe = 'true';
-    controlsEl.createDiv('clickable-icon graph-controls-button mod-close', (el) => {
+    controlsEl.createDiv('clickable-icon graph-controls-button mod-close', (el: HTMLDivElement) => {
       setIcon(el, 'x');
       el.setAttr('aria-label', t('interface.menu.close'));
       el.addEventListener('click', () => { controlsEl.addClass('is-close'); this.onOptionsChange(); });
     });
-    controlsEl.createDiv('clickable-icon graph-controls-button mod-open', (el) => {
+    controlsEl.createDiv('clickable-icon graph-controls-button mod-open', (el: HTMLDivElement) => {
       setIcon(el, 'settings');
       el.setAttr('aria-label', t('plugins.graph-view.tooltip-open-graph-settings'));
       el.addEventListener('click', () => { controlsEl.removeClass('is-close'); this.onOptionsChange(); });
     });
     if (!isLocal) {
-      controlsEl.createDiv('clickable-icon graph-controls-button mod-animate', (el) => {
+      controlsEl.createDiv('clickable-icon graph-controls-button mod-animate', (el: HTMLDivElement) => {
         setIcon(el, 'wand-2');
         el.setAttr('aria-label', t('plugins.graph-view.tooltip-start-timelapse-animation'));
         el.addEventListener('click', () => this.renderProgression());
       });
     }
-    controlsEl.createDiv('clickable-icon graph-controls-button mod-reset', (el) => {
+    controlsEl.createDiv('clickable-icon graph-controls-button mod-reset', (el: HTMLDivElement) => {
       setIcon(el, 'rotate-ccw');
       el.setAttr('aria-label', t('interface.tooltip-restore-default-settings'));
       el.addEventListener('click', () => {
@@ -126,7 +132,7 @@ export class GraphEngine {
     view.registerInterval(window.setInterval(() => {
       if (this.renderer.targetScale !== lastScale) { lastScale = this.renderer.targetScale; this.onOptionsChange(); }
     }, 2000));
-    const onKey = (ev) => {
+    const onKey = (ev: KeyboardEvent) => {
       const renderer = this.renderer;
       renderer.keyboardActions.shift = ev.shiftKey;
       const down = ev.type === 'keydown';
@@ -150,7 +156,7 @@ export class GraphEngine {
     this.destroyed = true;
     this.animationId++;
     this.progression = 0;
-    if (this.queue) clearTimeout(this.queue.timer);
+    if (this.queue) this.queue.timer && clearTimeout(this.queue.timer);
     this.queue = null;
     this.filterOptions.stopSearch();
     /* 关闭视图时同步收起悬停预览（预览由 page-preview 插件持有） */
@@ -163,7 +169,7 @@ export class GraphEngine {
 
   updateSearch() {
     if (this.destroyed) return;
-    const queries = [];
+    const queries: GraphColorQuery[] = [];
     const search = this.filterOptions.search.getValue();
     if (search) queries.push({ query: search, color: null });
     this.setQuery(queries.concat(this.colorGroupOptions.getColoredQueries()));
@@ -171,12 +177,12 @@ export class GraphEngine {
   }
 
   /* 原版 setQuery：丢弃空检索式；非颜色检索式决定 hasFilter；分块扫描文件后重绘 */
-  setQuery(queries) {
+  setQuery(queries: GraphColorQuery[]) {
     if (this.destroyed) return;
-    if (this.queue) { clearTimeout(this.queue.timer); this.queue = null; }
+    if (this.queue) { this.queue.timer && clearTimeout(this.queue.timer); this.queue = null; }
     this.filterOptions.stopSearch();
     this.hasFilter = false;
-    let list = [];
+    let list: Array<{query: GraphQuery; color: GraphColorQuery['color']}> | null = [];
     for (const entry of queries) {
       const query = new GraphQuery(entry.query);
       if (!query.matcher) continue;
@@ -186,9 +192,9 @@ export class GraphEngine {
     if (list.length === 0) list = null;
     this.searchQueries = list;
     if (!list) { this.fileFilter = {}; this.render(); return; }
-    const fileFilter = this.fileFilter = {};
+    const fileFilter: Record<string, boolean | GraphColor> = this.fileFilter = {};
     const files = this.app.vault.getFiles();
-    const queue = this.queue = { timer: null };
+    const queue = this.queue = { timer: null as ReturnType<typeof setTimeout> | null };
     let index = 0;
     this.filterOptions.startSearch();
     const step = () => {
@@ -215,7 +221,7 @@ export class GraphEngine {
     queue.timer = setTimeout(step, 0);
   }
 
-  fileText(file) {
+  fileText(file: TFile) {
     const cache = this.app.metadataCache.getCache(file.path);
     return (cache && cache._rawText) || '';
   }
@@ -230,14 +236,14 @@ export class GraphEngine {
     const fileFilter = this.fileFilter;
     if (!this.isLocal || options.localFile) {
       if (this.isLocal) this.progression = 0;
-      const nodeFilter = (path, type) => {
+      const nodeFilter = (path: string, type: string) => {
         if (!searchQueries) return true;
         if (type === '') return path === options.localFile || (has(fileFilter, path) ? fileFilter[path] : !this.hasFilter);
         if (type === 'tag') return searchQueries.every((entry) => !!entry.color || !!entry.query.matchTag(path));
         if (type === 'attachment') return searchQueries.every((entry) => !!entry.color || !!entry.query.matchFilepath(path));
         return true;
       };
-      let data: { nodes: Record<string, any>; numLinks?: number; weights?: Record<string, number> } = buildGraphData(app.metadataCache, app.vault, options, nodeFilter, this.progression);
+      let data: GraphData = buildGraphData(app.metadataCache, app.vault, options, nodeFilter, this.progression);
       const numLinks = data.numLinks;
       if (options.localFile) data = filterLocalGraph(data, options);
       if (!options.showOrphans) removeOrphans(data);
@@ -278,21 +284,21 @@ export class GraphEngine {
     }
   }
 
-  onFileChanged(file) { if (file.extension !== 'md') this.recomputeFile(); }
+  onFileChanged(file: VaultEntry) { if (!('extension' in file) || file.extension !== 'md') this.recomputeFile(); }
 
   recomputeFile() {
     if (this.searchQueries) this.updateSearch();
     else this.render();
   }
 
-  onFileOpen(file) {
+  onFileOpen(file: TFile|null) {
     const path = file ? file.path : '';
     if (path === this.currentFocusFile) return;
     this.currentFocusFile = path;
     this.render();
   }
 
-  onNodeClick(ev, id, type) {
+  onNodeClick(ev: MouseEvent, id: string, type: string) {
     if (type !== 'tag') return this.app.workspace.openLinkText(id, '', ev?.button === 1 || isModEvent(ev));
     else this.openTagSearch(id);
   }
@@ -300,7 +306,7 @@ export class GraphEngine {
   /* 原版右键菜单：分节表 title/open/action/info/info.copy/view/view.linked/system/''/danger，
      view.linked 是子菜单（打开关联视图），条目依次为标题（短文件名）/ 在新标签页中打开 /
      file-menu 事件贡献项 / 删除文件。file-menu 事件本项目由核心层与图谱插件各贡献一段。 */
-  onNodeRightClick(ev, id, type) {
+  onNodeRightClick(ev: MouseEvent, id: string, type: string) {
     if (type === 'tag') { this.openTagSearch(id); return; }
     const app = this.app;
     const path = app.metadataCache.getFirstLinkpathDest(id, '');
@@ -323,7 +329,7 @@ export class GraphEngine {
   /* 原版 onNodeHover：文件、焦点与附件节点经 workspace 的 hover-link 事件请求页面预览；
      标签与未解析节点不触发。同一节点的预览仍在时只续命，不重复请求。
      原版载荷只有 event/source/hoverParent/targetEl/linktext 五项，没有 sourcePath。 */
-  onNodeHover(ev, id, type) {
+  onNodeHover(ev: Pick<MouseEvent, 'clientX' | 'clientY'>, id: string, type: string) {
     this.onNodeUnhover();
     if (!(ev instanceof MouseEvent)) return;
     if (!(type === '' || type === 'focused' || type === 'attachment')) return;
@@ -346,17 +352,16 @@ export class GraphEngine {
   }
 
   /* page-preview 在延迟显示前回调本方法：悬停已结束时不再打开预览 */
-  isHoveringLink(id) {
+  isHoveringLink(id: string) {
     const node = this.renderer.getHighlightNode();
     return !!node && node.id === id;
   }
 
   /* 标签节点点击：原版调用 global-search 插件的 openGlobalSearch("tag:xxx") */
-  openTagSearch(tag) {
-    const open = (leaf) => {
+  openTagSearch(tag: string) {
+    const open = (leaf: WorkspaceLeaf) => {
       const view = leaf && leaf.view;
-      if (view && view.setQuery) view.setQuery('tag:' + tag);
-      if (view && view.focus) view.focus();
+      if (view instanceof SearchView) { view.setQuery('tag:' + tag); view.focus(); }
     };
     const leaves = this.app.workspace.getLeavesOfType('search');
     if (leaves.length) { this.app.workspace.revealLeaf(leaves[0]); open(leaves[0]); return; }
@@ -364,7 +369,7 @@ export class GraphEngine {
   }
 
   getOptions() {
-    const options: Record<string, any> = {};
+    const options: Record<string, unknown> = {};
     this.filterOptions.getOptions(options);
     this.colorGroupOptions.getOptions(options);
     this.displayOptions.getOptions(options);
@@ -374,7 +379,7 @@ export class GraphEngine {
     return options;
   }
 
-  setOptions(options) {
+  setOptions(options: Record<string, unknown>) {
     if (!options) return;
     this.filterOptions.setOptions(options);
     this.colorGroupOptions.setOptions(options);

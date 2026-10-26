@@ -12,18 +12,20 @@ import { Setting, SettingGroup } from '../core/setting.js';
 import { t } from '../core/i18n.js';
 import { setIcon } from '../core/icons.js';
 import { hotkeyToString } from '../core/keymap.js';
+import type { Command } from '../core/commands.js';
+import { JsonRecord } from '../core/settings-types.js';
 
 export const nameKey = 'plugins.command-palette';
 
 /** 置顶命令持久化：.obsidian/command-palette.json（与原版核心插件数据文件同一位置）。 */
 const DATA_FILE = 'command-palette.json';
-const DEFAULT_OPTIONS = { pinned: [] };
+const DEFAULT_OPTIONS: { pinned: string[] } = { pinned: [] };
 
 function loadOptions(app: App) {
   const data = app.settings.loadPluginData(DATA_FILE, DEFAULT_OPTIONS);
   return { pinned: Array.isArray(data.pinned) ? data.pinned.filter((id) => typeof id === 'string') : [] };
 }
-function saveOptions(app: App, options) {
+function saveOptions(app: App, options: JsonRecord) {
   app.settings.savePluginData(DATA_FILE, options);
 }
 
@@ -41,9 +43,9 @@ function availableCommands(app: App) {
   });
 }
 
-class CommandPaletteModal extends SuggestModal {
+class CommandPaletteModal extends SuggestModal<Command> {
   declare limit: number;
-  declare emptyStateText: any;
+  declare emptyStateText: string;
 
   constructor(app: App) {
     super(app);
@@ -61,16 +63,16 @@ class CommandPaletteModal extends SuggestModal {
       { command: 'esc', purpose: t('plugins.command-palette.instruction-dismiss') || 'to dismiss' },
     ];
   }
-  getSuggestions(query) {
+  getSuggestions(query: string) {
     const available = availableCommands(this.app);
     if (!query) {
       // 原版顺序：置顶命令 → 最近使用 → 其余
       const pinnedIds = loadOptions(this.app).pinned;
-      const pinned = pinnedIds.map((id) => available.find((c) => c.id === id)).filter(Boolean);
+      const pinned = pinnedIds.map((id) => available.find((c) => c.id === id)).filter((cmd): cmd is Command => !!cmd);
       const pinnedSet = new Set(pinned.map((c) => c.id));
       const recent = (this.app._recentCommands || []).filter((id) => !pinnedSet.has(id));
       const recentSet = new Set(recent);
-      const recents = recent.map((id) => available.find((c) => c.id === id)).filter(Boolean);
+      const recents = recent.map((id) => available.find((c) => c.id === id)).filter((cmd): cmd is Command => !!cmd);
       const others = available.filter((c) => !recentSet.has(c.id) && !pinnedSet.has(c.id));
       return [...pinned, ...recents, ...others];
     }
@@ -84,7 +86,7 @@ class CommandPaletteModal extends SuggestModal {
     out.sort((a, b) => b.score - a.score);
     return out.slice(0, 200).map((o) => o.cmd);
   }
-  renderSuggestion(cmd, el) {
+  renderSuggestion(cmd: Command, el: HTMLDivElement) {
     // 原版 app.css 9003-9045：命令项为 .suggestion-item.mod-complex——标题进 .suggestion-content 列，
     // 热键是 item 的直接子元素，同一行靠右显示
     el.toggleClass('mod-complex', true);
@@ -99,7 +101,7 @@ class CommandPaletteModal extends SuggestModal {
       el.createDiv({ cls: 'suggestion-hotkey' }, (h) => h.setText(hotkeyToString(hks[0])));
     }
   }
-  onChooseSuggestion(cmd) {
+  onChooseSuggestion(cmd: Command) {
     if (cmd.id) {
       this.app._recentCommands = [cmd.id, ...(this.app._recentCommands || []).filter((id) => id !== cmd.id)].slice(0, 20);
       this.app.commands.executeCommandById(cmd.id);
@@ -108,12 +110,12 @@ class CommandPaletteModal extends SuggestModal {
 }
 
 /** 添加置顶命令的选择器（设置页 + 号入口）。 */
-class PinCommandModal extends SuggestModal {
-  declare onChoose: any;
+class PinCommandModal extends SuggestModal<Command> {
+  declare onChoose: (id: string) => void;
   declare limit: number;
-  declare emptyStateText: any;
+  declare emptyStateText: string;
 
-  constructor(app: App, onChoose) {
+  constructor(app: App, onChoose: (id: string) => void) {
     super(app);
     this.onChoose = onChoose;
     this.limit = 50;
@@ -122,7 +124,7 @@ class PinCommandModal extends SuggestModal {
   getPlaceholder() {
     return t('plugins.command-palette.prompt-add-command') || 'Select a command...';
   }
-  getSuggestions(query) {
+  getSuggestions(query: string) {
     const commands = availableCommands(this.app);
     if (!query) return commands.slice(0, 200);
     const out = [];
@@ -133,10 +135,10 @@ class PinCommandModal extends SuggestModal {
     out.sort((a, b) => b.score - a.score);
     return out.slice(0, 200).map((o) => o.cmd);
   }
-  renderSuggestion(cmd, el) {
+  renderSuggestion(cmd: Command, el: HTMLDivElement) {
     el.setText(cmd.name || cmd.id);
   }
-  onChooseSuggestion(cmd) {
+  onChooseSuggestion(cmd: Command) {
     if (cmd && this.onChoose) this.onChoose(cmd.id);
   }
 }
@@ -145,11 +147,11 @@ class PinCommandModal extends SuggestModal {
  * 原版核心插件设置页：置顶命令。
  * 结构：SettingGroup 标题「置顶命令」+ 标题行右侧加号 + 命令行（行尾移除钮）/ 空态行。
  */
-export function settingTab(app: App, containerEl) {
+export function settingTab(app: App, containerEl: HTMLElement) {
   const options = loadOptions(app);
   const group = new SettingGroup(containerEl);
   group.setHeading(t('plugins.command-palette.label-pinned-commands') || 'Pinned commands');
-  const nameOf = (id) => {
+  const nameOf = (id: string) => {
     const cmd = app.commands.commands[id];
     return cmd ? cmd.name : id;
   };
@@ -195,7 +197,7 @@ export function settingTab(app: App, containerEl) {
 }
 
 export function create(app: App) {
-  let ribbonEl = null;
+  let ribbonEl: HTMLDivElement|null = null;
   return {
     onload() {
       if (ribbonEl) return;

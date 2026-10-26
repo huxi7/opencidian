@@ -7,13 +7,14 @@
 /* Media views — image / audio / video / pdf. */
 import { View } from '../core/view.js';
 import { setIcon } from '../core/icons.js';
+import type { TFile } from '../core/vault.js';
+import { WorkspaceLeaf } from '../core/workspace-model.js';
 
 class MediaView extends View {
-  declare type: any;
-  declare file: any;
-  declare icon: any;
+  declare type: string;
+    declare icon: string;
 
-  constructor(leaf, type) {
+  constructor(leaf: WorkspaceLeaf, type: string) {
     super(leaf);
     this.type = type;
     this.file = null;
@@ -23,16 +24,16 @@ class MediaView extends View {
   getDisplayText() { return this.file ? this.file.name : this.type; }
   getIcon() { return this.icon; }
   getState() { return { file: this.file ? this.file.path : undefined }; }
-  getResourcePath() { return this.app.vault.adapter.getResourcePath(this.file.path); }
+  getResourcePath() { return this.app.vault.adapter.getResourcePath(this.file?.path || ''); }
 
-  async setState(state) {
-    if (state && state.file) {
-      this.file = this.app.vault.getFileByPath(state.file) || this.app.vault.getAbstractFileByPath(state.file);
+  async setState(state: Record<string,unknown>) {
+    if (state && typeof state.file === 'string') {
+      this.file = this.app.vault.getFileByPath(state.file);
       this.render();
     }
   }
   async onOpen() { this.render(); }
-  onLoadFile(file) { this.file = file; this.render(); }
+  onLoadFile(file: TFile) { this.file = file; this.render(); }
   render() {
     this.contentEl.empty();
     if (!this.file) {
@@ -57,24 +58,24 @@ class MediaView extends View {
       frame.src = url;
     }
   }
-  _showError(container, msg) {
+  _showError(container: HTMLDivElement, msg: string) {
     container.empty();
     const err = container.createDiv('media-error');
     setIcon(err.createDiv('media-error-icon'), 'file-x');
     err.createDiv('media-error-message', (el) => el.setText(msg));
   }
-  _fillViewActions(actions) {}
+  _fillViewActions(actions: HTMLElement) {}
 }
 
 export class ImageView extends MediaView {
-  constructor(leaf) { super(leaf, 'image'); }
+  constructor(leaf: WorkspaceLeaf) { super(leaf, 'image'); }
 }
 export class VideoView extends MediaView {
-  constructor(leaf) { super(leaf, 'video'); }
+  constructor(leaf: WorkspaceLeaf) { super(leaf, 'video'); }
 }
 export class AudioView extends MediaView {
-  constructor(leaf) { super(leaf, 'audio'); }
+  constructor(leaf: WorkspaceLeaf) { super(leaf, 'audio'); }
 }
 export class PdfView extends MediaView {
-  constructor(leaf) { super(leaf, 'pdf'); }
+  constructor(leaf: WorkspaceLeaf) { super(leaf, 'pdf'); }
 }

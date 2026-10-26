@@ -10,36 +10,37 @@ import { Notice } from '../core/notices.js';
 import { setIcon } from '../core/icons.js';
 import { saveAttachment } from '../editor/attachments.js';
 
-const moment = require('moment');
+import moment from 'moment';
 
 export const nameKey = 'plugins.audio-recorder';
 
 const MP4_MIME = 'audio/mp4';
 import fixWebmDuration from 'fix-webm-duration';
+import { Command,CommandDefinition } from '../core/commands.js';
 
 const WEBM_MIME = 'audio/webm;codecs="opus"';
 const MIC_ICON = 'lucide-mic';
 
-const MSG_ACCESS_DENIED = ['plugins.audio-recorder.msg-access-denied',
+const MSG_ACCESS_DENIED: [string, string] = ['plugins.audio-recorder.msg-access-denied',
   'Microphone access was denied, please enable it from the preference pane.'];
-const MSG_PENDING_GRANT = ['plugins.audio-recorder.msg-pending-grant',
+const MSG_PENDING_GRANT: [string, string] = ['plugins.audio-recorder.msg-pending-grant',
   'Please grant microphone permission to start recording.'];
-const MSG_NO_MICROPHONE = ['plugins.audio-recorder.msg-no-microphone', 'No microphone is connected.'];
+const MSG_NO_MICROPHONE: [string, string] = ['plugins.audio-recorder.msg-no-microphone', 'No microphone is connected.'];
 
-const msg = (entry) => tt(entry[0], entry[1]);
+const msg = (entry: [string, string]) => tt(entry[0], entry[1]);
 
-function errorName(error) { return (error && error.name) || ''; }
-function errorText(error) { return error ? String(error.message || error.name || error) : ''; }
+function errorName(error: unknown) { return error instanceof Error ? error.name : ''; }
+function errorText(error: unknown) { return error instanceof Error ? error.message || error.name : error ? String(error) : ''; }
 
 /** 设备/权限错误 → 不连接麦克风；其余返回 false。原版匹配的是英文 message，这里同时认名字与文案。 */
-function isMissingMicrophone(error) {
+function isMissingMicrophone(error: unknown) {
   const name = errorName(error);
   return name === 'NotFoundError' || name === 'DevicesNotFoundError'
     || errorText(error).includes('Requested device not found');
 }
 
 /** 用户拒绝授权。原版把原始 message 直接塞进 Notice；渲染层改用 locale 文案。 */
-function isAccessDenied(error) {
+function isAccessDenied(error: unknown) {
   const name = errorName(error);
   return name === 'NotAllowedError' || name === 'PermissionDeniedError' || name === 'SecurityError'
     || /denied/i.test(errorText(error));
@@ -48,14 +49,16 @@ function isAccessDenied(error) {
 /* --------------------------------------------------------------------------
  * AudioRecorder — 一次录音会话
  * ------------------------------------------------------------------------ */
+interface RecordingSession { stream: MediaStream; chunks: Blob[]; mimeType: string; discard: boolean; recorder: MediaRecorder | null; startedAt: number; }
+
 class AudioRecorder {
   declare app: App;
   declare recording: boolean;
-  declare recorder: any;
+  declare recorder: MediaRecorder | null;
   declare extension: string;
-  declare buttonEls: any[];
-  declare _commandIds: any[];
-  declare _session: any;
+  declare buttonEls: HTMLDivElement[];
+  declare _commandIds: string[];
+  declare _session: RecordingSession | null;
 
   constructor(app: App) {
     this.app = app;
@@ -104,7 +107,7 @@ class AudioRecorder {
     this.deregisterCommands();
   }
 
-  addCommand(command) {
+  addCommand(command: Command|CommandDefinition) {
     this.app.commands.addCommand(command);
     this._commandIds.push(command.id);
   }
@@ -163,7 +166,7 @@ class AudioRecorder {
   }
 
   /** getUserMedia 开始失败时的提示：无麦克风 / 访问被拒绝 / 其余只记日志。 */
-  showStartError(error) {
+  showStartError(error: unknown) {
     if (isMissingMicrophone(error)) {
       if (this.buttonEls.length > 0) this.showRecordingMessage(msg(MSG_NO_MICROPHONE));
       return;
@@ -181,8 +184,8 @@ class AudioRecorder {
     for (const el of this.buttonEls) el.removeClass('is-active');
   }
 
-  async startRecording(stream) {
-    const chunks = [];
+  async startRecording(stream: MediaStream) {
+    const chunks: Blob[] = [];
     let mimeType = WEBM_MIME;
     this.extension = 'webm';
     // 原版：支持 audio/mp4 就录 mp4（落 .m4a），否则 webm/opus；webm 在落盘前用 fix-webm-duration 补时长元数据。
@@ -191,7 +194,7 @@ class AudioRecorder {
       mimeType = MP4_MIME;
       this.extension = 'm4a';
     }
-    const session = { stream, chunks, mimeType, discard: false, recorder: null, startedAt: Date.now() };
+    const session: RecordingSession = { stream, chunks, mimeType, discard: false, recorder: null, startedAt: Date.now() };
     this._session = session;
     const recorder = new MediaRecorder(stream, { mimeType });
     session.recorder = recorder;
@@ -203,7 +206,7 @@ class AudioRecorder {
     recorder.start();
   }
 
-  onRecorderStopped(session) {
+  onRecorderStopped(session: RecordingSession) {
     // stop 事件是异步的：只有当前会话的录音器才能清空 this.recorder，
     // 否则用户在事件到达前启动的下一段录音会被误清，导致无法停止。
     if (this.recorder === session.recorder) this.recorder = null;
@@ -214,7 +217,7 @@ class AudioRecorder {
     this.finishRecording(session).catch((error) => console.error(error));
   }
 
-  async finishRecording(session) {
+  async finishRecording(session: RecordingSession) {
     let blob = new Blob(session.chunks, { type: session.mimeType });
     if (this.extension === 'webm') {
       // 原版：MediaRecorder 产出的 webm 缺 Duration（播放器进度条异常），落盘前用 fix-webm-duration 补；
@@ -246,21 +249,22 @@ class AudioRecorder {
 
   /* --------------------------------------------------------------- 落盘 */
   /** 原版 saveRecording：命名 "Recording <YYYYMMDDHHmmss>"，文件名冲突由附件路径规则去重。 */
-  async saveRecording(data) {
+  async saveRecording(data: string|ArrayBuffer|NodeJS.ArrayBufferView<ArrayBufferLike>) {
     const name = 'Recording ' + moment().format('YYYYMMDDHHmmss');
     const activeFile = this.app.workspace.getActiveFile();
     const file = await saveAttachment(this.app, name, this.extension, data, activeFile ? activeFile.path : '');
     const view = this.app.workspace.getActiveViewOfType('markdown');
-    if (view && view.editor && typeof view.editor.replaceSelection === 'function') {
+    if (view && view.file && view.editor && typeof view.editor.replaceSelection === 'function') {
       view.editor.replaceSelection('\n!' + this.app.fileManager.generateMarkdownLink(file, view.file.path) + '\n');
     } else {
-      await this.app.workspace.getLeaf('tab').openFile(file, { active: true });
+      const leaf = await this.app.workspace.openFile(file, { newLeaf: 'tab' });
+      if (leaf) this.app.workspace.setActiveLeaf(leaf, { focus: true });
     }
     return file;
   }
 
   /** 原版把文案挂在功能区按钮的 tooltip 上（mod-error）；本实现走项目统一通知通道。 */
-  showRecordingMessage(message) {
+  showRecordingMessage(message: unknown) {
     if (!this.buttonEls.length) return;
     new Notice(message);
   }

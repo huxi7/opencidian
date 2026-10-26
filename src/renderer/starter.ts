@@ -7,6 +7,7 @@
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 /* Vault switcher ("starter") window logic — 1.14.4 parity. */
+import type { VaultDescriptor } from '../contracts.js';
 import './core/dom.js';
 import { setLanguage, detectLanguage, getLanguage, tt } from './core/i18n.js';
 import { setIcon } from './core/icons.js';
@@ -111,7 +112,7 @@ function closeStarter() {
   ipcSend('window-close');
 }
 
-function openVault(path, create = false) {
+function openVault(path: string, create = false) {
   const res = Desktop.vaultOpen(path, create);
   if (res === true) { closeStarter(); return true; }
   const detail = typeof res === 'string' && res ? ` ${res}.` : '';
@@ -122,7 +123,7 @@ function openVault(path, create = false) {
 // ---------------------------------------------------------------------------
 // 行菜单：节序与原版 addSections(["open","info","action","system","","danger"]) 一致
 // ---------------------------------------------------------------------------
-function rowMenu(entry, row, nameEl, event) {
+function rowMenu(entry: VaultDescriptor & { id: string }, row: HTMLElement, nameEl: HTMLDivElement, event: Pick<MouseEvent, 'clientX' | 'clientY' | 'preventDefault' | 'stopPropagation'>) {
   event.preventDefault();
   event.stopPropagation();
   const rect = row.getBoundingClientRect();
@@ -152,17 +153,17 @@ function rowMenu(entry, row, nameEl, event) {
   menu.showAtPosition({ x, y });
 }
 
-function removeVault(entry) {
+function removeVault(entry: { path: string; }) {
   // 原版没有二次确认框：危险色菜单项即确认步骤；主进程拒绝移除正在打开的库。
   if (Desktop.vaultRemove(entry.path)) renderVaults();
   else new Notice(ERROR_REMOVE_OPEN());
 }
 
 // 原版 starter 的重命名是行内 contenteditable；Enter/失焦提交，Esc 取消。
-function beginRename(entry, row, nameEl) {
+function beginRename(entry: VaultDescriptor, row: HTMLElement, nameEl: HTMLElement) {
   const baseName = nodePath.basename(entry.path) || entry.path;
   let finished = false;
-  const finish = (commit) => {
+  const finish = (commit: boolean) => {
     if (finished) return;
     finished = true;
     nameEl.removeAttribute('contenteditable');
@@ -175,7 +176,7 @@ function beginRename(entry, row, nameEl) {
       renderVaults();
     }
   };
-  const onKeyDown = (event) => {
+  const onKeyDown = (event: KeyboardEvent) => {
     if (event.isComposing) return;
     if (event.key === 'Enter') {
       event.preventDefault();
@@ -190,7 +191,7 @@ function beginRename(entry, row, nameEl) {
   };
   nameEl.setAttr('contenteditable', 'true');
   nameEl.setAttr('tabindex', '-1');
-  nameEl.addEventListener('click', (event) => {
+  nameEl.addEventListener('click', (event: { preventDefault: () => void; }) => {
     if (nameEl.isContentEditable) event.preventDefault();
   });
   nameEl.addEventListener('keydown', onKeyDown);
@@ -199,11 +200,11 @@ function beginRename(entry, row, nameEl) {
   const range = document.createRange();
   range.selectNodeContents(nameEl);
   const selection = window.getSelection();
-  selection.removeAllRanges();
-  selection.addRange(range);
+  selection?.removeAllRanges();
+  selection?.addRange(range);
 }
 
-function chooseMove(entry) {
+function chooseMove(entry: VaultDescriptor) {
   const res = Desktop.openDialog({
     title: MSG_MOVE_DEST(),
     defaultPath: nodePath.dirname(entry.path),
@@ -214,7 +215,7 @@ function chooseMove(entry) {
   moveVault(entry, nodePath.join(dest, nodePath.basename(entry.path)), 'move');
 }
 
-function moveVault(entry, target, kind) {
+function moveVault(entry: { path: string; }, target: string, kind: string) {
   const rename = kind === 'rename';
   if (target === entry.path) { renderVaults(); return false; }
   if (fs.existsSync(target)) {
@@ -260,7 +261,7 @@ function renderVaults() {
   for (const entry of entries) renderRow(entry);
 }
 
-function renderRow(entry) {
+function renderRow(entry: VaultDescriptor & { id: string }) {
   const name = nodePath.basename(entry.path) || entry.path;
   const row = recentListEl.createDiv('recent-vaults-list-item');
   row.setAttr('data-tooltip-position', 'right');
@@ -391,7 +392,7 @@ createHeading.createDiv('setting-item-control');
 createGroup.createDiv('setting-group-search').setAttr('tabindex', '-1');
 const createItems = createGroup.createDiv('setting-items');
 
-let nameInput = null;
+let nameInput: HTMLInputElement|null = null;
 const nameSetting = new Setting(createItems);
 nameSetting.settingEl.setAttr('tabindex', '-1');
 nameSetting.setName(OPT_NEW_NAME()).setDesc(OPT_NEW_NAME_DESC())
@@ -438,7 +439,7 @@ function createVault() {
   }
 }
 
-function showScreen(target) {
+function showScreen(target: string) {
   const create = target === 'create';
   openScreen.style.transform = create ? 'translateX(-100%)' : 'translateX(0%)';
   createScreen.style.transform = create ? 'translateX(0%)' : 'translateX(100%)';
@@ -455,7 +456,7 @@ createScreen.addEventListener('keydown', (event) => {
 // ---------------------------------------------------------------------------
 // 拖拽文件夹入窗（原版 starter 不处理 drop；保留以兼容既有交互）
 // ---------------------------------------------------------------------------
-function pathForFile(file) {
+function pathForFile(file: File) {
   try {
     const { webUtils } = require('electron');
     if (webUtils && webUtils.getPathForFile) return webUtils.getPathForFile(file);
@@ -488,6 +489,6 @@ if (process.env.E2E === '1') {
     renderVaults,
     showScreen,
     getLocation: () => location,
-    setLocation: (value) => { location = value; },
+    setLocation: (value: string) => { location = value; },
   };
 }

@@ -11,26 +11,31 @@
  *        剪切/复制落在单元格文本上（编辑器选区 > DOM 选区 > 整格），原版由主进程 editFlags 判定，部件渲染态没有可选文本。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
+import type { TableModel } from './table-model.js';
+import type { EditorView } from '@codemirror/view';
+import type { TableWidget } from './table-widget.js';
+import type { CellPosition } from './table-types.js';
 import { Menu } from '../core/menu.js';
 import { t } from '../core/i18n.js';
 import { getMarkdownIt } from '../markdown/reading.js';
 import { serializeTable, parseTableText, clamp, cellTextFromInput, cellTextToInput } from './table-model.js';
 import { buildFormattingSubmenu } from './table-format.js';
+import { App } from '../core/app.js';
 
 /** 原版 obsidian/table 载荷的同进程等价物；系统剪贴板在无权限时读不回自定义类型。 */
-let tableClipboard = null;
+let tableClipboard: { rows: string[][]; alignment: import('./table-model.js').TableAlignment[] } | null = null;
 
 /** 纯文本的同进程副本：窗口未聚焦时 Chromium 拒绝系统剪贴板（NotAllowedError），读回走它。 */
-let textClipboard = null;
+let textClipboard: string|null = null;
 
-export function cellElement(container: HTMLElement, row, col) {
+export function cellElement(container: HTMLElement, row: number, col: number) {
   const table = container && container.querySelector<HTMLTableElement>('table.table-editor');
   if (!table) return null;
   const rowEl = table.rows[row];
   return rowEl && rowEl.cells[col] ? rowEl.cells[col] : null;
 }
 
-export function cellPosition(cellEl) {
+export function cellPosition(cellEl: HTMLTableCellElement) {
   const rowEl = cellEl && cellEl.parentElement;
   const table = rowEl && rowEl.closest ? rowEl.closest('table') : null;
   if (!table) return null;
@@ -38,7 +43,7 @@ export function cellPosition(cellEl) {
 }
 
 /** 原版 getClosestCell：先按纵向找最近行（含表头），再按横向找最近列。 */
-export function closestCell(container: HTMLElement, x, y) {
+export function closestCell(container: HTMLElement, x: number, y: number) {
   const table = container && container.querySelector<HTMLTableElement>('table.table-editor');
   if (!table || !table.rows.length) return null;
   const rows = Array.from(table.rows);
@@ -67,7 +72,7 @@ export function closestCell(container: HTMLElement, x, y) {
   return currentCell || null;
 }
 
-export function selectionBounds(anchor, head) {
+export function selectionBounds(anchor: CellPosition | null, head: CellPosition | null) {
   if (!anchor || !head) return null;
   return {
     minRow: Math.min(anchor.row, head.row),
@@ -78,7 +83,7 @@ export function selectionBounds(anchor, head) {
 }
 
 /** 原版 validateSelectionBounds：把越界行列夹回表格范围。 */
-export function clampBounds(bounds, rowCount, colCount) {
+export function clampBounds(bounds: { minRow: number; maxRow: number; minCol: number; maxCol: number; }|null, rowCount: number, colCount: number) {
   if (!bounds) return null;
   return {
     minRow: clamp(bounds.minRow, 0, rowCount - 1),
@@ -92,11 +97,12 @@ export function clampBounds(bounds, rowCount, colCount) {
  * 单元格按下 → 框选：原版 mq.init 的 pointerdown 分支。
  * 单格按下先清空旧选区；拖过其它单元格时按矩形重画选中类；pointerup 后保留选区并聚焦容器（Tab 换格的入口）。
  */
-export function attachCellSelection(widget, view, container) {
+export function attachCellSelection(widget: TableWidget, view: EditorView, container: HTMLDivElement) {
   container.addEventListener('pointerdown', (event) => {
     const target = event.target;
+    if (!(target instanceof Element)) return;
     if (target.closest && target.closest('.table-row-drag-handle, .table-col-drag-handle, .table-row-btn, .table-col-btn')) return;
-    const cellEl = target.closest ? target.closest('th, td') : null;
+    const cellEl = target.closest ? target.closest<HTMLTableCellElement>('th, td') : null;
     if (cellEl && container.contains(cellEl)) {
       if (event.button === 2) {
         // 原版：右键落在已选单元格上要保住选区，供 contextmenu 构建选区菜单
@@ -115,7 +121,8 @@ export function attachCellSelection(widget, view, container) {
 
   container.addEventListener('contextmenu', (event) => {
     const target = event.target;
-    const cellEl = target.closest ? target.closest('th, td') : null;
+    if (!(target instanceof Element)) return;
+    const cellEl = target.closest ? target.closest<HTMLTableCellElement>('th, td') : null;
     if (!cellEl || !container.contains(cellEl)) return;
     if (widget.selectedCells.includes(cellEl)) {
       event.preventDefault();
@@ -139,7 +146,7 @@ export function attachCellSelection(widget, view, container) {
   });
 }
 
-function startCellDrag(widget, view, container, event, cellEl) {
+function startCellDrag(widget: TableWidget, view: EditorView, container: HTMLElement, event: PointerEvent, cellEl: HTMLTableCellElement) {
   const win = (container.ownerDocument || document).defaultView || window;
   let anchor = cellPosition(cellEl);
   if (!anchor) return;
@@ -155,7 +162,7 @@ function startCellDrag(widget, view, container, event, cellEl) {
     win.removeEventListener('keydown', onKeyDown);
     container.removeClass('mod-selecting');
   };
-  const onMove = (moveEvent) => {
+  const onMove = (moveEvent: { pointerId: number; clientX: number; clientY: number; preventDefault: () => void; }) => {
     if (moveEvent.pointerId !== event.pointerId) return;
     const over = closestCell(container, moveEvent.clientX, moveEvent.clientY);
     if (!over) return;
@@ -169,7 +176,7 @@ function startCellDrag(widget, view, container, event, cellEl) {
     head = position;
     widget.selectCells(view, anchor, head);
   };
-  const onFinish = (upEvent) => {
+  const onFinish = (upEvent: { pointerId: number; button: number; }) => {
     if (upEvent.pointerId !== event.pointerId) return;
     cleanup();
     if (!moved && upEvent.button !== event.button) return;
@@ -177,7 +184,7 @@ function startCellDrag(widget, view, container, event, cellEl) {
     widget.focusContainer();
   };
   const onCancel = () => cleanup();
-  const onKeyDown = (keyEvent) => { if (keyEvent.key === 'Escape') cleanup(); };
+  const onKeyDown = (keyEvent: { key: string; }) => { if (keyEvent.key === 'Escape') cleanup(); };
 
   win.addEventListener('pointermove', onMove);
   win.addEventListener('pointerup', onFinish);
@@ -186,7 +193,7 @@ function startCellDrag(widget, view, container, event, cellEl) {
 }
 
 /** 选区右键菜单 —— 原版 onContextMenu 的 selection 分支（桌面 clipboard 三项 + 对齐 + 清空/删除）。 */
-export function buildSelectionMenu(widget, view, event) {
+export function buildSelectionMenu(widget: TableWidget, view: EditorView, event: MouseEvent) {
   const menu = new Menu(widget.app);
   menu.addItem((item) => item.setSection('clipboard').setIcon('lucide-scissors').setTitle(t('interface.menu.cut'))
     .onClick(() => copySelection(widget, view, true)));
@@ -206,7 +213,7 @@ export function buildSelectionMenu(widget, view, event) {
     .onClick(() => widget.clearSelectedCells(view)));
   menu.addItem((item) => item.setSection('table').setIcon('lucide-trash-2').setTitle(t('table.action-delete-selection'))
     .onClick(() => widget.deleteSelection(view, -1)));
-  menu.setParentElement(widget.containerEl);
+  if (widget.containerEl) menu.setParentElement(widget.containerEl);
   menu.showAtMouseEvent(event);
   return menu;
 }
@@ -216,10 +223,10 @@ export function buildSelectionMenu(widget, view, event) {
 // ---------------------------------------------------------------------------
 
 /** 原位编辑中的单元格菜单交回编辑器菜单，由它追加表格子菜单；这里记住待追加的目标。 */
-let pendingCellMenu = null;
+let pendingCellMenu: { widget: TableWidget; view: EditorView; position: CellPosition; time: number } | null = null;
 
 /** 供 table-widget 的 editor-menu 钩子调用：原版 onMenu 末尾的 table.onContextMenu(cell)。 */
-export function appendPendingTableMenu(menu) {
+export function appendPendingTableMenu(menu: Menu) {
   const pending = pendingCellMenu;
   pendingCellMenu = null;
   if (!pending || Date.now() - pending.time > 1000) return false;
@@ -233,7 +240,7 @@ export function appendPendingTableMenu(menu) {
  * 部件渲染态没有可选的单元格文本（Chromium 对 user-select:none 的部件不给选区），所以剪切/复制落在
  * 单元格文本上：编辑器内的选区 > 部件内的 DOM 选区 > 整格文本；粘贴优先用同进程的表格载荷。
  */
-export function buildCellMenu(widget, view, position, event) {
+export function buildCellMenu(widget: TableWidget, view: EditorView, position: CellPosition, event: MouseEvent) {
   const source = cellClipboardSource(widget, position);
   const menu = new Menu(widget.app);
   menu.addItem((item) => item.setSection('clipboard').setIcon('lucide-scissors').setTitle(t('interface.menu.cut'))
@@ -251,13 +258,13 @@ export function buildCellMenu(widget, view, position, event) {
   buildFormattingSubmenu(menu, widget, view, position);
   menu.addSeparator();
   widget.appendTableMenuItems(menu, position, view);
-  menu.setParentElement(widget.containerEl);
+  if (widget.containerEl) menu.setParentElement(widget.containerEl);
   menu.showAtMouseEvent(event);
   return menu;
 }
 
 /** 单元格内可剪贴的文本；空单元格返回 null（原版 editFlags.canCut/canCopy 的等价判定）。 */
-function cellClipboardSource(widget, position) {
+function cellClipboardSource(widget: TableWidget, position: CellPosition) {
   const editor = widget.edit && widget.edit.row === position.row && widget.edit.col === position.col
     ? widget.edit.textarea
     : null;
@@ -272,7 +279,7 @@ function cellClipboardSource(widget, position) {
 }
 
 /** 部件内的 DOM 文本选区；没有选区返回 null。 */
-function widgetTextSelection(widget) {
+function widgetTextSelection(widget: TableWidget) {
   const selection = window.getSelection ? window.getSelection() : null;
   if (!selection || selection.isCollapsed || !selection.rangeCount) return null;
   const range = selection.getRangeAt(0);
@@ -282,7 +289,7 @@ function widgetTextSelection(widget) {
 }
 
 /** 剪切：文本进剪贴板，并从来源（编辑器选区 / DOM 选区 / 整格）删掉它。 */
-function cutCellText(widget, view, position, source) {
+function cutCellText(widget: TableWidget, view: EditorView, position: CellPosition, source: ReturnType<typeof cellClipboardSource>) {
   if (!source) return false;
   tableClipboard = null;
   writeClipboardText(source.text);
@@ -310,7 +317,7 @@ function cutCellText(widget, view, position, source) {
 }
 
 /** 粘贴：表格载荷从按下的单元格起写入；纯文本进编辑器光标处，否则整格替换。 */
-async function pasteIntoCell(widget, view, position) {
+async function pasteIntoCell(widget: TableWidget, view: EditorView, position: CellPosition) {
   widget.deselectCells();
   widget.focusCell = { row: position.row, col: position.col };
   const payload = await readClipboardPayload();
@@ -335,7 +342,7 @@ async function pasteIntoCell(widget, view, position) {
 }
 
 /** 选区 → 子表格 Markdown，并写系统剪贴板：原版 copySelection 的四个 MIME 砍到 text/plain 与 text/html。 */
-export function copySelection(widget, view, cut) {
+export function copySelection(widget: TableWidget, view: EditorView, cut: boolean) {
   const model = widget.model();
   const bounds = widget.getSelectionBounds();
   if (!model || !bounds) return false;
@@ -351,7 +358,7 @@ export function copySelection(widget, view, cut) {
   return true;
 }
 
-function writeClipboard(markdown) {
+function writeClipboard(markdown: string) {
   const writeText = () => writeClipboardText(markdown);
   try {
     const html = getMarkdownIt().render(markdown);
@@ -367,7 +374,7 @@ function writeClipboard(markdown) {
 }
 
 /** 纯文本写剪贴板：navigator.clipboard 失败时退回隐藏 textarea + execCommand("copy")；两条路都留同进程副本。 */
-export function writeClipboardText(text) {
+export function writeClipboardText(text: BlobPart|null) {
   const value = String(text == null ? '' : text);
   textClipboard = value;
   const fallback = () => execCommandCopy(value);
@@ -389,7 +396,7 @@ function clipboardBuffer() {
   return buffer;
 }
 
-function execCommandCopy(text) {
+function execCommandCopy(text: string) {
   try {
     const buffer = clipboardBuffer();
     buffer.value = text;
@@ -436,7 +443,7 @@ async function readClipboardPayload() {
 }
 
 /** 粘贴子表格：原版 pasteSelection —— 从选区左上角（或最后按下的单元格）起写，缺行补行、缺列补列；落在表头行时改写对齐。 */
-export async function pasteSelection(widget, view) {
+export async function pasteSelection(widget: TableWidget, view: EditorView) {
   const model = widget.model();
   if (!model) return false;
   const bounds = widget.getSelectionBounds();

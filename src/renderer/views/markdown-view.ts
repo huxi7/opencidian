@@ -18,51 +18,56 @@ import {
 } from '../markdown/reading.js';
 import { renderProperties } from '../markdown/properties.js';
 import { Notice } from '../core/notices.js';
-import { normalizePath } from '../core/vault.js';
+import { normalizePath, TFile } from '../core/vault.js';
 import { BacklinkView } from '../plugins-core/backlink.js';
 import { addViewAction, installViewMoreAction } from '../core/view-pane-menu.js';
 import { IS_MAC } from '../core/keymap.js';
 import { PromptModal } from '../core/modals.js';
 import { showEditorContextMenu } from '../editor/editor-menu.js';
+import { WorkspaceLeaf } from '../core/workspace-model.js';
+import type { EventRef } from '../core/events.js';
+
+interface PendingScroll { subpath?: string; line?: number; ch?: number; }
+import { Menu, MenuEvent } from '../core/menu.js';
 
 const SAVE_DELAY = 150;
 
 export class MarkdownView extends View {
   declare _writing: boolean;
 
-  declare file: any;
+  declare file: TFile | null;
   declare _closed: boolean;
   declare mode: string;
   declare _lastEditMode: string;
-  declare editor: any;
+  declare editor: Editor | null;
   declare navigation: boolean;
   declare icon: string;
   declare _suppressChange: boolean;
-  declare _renderedText: any;
-  declare _saveTimer: any;
-  declare _pendingScroll: any;
-  declare showBacklinks: any;
-  declare _eState: any;
-  declare sourceEl: any;
-  declare inlineTitleEdit: any;
-  declare readingEl: any;
-  declare readingSizer: any;
-  declare readingContent: any;
-  declare readingTitle: any;
-  declare propertiesReadingEl: any;
-  declare renderedContent: any;
-  declare backlinksEl: any;
-  declare _refs: any[] | undefined;
+  declare _renderedText: string | null;
+  declare _saveTimer: ReturnType<typeof setTimeout> | null;
+  declare _pendingScroll: PendingScroll | null;
+  declare showBacklinks: boolean;
+  declare _eState: Record<string, unknown>;
+  declare sourceEl: HTMLDivElement;
+  declare inlineTitleEdit: HTMLDivElement;
+  declare readingEl: HTMLDivElement;
+  declare readingSizer: HTMLDivElement;
+  declare readingContent: HTMLDivElement;
+  declare readingTitle: HTMLDivElement;
+  declare propertiesReadingEl: HTMLDivElement;
+  declare renderedContent: HTMLDivElement;
+  declare backlinksEl: HTMLDivElement;
+  declare _refs: EventRef[] | undefined;
   declare _fileDeleted: boolean | undefined;
   declare backlinks: BacklinkView | null | undefined;
-  declare _loadSequence: any;
-  declare _failedFilePath: any;
-  declare _loadedText: any;
+  declare _loadSequence: number | undefined;
+  declare _failedFilePath: string | undefined;
+  declare _loadedText: string | null;
   declare _dirty: boolean | undefined;
-  declare _saveError: any;
+  declare _saveError: string | null;
   declare _saveConflict: boolean | undefined;
 
-  constructor(leaf) {
+  constructor(leaf: WorkspaceLeaf) {
     super(leaf);
     this.file = null; this._closed = false;
     this.mode = 'live';         // 'source' | 'live' | 'preview'
@@ -83,7 +88,7 @@ export class MarkdownView extends View {
   getMode() { return this.mode; }
 
   getState() {
-    const state: { file: string; mode: string; backlinks: boolean; source?: boolean; scroll?: number } = { file: this.file ? this.file.path : this._failedFilePath, mode: this.mode, backlinks: this.showBacklinks };
+    const state: { file?: string; mode: string; backlinks: boolean; source?: boolean; scroll?: number } = { file: this.file ? this.file.path : this._failedFilePath, mode: this.mode, backlinks: this.showBacklinks };
     if (this.mode === 'preview') state.source = this._lastEditMode === 'source';
     if (this.editor && this.mode !== 'preview') {
       state.scroll = this.editor.getScrollInfo().top;
@@ -95,16 +100,17 @@ export class MarkdownView extends View {
     return { ...(this._eState || {}) };
   }
 
-  setEphemeralState(state) {
-    this._eState = state || {};
-    if (state && state.subpath) this._pendingScroll = { subpath: state.subpath };
-    if (state && state.line !== undefined) this._pendingScroll = { line: state.line, ch: state.ch || 0 };
+  setEphemeralState(state: Record<string,unknown>) {
+    state = state || {};
+    this._eState = state;
+    if (typeof state.subpath === 'string') this._pendingScroll = { subpath: state.subpath };
+    if (typeof state.line === 'number') this._pendingScroll = { line: state.line, ch: typeof state.ch === 'number' ? state.ch : 0 };
     this._applyPendingScroll();
   }
 
-  async setState(state, result) {
+  async setState(state: Record<string, unknown> = {}) {
     state = state || {};
-    if (state.file && (!this.file || this.file.path !== state.file)) {
+    if (typeof state.file === 'string' && (!this.file || this.file.path !== state.file)) {
       if (await this._loadFile(state.file, state) === false) return false;
     }
     if (typeof state.backlinks === 'boolean') this.showBacklinks = state.backlinks;
@@ -114,11 +120,11 @@ export class MarkdownView extends View {
     }
     else if (state.mode === 'source' || state.mode === 'live') { this.mode = state.mode; this._lastEditMode = state.mode; }
     this._applyMode();
-    if (state.scroll !== undefined && this.editor) {
+    if (typeof state.scroll === 'number' && this.editor) {
       this.editor.applyScrollInfo({ top: state.scroll });
     }
-    if (state.subpath) this._pendingScroll = { subpath: state.subpath };
-    if (state.line !== undefined) this._pendingScroll = { line: state.line, ch: state.ch || 0 };
+    if (typeof state.subpath === 'string') this._pendingScroll = { subpath: state.subpath };
+    if (typeof state.line === 'number') this._pendingScroll = { line: state.line, ch: typeof state.ch === 'number' ? state.ch : 0 };
     this._applyPendingScroll();
   }
 
@@ -142,35 +148,34 @@ export class MarkdownView extends View {
     if (this.app.settings.appSettings.showInlineTitle === false) this.inlineTitleEdit.addClass('is-hidden');
 
     const editorHost = this.sourceEl.createDiv('cm-editor-host');
-    this.editor = new Editor(editorHost, this.app, { doc: '' });
+    const editor = this.editor = new Editor(editorHost, this.app, { doc: '' });
     this.editor.cm.dom.setAttr('data-editor-mode', 'source');
     // 原版：行内标题是 .cm-sizer 的子元素，随内容滚动、与正文同宽居中
     this.editor.sizerEl.prepend(this.inlineTitleEdit);
     this.editor.onChange(() => this._onEditorChange());
     // 原版 editor-selection-change：状态栏（字数/视图状态）据此刷新选区统计
     this.editor.onSelectionChange(() => this.app.workspace.trigger('editor-selection-change', this));
-    this._bindEditorKeys();
     this._bindInlineTitle();
     // 原版 onContextMenu：编辑器右键菜单（属性行等组件已 preventDefault 的不再重复弹出）
     // 真实右键的 mousedown 会把 CM 选区折叠/移走；在捕获阶段记住按下前的选区，contextmenu 时若落点在选区内则恢复。
-    let rightPress = null;
-    this.editor.cm.dom.addEventListener('mousedown', (ev) => {
+    let rightPress: { from: number; to: number } | null = null;
+    editor.cm.dom.addEventListener('mousedown', (ev) => {
       // macOS 的 Ctrl+Click 是副键点击，DOM 里 button 仍为 0
       const secondary = ev.button === 2 || (navigator.platform.startsWith('Mac') && ev.ctrlKey && ev.button === 0);
       if (!secondary) return;
-      const sel = this.editor.cm.state.selection.main;
+      const sel = editor.cm.state.selection.main;
       rightPress = sel.empty ? null : { from: sel.from, to: sel.to };
     }, true);
-    this.editor.cm.dom.addEventListener('contextmenu', (ev) => {
+    editor.cm.dom.addEventListener('contextmenu', (ev: MouseEvent) => {
       if (ev.defaultPrevented) return;
       if (rightPress) {
-        const pos = this.editor.cm.posAtCoords({ x: ev.clientX, y: ev.clientY });
+        const pos = editor.cm.posAtCoords({ x: ev.clientX, y: ev.clientY });
         if (pos != null && pos >= rightPress.from && pos <= rightPress.to) {
-          this.editor.cm.dispatch({ selection: { anchor: rightPress.from, head: rightPress.to } });
+          editor.cm.dispatch({ selection: { anchor: rightPress.from, head: rightPress.to } });
         }
       }
       rightPress = null;
-      showEditorContextMenu(this.app, this.editor, this, ev);
+      showEditorContextMenu(this.app, editor, this, ev);
     });
 
     // ---- reading DOM
@@ -187,7 +192,7 @@ export class MarkdownView extends View {
     this._refs = [
       this.app.vault.on('modify', (file) => { if (this.file && file.path === this.file.path) this._onExternalModify(); }),
       this.app.vault.on('rename', (file, oldPath) => {
-        if (this.file && oldPath === this.file.path) { this.file = file; this._updateTitles(); }
+        if (file instanceof TFile && this.file && oldPath === this.file.path) { this.file = file; this._updateTitles(); }
       }),
       this.app.vault.on('delete', (file) => {
         if (this.file && file.path === this.file.path) { this._fileDeleted = true; this._renderFilePathMissing(); }
@@ -239,15 +244,15 @@ export class MarkdownView extends View {
   // -------------------------------------------------------------------------
   // File loading & saving
   // -------------------------------------------------------------------------
-  async _loadFile(path, state) {
+  async _loadFile(path: string, state: Record<string, unknown>) {
     const sequence = this._loadSequence = (this._loadSequence || 0) + 1;
     if (this.file && !this._fileDeleted) {
-      clearTimeout(this._saveTimer);
+      if (this._saveTimer) clearTimeout(this._saveTimer);
       this._saveTimer = null;
       if (await this.save() === false) return false;
     }
     if (sequence !== this._loadSequence || this._closed) return false;
-    const file = this.app.vault.getFileByPath(path) || this.app.vault.getAbstractFileByPath(path);
+    const file = this.app.vault.getFileByPath(path);
     if (!file || !file.path || file.extension !== 'md') {
       this.file = null;
       this._renderFilePathMissing(path);
@@ -258,13 +263,15 @@ export class MarkdownView extends View {
     catch (error) {
       if (sequence !== this._loadSequence || this._closed) return false;
       if (!this.file) this._renderFilePathMissing(path, '无法读取文件');
-      new Notice('无法读取文件：' + path + '\n' + error.message);
+      new Notice('无法读取文件：' + path + '\n' + (error instanceof Error ? error.message : String(error)));
       return false;
     }
     if (sequence !== this._loadSequence || this._closed) return false;
     // 目标读取期间仍可编辑来源文件；提交切换前保存这批迟到输入。
     if (this.file && hasUnsavedWindowView(this) && await this.save() === false) return false;
     if (sequence !== this._loadSequence || this._closed) return false;
+    const editor = this.editor;
+    if (!editor) return false;
     this.file = file;
     this._failedFilePath = undefined;
     this._fileDeleted = false;
@@ -274,8 +281,8 @@ export class MarkdownView extends View {
     }
     this._loadedText = text; this._dirty = false; this._saveError = null; this._saveConflict = false;
     this._suppressChange = true;
-    this.editor.sourcePath = file.path;
-    this.editor.setValue(text);
+    editor.sourcePath = file.path;
+    editor.setValue(text);
     this._suppressChange = false;
     this._renderedText = null;
     this._updateTitles();
@@ -284,7 +291,7 @@ export class MarkdownView extends View {
     this._emitEditorChange();
   }
 
-  _renderFilePathMissing(path?, title?) {
+  _renderFilePathMissing(path?: string, title?: string|undefined) {
     if (path) this._failedFilePath = path;
     if (this.leaf?.contentEl) this.leaf.contentEl.setAttr('data-type', 'markdown');
     this.contentEl.empty();
@@ -319,7 +326,7 @@ export class MarkdownView extends View {
     // 与我们最后一次写盘/加载的内容一致 → 自家写入的迟到通知，绝不回滚正在编辑的文档
     if (text === this._loadedText) return;
     if (text === this.editor.getValue()) { this._loadedText = text; this._dirty = false; this._saveError = null; this._saveConflict = false; return; }
-    if (hasUnsavedWindowView(this)) { clearTimeout(this._saveTimer); this._saveTimer = null; reportWindowSaveError(this, '文件已被另一个窗口修改，未保存的编辑已保留。', true); return; }
+    if (hasUnsavedWindowView(this)) { if (this._saveTimer) clearTimeout(this._saveTimer); this._saveTimer = null; reportWindowSaveError(this, '文件已被另一个窗口修改，未保存的编辑已保留。', true); return; }
     // file changed on disk
     this._loadedText = text; this._dirty = false; this._saveError = null; this._saveConflict = false;
     const scroll = this.editor.getScrollInfo();
@@ -337,6 +344,7 @@ export class MarkdownView extends View {
   // Modes
   // -------------------------------------------------------------------------
   _applyMode() {
+    if (!this.editor) return;
     const preview = this.mode === 'preview';
     const live = this.mode === 'live' && this.app.settings.appSettings.livePreview !== false;
     this.sourceEl.toggle(!preview);
@@ -367,7 +375,7 @@ export class MarkdownView extends View {
   }
 
   updateShowBacklinks() {
-    if (!this.backlinksEl) return;
+    if (!this.backlinksEl || !this.editor) return;
     const visible = this.showBacklinks && this.canToggleBacklinks();
     this.backlinksEl.toggle(visible);
     if (!this.showBacklinks || !this.canToggleBacklinks()) {
@@ -465,7 +473,7 @@ export class MarkdownView extends View {
     });
   }
 
-  _scrollEditorToSubpath(subpath) {
+  _scrollEditorToSubpath(subpath: string) {
     if (!this.file || !this.editor || !subpath) return;
     const cache = this.app.metadataCache.getFileCache(this.file);
     const str = String(subpath).trim();
@@ -479,7 +487,7 @@ export class MarkdownView extends View {
         if (this.editor.setCursor) this.editor.setCursor({ line, ch: 0 });
         return;
       }
-      const count = typeof this.editor.lineCount === 'function' ? this.editor.lineCount() : 0;
+      const count = this.editor.lineCount;
       for (let i = 0; i < count; i++) {
         const lineText = this.editor.getLine(i);
         if (lineText && lineText.includes('^' + blockId)) {
@@ -523,13 +531,13 @@ export class MarkdownView extends View {
   }
 
   _bindInlineTitle() {
-    this.inlineTitleEdit.addEventListener('keydown', (ev) => {
+    this.inlineTitleEdit.addEventListener('keydown', (ev: { key: string; preventDefault: () => void; }) => {
       if (ev.key === 'Enter') { ev.preventDefault(); this.inlineTitleEdit.blur(); }
       if (ev.key === 'Escape') { ev.preventDefault(); this.inlineTitleEdit.setText(this.file ? this.file.basename : ''); this.inlineTitleEdit.blur(); }
     });
     this.inlineTitleEdit.addEventListener('blur', async () => {
       if (!this.file) return;
-      const value = this.inlineTitleEdit.textContent.trim();
+      const value = (this.inlineTitleEdit.textContent || '').trim();
       if (!value || value === this.file.basename) return;
       const parent = this.file.path.split('/').slice(0, -1).join('/');
       const newPath = normalizePath((parent ? parent + '/' : '') + value + '.md');
@@ -542,8 +550,8 @@ export class MarkdownView extends View {
       const range = document.createRange();
       range.selectNodeContents(this.inlineTitleEdit);
       const sel = window.getSelection();
-      sel.removeAllRanges();
-      sel.addRange(range);
+      sel?.removeAllRanges();
+      sel?.addRange(range);
     });
   }
 
@@ -552,25 +560,14 @@ export class MarkdownView extends View {
     const range = document.createRange();
     range.selectNodeContents(this.inlineTitleEdit);
     const sel = window.getSelection();
-    sel.removeAllRanges();
-    sel.addRange(range);
-  }
-
-  // -------------------------------------------------------------------------
-  // Editor key bindings
-  // -------------------------------------------------------------------------
-  _bindEditorKeys() {
-    // handled through app-level hotkeys (editor:* commands)
-    this.editor.cm.dom.addEventListener('click', (ev) => {
-      const link = ev.target.closest('.cm-wikilink');
-      if (link) return; // widget handles it
-    });
+    sel?.removeAllRanges();
+    sel?.addRange(range);
   }
 
   // -------------------------------------------------------------------------
   // View header actions
   // -------------------------------------------------------------------------
-  _fillViewActions(actions?) {
+  _fillViewActions(actions?: HTMLElement|undefined) {
     // 原版 1.14.4：模式切换后视图头按钮要跟着换图标与文案，
     // 所以这里没传 actions 时取叶子上的动作区（_applyMode 走的就是这条）。
     const el = actions || (this.leaf && this.leaf._viewActionsEl);
@@ -587,19 +584,19 @@ export class MarkdownView extends View {
       : (t('interface.menu.switch-to-read-view') || '点击此处切换至阅读视图');
     const modText = t('interface.menu.mod-click-open-new-tab', { key: IS_MAC ? '⌘' : 'Ctrl' })
       || (IS_MAC ? '⌘' : 'Ctrl') + '+单击以在新标签页中打开';
-    const toggle = addViewAction(el, preview ? 'edit-3' : 'book-open', `${stateText}\n${actionText}\n${modText}`, (event) => this.onSwitchView(event), 'mod-switch-view');
+    const toggle = addViewAction(el, preview ? 'edit-3' : 'book-open', `${stateText}\n${actionText}\n${modText}`, (event: MenuEvent) => this.onSwitchView(event), 'mod-switch-view');
     installViewMoreAction(this, el);
     if (restoreFocus) toggle.focus({ preventScroll: true });
   }
 
   /** 原版 onSwitchView：Mod/中键建右侧叶子，目标模式取反，来源状态不变。 */
-  async onSwitchView(event) {
+  async onSwitchView(event: MenuEvent) {
     event?.preventDefault();
     if (!this.file) return;
     const state = { ...this.getState(), source: (this.mode === 'preview' ? this._lastEditMode : this.mode) === 'source', mode: this.mode === 'preview' ? (this._lastEditMode || 'live') : 'preview' };
     if (await this.save() === false) return false;
     const workspace = this.app.workspace;
-    const modified = event && ((IS_MAC ? event.metaKey : event.ctrlKey) || event.button === 1);
+    const modified = event && ((IS_MAC ? event.metaKey : event.ctrlKey) || ('button' in event && event.button === 1));
     const leaf = modified ? workspace.createLeafBySplit(this.leaf, 'vertical') : this.leaf;
     if (await leaf.setViewState({ type: 'markdown', state }) === false) return false;
     workspace.setActiveLeaf(leaf, { focus: false });
@@ -607,12 +604,13 @@ export class MarkdownView extends View {
   }
 
   async promptAddProperty() {
-    if (!this.file) return;
+    const file = this.file;
+    if (!file) return;
     new PromptModal(this.app, {
       title: 'Property name',
       onSubmit: async (key) => {
         if (!key) return;
-        await this.app.fileManager.processFrontMatter(this.file, (fm) => { if (!(key in fm)) fm[key] = ''; });
+        await this.app.fileManager.processFrontMatter(file, (fm) => { if (!(key in fm)) fm[key] = ''; });
       },
     }).open();
   }
@@ -622,7 +620,7 @@ export class MarkdownView extends View {
    * 源码模式（pane，编辑态）、查找/替换（find，替换仅编辑态可用）。
    * 导出为 PDF 依赖原版导出链路，本项目未实现，故意缺失。
    */
-  onPaneMenu(menu, source) {
+  onPaneMenu(menu: Menu, source: string) {
     super.onPaneMenu(menu, source);
     if (source !== 'tab-header' && source !== 'more-options') return;
     const editMode = this.mode === 'live' || this.mode === 'source';

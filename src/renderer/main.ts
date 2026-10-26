@@ -2,6 +2,7 @@
  * [INPUT]: core/dom.js 与 core/tooltip.js(DOM 助手与全局提示层，均靠副作用安装)；App 与各注册模块；core/ipc.js 的设置窗口通道。
  * [OUTPUT]: 无导出。构造 window.app、注册视图与命令、启动 App.initialize 并安装全局错误上报；`#settings-window` 时改为设置独立窗口形态。
  * [POS]: 渲染进程入口。语言在模块作用域即确定，必须先于任何界面模块构造；设置窗口与主窗口共用本文件，以 app.isSettingsWindow 分流。
+ *        初始化未找到库时停止后续注册，不访问未就绪服务。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 /*
@@ -30,14 +31,15 @@ setLanguage(detectLanguage(systemLocale));
 // ---------------------------------------------------------------------------
 let lastErrorMsg = '';
 let lastErrorTime = 0;
-function reportError(kind, err) {
-  const msg = err && (err.stack || err.message || String(err));
+function reportError(kind: string, err: unknown) {
+  const detail = err instanceof Error ? err.message : String(err);
+  const msg = err instanceof Error ? err.stack || detail : detail;
   console.error(`[${kind}]`, err);
   const now = Date.now();
   if (msg === lastErrorMsg && now - lastErrorTime < 5000) return;
   lastErrorMsg = msg;
   lastErrorTime = now;
-  try { new Notice(`An error occurred. Check the developer console for details.\n${(err && err.message) || err}`, 8000); } catch (e) {}
+  try { new Notice(`An error occurred. Check the developer console for details.\n${detail}`, 8000); } catch (e) {}
 }
 window.addEventListener('error', (ev) => reportError('error', ev.error || ev.message));
 window.addEventListener('unhandledrejection', (ev) => reportError('unhandledrejection', ev.reason));
@@ -54,8 +56,8 @@ globalThis.app = app;
 registerBuiltinViews(app);
 registerEditorCommands(app);
 
-app.initialize().then(async () => {
-  if (!app.vault || !app.workspace) return; // e.g. no vault selected; starter was opened
+app.initialize().then(async ready => {
+  if (!ready) return; // e.g. no vault selected; starter was opened
   registerAppCommands(app);
 
   if (app.isSettingsWindow) {

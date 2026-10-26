@@ -6,17 +6,24 @@
  */
 /* Canvas geometry + color helpers — mirrors the original B5/V5/z5/R5/N3. */
 
+export interface CanvasPoint { x: number; y: number; }
+export interface CanvasSize { width: number; height: number; }
+export interface CanvasRect extends CanvasPoint, CanvasSize {}
+export interface CanvasBBox { minX: number; minY: number; maxX: number; maxY: number; }
+export type CanvasSide = 'top' | 'right' | 'bottom' | 'left';
+export interface CanvasBezier { from: CanvasPoint; to: CanvasPoint; cp1: CanvasPoint; cp2: CanvasPoint; path: string; }
+
 /** 生成节点/边 id（原版 sc(16)：16 位十六进制）。 */
 export function genId() {
   return Math.random().toString(16).slice(2, 10) + Math.random().toString(16).slice(2, 10);
 }
 
 /** Node rect -> bbox. */
-export function bboxOf(node) {
+export function bboxOf(node: CanvasRect) {
   return { minX: node.x, minY: node.y, maxX: node.x + node.width, maxY: node.y + node.height };
 }
 
-export function unionBBox(boxes) {
+export function unionBBox(boxes: Iterable<CanvasBBox>) {
   const out = { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity };
   for (const b of boxes) {
     out.minX = Math.min(out.minX, b.minX);
@@ -27,23 +34,23 @@ export function unionBBox(boxes) {
   return out;
 }
 
-export function expandBBox(box, d) {
+export function expandBBox(box: CanvasBBox, d: number) {
   return { minX: box.minX - d, minY: box.minY - d, maxX: box.maxX + d, maxY: box.maxY + d };
 }
 
-export function boxesIntersect(a, b) {
+export function boxesIntersect(a: CanvasBBox, b: CanvasBBox) {
   return a.minX <= b.maxX && a.maxX >= b.minX && a.minY <= b.maxY && a.maxY >= b.minY;
 }
 
 /** 原版 g3：box 是否完整包含 inner。 */
-export function containsBox(box, inner) {
+export function containsBox(box: CanvasBBox, inner: CanvasBBox) {
   return box.minX <= inner.minX && box.minY <= inner.minY && box.maxX >= inner.maxX && box.maxY >= inner.maxY;
 }
 
-export function clamp(v, min, max) { return Math.min(Math.max(v, min), max); }
+export function clamp(v: number, min: number, max: number) { return Math.min(Math.max(v, min), max); }
 
 /** B5: 边在节点 bbox 指定侧的中点。side 非法时返回 null。 */
-export function sidePoint(box, side) {
+export function sidePoint(box: CanvasBBox, side: string) {
   switch (side) {
     case 'top': return { x: (box.minX + box.maxX) / 2, y: box.minY };
     case 'right': return { x: box.maxX, y: (box.minY + box.maxY) / 2 };
@@ -54,7 +61,7 @@ export function sidePoint(box, side) {
 }
 
 /** V5: 沿 side 法线把点外移 dist。 */
-export function offsetPoint(point, side, dist) {
+export function offsetPoint(point: CanvasPoint, side: string, dist: number) {
   const p = { x: point.x, y: point.y };
   switch (side) {
     case 'top': p.y -= dist; break;
@@ -66,7 +73,7 @@ export function offsetPoint(point, side, dist) {
 }
 
 /** z5: 三次贝塞尔，返回 {from,to,cp1,cp2,path}。 */
-export function bezierFor(from, fromSide, to, toSide) {
+export function bezierFor(from: CanvasPoint, fromSide: string, to: CanvasPoint, toSide: string) {
   const dist = Math.hypot(from.x - to.x, from.y - to.y);
   const offset = Math.min(Math.max(dist / 2, 70), 150);
   const cp1 = offsetPoint(from, fromSide, offset);
@@ -76,7 +83,7 @@ export function bezierFor(from, fromSide, to, toSide) {
 }
 
 /** 贝塞尔参数点（边标签定位用 t=0.5）。 */
-export function bezierPoint(t, bezier) {
+export function bezierPoint(t: number, bezier: CanvasBezier) {
   const { from, to, cp1, cp2 } = bezier;
   const a = 1 - t;
   const c0 = a * a * a;
@@ -90,7 +97,7 @@ export function bezierPoint(t, bezier) {
 }
 
 /** R5: fromBox 朝向 toBox 的一侧。 */
-export function nearestSide(fromBox, toBox) {
+export function nearestSide(fromBox: CanvasBBox, toBox: CanvasBBox) {
   const fc = { x: (fromBox.minX + fromBox.maxX) / 2, y: (fromBox.minY + fromBox.maxY) / 2 };
   const tc = { x: (toBox.minX + toBox.maxX) / 2, y: (toBox.minY + toBox.maxY) / 2 };
   const angle = Math.atan2(tc.y - fc.y, tc.x - fc.x);
@@ -104,10 +111,10 @@ export function nearestSide(fromBox, toBox) {
 }
 
 /** 箭头旋转角（原版 q5）。 */
-export const SIDE_ROTATION = { top: '180', bottom: '0', left: '90', right: '270' };
+export const SIDE_ROTATION: Record<string, string> = { top: '180', bottom: '0', left: '90', right: '270' };
 
 /** 解析 "r,g,b" 或 "#rrggbb"/"#rgb" 为 {r,g,b}；失败返回 null。 */
-export function parseCanvasColor(color) {
+export function parseCanvasColor(color: string | null | undefined) {
   const s = String(color || '').trim();
   if (!s) return null;
   let m = s.match(/^\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*$/);
@@ -126,7 +133,7 @@ export function parseCanvasColor(color) {
 }
 
 /** N3: 把 JSON Canvas 颜色写到元素上（mod-canvas-color-1..6 / 自定义 RGB）。 */
-export function applyCanvasColor(el, color) {
+export function applyCanvasColor(el: HTMLElement | SVGElement, color: string | null | undefined) {
   const value = String(color || '').trim();
   for (const cls of Array.from<string>(el.classList)) {
     if (cls.startsWith('mod-canvas-color')) el.classList.remove(cls);
@@ -148,7 +155,7 @@ export function applyCanvasColor(el, color) {
 /* ------------------------------------------------------------ 元素与尺寸 */
 
 /** 元素可视矩形（含 clientLeft/Top 修正），额外给出中心与相对中心的边界。 */
-export function rectOf(el) {
+export function rectOf(el: Element) {
   const rect = el.getBoundingClientRect();
   const left = rect.left + el.clientLeft;
   const top = rect.top + el.clientTop;
@@ -162,12 +169,12 @@ export function rectOf(el) {
 }
 
 /** 元素 bbox 折成矩形（原版 f3）。 */
-export function rectFromBBox(box) {
+export function rectFromBBox(box: CanvasBBox) {
   return { x: box.minX, y: box.minY, width: box.maxX - box.minX, height: box.maxY - box.minY };
 }
 
 /** 原版 w3：把锚点 + 尺寸 + 方位折成矩形。 */
-export function rectFromPos(pos, size, position) {
+export function rectFromPos(pos: CanvasPoint, size: CanvasSize, position?: string) {
   let x = pos.x;
   let y = pos.y;
   if (position === 'center') { x -= size.width / 2; y -= size.height / 2; }
@@ -179,22 +186,22 @@ export function rectFromPos(pos, size, position) {
 }
 
 /** 点到矩形的最近距离（点在矩形内时为 0）。 */
-export function distanceToBox(point, box) {
+export function distanceToBox(point: CanvasPoint, box: CanvasBBox) {
   const dx = Math.max(box.minX - point.x, 0, point.x - box.maxX);
   const dy = Math.max(box.minY - point.y, 0, point.y - box.maxY);
   return Math.hypot(dx, dy);
 }
 
 /** 原版 cc：按节点索引边的多值映射。 */
-export class MultiMap {
-  declare map: any;
+export class MultiMap<K, V> {
+  declare map: Map<K, Set<V>>;
 
   constructor() { this.map = new Map(); }
-  add(key, value) {
+  add(key: K, value: V) {
     let set = this.map.get(key);
     if (!set) { set = new Set(); this.map.set(key, set); }
     set.add(value);
   }
-  delete(key, value) { const set = this.map.get(key); if (set) set.delete(value); }
-  getArray(key) { const set = this.map.get(key); return set ? Array.from(set) : []; }
+  delete(key: K, value: V) { const set = this.map.get(key); if (set) set.delete(value); }
+  getArray(key: K) { const set = this.map.get(key); return set ? Array.from(set) : []; }
 }

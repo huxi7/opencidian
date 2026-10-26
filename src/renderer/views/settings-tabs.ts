@@ -6,7 +6,7 @@
  */
 /* Built-in settings tabs: About / Editor / File & Links. */
 import { tt, getLanguage, setLanguage } from '../core/i18n.js';
-import { SettingGroup, SettingTab } from '../core/setting.js';
+import { ButtonComponent, Setting, SettingGroup, SettingTab, SliderComponent } from '../core/setting.js';
 import { Notice } from '../core/notices.js';
 import { Desktop, ipcSync } from '../core/ipc.js';
 import { checkForUpdates, compareVersions } from '../core/update-check.js';
@@ -22,6 +22,8 @@ import {
   FilePathSuggest,
   FolderPathSuggest,
 } from './settings-tabs-dialogs.js';
+import { SettingsHost } from './settings-view.js';
+import { AppSettings } from '../core/settings-types.js';
 
 const IS_MAC = navigator.platform.startsWith('Mac') || navigator.userAgent.includes('Macintosh');
 
@@ -32,11 +34,11 @@ function electronModule() {
 /* ------------------------------------------------------------------- About */
 
 export class AboutTab extends SettingTab {
-  declare name: any;
+  declare name: string;
   declare id: string;
   declare icon: string;
 
-  constructor(app: App, setting) {
+  constructor(app: App, setting: SettingsHost) {
     super(app, setting);
     this.name = tt('setting.about.name', '关于');
     this.id = 'about';
@@ -51,7 +53,7 @@ export class AboutTab extends SettingTab {
     // 原版：版本行 = 名称「版本 x」+ 描述「安装程序版本: x」+ 更新日志链接 + “检查更新”按钮。
     // 原版按钮点击后向主进程发 check-update 并轮询“是否检查中”；本复刻主进程无更新器，
     // 落回渲染层版本比较（core/update-check.js），结果写进描述与“可以更新”行。
-    let updateRow = null;
+    let updateRow: Setting|null = null;
     let updateUrl = '';
     group.addSetting((s) => {
       s.setName(tt('setting.about.label-version', '版本 {{version}}', { version: VERSION }));
@@ -118,8 +120,8 @@ export class AboutTab extends SettingTab {
         attr: { href: 'https://help.obsidian.md/Translations', target: '_blank', rel: 'noopener' },
       });
       const current = getLanguage() === 'zh' ? 'zh' : 'en';
-      let pending = null;
-      let relaunchBtn = null;
+      let pending: string|null = null;
+      let relaunchBtn: ButtonComponent|null = null;
       s.addButton((b) => {
         relaunchBtn = b;
         b.setCta().setButtonText(tt('setting.about.button-relaunch', '重新启动应用'));
@@ -135,7 +137,7 @@ export class AboutTab extends SettingTab {
         d.setValue(current);
         d.onChange((v) => {
           pending = v;
-          relaunchBtn.buttonEl.toggle(v !== current);
+          relaunchBtn?.buttonEl.toggle(v !== current);
         });
       });
     });
@@ -167,7 +169,7 @@ export class AboutTab extends SettingTab {
       let gpuDisabled = false;
       try { gpuDisabled = !!electron.ipcRenderer.sendSync('disable-gpu'); } catch (e) {}
       adv.addSetting((s) => {
-        let relaunchBtn = null;
+        let relaunchBtn: ButtonComponent|null = null;
         s.setName(tt('setting.about.option-hw-acceleration', '硬件加速'));
         s.descEl.empty();
         const desc = s.descEl.createDiv();
@@ -182,7 +184,7 @@ export class AboutTab extends SettingTab {
         s.addToggle((tog) => tog.setValue(!gpuDisabled).onChange((v) => {
           const disabled = !v;
           try { electron.ipcRenderer.sendSync('disable-gpu', disabled); } catch (e) {}
-          relaunchBtn.buttonEl.toggle(disabled !== gpuDisabled);
+          relaunchBtn?.buttonEl.toggle(disabled !== gpuDisabled);
         }));
       });
     }
@@ -241,12 +243,12 @@ export class AboutTab extends SettingTab {
 /* ------------------------------------------------------------------ Editor */
 
 export class EditorTab extends SettingTab {
-  declare name: any;
+  declare name: string;
   declare id: string;
   declare icon: string;
   declare passedVimTest: boolean;
 
-  constructor(app: App, setting) {
+  constructor(app: App, setting: SettingsHost) {
     super(app, setting);
     this.name = tt('setting.editor.name', '编辑器');
     this.id = 'editor';
@@ -257,7 +259,7 @@ export class EditorTab extends SettingTab {
   display() {
     const app = this.app;
     const settings = app.settings.appSettings;
-    const update = (patch) => app.settings.updateAppSettings(patch);
+    const update = (patch: Partial<AppSettings>) => app.settings.updateAppSettings(patch);
     this.containerEl.empty();
 
     const group = new SettingGroup(this.containerEl);
@@ -360,7 +362,7 @@ export class EditorTab extends SettingTab {
         .setDesc(IS_MAC
           ? tt('setting.editor.spellcheck-languages-mac-description', '本地的拼写检查器将自动检测你当前所使用的语言。')
           : tt('setting.editor.spellcheck-languages-description', '选择需要检查拼写的语言。'));
-      const displayName = (lang) => {
+      const displayName = (lang: string) => {
         try { return new Intl.DisplayNames([getLanguage()], { type: 'language' }).of(lang) || lang; } catch (e) { return lang; }
       };
       const renderLanguages = () => {
@@ -371,7 +373,7 @@ export class EditorTab extends SettingTab {
         const available = Array.isArray(info.available) ? info.available : [];
         const active = Array.isArray(info.active) ? info.active : [];
         const custom = Array.isArray(info.current) ? [...info.current] : null;
-        const apply = (languages) => { try { Desktop.spellcheckLanguagesSet(languages); } catch (e) {} renderLanguages(); };
+        const apply = (languages: string[]|null) => { try { Desktop.spellcheckLanguagesSet(languages); } catch (e) {} renderLanguages(); };
         s.controlEl.empty();
         const row = s.controlEl.createDiv('setting-command-hotkeys');
         if (custom) {
@@ -427,8 +429,8 @@ export class EditorTab extends SettingTab {
       .setDesc(tt('setting.editor.option-use-tabs-description', '开启后，Tab 键将使用制表符来完成缩进。关闭后 Tab 键将使用空格完成缩进。'))
       .addToggle((tog) => tog.setValue(settings.useTab !== false).onChange((v) => update({ useTab: v }))));
     behavior.addSetting((s) => {
-      let slider = null;
-      const setSize = (v) => {
+      let slider: SliderComponent|null = null;
+      const setSize = (v: number) => {
         if (slider) slider.setValue(v);
         update({ tabSize: v });
       };
@@ -476,11 +478,11 @@ export class EditorTab extends SettingTab {
 /* --------------------------------------------------------------- File & Links */
 
 export class FileTab extends SettingTab {
-  declare name: any;
+  declare name: string;
   declare id: string;
   declare icon: string;
 
-  constructor(app: App, setting) {
+  constructor(app: App, setting: SettingsHost) {
     super(app, setting);
     this.name = tt('setting.file.name', '文件与链接');
     this.id = 'file';
@@ -490,14 +492,14 @@ export class FileTab extends SettingTab {
   display() {
     const app = this.app;
     const settings = app.settings.appSettings;
-    const update = (patch) => app.settings.updateAppSettings(patch);
+    const update = (patch: Partial<AppSettings>) => app.settings.updateAppSettings(patch);
     this.containerEl.empty();
 
     /* 默认打开文件 */
     const behavior = settings.openBehavior || '';
     const isFileBehavior = behavior.startsWith('file:');
     let currentOpenPath = isFileBehavior ? behavior.slice(5) : '';
-    let openFileRow = null;
+    let openFileRow: Setting|null = null;
     const group = new SettingGroup(this.containerEl);
     group.addSetting((s) => s
       .setName(tt('setting.file.option-default-open-action', '默认打开文件'))
@@ -549,7 +551,7 @@ export class FileTab extends SettingTab {
           if (newFolderRow) newFolderRow.settingEl.toggle(v === 'folder');
         });
       }));
-    let newFolderRow = null;
+    let newFolderRow: Setting|null = null;
     group.addSetting((s) => {
       newFolderRow = s;
       s.setName(tt('setting.file.option-new-file-folder-path', '存放新建笔记的文件夹'))
@@ -571,15 +573,15 @@ export class FileTab extends SettingTab {
     if (attach === './' || attach === '.') attachMode = 'current';
     else if (attach.startsWith('./')) { attachMode = 'subfolder'; attachSub = attach.slice(2); if (attachSub === 'attachments') attachSub = ''; }
     else if (attach !== '/' && attach !== '') { attachMode = 'folder'; attachFolder = attach === 'attachments' ? '' : attach; }
-    const writeAttach = (mode, folder, sub) => {
+    const writeAttach = (mode: string, folder: string, sub: string) => {
       let value = '/';
       if (mode === 'current') value = './';
       else if (mode === 'subfolder') value = './' + (sub || 'attachments');
       else if (mode === 'folder') value = folder || 'attachments';
       update({ attachmentFolderPath: value });
     };
-    let attachFolderRow = null;
-    let attachSubRow = null;
+    let attachFolderRow: Setting|null = null;
+    let attachSubRow: Setting|null = null;
     group.addSetting((s) => s
       .setName(tt('setting.file.option-new-attachment-location', '附件默认存放路径'))
       .setDesc(tt('setting.file.option-new-attachment-location-description', '设置新添加附件的存放位置。'))
@@ -718,7 +720,7 @@ export class FileTab extends SettingTab {
     };
     this.setting.openPage({
       title: tt('setting.file.option-excluded-files', '忽略文件'),
-      build: (contentEl) => {
+      build: (contentEl: HTMLElement) => {
         const group = new SettingGroup(contentEl);
         group.addClass('mod-list');
         group.addClass('mod-no-icon');
@@ -728,7 +730,7 @@ export class FileTab extends SettingTab {
           .setIcon('lucide-plus')
           .setTooltip(tt('setting.file.label-add-excluded-filter', '添加排除项...'))
           .onClick(() => {
-            new AddExcludedFilterModal(app, (value) => {
+            new AddExcludedFilterModal(app, (value: string) => {
               app.settings.updateAppSettings({ userIgnoreFilters: [...filters(), value] });
               rerender();
             }).open();

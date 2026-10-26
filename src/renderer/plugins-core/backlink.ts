@@ -6,10 +6,14 @@
  *        状态栏条目按 resolvedLinks 汇总反链数，点击展开右栏反链（原版 updateBacklinks）。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
+import type { EventRef } from '../core/events.js';
+import { MarkdownView } from '../views/markdown-view.js';
 import { View } from '../core/view.js';
 import { t, getNouns } from '../core/i18n.js';
 import { setIcon } from '../core/icons.js';
 import { SettingGroup } from '../core/setting.js';
+import { TFile, VaultEntry } from '../core/vault.js';
+import { WorkspaceLeaf } from '../core/workspace-model.js';
 
 export const nameKey = 'plugins.backlinks';
 
@@ -17,7 +21,7 @@ export const nameKey = 'plugins.backlinks';
  * 原版搜索/反链条目共用：右键挂链接菜单（分节表 title/open/action/view/info/info.copy/danger）。
  * linktext 用来源文件路径，sourcePath 用当前笔记路径，重命名等动作才能命中同一文件。
  */
-function attachLinkRowMenu(app: App, el, sourceFile, currentFile) {
+function attachLinkRowMenu(app: App, el: HTMLElement, sourceFile: TFile, currentFile: { path: string } | null) {
   el.addEventListener('contextmenu', (ev) => {
     const menu = app.workspace.buildLinkMenu();
     const ok = app.workspace.handleLinkContextMenu(menu, sourceFile.path, currentFile ? currentFile.path : '', ev);
@@ -28,7 +32,7 @@ function attachLinkRowMenu(app: App, el, sourceFile, currentFile) {
 }
 
 // --- 从来源正文提取指向目标文件的链接上下文 ---
-export function findLinkContexts(app: App, sourceFile, targetFile) {
+export function findLinkContexts(app: App, sourceFile: TFile, targetFile: { path: string|null; }) {
   const cache = app.metadataCache.getFileCache(sourceFile);
   const text = (cache && cache._rawText) || '';
   if (!text) return [];
@@ -55,22 +59,22 @@ export function findLinkContexts(app: App, sourceFile, targetFile) {
 }
 
 export class BacklinkView extends View {
-  declare ownerView: import('../views/markdown-view.js').MarkdownView;
+  declare ownerView: MarkdownView | undefined;
 
   declare icon: string;
   declare navigation: boolean;
-  declare _refs: any[];
+  declare _refs: EventRef[];
   declare _showSearch: boolean;
   declare _query: string;
   declare _backlinkCollapsed: boolean;
   declare _unlinkedCollapsed: boolean;
-  declare _pending: any;
-  declare _filePath: any;
-  declare _collapsedFiles: any;
-  declare _header: any;
-  declare _pane: any;
+  declare _pending: ReturnType<typeof setTimeout> | null;
+  declare _filePath: string | null;
+  declare _collapsedFiles: Set<string>;
+  declare _header: HTMLDivElement | null;
+  declare _pane: HTMLDivElement | null;
 
-  constructor(leaf) {
+  constructor(leaf: WorkspaceLeaf) {
     super(leaf);
     this.icon = 'arrow-left-right';
     this.navigation = true;
@@ -110,7 +114,7 @@ export class BacklinkView extends View {
   onClose() {
     for (const r of this._refs) r.unregister && r.unregister();
     this._refs = [];
-    clearTimeout(this._pending);
+    clearTimeout(this._pending ?? undefined);
     this._pending = null;
     this._pane = null;
     this._header = null;
@@ -165,7 +169,7 @@ export class BacklinkView extends View {
     }
   }
 
-  _section(pane, labelText, count, collapsed, onToggle) {
+  _section(pane: HTMLElement, labelText: string, count: number, collapsed: boolean, onToggle: (collapsed: boolean) => void) {
     const header = pane.createDiv('tree-item-self is-clickable backlink-pane-header');
     header.toggleClass('is-collapsed', collapsed);
     header.setAttr('aria-expanded', String(!collapsed));
@@ -179,15 +183,16 @@ export class BacklinkView extends View {
     return header;
   }
 
-  _renderResults(file) {
+  _renderResults(file: TFile) {
     const pane = this._pane;
+    if (!pane) return;
     const q = this._query.toLowerCase();
     const data = this.app.metadataCache.getBacklinksForFile(file);
     const entries = Object.entries(data.backlinks as Record<string, { count: number }>).filter(([path]) => !q || path.toLowerCase().includes(q));
     const total = entries.reduce((a, [, info]) => a + (info.count || 0), 0);
 
     // --- 分节标题与搜索结果容器保持同级 ---
-    this._section(pane, t('plugins.backlinks.label-linked-mentions') || 'Linked mentions', total, this._backlinkCollapsed, (c) => {
+    this._section(pane, t('plugins.backlinks.label-linked-mentions') || 'Linked mentions', total, this._backlinkCollapsed, (c: boolean) => {
       this._backlinkCollapsed = c;
       this._render();
     });
@@ -203,7 +208,7 @@ export class BacklinkView extends View {
 
     // --- 未链接提及默认收起 ---
     const unlinked = this.app.metadataCache.getUnlinkedMentions(file).filter(({ file: f }) => f && (!q || f.path.toLowerCase().includes(q)));
-    this._section(pane, t('plugins.backlinks.label-unlinked-mentions') || 'Unlinked mentions', unlinked.length, this._unlinkedCollapsed, (c) => {
+    this._section(pane, t('plugins.backlinks.label-unlinked-mentions') || 'Unlinked mentions', unlinked.length, this._unlinkedCollapsed, (c: boolean) => {
       this._unlinkedCollapsed = c;
       this._render();
     });
@@ -213,6 +218,7 @@ export class BacklinkView extends View {
       unlinkedDom.createDiv({ cls: 'search-empty-state', text: t('plugins.backlinks.label-no-unlinked-mentions') || 'No unlinked mentions found.' });
     } else {
       for (const { file: source, name } of unlinked.slice(0, 50)) {
+        if (!source) continue;
         const contexts = findContextsByName(this.app, source, name);
         const item = unlinkedDom.createDiv('tree-item search-result');
         const selfEl = item.createDiv('tree-item-self search-result-file-title is-clickable');
@@ -225,7 +231,7 @@ export class BacklinkView extends View {
           highlightRange(match, ctx.start, ctx.end);
           match.onclick = () => this.app.workspace.openFile(source, { eState: { line: ctx.line } });
           const linkBtn = match.createEl('button', { cls: 'backlink-unlinked-link-button', text: t('plugins.backlinks.label-link-button-text') || 'Link' });
-          linkBtn.onclick = async (ev) => {
+          linkBtn.onclick = async (ev: { stopPropagation: () => void; }) => {
             ev.stopPropagation();
             const text = await this.app.vault.read(source);
             const lines = text.split('\n');
@@ -240,8 +246,8 @@ export class BacklinkView extends View {
     }
   }
 
-  _renderBacklinkFile(container, path, count) {
-    const source = this.app.vault.getAbstractFileByPath(path);
+  _renderBacklinkFile(container: HTMLElement, path: string, count: number) {
+    const source = this.app.vault.getFileByPath(path);
     if (!source) return;
     const current = this._getFile();
     const item = container.createDiv('tree-item search-result');
@@ -252,7 +258,7 @@ export class BacklinkView extends View {
     self.createDiv({ cls: 'tree-item-inner', text: source.basename });
     self.createDiv('tree-item-flair-outer').createSpan({ cls: 'tree-item-flair', text: String(count) });
     const children = item.createDiv('search-result-file-matches');
-    const setCollapsed = (collapsed) => {
+    const setCollapsed = (collapsed: boolean) => {
       item.toggleClass('is-collapsed', collapsed);
       icon.toggleClass('is-collapsed', collapsed);
       self.setAttr('aria-expanded', String(!collapsed));
@@ -261,7 +267,7 @@ export class BacklinkView extends View {
       else this._collapsedFiles.delete(path);
     };
     setCollapsed(this._collapsedFiles.has(path));
-    icon.onclick = (ev) => {
+    icon.onclick = (ev: { stopPropagation: () => void; }) => {
       ev.stopPropagation();
       setCollapsed(!item.hasClass('is-collapsed'));
     };
@@ -284,15 +290,15 @@ export class BacklinkView extends View {
   }
 }
 
-function highlightRange(el, start, end) {
-  const text = el.textContent;
+function highlightRange(el: HTMLElement, start: number, end: number) {
+  const text = el.textContent || '';
   el.empty();
   el.appendText(text.slice(0, start));
   el.createSpan({ cls: 'search-result-file-matched-text', text: text.slice(start, end) });
   el.appendText(text.slice(end));
 }
 
-function findContextsByName(app: App, sourceFile, name) {
+function findContextsByName(app: App, sourceFile: TFile, name: string) {
   const cache = app.metadataCache.getFileCache(sourceFile);
   const text = (cache && cache._rawText) || '';
   const lines = text.split('\n');
@@ -310,7 +316,7 @@ function findContextsByName(app: App, sourceFile, name) {
 }
 
 /** 原版 A8：默认只作用于后续打开的笔记；各标签页保存独立 backlinks 状态。 */
-export function settingTab(app: App, containerEl) {
+export function settingTab(app: App, containerEl: HTMLElement) {
   const options = app.settings.loadPluginData('backlink.json', { backlinkInDocument: false });
   const group = new SettingGroup(containerEl).setHeading(t('plugins.backlinks.name'));
   group.addSetting((s) => s
@@ -324,8 +330,8 @@ export function settingTab(app: App, containerEl) {
 }
 
 export function create(app: App) {
-  let statusEl = null;
-  let refs = [];
+  let statusEl: HTMLDivElement|null = null;
+  let refs: EventRef[] = [];
 
   /** 原版 updateBacklinks：statusBar 显示当前文件的反链数，点击打开右栏反链。 */
   function updateStatus() {
@@ -347,9 +353,9 @@ export function create(app: App) {
   return {
     onload() {
       app.workspace.backlinkInDocument = !!app.settings.loadPluginData('backlink.json', {}).backlinkInDocument;
-      statusEl = app.workspace.statusBar.createDiv('status-bar-item plugin-backlink mod-clickable');
-      statusEl.addEventListener('click', () => {
-        app.workspace.ensureSideLeaf('backlink', 'right', { active: true, reveal: true });
+      statusEl = app.workspace.statusBar?.createDiv('status-bar-item plugin-backlink mod-clickable') || null;
+      statusEl?.addEventListener('click', () => {
+        app.workspace.ensureSideLeaf('backlink', 'right', { reveal: true });
       });
       refs = [app.workspace.on('file-open', updateStatus),
         app.workspace.on('active-leaf-change', updateStatus),
@@ -379,7 +385,7 @@ export function create(app: App) {
         name: t('plugins.backlinks.action-toggle-backlinks-in-document') || 'Toggle backlinks in document',
         checkCallback: (checking) => {
           const view = app.workspace.activeLeaf?.view;
-          if (!view?.canToggleBacklinks?.()) return false;
+          if (!(view instanceof MarkdownView) || !view.canToggleBacklinks()) return false;
           if (!checking) view.toggleBacklinks();
           return true;
         },
@@ -389,7 +395,7 @@ export function create(app: App) {
       refs.forEach((ref) => ref.unregister()); refs = [];
       app.workspace.backlinkInDocument = false;
       for (const leaf of app.workspace.getLeavesOfType('markdown')) {
-        leaf.view.showBacklinks = false; leaf.view.updateShowBacklinks?.();
+        if (leaf.view instanceof MarkdownView) { leaf.view.showBacklinks = false; leaf.view.updateShowBacklinks(); }
       }
       app.viewRegistry.unregisterView('backlink');
       if (statusEl) { statusEl.detach(); statusEl = null; }

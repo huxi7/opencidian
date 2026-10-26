@@ -6,6 +6,8 @@
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 /* Core plugin: properties — the "All properties" and "File properties" panes. */
+import type { EventRef } from '../core/events.js';
+import { SearchView } from './global-search.js';
 import { View } from '../core/view.js';
 import { t, getNouns } from '../core/i18n.js';
 import { setIcon } from '../core/icons.js';
@@ -14,6 +16,9 @@ import { IS_MAC } from '../core/keymap.js';
 import { buildMetadataContainer } from '../markdown/properties.js';
 import { getPropertyTypes } from '../markdown/properties-types.js';
 import { showPropertyTypeMenu } from '../markdown/properties-menu.js';
+import { WorkspaceLeaf } from '../core/workspace-model.js';
+import { Command,CommandDefinition } from '../core/commands.js';
+import { TFile } from '../core/vault.js';
 
 export const nameKey = 'plugins.properties';
 
@@ -22,27 +27,27 @@ export const FILE_PROPERTIES_VIEW_TYPE = 'file-properties';
 
 // 原版 g7/y7：两组各两项，组间分隔线；默认 frequency。
 const SORT_GROUPS = [['alphabetical', 'alphabeticalReverse'], ['frequency', 'frequencyReverse']];
-const SORT_LABELS = {
+const SORT_LABELS: Record<string, () => string> = {
   alphabetical: () => t('plugins.properties.label-sort-by-name-a-to-z') || 'Property name (A to Z)',
   alphabeticalReverse: () => t('plugins.properties.label-sort-by-name-z-to-a') || 'Property name (Z to A)',
   frequency: () => t('plugins.properties.label-sort-by-frequency-high-to-low') || 'Frequency (high to low)',
   frequencyReverse: () => t('plugins.properties.label-sort-by-frequency-low-to-high') || 'Frequency (low to high)',
 };
 
-function isModEvent(ev) {
+function isModEvent(ev: Pick<MouseEvent, 'metaKey' | 'ctrlKey'>) {
   return IS_MAC ? !!ev.metaKey : !!ev.ctrlKey;
 }
 
 export class AllPropertiesView extends View {
   declare icon: string;
   declare navigation: boolean;
-  declare _refs: any[];
-  declare _pending: any;
-  declare _list: any;
-  declare _header: any;
+  declare _refs: EventRef[];
+  declare _pending: ReturnType<typeof setTimeout> | null;
+  declare _list: HTMLDivElement | null;
+  declare _header: HTMLDivElement | null;
   declare _sortOrder: string;
 
-  constructor(leaf) {
+  constructor(leaf: WorkspaceLeaf) {
     super(leaf);
     this.icon = 'archive';
     this.navigation = true;
@@ -57,8 +62,8 @@ export class AllPropertiesView extends View {
   getDisplayText() { return t('plugins.properties.name-global') || 'All properties'; }
   getState() { return { sortOrder: this._sortOrder }; }
 
-  async setState(state) {
-    if (state && SORT_LABELS[state.sortOrder]) this._sortOrder = state.sortOrder;
+  async setState(state: Record<string,unknown>) {
+    if (state && typeof state.sortOrder === 'string' && SORT_LABELS[state.sortOrder]) this._sortOrder = state.sortOrder;
     this._render();
   }
 
@@ -81,7 +86,7 @@ export class AllPropertiesView extends View {
   onClose() {
     for (const ref of this._refs) ref.unregister && ref.unregister();
     this._refs = [];
-    clearTimeout(this._pending);
+    clearTimeout(this._pending ?? undefined);
     this._pending = null;
     this._list = null;
     this._header = null;
@@ -100,13 +105,13 @@ export class AllPropertiesView extends View {
     const sortBtn = buttons.createDiv('clickable-icon nav-action-button');
     setIcon(sortBtn, 'sort-asc');
     sortBtn.setAttr('aria-label', t('plugins.file-explorer.action-change-sort') || 'Change sort order');
-    sortBtn.onclick = (ev) => {
+    sortBtn.onclick = (ev: MouseEvent) => {
       ev.preventDefault();
       this._showSortMenu(sortBtn, ev);
     };
   }
 
-  _showSortMenu(anchor, ev) {
+  _showSortMenu(anchor: HTMLElement, ev: MouseEvent) {
     const menu = new Menu(this.app);
     SORT_GROUPS.forEach((group, groupIndex) => {
       for (const order of group) {
@@ -120,7 +125,7 @@ export class AllPropertiesView extends View {
     menu.setParentElement(anchor).showAtMouseEvent(ev);
   }
 
-  setSortOrder(order) {
+  setSortOrder(order: string) {
     if (!SORT_LABELS[order]) return;
     this._sortOrder = order;
     this._render();
@@ -128,7 +133,7 @@ export class AllPropertiesView extends View {
 
   /** 统计：属性键 → 出现该键的 md 文件数（原版 metadataTypeManager.occurrences 语义）。 */
   _collectStats() {
-    const stats = new Map();
+    const stats = new Map<string, { name: string; count: number; value: unknown }>();
     for (const file of this.app.vault.getMarkdownFiles()) {
       const cache = this.app.metadataCache.getFileCache(file);
       const frontmatter = cache && cache.frontmatter;
@@ -143,9 +148,9 @@ export class AllPropertiesView extends View {
     return stats;
   }
 
-  _sorted(stats) {
+  _sorted(stats: ReturnType<AllPropertiesView['_collectStats']>) {
     const entries = [...stats.entries()].map(([, info]) => ({ name: info.name, count: info.count, value: info.value }));
-    const byName = (a, b) => a.name.localeCompare(b.name);
+    const byName = (a: { name: string }, b: { name: string }) => a.name.localeCompare(b.name);
     switch (this._sortOrder) {
       case 'alphabetical': return entries.sort(byName);
       case 'alphabeticalReverse': return entries.sort((a, b) => byName(b, a));
@@ -171,16 +176,17 @@ export class AllPropertiesView extends View {
       row.createDiv({ cls: 'tree-item-inner' }).createDiv({ cls: 'tree-item-inner-text', text: entry.name });
       row.createDiv('tree-item-flair-outer').createSpan({ cls: 'tree-item-flair', text: String(entry.count) });
       row.onclick = (ev) => this._openSearchForProperty(entry.name, ev);
-      row.oncontextmenu = ev => showPropertyTypeMenu(this.app, { key: entry.name, value: entry.value }, row, ev);
+      row.oncontextmenu = (ev: MouseEvent) => showPropertyTypeMenu(this.app, { key: entry.name, value: entry.value }, row, ev);
     }
   }
 
   /** 原版 onSelfClick：打开全局搜索 ["name"]；Mod 点击在现有查询里切换该 token。 */
-  _openSearchForProperty(name, ev) {
+  _openSearchForProperty(name: string, ev: MouseEvent) {
     const token = '["' + name + '"]';
-    const open = (leaf) => {
+    const open = (leaf: WorkspaceLeaf) => {
       this.app.workspace.revealLeaf(leaf);
       const view = leaf.view;
+      if (!(view instanceof SearchView)) return;
       let next = token;
       if (isModEvent(ev) && view.getState) {
         const current = String(view.getState().query || '').trim();
@@ -201,13 +207,13 @@ export class AllPropertiesView extends View {
 export class FilePropertiesView extends View {
   declare icon: string;
   declare navigation: boolean;
-  declare _refs: any[];
-  declare _pending: any;
-  declare _container: any;
-  declare _stateFile: any;
-  declare _renderedPath: any;
+  declare _refs: EventRef[];
+  declare _pending: ReturnType<typeof setTimeout> | null;
+  declare _container: HTMLDivElement | null;
+  declare _stateFile: string | null;
+  declare _renderedPath: string | null;
 
-  constructor(leaf) {
+  constructor(leaf: WorkspaceLeaf) {
     super(leaf);
     this.icon = 'info';
     this.navigation = true;
@@ -234,7 +240,7 @@ export class FilePropertiesView extends View {
   }
   getState() { return this._renderedPath ? { file: this._renderedPath } : {}; }
 
-  async setState(state) {
+  async setState(state: Record<string,unknown>) {
     if (state && typeof state.file === 'string') this._stateFile = state.file;
     this._render();
   }
@@ -258,7 +264,7 @@ export class FilePropertiesView extends View {
   onClose() {
     for (const ref of this._refs) ref.unregister && ref.unregister();
     this._refs = [];
-    clearTimeout(this._pending);
+    clearTimeout(this._pending ?? undefined);
     this._pending = null;
     this._container = null;
     this._renderedPath = null;
@@ -289,9 +295,9 @@ export class FilePropertiesView extends View {
 
 class PropertiesPlugin {
   declare app: App;
-  declare _refs: any[];
-  declare _commandIds: any[];
-  declare _statusBarEl: any;
+  declare _refs: EventRef[];
+  declare _commandIds: string[];
+  declare _statusBarEl: HTMLDivElement | null;
 
   constructor(app: App) {
     this.app = app;
@@ -306,7 +312,7 @@ class PropertiesPlugin {
     app.viewRegistry.registerView(ALL_PROPERTIES_VIEW_TYPE, (leaf) => new AllPropertiesView(leaf));
     app.viewRegistry.registerView(FILE_PROPERTIES_VIEW_TYPE, (leaf) => new FilePropertiesView(leaf));
     this._commandIds = [];
-    const add = (command) => {
+    const add = (command: Command|CommandDefinition) => {
       app.commands.addCommand(command);
       this._commandIds.push(command.id);
     };
@@ -322,9 +328,9 @@ class PropertiesPlugin {
       icon: 'info',
       callback: () => { this.ensurePropertiesView(app.workspace.getActiveFile()); },
     });
-    this._statusBarEl = app.workspace.statusBar.createDiv('status-bar-item plugin-properties');
-    this._statusBarEl.addClass('mod-clickable');
-    this._statusBarEl.addEventListener('click', () => {
+    this._statusBarEl = app.workspace.statusBar?.createDiv('status-bar-item plugin-properties') || null;
+    this._statusBarEl?.addClass('mod-clickable');
+    this._statusBarEl?.addEventListener('click', () => {
       this.ensurePropertiesView(app.workspace.getActiveFile());
     });
     this._refs = [
@@ -362,7 +368,7 @@ class PropertiesPlugin {
   }
 
   /** 原版 ensurePropertiesView：聚焦右侧 file-properties 并写入目标文件。 */
-  async ensurePropertiesView(file) {
+  async ensurePropertiesView(file: TFile|null) {
     const leaf = await this.app.workspace.ensureSideLeaf(FILE_PROPERTIES_VIEW_TYPE, 'right', { reveal: true });
     await leaf.setViewState({ type: FILE_PROPERTIES_VIEW_TYPE, state: file ? { file: file.path } : {} });
     this.app.workspace.setActiveLeaf(leaf, { focus: true });

@@ -10,7 +10,7 @@ import { Desktop } from '../core/ipc.js';
 import { syncTrafficLightPosition } from '../core/window-chrome.js';
 import { setIcon } from '../core/icons.js';
 import { tt } from '../core/i18n.js';
-import { SettingTab } from '../core/setting.js';
+import { Setting, SettingTab } from '../core/setting.js';
 import { renderHighlightedText } from '../core/suggest.js';
 import { AboutTab, EditorTab, FileTab } from './settings-tabs.js';
 import { AppearanceTab, InterfaceTab } from './settings-tabs-appearance.js';
@@ -19,7 +19,7 @@ import { HotkeysTab, CorePluginsTab } from './settings-tabs-plugins.js';
 export { SettingTab };
 
 /** 核心插件设置页在左栏的图标：与各插件功能区入口保持同一图标。 */
-const CORE_PLUGIN_ICONS = {
+const CORE_PLUGIN_ICONS: Record<string, string> = {
   'file-explorer': 'lucide-folder-closed',
   'global-search': 'lucide-search',
   'switcher': 'lucide-file-search',
@@ -47,7 +47,7 @@ const CORE_PLUGIN_ICONS = {
 };
 
 /** 别名载体：设置行的 data-aliases（JSON 字符串数组），对应原版定义树的 aliases 字段。 */
-function readSettingAliases(el) {
+function readSettingAliases(el: Element) {
   const raw = el.getAttribute('data-aliases');
   if (!raw) return [];
   try {
@@ -62,9 +62,9 @@ function readSettingAliases(el) {
  * 原版 gx/vx/fx：查询按空格切词，每个词都必须是文本的子串（AND），命中区间合并后返回。
  * 设置搜索的名称、描述、别名三路与页签名共用它，原版即用这一套。
  */
-function createSettingMatcher(query) {
+function createSettingMatcher(query: string) {
   const tokens = String(query || '').toLowerCase().split(' ').filter(Boolean);
-  return (text) => {
+  return (text: string) => {
     if (!text) return null;
     const lower = text.toLowerCase();
     const ranges = [];
@@ -87,8 +87,8 @@ function createSettingMatcher(query) {
 }
 
 /** 原版 ix：按起点排序，合并相交或相接的命中区间。 */
-function mergeMatchRanges(ranges) {
-  const sorted = ranges.slice().sort((a, b) => a[0] - b[0]);
+function mergeMatchRanges(ranges: number[][]) {
+  const sorted = ranges.slice().sort((a: number[], b: number[]) => a[0] - b[0]);
   const merged = [sorted[0].slice()];
   for (let i = 1; i < sorted.length; i++) {
     const last = merged[merged.length - 1];
@@ -99,7 +99,7 @@ function mergeMatchRanges(ranges) {
 }
 
 /** 原版 cx：区间数、命中跨度、命中起点与文本长度的加权惩罚（分数越高越靠前）。 */
-function scoreMatchRanges(ranges, queryLength, textLength) {
+function scoreMatchRanges(ranges: number[][], queryLength: number, textLength: number) {
   if (!ranges.length) return 0;
   let score = 0;
   score -= Math.max(0, ranges.length - 1);
@@ -112,8 +112,8 @@ function scoreMatchRanges(ranges, queryLength, textLength) {
 }
 
 /** 原版：别名逐条比对，取分数最高的一条作为该项的别名命中。 */
-function matchAliases(match, aliases) {
-  let best = null;
+function matchAliases(match: (text: string) => SettingMatch | null, aliases: string[]) {
+  let best: SettingMatch | null = null;
   for (const alias of aliases || []) {
     const hit = match(alias);
     if (hit && (!best || hit.score > best.score)) best = hit;
@@ -121,25 +121,30 @@ function matchAliases(match, aliases) {
   return best;
 }
 
+interface SettingMatch { score: number; matches: number[][]; }
+interface SettingSearchItem { name: string; desc: string; aliases: string[]; }
+interface SettingSearchResult { name: string; desc: string; nameMatch: SettingMatch | null; descMatch: SettingMatch | null; aliasMatch: SettingMatch | null; score: number; }
+interface SettingSearchGroup { tab: SettingTab; tabNameMatch: SettingMatch | null; results: SettingSearchResult[]; best: number; }
+
 export class SettingsHost extends Modal {
-  declare settingTabs: any[];
-  declare pluginTabs: any[];
-  declare activeTab: any;
+  declare settingTabs: SettingTab[];
+  declare pluginTabs: SettingTab[];
+  declare activeTab: SettingTab | null;
   declare lastTabId: string;
-  declare pageStack: any[];
-  declare searchItemCache: any;
+  declare pageStack: Array<{ el: HTMLElement; title: string }>;
+  declare searchItemCache: Map<string, SettingSearchItem[]>;
   declare isSearchActive: boolean;
-  declare tabHeadersEl: any;
-  declare searchContainerEl: any;
-  declare searchResultsEl: any;
-  declare tabGroupContainerEl: any;
-  declare tabContainer: any;
-  declare corePluginTabHeaderGroup: any;
-  declare corePluginTabContainer: any;
-  declare tabContentContainer: any;
-  declare titleTextEl: any;
-  declare searchInputEl: any;
-  declare searchClearEl: any;
+  declare tabHeadersEl: HTMLDivElement;
+  declare searchContainerEl: HTMLDivElement;
+  declare searchResultsEl: HTMLDivElement;
+  declare tabGroupContainerEl: HTMLDivElement;
+  declare tabContainer: HTMLDivElement;
+  declare corePluginTabHeaderGroup: HTMLDivElement;
+  declare corePluginTabContainer: HTMLDivElement;
+  declare tabContentContainer: HTMLDivElement;
+  declare titleTextEl: HTMLElement;
+  declare searchInputEl: HTMLInputElement;
+  declare searchClearEl: HTMLElement;
 
   constructor(app: App) {
     super(app);
@@ -200,10 +205,12 @@ export class SettingsHost extends Modal {
   }
 
   /** 取得（必要时创建）某个核心插件的设置页签，并挂进侧栏“核心插件”分组。 */
-  ensureCorePluginTab(pluginId, entry) {
+  ensureCorePluginTab(pluginId: string, entry?: App['plugins']['internalPlugins'][string]) {
     if (!entry) entry = this.app.plugins && this.app.plugins.getInternalPlugin(pluginId);
-    const module = entry && entry.manifest && entry.manifest.module;
+    if (!entry) return null;
+    const module = entry.manifest.module;
     if (!module || typeof module.settingTab !== 'function') return null;
+    const display = module.settingTab;
     const existing = this.pluginTabs.find((x) => x.pluginId === pluginId);
     if (existing) return existing;
     const tab = new SettingTab(this.app, this);
@@ -214,13 +221,13 @@ export class SettingsHost extends Modal {
     tab.pluginId = pluginId;
     tab.display = () => {
       tab.containerEl.empty();
-      module.settingTab(this.app, tab.containerEl);
+      display(this.app, tab.containerEl);
     };
     this.addSettingTab(tab);
     return tab;
   }
 
-  updateModalTitle(tab?) {
+  updateModalTitle(tab?: AboutTab|SettingTab|AppearanceTab|InterfaceTab|EditorTab|FileTab|HotkeysTab|CorePluginsTab|undefined) {
     this.titleEl.empty();
     // 原版 titleTextEl：.modal-title 内的裸 div，返回按钮作为它的前一个兄弟
     this.titleTextEl = this.titleEl.createDiv();
@@ -235,7 +242,7 @@ export class SettingsHost extends Modal {
    * @param {{title: string, build?: (contentEl: HTMLElement) => void}} options
    * @returns {HTMLElement} 页面根元素
    */
-  openPage(options) {
+  openPage(options: { title?: string; build?: ((contentEl: HTMLElement) => void)|((contentEl: HTMLElement) => void)|((contentEl: HTMLElement) => void)|((contentEl: HTMLElement) => void); }) {
     const { title, build } = options || {};
     this.closePage(true);
     const pageEl = createDiv('setting-page vertical-tab-content');
@@ -258,7 +265,7 @@ export class SettingsHost extends Modal {
   }
 
   /** 关闭子页面：移除页面并把页签内容放回内容容器。 */
-  closePage(silent?) {
+  closePage(silent?: boolean|undefined) {
     const page = this.pageStack.pop();
     if (!page) return false;
     page.el.remove();
@@ -314,19 +321,19 @@ export class SettingsHost extends Modal {
   }
 
   /** 采集单个页签的条目；页签未渲染过时离屏渲染一次（结果缓存）。 */
-  harvestTabItems(tab) {
+  harvestTabItems(tab: SettingTab) {
     const container = tab.containerEl;
     if (container && container.childElementCount) return this.harvestItemsFrom(container);
-    if (this.searchItemCache.has(tab.id)) return this.searchItemCache.get(tab.id);
+    if (this.searchItemCache.has(tab.id)) return this.searchItemCache.get(tab.id) || [];
     const probe = createDiv('vertical-tab-content');
     const original = tab.containerEl;
     tab.containerEl = probe;
-    let items = [];
+    let items: SettingSearchItem[] = [];
     try {
       tab.display();
       items = this.harvestItemsFrom(probe);
     } catch (e) {
-      console.error('Settings search index failed', tab.id, (e && e.stack) || e);
+      console.error('Settings search index failed', tab.id, (e instanceof Error ? e.stack : e));
     }
     tab.containerEl = original;
     this.searchItemCache.set(tab.id, items);
@@ -334,8 +341,8 @@ export class SettingsHost extends Modal {
   }
 
   /** 从渲染结果里取“名称 + 描述 + 别名”（跳过标题行）。 */
-  harvestItemsFrom(root) {
-    const out = [];
+  harvestItemsFrom(root: HTMLDivElement) {
+    const out: SettingSearchItem[] = [];
     for (const el of root.querySelectorAll('.setting-item:not(.setting-item-heading)')) {
       const nameEl = el.querySelector('.setting-item-name');
       if (!nameEl) continue;
@@ -353,8 +360,8 @@ export class SettingsHost extends Modal {
    * 原版 aliases：设置定义可带别名数组，搜索时与名称、描述同权重参与匹配。
    * 本仓库的搜索索引从 DOM 采集，故别名挂在设置行的 data-aliases 上（JSON 字符串数组）。
    */
-  setSettingAliases(setting, aliases) {
-    const list = (aliases || []).filter((a) => typeof a === 'string' && a.trim());
+  setSettingAliases(setting: Setting, aliases: string[]) {
+    const list = (aliases || []).filter((a: string) => typeof a === 'string' && a.trim());
     if (!list.length) return setting;
     setting.settingEl.setAttr('data-aliases', JSON.stringify(list));
     return setting;
@@ -387,9 +394,9 @@ export class SettingsHost extends Modal {
    * 组内按分数降序，组间按最高分降序。匹配器与原版一致：查询按空格切词，
    * 每个词都必须是文本的子串。
    */
-  searchGroups(query) {
+  searchGroups(query: string) {
     const match = createSettingMatcher(query);
-    const byTab = new Map();
+    const byTab = new Map<SettingTab, SettingSearchGroup>();
     for (const item of this.collectSearchItems()) {
       const nameMatch = match(item.name);
       const descMatch = item.desc ? match(item.desc) : null;
@@ -411,34 +418,34 @@ export class SettingsHost extends Modal {
     const groups = [...byTab.values()].filter((g) => g.results.length || g.tabNameMatch);
     for (const group of groups) {
       group.best = Math.max(group.best, group.tabNameMatch ? group.tabNameMatch.score : -Infinity);
-      group.results.sort((a, b) => b.score - a.score);
+      group.results.sort((a: { score: number; }, b: { score: number; }) => b.score - a.score);
     }
     groups.sort((a, b) => b.best - a.best);
     return groups;
   }
 
   /** 渲染一组结果：页签行 + 设置项行（最多显示 3 条，其余收进“还有 N 个”）。 */
-  renderSearchGroup(group) {
+  renderSearchGroup(group: SettingSearchGroup) {
     const groupEl = this.searchResultsEl.createDiv('setting-search-result-group');
     const tabRow = groupEl.createDiv('vertical-tab-nav-item setting-search-result-tab tappable');
     tabRow.setAttr('tabindex', '-1');
-    if (group.tab.icon) tabRow.createDiv('vertical-tab-nav-item-icon', (el) => setIcon(el, group.tab.icon));
+    if (group.tab.icon) tabRow.createDiv('vertical-tab-nav-item-icon', (el: Element|null|undefined) => setIcon(el, group.tab.icon));
     const textEl = tabRow.createDiv('setting-search-result-tab-text');
     const labelEl = textEl.createDiv('setting-search-result-tab-label');
     renderHighlightedText(labelEl, group.tab.name, group.tabNameMatch ? group.tabNameMatch.matches : null);
-    tabRow.createDiv('vertical-tab-nav-item-chevron', (el) => setIcon(el, 'lucide-chevron-right'));
+    tabRow.createDiv('vertical-tab-nav-item-chevron', (el: Element|null|undefined) => setIcon(el, 'lucide-chevron-right'));
     tabRow.addEventListener('click', () => this.openSearchResult(group, null));
 
     const itemsEl = groupEl.createDiv('setting-search-result-group-items');
-    const hidden = [];
-    group.results.forEach((result, index) => {
+    const hidden: HTMLElement[] = [];
+    group.results.forEach((result: SettingSearchResult, index: number) => {
       const row = itemsEl.createDiv('vertical-tab-nav-item setting-search-result-item tappable');
       row.setAttr('tabindex', '-1');
       if (index >= 3) { row.hide(); hidden.push(row); }
       const titleEl = row.createDiv('vertical-tab-nav-item-title');
       // 原版 hoe：只有名称命中才高亮；描述或别名命中的行显示不带高亮的名称
       renderHighlightedText(titleEl, result.name, result.nameMatch ? result.nameMatch.matches : null);
-      row.createDiv('vertical-tab-nav-item-chevron', (el) => setIcon(el, 'lucide-chevron-right'));
+      row.createDiv('vertical-tab-nav-item-chevron', (el: Element|null|undefined) => setIcon(el, 'lucide-chevron-right'));
       row.addEventListener('click', () => this.openSearchResult(group, result));
     });
     if (hidden.length) {
@@ -454,7 +461,7 @@ export class SettingsHost extends Modal {
   }
 
   /** 打开搜索结果所在页签，并滚动/闪烁高亮对应设置行（原版 scrollToDefinition）。 */
-  openSearchResult(group, result) {
+  openSearchResult(group: SettingSearchGroup, result: SettingSearchResult | null) {
     this.openTab(group.tab);
     if (!result) return;
     const el = this.findSettingRow(group.tab, result.name);
@@ -465,7 +472,7 @@ export class SettingsHost extends Modal {
   }
 
   /** 在页签内容里找名称匹配的行。 */
-  findSettingRow(tab, name) {
+  findSettingRow(tab: SettingTab, name: string) {
     if (!tab || !tab.containerEl) return null;
     for (const el of tab.containerEl.querySelectorAll('.setting-item')) {
       const nameEl = el.querySelector('.setting-item-name');
@@ -493,7 +500,7 @@ export class SettingsHost extends Modal {
   getRootEl() { return this.app.isSettingsWindow ? this.modalEl : this.containerEl; }
 
   /** 向主进程请求开窗/聚焦，并接力目标页签。 */
-  _openPopoutWindow(tabId) {
+  _openPopoutWindow(tabId: string) {
     let background = '';
     try { background = getComputedStyle(document.body).backgroundColor; } catch (e) {}
     try {
@@ -534,7 +541,7 @@ export class SettingsHost extends Modal {
     return super.close();
   }
 
-  addSettingTab(tab) {
+  addSettingTab(tab: AboutTab|SettingTab|AppearanceTab|InterfaceTab|EditorTab|FileTab|HotkeysTab|CorePluginsTab) {
     if (!tab || !tab.id) return;
     if (!tab.containerEl) tab.containerEl = createDiv('vertical-tab-content');
     if (!tab.navEl) {
@@ -555,7 +562,7 @@ export class SettingsHost extends Modal {
     this.updatePluginSection();
   }
 
-  removeSettingTab(tab) {
+  removeSettingTab(tab: SettingTab | string) {
     const id = typeof tab === 'string' ? tab : tab && tab.id;
     this.pluginTabs = this.pluginTabs.filter((x) => x.id !== id);
     this.settingTabs = this.settingTabs.filter((x) => x.id !== id);
@@ -564,13 +571,13 @@ export class SettingsHost extends Modal {
   }
 
   /** 核心插件在禁用时移除其设置页签（plugins.js 调用）。 */
-  removePluginTabs(pluginId) {
+  removePluginTabs(pluginId: string) {
     for (const tab of [...this.pluginTabs]) {
       if (tab.pluginId === pluginId) this.removeSettingTab(tab);
     }
   }
 
-  isPluginSettingTab(tab) {
+  isPluginSettingTab(tab: AboutTab|SettingTab|AppearanceTab|InterfaceTab|EditorTab|FileTab|HotkeysTab|CorePluginsTab) {
     return !!(tab.group === 'core' || tab.plugin);
   }
 
@@ -579,22 +586,22 @@ export class SettingsHost extends Modal {
     core.sort((a, b) => String(a.name).localeCompare(String(b.name), 'zh'));
     core.length ? this.corePluginTabHeaderGroup.show() : this.corePluginTabHeaderGroup.hide();
     this.corePluginTabContainer.empty();
-    for (const tab of core) this.corePluginTabContainer.appendChild(tab.navEl);
+    for (const tab of core) tab.navEl && this.corePluginTabContainer.appendChild(tab.navEl);
   }
 
-  openTab(tab) {
+  openTab(tab: AboutTab|SettingTab|AppearanceTab|InterfaceTab|EditorTab|FileTab|HotkeysTab|CorePluginsTab) {
     if (!tab || !tab.containerEl) return;
     if (this.shouldUsePopout()) { this.lastTabId = tab.id; this._openPopoutWindow(tab.id); return; }
     this.pageStack = [];
     this.tabContentContainer.empty();
     this.updateModalTitle(tab);
     if (this.activeTab) {
-      this.activeTab.navEl.removeClass('is-active');
+      this.activeTab.navEl?.removeClass('is-active');
       this.activeTab.hide();
     }
     this.activeTab = tab;
     this.lastTabId = tab.id;
-    tab.navEl.addClass('is-active');
+    tab.navEl?.addClass('is-active');
     this.tabContentContainer.appendChild(tab.containerEl);
     const backButton = createDiv('clickable-icon modal-setting-back-button mod-raised', (el) => {
       el.addEventListener('click', () => this.closeActiveTab());
@@ -607,7 +614,7 @@ export class SettingsHost extends Modal {
       this.markToggleRows(tab.containerEl);
       this.searchItemCache.set(tab.id, this.harvestItemsFrom(tab.containerEl));
     } catch (e) {
-      console.error('Settings tab failed', tab.id, (e && e.stack) || e);
+      console.error('Settings tab failed', tab.id, (e instanceof Error ? e.stack : e));
     }
   }
 
@@ -615,7 +622,7 @@ export class SettingsHost extends Modal {
    * 原版：带开关控件的设置行带 mod-toggle 类（决定 info/control 的对齐与宽度）。
    * core/setting.js 只读，这里在渲染后统一补齐。
    */
-  markToggleRows(containerEl) {
+  markToggleRows(containerEl: HTMLDivElement) {
     if (!containerEl) return;
     for (const row of containerEl.querySelectorAll('.setting-item')) {
       const control = row.querySelector(':scope > .setting-item-control');
@@ -628,14 +635,14 @@ export class SettingsHost extends Modal {
     if (tab) {
       this.pageStack = [];
       this.tabContentContainer.empty();
-      tab.navEl.removeClass('is-active');
+      tab.navEl?.removeClass('is-active');
       tab.hide();
       this.updateModalTitle();
       this.activeTab = null;
     }
   }
 
-  openTabById(id) {
+  openTabById(id: string|undefined) {
     for (const tab of this.settingTabs) {
       if (tab.id === id) { this.openTab(tab); return tab; }
     }
@@ -649,7 +656,7 @@ export class SettingsHost extends Modal {
    * 核心插件的齿轮入口：为导出 settingTab(app, containerEl) 的插件生成设置页签，
    * 归入侧栏“核心插件”分组（对齐原版 G0 页签行为）。
    */
-  openPluginOptions(pluginId) {
+  openPluginOptions(pluginId: string) {
     const entry = this.app.plugins && this.app.plugins.getInternalPlugin(pluginId);
     if (!entry || !entry.manifest.module.settingTab) return;
     const tab = this.ensureCorePluginTab(pluginId, entry);

@@ -5,8 +5,11 @@
 核心插件。每个文件导出一个模块对象 `{ nameKey?, create(app) }`；create 返回 `{ onload, onunload, registerCommands?, deregister? }`。插件 id 必须与 settings.corePlugins 的键一致，并登记到 core/plugins-registry.ts。
 
 成员清单
+bases-types.ts: 数据库共享契约。定义公式上下文、延迟表达式、配置与查询行。
+graph-types.ts: 图谱共享契约。定义显示选项、力参数、Worker 命令与位置回执。
+search-types.ts: 搜索共享契约。解析树、正文切片与命中结果保持独立于 DOM。
 file-explorer-drag.ts: 文件树拖拽层。setupItemDrag 复刻 dragManager 的 drag-ghost-self 幽灵、body.is-grabbing、整个选择集 is-being-dragged 与多选载荷；setupFolderDrop 负责外部文件复制、库内项移动与 750ms 悬停展开；setupRootDrop 处理库根空白区（外部文件进根、库内项移回根）；importExternalFiles 经 getAvailableAttachmentPath 去重写入。
-file-explorer.ts: 文件树视图(type file-explorer)。根级文件挂匿名容器（无仓库名标题行）；1.14.4 无功能区按钮。头部按钮行经 file-explorer-toolbar.ts（.nav-header 内五按钮，侧栏内复用共享靠左规则）。排序/折叠/右键菜单/拖拽移动/inline 重命名/新建文件与文件夹命令。拖拽移动失败经 tt('plugins.file-explorer.msg-error-move-failed', …) 提示（locale 已有该键）。 系统外部文件拖入：文件夹标题/根区域复制进库（由 file-explorer-drag.ts 经 getAvailableAttachmentPath 去重）。 拖拽生命周期委派 file-explorer-drag.ts。多选：选择集/键盘/批量操作分别委派 file-explorer-selection.ts 与 file-explorer-multi.ts；容器 tabindex=0 持有 DOM 焦点，空白点击与右键清空选择，拖动载荷载入选择集，菜单对选择集生效。
+file-explorer.ts: 停用撤销六条文件树命令。文件树视图(type file-explorer)。根级文件挂匿名容器（无仓库名标题行）；1.14.4 无功能区按钮。头部按钮行经 file-explorer-toolbar.ts（.nav-header 内五按钮，侧栏内复用共享靠左规则）。排序/折叠/右键菜单/拖拽移动/inline 重命名/新建文件与文件夹命令。拖拽移动失败经 tt('plugins.file-explorer.msg-error-move-failed', …) 提示（locale 已有该键）。 系统外部文件拖入：文件夹标题/根区域复制进库（由 file-explorer-drag.ts 经 getAvailableAttachmentPath 去重）。 拖拽生命周期委派 file-explorer-drag.ts。多选：选择集/键盘/批量操作分别委派 file-explorer-selection.ts 与 file-explorer-multi.ts；容器 tabindex=0 持有 DOM 焦点，空白点击与右键清空选择，拖动载荷载入选择集，菜单对选择集生效。
 file-explorer-selection.ts: 文件树选择层。原版 a2 的 selectedDoms/focusedItem/activeDom 三元组按 path 保存（每次重绘重建 DOM），Alt 切换选择、Shift 按可见顺序范围选择、点击已打开项只聚焦；键盘等价 initializeKeyboardNav（↑/↓/Shift/Mod、←/→、Enter=mac 重命名、Mod+Enter/Space 打开、F2、Delete 与 mac Mod+Backspace），Home/End 原版未注册故不实现。
 file-explorer-multi.ts: 文件树批量操作层。原版 x8.dragFiles 的多选拖动载荷（text/plain JSON type=files 增加 items，保留单项 path 供编辑器插入链接）、dragTitleFor 的单项幽灵标题（md 短名/其它全名/文件夹名）、onFileContextMenu 多选分支（新建文件夹含选中项 / 移动 N 项到… / 删除）、onDeleteSelectedFiles 顺序删除、f$ 移动、v$ 顶层项去重。
 file-explorer-toolbar.ts: 文件浏览器头部按钮行。按原版 QL.addNavButton 建 .nav-header>.nav-buttons-container 与五个 clickable-icon.nav-action-button（新建笔记 lucide-edit / 新建文件夹 / 排序 / 自动显示 / 折叠-展开）；排序菜单三组各两项、组后分隔线并挂按钮（has-active-menu 守卫）；视觉由 syncExplorerToolbar 依视图状态渲染，本模块不持状态。
@@ -15,9 +18,9 @@ switcher.ts: 快速切换器（1.14.4 1:1）与 file-search 功能区入口。�
 backlink.ts: 反链分节、上下文与筛选。导出文档底部反链设置页，组件可绑定宿主笔记。折叠跨重绘保留；关闭释放全部事件与计时器。状态栏反链计数按 resolvedLinks 汇总，点击展开右栏。
 outgoing-link.ts: 出链面板视图(type outgoing-link)。逐条列出当前文件的已解析与未解析出链及未链接提及(Unlinked mentions)；图标按标题/块/文件/未解析切换，已解析出链的副文本显示目标文件夹，未解析出链带 is-unresolved 与“尚未创建”提示；未链接提及在当前正文中查找其它笔记的名称与别名，支持点击 Link 按钮写入内部链接。不自动创建窗格，由命令 outgoing-links:open / outgoing-links:open-for-current 打开；关闭释放订阅与计时器，禁用撤销视图与命令。
 outline.ts: 按标题层级建立大纲。跳级归最近父标题，同名标题按行号跳转，关闭释放资源。
-tag-pane.ts: 标签面板视图(type tag)。标签树/排序/嵌套开关。
+tag-pane.ts: 关闭取消延迟重绘。标签面板视图(type tag)。标签树/排序/嵌套开关。
 properties.ts: 属性插件。全部属性忽略大小写聚合，提供类型菜单和四种排序；文件属性侧栏共用文档编辑器与库级类型。命令和状态栏对称启停。
-global-search.ts: 全局搜索视图(type search)。DOM 与 1.14.4 对齐（search-row/search-params/search-results-info/tree-item 分组），负责状态、排序、折叠、解释与键盘导航；结果列表的虚拟化与分组模型委托 search-results.ts，查询与命中委托 search-query.ts，复制结果弹窗委托 search-copy.ts，输入框建议弹层委托 search-suggest.ts，自身不再实现匹配。file-menu/editor-menu 事件按原版补「在文件夹中查找」（非根文件夹，action 段，lucide-folder-search，查询 path:"<目录>/"）与「查找 …」（选区，selection 段）。
+global-search.ts: 选区来自活动宿主的 editor；筛选变化发布布局保存事件。全局搜索视图(type search)。DOM 与 1.14.4 对齐（search-row/search-params/search-results-info/tree-item 分组），负责状态、排序、折叠、解释与键盘导航；结果列表的虚拟化与分组模型委托 search-results.ts，查询与命中委托 search-query.ts，复制结果弹窗委托 search-copy.ts，输入框建议弹层委托 search-suggest.ts，自身不再实现匹配。file-menu/editor-menu 事件按原版补「在文件夹中查找」（非根文件夹，action 段，lucide-folder-search，查询 path:"<目录>/"）与「查找 …」（选区，selection 段）。
 search-query.ts: 查询门面。只转出 parseQuery/queryInfo（search-query-parse.ts）与 createSearchDocument/searchDocument（search-query-match.ts），保持旧导入路径可用。
 search-query-parse.ts: 无 DOM 查询解析层。parseQuery 解析 file/path/tag/content、line/section/block/task/task-todo/task-done、match-case/ignore-case、属性 [key]/[key:value]、引号、OR、括号、否定、正则与大小写；queryInfo 供解释视图。
 search-query-match.ts: 无 DOM 匹配层。createSearchDocument 按行/章节/块/任务切正文并建立属性表，searchDocument 返回字段/正文/属性命中与行上下文、评分与徽标。
@@ -43,7 +46,7 @@ graph-sim-worker.ts: 力学 Worker 脚本（esbuild → dist/graph-sim-worker.ts
 graph-quadtree.ts: 力学空间索引。buildQuadtree/visitAfter；重合点存 next 链；供 Barnes-Hut 斥力与半径碰撞共用同一棵树。
 graph-options.ts: 默认选项和 graph.json 读写，供视图与引擎共用。
 graph-utils.ts: 无状态颜色、插值、矩形与键盘常量。
-file-recovery.ts: 文件恢复插件(原版默认启用)。快照范围为 md/canvas/base；间隔单位分钟(默认 5，0 表示每次变更即存)，旧 intervalSeconds 配置读取时按 60 秒=1 分钟迁移。快照落盘 .obsidian/.file-recovery/ 按天原子替换 JSON({路径:[{ts,data}]})；命令 file-recovery:open 打开快照弹窗(文件搜索+时间/大小列表+预览+恢复+复制+显示差异)；settingTab(间隔分钟/保留天数/查看/清空)。
+file-recovery.ts: 恢复前保存失败则保留原文和草稿。 文件恢复插件(原版默认启用)。快照范围为 md/canvas/base；间隔单位分钟(默认 5，0 表示每次变更即存)，旧 intervalSeconds 配置读取时按 60 秒=1 分钟迁移。快照落盘 .obsidian/.file-recovery/ 按天原子替换 JSON({路径:[{ts,data}]})；命令 file-recovery:open 打开快照弹窗(文件搜索+时间/大小列表+预览+恢复+复制+显示差异)；settingTab(间隔分钟/保留天数/查看/清空)。
 random-note.ts: 漫游笔记插件。共用 MetadataCache 排除规则。命令 random-note + ribbon(dice-glyph) 随机打开一篇 md；Mod 点击新标签页。
 zk-prefixer.ts: 时间戳笔记插件(id zk-prefixer，文案键 plugins.unique-note-creator)。命令 zk-prefixer + ribbon(sheets-in-box)；getUniquePath 冲突按 分/时/日/周/月/年 递增；数据 .obsidian/zk-prefixer.json；settingTab(文件夹/模板/格式样例)。
 workspaces.ts: 命名布局保存与恢复。尊重保存失败，统一由 Workspace 关闭旧视图，不重复清理。
@@ -59,7 +62,7 @@ bases-values.ts: 日期、时长、链接与展示值。共用格式、相等、
 bases-values-file.ts: 只读文件适配。路径解析回 TFile，聚合属性与引用。
 bases-values-render.ts: 富值 DOM 门面。文件/标签经受控导航，HTML/Markdown 委托净化与生命周期模块。
 bases-csv.ts: CSV 导出边界。转义遵循原版；保存重读查询，取消不写盘。
-bases-view.ts: 数据库和嵌入共用控制器。设置变动刷新排除规则；事务、缓存、类型/文件订阅及草稿共同受生命周期约束。
+bases-view.ts: BasesController 通过 isReady 收窄为 ReadyBasesController；就绪后才访问模型与文件。 数据库和嵌入共用控制器。设置变动刷新排除规则；事务、缓存、类型/文件订阅及草稿共同受生命周期约束。
 bases-embed.ts: Markdown 嵌入入口。隔离文件视图生命周期。
 bases-layouts.ts: 四类布局。表格编辑、列操作和行高共用值层；行与组两层窗口化，出窗释放富值。
 bases-grouping.ts: 分组与汇总。标量使用 Map 索引，富值保持相等语义；自定义汇总复用公式引擎。

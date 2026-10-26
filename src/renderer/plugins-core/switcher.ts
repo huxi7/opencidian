@@ -15,9 +15,20 @@ import { IS_MAC } from '../core/keymap.js';
 import { setIcon } from '../core/icons.js';
 import { setTooltip } from '../core/tooltip.js';
 import { SettingGroup } from '../core/setting.js';
+import { TFile, VaultEntry } from '../core/vault.js';
+import type { BookmarkItem, create as createBookmarks } from './bookmarks.js';
+import { CachedMetadata } from '../core/metadata-types.js';
 
 export const nameKey = 'plugins.quick-switcher';
 
+type SwitcherQuery = ReturnType<typeof parseQuery>;
+interface SwitcherMatch { score: number; matches: number[][]; }
+interface SwitcherOptions { showExistingOnly: boolean; showAttachments: boolean; showAllFileTypes: boolean; }
+type SwitcherItem = { match: SwitcherMatch | null; downranked?: boolean } & (
+  { type: 'file'; file: TFile } | { type: 'alias'; file: TFile; alias: string }
+  | { type: 'unresolved'; linktext: string }
+  | { type: 'bookmark'; item: BookmarkItem; bookmarkPath: string }
+);
 const DATA_FILE = 'switcher.json';
 export const DEFAULT_OPTIONS = Object.freeze({
   showExistingOnly: false,
@@ -36,7 +47,7 @@ const PUNCT_RE = /[\u2000-\u206F\u2E00-\u2E7F\\'!"#$%&()*+,\-.\/:;<=>?@\[\]^_`{|
 const SPACE_RE = /\s/;
 const CJK_RE = /[\u0F00-\u0FFF\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff\uff66-\uff9f]/;
 
-export function parseQuery(query) {
+export function parseQuery(query: string) {
   const lower = query.toLowerCase();
   const tokens = [];
   let start = 0;
@@ -55,7 +66,7 @@ export function parseQuery(query) {
   return { query, tokens, fuzzy: lower.split('').filter((ch) => ch !== ' ') };
 }
 
-function scoreRanges(ranges, queryLength, textLength, penalties) {
+function scoreRanges(ranges: number[][], queryLength: number, textLength: number, penalties: number) {
   if (!ranges.length) return 0;
   let score = 0;
   score -= Math.max(0, ranges.length - 1);
@@ -67,7 +78,7 @@ function scoreRanges(ranges, queryLength, textLength, penalties) {
   return score;
 }
 
-function matchTokens(tokens, query, text, fuzzy) {
+function matchTokens(tokens: string[], query: string, text: string, fuzzy: boolean) {
   if (!tokens.length) return { score: 0, matches: [] };
   const lower = text.toLowerCase();
   const ranges = [];
@@ -91,18 +102,18 @@ function matchTokens(tokens, query, text, fuzzy) {
   return { matches: ranges, score: scoreRanges(ranges, query.length, text.length, penalties) };
 }
 
-export function matchText(parsed, text) {
+export function matchText(parsed: SwitcherQuery, text: string) {
   if (!parsed.query) return { score: 0, matches: [] };
   return matchTokens(parsed.tokens, parsed.query, text, false)
     || matchTokens(parsed.fuzzy, parsed.query, text, true);
 }
 
-export function basenameOf(path) {
+export function basenameOf(path: unknown) {
   return String(path).split('/').pop() || '';
 }
 
 /** 原版 UB：先按文件名匹配（命中则整体不降分），再按完整显示路径匹配并 -1。 */
-export function matchFile(parsed, displayPath) {
+export function matchFile(parsed: { query: string; tokens: string[]; fuzzy: string[]; }, displayPath: string) {
   const name = basenameOf(displayPath);
   let found = matchText(parsed, name);
   if (found) {
@@ -115,36 +126,36 @@ export function matchFile(parsed, displayPath) {
   return found;
 }
 
-export function sortSuggestions(items) {
-  return items.sort((a, b) => b.match.score - a.match.score);
+export function sortSuggestions<T extends { match: SwitcherMatch | null }>(items: T[]): T[] {
+  return items.sort((a, b) => (b.match?.score || 0) - (a.match?.score || 0));
 }
 
 /* --------------------------------------------------------------------------
  * 显示与路径
  * ------------------------------------------------------------------------ */
 /** 原版 x5：md 去掉 .md；其他文件显示完整路径（含扩展名）。 */
-export function displayPath(file) {
+export function displayPath(file: TFile) {
   return file.extension === 'md' ? file.path.replace(/\.md$/i, '') : file.path;
 }
 
 /** 原版 Vl：Tab 补全用；md 去掉扩展名，其余保留。 */
-function linkPath(file) {
+function linkPath(file: { extension: string; path: string; }) {
   return file.extension === 'md' ? file.path.replace(/\.md$/i, '') : file.path;
 }
 
 /** 原版 ym：frontmatter aliases（键名大小写不敏感），trim 后去空。 */
-function aliasesOf(cache) {
+function aliasesOf(cache: CachedMetadata|null) {
   if (!cache) return [];
   const frontmatter = cache.frontmatter || {};
   const key = Object.keys(frontmatter).find((k) => k.toLowerCase() === 'aliases');
   let value = key ? frontmatter[key] : cache.aliases;
   if (value === undefined || value === null) return [];
   if (!Array.isArray(value)) value = [value];
-  return value.map((v) => String(v).trim()).filter(Boolean);
+  return (Array.isArray(value) ? value : [value]).map((v) => String(v).trim()).filter(Boolean);
 }
 
 /** 原版 wx：Tab 补全到匹配末尾之后的第一个 "/"（含）。 */
-function completionText(text, matches) {
+function completionText(text: string, matches: number[][] | null) {
   if (matches && matches.length) {
     const end = matches[matches.length - 1][1];
     const slash = text.indexOf('/', end);
@@ -154,9 +165,9 @@ function completionText(text, matches) {
 }
 
 /** 原版 mS.isModEvent：中键/Mod → tab，Mod+Alt → split，Mod+Alt+Shift → window。 */
-function modEventMode(ev) {
+function modEventMode(ev: MouseEvent|KeyboardEvent) {
   if (!ev) return false;
-  if (ev.button === 1) return 'tab';
+  if ('button' in ev && ev.button === 1) return 'tab';
   const mod = IS_MAC ? ev.metaKey : ev.ctrlKey;
   if (!mod) return false;
   if (ev.altKey) return ev.shiftKey ? 'window' : 'split';
@@ -166,21 +177,21 @@ function modEventMode(ev) {
 /* --------------------------------------------------------------------------
  * 快速切换模态（原版 oie）
  * ------------------------------------------------------------------------ */
-export class QuickSwitcherModal extends SuggestModal {
-  declare options: any;
-  declare limit: any;
-  declare emptyStateText: any;
-  declare noRecentFilesText: any;
+export class QuickSwitcherModal extends SuggestModal<SwitcherItem> {
+  declare options: SwitcherOptions;
+  declare limit: number;
+  declare emptyStateText: string;
+  declare noRecentFilesText: string;
   declare allowCreateNewFile: boolean;
   declare shouldShowMarkdown: boolean;
-  declare shouldShowUnresolved: any;
-  declare shouldShowNonImageAttachments: any;
-  declare shouldShowImages: any;
-  declare shouldShowAllTypes: any;
+  declare shouldShowUnresolved: boolean;
+  declare shouldShowNonImageAttachments: boolean;
+  declare shouldShowImages: boolean;
+  declare shouldShowAllTypes: boolean;
   declare shouldShowNonFileBookmarks: boolean;
   declare context: string;
 
-  constructor(app: App, options = DEFAULT_OPTIONS) {
+  constructor(app: App, options: SwitcherOptions = DEFAULT_OPTIONS) {
     super(app);
     this.options = { ...DEFAULT_OPTIONS, ...options };
     this.limit = RESULT_LIMIT;
@@ -212,16 +223,16 @@ export class QuickSwitcherModal extends SuggestModal {
   }
 
   /* ---------------------------------------------------------------- 过滤 */
-  isIgnored(path) {
+  isIgnored(path: string|{ path: string; }|null|undefined) {
     return this.app.metadataCache.isUserIgnored(path);
   }
 
-  _isExtensionRegistered(ext) {
+  _isExtensionRegistered(ext: string) {
     return !!this.app.viewRegistry.getTypeByExtension(ext);
   }
 
   /** 原版 h(file)：按插件选项决定某文件是否进入建议池。 */
-  shouldShowFile(file) {
+  shouldShowFile(file: TFile) {
     const ext = (file.extension || '').toLowerCase();
     if (ext === 'md') return !!this.shouldShowMarkdown;
     if (ext === 'canvas' || ext === 'base') return !!this.shouldShowNonAttachments;
@@ -234,7 +245,7 @@ export class QuickSwitcherModal extends SuggestModal {
   getRecentFiles() {
     const out = [];
     for (const path of this.app.workspace.lastOpenFiles || []) {
-      const ext = String(path).split('.').pop().toLowerCase();
+      const ext = (String(path).split('.').pop() || '').toLowerCase();
       let visible;
       if (ext === 'md') visible = !!this.shouldShowMarkdown;
       else if (ext === 'canvas' || ext === 'base') visible = !!this.shouldShowNonAttachments;
@@ -246,16 +257,16 @@ export class QuickSwitcherModal extends SuggestModal {
     return out;
   }
 
-  getSuggestions(query) {
+  getSuggestions(query: string) {
     const value = (query || '').trim();
     const app = this.app;
     const metadata = app.metadataCache;
-    const out = [];
+    const out: SwitcherItem[] = [];
 
     if (!value) {
       for (const path of this.getRecentFiles()) {
         const file = app.vault.getAbstractFileByPath(path);
-        if (!file || typeof file.extension !== 'string') continue;
+        if (!(file instanceof TFile)) continue;
         if (this.isIgnored(file.path) || !this.shouldShowFile(file)) continue;
         out.push({ type: 'file', file, match: null });
       }
@@ -281,7 +292,7 @@ export class QuickSwitcherModal extends SuggestModal {
     }
 
     if (this.shouldShowUnresolved) {
-      const seen = new Set();
+      const seen = new Set<string>();
       for (const links of Object.values(metadata.unresolvedLinks || {})) {
         for (const linktext of Object.keys(links || {})) seen.add(linktext);
       }
@@ -294,13 +305,13 @@ export class QuickSwitcherModal extends SuggestModal {
     const bookmarks = app.plugins && app.plugins.getInternalPlugin('bookmarks');
     if (bookmarks && bookmarks.enabled && bookmarks.instance) {
       const plugin = bookmarks.instance;
-      const walk = (items, prefix) => {
+      const walk = (items: BookmarkItem[], prefix: string): void => {
         for (const item of items || []) {
           if (item.type !== 'file' || item.subpath) {
             if (this.shouldShowNonFileBookmarks && item.type !== 'group') this.addBookmark(out, parsed, plugin, item, prefix);
           } else {
             const file = app.vault.getAbstractFileByPath(item.path);
-            if (file && typeof file.extension === 'string' && this.shouldShowFile(file)) {
+            if (file instanceof TFile && this.shouldShowFile(file)) {
               this.addBookmark(out, parsed, plugin, item, prefix);
             }
           }
@@ -313,14 +324,14 @@ export class QuickSwitcherModal extends SuggestModal {
     return sortSuggestions(out);
   }
 
-  addBookmark(out, parsed, plugin, item, prefix) {
+  addBookmark(out: SwitcherItem[], parsed: SwitcherQuery, plugin: ReturnType<typeof createBookmarks>, item: BookmarkItem, prefix: string) {
     const bookmarkPath = prefix + plugin.getItemTitle(item);
     const matched = matchText(parsed, bookmarkPath);
     if (matched) out.push({ type: 'bookmark', item, match: matched, bookmarkPath });
   }
 
   /* ---------------------------------------------------------------- 渲染 */
-  renderSuggestion(item, el, query) {
+  renderSuggestion(item: SwitcherItem | null, el: HTMLDivElement, query: string) {
     el.addClass('mod-complex');
     const content = el.createDiv('suggestion-content');
     const aux = el.createDiv('suggestion-aux');
@@ -376,7 +387,7 @@ export class QuickSwitcherModal extends SuggestModal {
   }
 
   /* ---------------------------------------------------------------- 补全 */
-  getCompletionText(item) {
+  getCompletionText(item: SwitcherItem | null) {
     if (!item) return null;
     let text = null;
     if (item.type === 'file' || item.type === 'alias') text = linkPath(item.file);
@@ -387,7 +398,7 @@ export class QuickSwitcherModal extends SuggestModal {
   }
 
   /* ---------------------------------------------------------------- 选择 */
-  async onChooseSuggestion(item, ev) {
+  async onChooseSuggestion(item: SwitcherItem | null, ev: MouseEvent|KeyboardEvent) {
     const mode = modEventMode(ev);
     const active = this.app.workspace.getActiveFile();
     const sourcePath = active && active.extension === 'md' ? active.path : '';
@@ -408,13 +419,13 @@ export class QuickSwitcherModal extends SuggestModal {
     }
   }
 
-  openFile(file, mode) {
+  openFile(file: TFile|null|undefined, mode: string|boolean) {
     if (mode === 'window') mode = 'split'; // 本应用无多窗口叶子，降级为新标签组
-    return this.app.workspace.openFile(file, { newLeaf: mode || false, active: true });
+    return this.app.workspace.openFile(file, { newLeaf: mode || false });
   }
 
   /** 原版 openLinkText：已解析则跳转；未解析则按输入创建 Markdown 后打开。 */
-  async createAndOpen(text, sourcePath, mode) {
+  async createAndOpen(text: string, sourcePath: string, mode: string|boolean) {
     const value = String(text || '').trim();
     if (!value) return;
     const hash = value.indexOf('#');
@@ -432,7 +443,7 @@ export class QuickSwitcherModal extends SuggestModal {
     else await this.openFile(file, mode);
   }
 
-  async openBookmark(item, mode) {
+  async openBookmark(item: BookmarkItem, mode: string|boolean) {
     const bookmarks = this.app.plugins.getInternalPlugin('bookmarks');
     const plugin = bookmarks && bookmarks.instance;
     if (item.type === 'file') {
@@ -452,9 +463,9 @@ export class QuickSwitcherModal extends SuggestModal {
 /* --------------------------------------------------------------------------
  * 设置页（三项开关；showAllFileTypes 仅当全局「显示所有类型文件」开启时出现）
  * ------------------------------------------------------------------------ */
-export function settingTab(app: App, containerEl) {
-  const options = app.settings.loadPluginData(DATA_FILE, DEFAULT_OPTIONS);
-  const save = () => app.settings.savePluginData(DATA_FILE, options);
+export function settingTab(app: App, containerEl: HTMLElement) {
+  const options: SwitcherOptions = { ...app.settings.loadPluginData(DATA_FILE, DEFAULT_OPTIONS) };
+  const save = () => app.settings.savePluginData(DATA_FILE, { ...options });
   const group = new SettingGroup(containerEl);
   group.setHeading(t('plugins.quick-switcher.name'));
   group.addSetting((setting) => setting
@@ -487,8 +498,8 @@ export function settingTab(app: App, containerEl) {
  * 插件入口
  * ------------------------------------------------------------------------ */
 export function create(app: App) {
-  let ribbonEl = null;
-  let activeModal = null;
+  let ribbonEl: HTMLDivElement|null = null;
+  let activeModal: QuickSwitcherModal|null = null;
   let options = { ...DEFAULT_OPTIONS };
 
   const openSwitcher = () => {

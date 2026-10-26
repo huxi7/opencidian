@@ -5,7 +5,8 @@
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 /* Default hotkeys — extracted from the original app's command definitions. */
-export const DEFAULT_HOTKEYS = {
+import type { HotkeyBinding } from './settings-types.js';
+export const DEFAULT_HOTKEYS: Record<string, HotkeyBinding[]> = {
   'app:go-back': [{ modifiers: ['Mod', 'Alt'], key: 'ArrowLeft' }],
   'app:go-forward': [{ modifiers: ['Mod', 'Alt'], key: 'ArrowRight' }],
   'app:open-help': [{ modifiers: [], key: 'F1' }],

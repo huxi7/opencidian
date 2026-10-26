@@ -14,12 +14,16 @@
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 /* Canvas group node — label editing, themed label colors, background images. */
+import { TFile } from '../core/vault.js';
 import { CanvasNode } from './canvas-node.js';
 import { FileSuggestModal } from './canvas-menu.js';
 import { t } from '../core/i18n.js';
+import { VaultEntry } from '../core/vault.js';
+import { Menu } from '../core/menu.js';
+import { CanvasNodeData } from './canvas-types.js';
 
 /** 原版 iT：亮度 >= 150 用深色文字，否则用浅色文字。 */
-function isLightColor(r, g, b) {
+function isLightColor(r: number, g: number, b: number) {
   return (299 * r + 587 * g + 114 * b) / 1000 >= 150;
 }
 
@@ -30,16 +34,16 @@ export class CanvasGroupNode extends CanvasNode {
   declare isGroup: boolean;
   declare label: string;
   declare bgPath: string;
-  declare bgFile: any;
+  declare bgFile: TFile | null;
   declare bgStyle: string;
-  declare contentEl: any;
-  declare labelEl: any;
+  declare contentEl: HTMLDivElement;
+  declare labelEl: HTMLDivElement;
   declare isContentMounted: boolean;
   declare aspectRatio: number;
   declare zIndex: number;
   declare renderedZIndex: number;
 
-  constructor(canvas: import('./canvas-view.js').CanvasView, id?) {
+  constructor(canvas: import('./canvas-view.js').CanvasView, id?: string) {
     super(canvas, id);
     this.isGroup = true;
     this.label = '';
@@ -54,7 +58,7 @@ export class CanvasGroupNode extends CanvasNode {
     this.contentEl = this.containerEl.createDiv('canvas-node-content');
     const labelEl = this.labelEl = this.nodeEl.createDiv('canvas-group-label');
     labelEl.spellcheck = false;
-    labelEl.addEventListener('pointerdown', (e) => this.onPointerdown(e));
+    labelEl.addEventListener('pointerdown', (e: PointerEvent) => this.onPointerdown(e));
     labelEl.addEventListener('dblclick', () => this.focusLabel());
     labelEl.addEventListener('keypress', (e) => {
       if (!e.isComposing && e.key === 'Enter') { e.preventDefault(); this.blurLabel(); }
@@ -63,7 +67,7 @@ export class CanvasGroupNode extends CanvasNode {
     this.isContentMounted = true;
   }
 
-  setLabel(label) {
+  setLabel(label: string) {
     if (this.label === label) return;
     this.label = label;
     this.canvas.markDirty(this);
@@ -99,7 +103,7 @@ export class CanvasGroupNode extends CanvasNode {
 
   /* ------------------------------------------------------------- 背景图 */
 
-  setBackgroundFile(file) {
+  setBackgroundFile(file: TFile | null) {
     this.setBackgroundPath(file ? file.path : '', file || null);
   }
 
@@ -107,17 +111,17 @@ export class CanvasGroupNode extends CanvasNode {
    * 重命名/移动事件用：保留 backgroundStyle，只替换路径与文件引用。
    * file 尚未进入 vault 索引时允许为 null；此时仍写入新路径，避免把旧路径留成死引用。
    */
-  setBackgroundPath(path, file) {
+  setBackgroundPath(path: string, file: VaultEntry|null) {
     path = path || '';
     if (this.bgPath === path && this.bgFile === (file || null)) return;
     this.bgPath = path;
-    this.bgFile = file || null;
+    this.bgFile = file instanceof TFile ? file : null;
     if (!path) this.bgStyle = '';
     this.updateAspectRatio();
     this.canvas.markDirty(this);
   }
 
-  setBackgroundStyle(style) {
+  setBackgroundStyle(style: string) {
     if (!this.bgPath) style = '';
     if (this.bgStyle === style) return;
     this.bgStyle = style;
@@ -176,7 +180,7 @@ export class CanvasGroupNode extends CanvasNode {
 
   /** 原版 I9 等价的图片选择弹窗；选中的非图片文件不写入背景。 */
   openBackgroundPicker() {
-    const picker = new FileSuggestModal(this.app, (file) => {
+    const picker = new FileSuggestModal(this.app, (file: TFile | null) => {
       if (!file) return;
       const ext = (file.extension || '').toLowerCase();
       if (!['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'bmp', 'avif'].includes(ext)) return;
@@ -225,7 +229,7 @@ export class CanvasGroupNode extends CanvasNode {
   }
 
   /** 分组菜单：编辑文字（原版 F5.showMenu）与背景图操作。 */
-  showMenu(menu) {
+  showMenu(menu: Menu) {
     super.showMenu(menu);
     if (this.canvas.readonly) return;
     menu.addItem((item) => item.setSection('canvas').setTitle(t('plugins.canvas.action-edit-label')).setIcon('lucide-edit')
@@ -245,7 +249,7 @@ export class CanvasGroupNode extends CanvasNode {
         this.canvas.requestSave();
         this.canvas.markDirty(this);
       }));
-    const setStyle = (style) => {
+    const setStyle = (style: string) => {
       this.setBackgroundStyle(style);
       this.canvas.requestSave();
       this.canvas.markDirty(this);
@@ -268,7 +272,7 @@ export class CanvasGroupNode extends CanvasNode {
     return data;
   }
 
-  setData(data) {
+  setData(data: CanvasNodeData) {
     const { label, background, backgroundStyle, ...rest } = data;
     super.setData(rest);
     if (label && typeof label === 'string') this.setLabel(label);
@@ -276,7 +280,7 @@ export class CanvasGroupNode extends CanvasNode {
       if (this.bgPath !== background || (this.bgFile && this.bgFile.path !== background)) {
         this.bgPath = background;
         const file = this.app.vault.getAbstractFileByPath(background);
-        this.bgFile = file && file.extension !== undefined ? file : null;
+        this.bgFile = file instanceof TFile ? file : null;
         this.canvas.markDirty(this);
       }
       if ((backgroundStyle || '') !== this.bgStyle) {

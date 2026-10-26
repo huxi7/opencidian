@@ -24,7 +24,7 @@ import { CanvasViewport } from './canvas-viewport.js';
 import { CanvasEdge } from './canvas-edge.js';
 import { CanvasNode } from './canvas-node.js';
 import { CanvasSelectionBox } from './canvas-selection.js';
-import { clamp, containsBox, unionBBox, expandBBox, bboxOf, boxesIntersect, rectFromBBox } from './canvas-utils.js';
+import { clamp, containsBox, unionBBox, expandBBox, bboxOf, boxesIntersect, rectFromBBox, CanvasBBox, CanvasSize } from './canvas-utils.js';
 import { Menu } from '../core/menu.js';
 import { IS_MAC } from '../core/keymap.js';
 import { t } from '../core/i18n.js';
@@ -35,30 +35,37 @@ const PAN_SPEED_FACTOR = 0.93;
 export { startDrag, suppressClick, suppressContextMenu } from './canvas-drag.js';
 import { startDrag, suppressClick, suppressContextMenu } from './canvas-drag.js';
 
+import type { CanvasPoint, CanvasRect } from './canvas-utils.js';
+import type { CanvasTextNode } from './canvas-text-node.js';
+import type { CanvasGroupNode } from './canvas-group-node.js';
+import type { CanvasDummyNode } from './canvas-node.js';
+import type { CanvasFileNode } from './canvas-file-node.js';
+import type { CanvasLinkNode } from './canvas-link-node.js';
+import type { CanvasNodeOptions, CanvasData, CanvasPromptOptions, CanvasDragPanHandlers } from './canvas-types.js';
 import type { CanvasSharedState } from './canvas-types.js';
 export interface CanvasInteractions extends CanvasSharedState {}
 export abstract class CanvasInteractions extends CanvasViewport {
-  abstract redo(...args: any[]): any;
-  abstract undo(...args: any[]): any;
-  abstract requestSave(...args: any[]): any;
-  abstract getIntersectingNodes(...args: any[]): any;
-  abstract removeNode(...args: any[]): any;
-  abstract removeEdge(...args: any[]): any;
-  abstract createTextNode(...args: any[]): any;
-  abstract createGroupNode(...args: any[]): any;
-  abstract getContainingNodes(...args: any[]): any;
-  abstract createDummyNode(...args: any[]): any;
-  abstract removeDummyNode(...args: any[]): any;
-  abstract canSnap(...args: any[]): any;
-  abstract cloneData(...args: any[]): any;
-  abstract getSelectionData(...args: any[]): any;
-  abstract importData(...args: any[]): any;
-  abstract promptAddFileNode(...args: any[]): any;
-  abstract promptAddLinkNode(...args: any[]): any;
+  abstract redo(): void;
+  abstract undo(): void;
+  abstract requestSave(history?: boolean): void;
+  abstract getIntersectingNodes(box: CanvasBBox): CanvasNode[];
+  abstract removeNode(node: CanvasNode): void;
+  abstract removeEdge(edge: CanvasEdge): void;
+  abstract createTextNode(options?: CanvasNodeOptions): CanvasTextNode;
+  abstract createGroupNode(options?: CanvasNodeOptions): CanvasGroupNode;
+  abstract getContainingNodes(box: CanvasBBox): CanvasNode[];
+  abstract createDummyNode(options?: { attach?: boolean }): CanvasDummyNode;
+  abstract removeDummyNode(node: CanvasNode): void;
+  abstract canSnap(event: Pick<MouseEvent, 'ctrlKey' | 'altKey'>): boolean;
+  abstract cloneData(data: CanvasData, offset?: CanvasPoint): CanvasData;
+  abstract getSelectionData(elements?: Iterable<CanvasNode | CanvasEdge>): CanvasData;
+  abstract importData(data: CanvasData, prune?: boolean): Set<CanvasNode>;
+  abstract promptAddFileNode(options?: CanvasPromptOptions<CanvasFileNode>): void;
+  abstract promptAddLinkNode(options?: CanvasPromptOptions<CanvasLinkNode>): void;
 
   /* -------------------------------------------------------------- 键盘 */
 
-  onKeydown(this: import('./canvas-view.js').CanvasView, e) {
+  onKeydown(this: import('./canvas-view.js').CanvasView, e: KeyboardEvent) {
     if (e.repeat || e.defaultPrevented) return;
     if (e.key === 'Escape') { this.deselectAll(); return; }
     if (e.key === 'Backspace' || e.key === 'Delete') {
@@ -101,7 +108,7 @@ export abstract class CanvasInteractions extends CanvasViewport {
   }
 
   /** 方向键微移选中节点（原版 nudgeSelection：步长 = 网格间距，Shift 为 5 倍；对齐网格时吸附网格线）。 */
-  nudgeSelection(this: import('./canvas-view.js').CanvasView, ev, direction) {
+  nudgeSelection(this: import('./canvas-view.js').CanvasView, ev: KeyboardEvent, direction: string) {
     const nodes = Array.from(this.selection).filter((el) => el instanceof CanvasNode);
     if (!nodes.length) return;
     const step = ev.shiftKey ? 5 * this.gridSpacing : this.gridSpacing;
@@ -129,7 +136,7 @@ export abstract class CanvasInteractions extends CanvasViewport {
   }
 
   /** 空格：进入平移模式（挂上 .canvas-mover 遮罩层）。焦点在输入控件时不生效。 */
-  _globalKeydown(this: import('./canvas-view.js').CanvasView, e) {
+  _globalKeydown(this: import('./canvas-view.js').CanvasView, e: KeyboardEvent) {
     if (e.key !== ' ' || this.isHoldingSpace) return;
     const active = document.activeElement;
     if (active instanceof Element && active.closest('input, textarea, [contenteditable="true"]')) return;
@@ -142,7 +149,7 @@ export abstract class CanvasInteractions extends CanvasViewport {
     this.isHoldingSpace = true;
   }
 
-  _globalKeyup(this: import('./canvas-view.js').CanvasView, e) {
+  _globalKeyup(this: import('./canvas-view.js').CanvasView, e: KeyboardEvent) {
     if (e.key !== ' ') return;
     this.moverEl.detach();
     this.isHoldingSpace = false;
@@ -150,12 +157,12 @@ export abstract class CanvasInteractions extends CanvasViewport {
 
   /* -------------------------------------------------------------- 滚轮 */
 
-  onWheel(this: import('./canvas-view.js').CanvasView, e) {
+  onWheel(this: import('./canvas-view.js').CanvasView, e: WheelEvent) {
     if (this.isDragging || e.defaultPrevented) return;
     const behavior = this.options.defaultWheelBehavior;
     const zoomIntent = e.ctrlKey || e.metaKey;
     let zooming = zoomIntent || this.isHoldingSpace;
-    const discreteWheel = Math.abs(e.wheelDeltaY) === 240 && e.wheelDeltaX === 0;
+    const discreteWheel = 'wheelDeltaY' in e && typeof e.wheelDeltaY === 'number' && Math.abs(e.wheelDeltaY) === 240 && 'wheelDeltaX' in e && e.wheelDeltaX === 0;
     // 原版：defaultWheelBehavior=zoom 时滚轮缩放（离散鼠标滚轮仍平移）；默认 pan 时滚轮平移。
     if (behavior === 'zoom') zooming = discreteWheel ? false : !zooming;
     // macOS 触控板捏合表现为 ctrl+wheel 且两轴增量为 0：按当前选择/指针下卡片智能缩放。
@@ -188,7 +195,7 @@ export abstract class CanvasInteractions extends CanvasViewport {
   }
 
   /** 原版 smartZoom：先看指针是否落在多选包围盒内，否则取指针下面积最小的卡片，再否则总览全局。 */
-  smartZoom(this: import('./canvas-view.js').CanvasView, e) {
+  smartZoom(this: import('./canvas-view.js').CanvasView, e: MouseEvent) {
     const pos = this.posFromEvt(e);
     const pointBox = { minX: pos.x, minY: pos.y, maxX: pos.x, maxY: pos.y };
     if (this.menu && this.selection.size > 0 && this.menu.selection.bbox
@@ -207,11 +214,11 @@ export abstract class CanvasInteractions extends CanvasViewport {
 
   /* ------------------------------------------------------------ 背景平移 */
 
-  handleMoverPointerdown(this: import('./canvas-view.js').CanvasView, e) {
+  handleMoverPointerdown(this: import('./canvas-view.js').CanvasView, e: PointerEvent) {
     if (!e.isPrimary || e.button !== 0) return;
     const start = this.posFromEvt(e);
     startDrag(e, () => ({
-      move: (ev) => {
+      move: (ev: PointerEvent) => {
         const pos = this.posFromEvt(ev);
         this.panBy(start.x - pos.x, start.y - pos.y);
       },
@@ -223,14 +230,14 @@ export abstract class CanvasInteractions extends CanvasViewport {
    * 右键用 5px 阈值，未达到阈值的纯右键不碰菜单；进入拖动时关掉 macOS 已先弹出的菜单，
    * 收尾时吞掉 Windows 在 pointerup 之后补发的 contextmenu。
    */
-  onPriorityPointerdown(this: import('./canvas-view.js').CanvasView, e) {
+  onPriorityPointerdown(this: import('./canvas-view.js').CanvasView, e: PointerEvent) {
     if (e.pointerType !== 'mouse') return;
     if (e.button === 1) {
       e.preventDefault();
       const start = this.posFromEvt(e);
       this.setDragging(true);
       startDrag(e, () => ({
-        move: (ev) => {
+        move: (ev: PointerEvent) => {
           const pos = this.posFromEvt(ev);
           this.panBy(start.x - pos.x, start.y - pos.y);
         },
@@ -248,7 +255,7 @@ export abstract class CanvasInteractions extends CanvasViewport {
       this.dismissOpenMenus();
       this.setDragging(true);
       return {
-        move: (ev) => {
+        move: (ev: PointerEvent) => {
           const pos = this.posFromEvt(ev);
           this.panBy(start.x - pos.x, start.y - pos.y);
         },
@@ -274,28 +281,28 @@ export abstract class CanvasInteractions extends CanvasViewport {
    * 原版 updateSelection：改动前先拍下旧集合，焦点/高亮差异留到帧尾统一应用（applySelectionDiff），
    * 这样 1↔多选切换不会出现「已聚焦又被选中」的中间态。
    */
-  updateSelection(this: import('./canvas-view.js').CanvasView, mutate) {
+  updateSelection(this: import('./canvas-view.js').CanvasView, mutate: (set: Set<CanvasNode | CanvasEdge>) => void) {
     if (!this.staleSelection) this.staleSelection = Array.from(this.selection);
     mutate(this.selection);
     this.selectionChanged = true;
     this.requestFrame();
   }
 
-  select(this: import('./canvas-view.js').CanvasView, el) { if (!this.selection.has(el)) this.updateSelection((set) => set.add(el)); }
+  select(this: import('./canvas-view.js').CanvasView, el: CanvasNode | CanvasEdge) { if (!this.selection.has(el)) this.updateSelection((set) => set.add(el)); }
 
-  deselect(this: import('./canvas-view.js').CanvasView, el) { if (this.selection.has(el)) this.updateSelection((set) => set.delete(el)); }
+  deselect(this: import('./canvas-view.js').CanvasView, el: CanvasNode | CanvasEdge) { if (this.selection.has(el)) this.updateSelection((set) => set.delete(el)); }
 
-  toggleSelect(this: import('./canvas-view.js').CanvasView, el) {
+  toggleSelect(this: import('./canvas-view.js').CanvasView, el: CanvasNode | CanvasEdge) {
     this.updateSelection((set) => { if (set.has(el)) set.delete(el); else set.add(el); });
   }
 
-  selectOnly(this: import('./canvas-view.js').CanvasView, el) {
+  selectOnly(this: import('./canvas-view.js').CanvasView, el: CanvasNode | CanvasEdge) {
     if (this.selection.size === 1 && this.selection.has(el)) return;
     this.updateSelection((set) => { set.clear(); set.add(el); });
   }
 
-  selectAll(this: import('./canvas-view.js').CanvasView, elements?) {
-    this.updateSelection((set) => {
+  selectAll(this: import('./canvas-view.js').CanvasView, elements?: Iterable<CanvasNode | CanvasEdge> | null) {
+    this.updateSelection((set: Set<CanvasNode | CanvasEdge>) => {
       if (elements) { set.clear(); for (const el of elements) set.add(el); }
       else for (const node of this.nodes.values()) set.add(node);
     });
@@ -341,7 +348,7 @@ export abstract class CanvasInteractions extends CanvasViewport {
     this.requestSave();
   }
 
-  setDragging(this: import('./canvas-view.js').CanvasView, isDragging) {
+  setDragging(this: import('./canvas-view.js').CanvasView, isDragging: boolean) {
     if (this.isDragging === isDragging) return;
     this.isDragging = isDragging;
     this.wrapperEl.toggleClass('is-dragging', isDragging);
@@ -356,7 +363,7 @@ export abstract class CanvasInteractions extends CanvasViewport {
    * 原版 hitTestNode：矩形命中测试取 z 最高的节点（含分组——分组内部空白处悬停同样出边手柄）。
    * tolerance 是屏幕像素，按缩放折算到画布坐标。
    */
-  hitTestNode(this: import('./canvas-view.js').CanvasView, pos, tolerance = 0) {
+  hitTestNode(this: import('./canvas-view.js').CanvasView, pos: CanvasPoint, tolerance = 0) {
     let best = null;
     for (const node of this.nodes.values()) {
       const box = expandBBox(bboxOf(node), tolerance);
@@ -372,19 +379,19 @@ export abstract class CanvasInteractions extends CanvasViewport {
    * 改用 mod-handles 类承接同一显隐语义，故这里只需维护「当前命中节点」。
    * 拖动中不更新；命中节点属于多选集合时收起（原版 selection.size>1 && has(r) → setTarget(null)）。
    */
-  interactionHitTest(this: import('./canvas-view.js').CanvasView, e) {
+  interactionHitTest(this: import('./canvas-view.js').CanvasView, e: MouseEvent) {
     const pos = this.posFromEvt(e);
     if (this.pointerFrame) return;
     this.pointerFrame = window.requestAnimationFrame(() => {
       this.pointerFrame = 0;
       if (this.isDragging) return;
       const node = this.hitTestNode(pos, 8 / this.scale);
-      if (this.selection.size > 1 && this.selection.has(node)) this.setInteractionTarget(null);
+      if (node && this.selection.size > 1 && this.selection.has(node)) this.setInteractionTarget(null);
       else if (this.interactionTarget !== node) this.setInteractionTarget(node);
     });
   }
 
-  setInteractionTarget(this: import('./canvas-view.js').CanvasView, node) {
+  setInteractionTarget(this: import('./canvas-view.js').CanvasView, node: CanvasNode | null) {
     if (this.interactionTarget === node) return;
     if (this.interactionTarget && !this.interactionTarget.destroyed) {
       this.interactionTarget.nodeEl.removeClass('mod-handles');
@@ -395,7 +402,7 @@ export abstract class CanvasInteractions extends CanvasViewport {
 
   /* -------------------------------------------------------------- 背景 */
 
-  onPointerdown(this: import('./canvas-view.js').CanvasView, e) {
+  onPointerdown(this: import('./canvas-view.js').CanvasView, e: PointerEvent) {
     if (e.pointerType !== 'mouse' || e.button !== 0) return;
     if (e.target !== this.wrapperEl) return;
     this.wrapperEl.focus({ preventScroll: true });
@@ -406,7 +413,7 @@ export abstract class CanvasInteractions extends CanvasViewport {
   }
 
   /** 指针移动：维护悬停手柄（原版 onPointermove → interactionHitTest，桌面端才有该监听）。 */
-  onPointermove(this: import('./canvas-view.js').CanvasView, e) {
+  onPointermove(this: import('./canvas-view.js').CanvasView, e: PointerEvent) {
     if (e.pointerType !== 'mouse') return;
     this.interactionHitTest(e);
   }
@@ -417,13 +424,13 @@ export abstract class CanvasInteractions extends CanvasViewport {
     this.setInteractionTarget(null);
   }
 
-  onDoubleClick(this: import('./canvas-view.js').CanvasView, e) {
+  onDoubleClick(this: import('./canvas-view.js').CanvasView, e: MouseEvent) {
     if (e.defaultPrevented || e.target !== this.wrapperEl || this.isDragging || this.readonly) return;
     const pos = this.posFromEvt(e);
     this.createTextNode({ pos, position: 'center' });
   }
 
-  onContextMenu(this: import('./canvas-view.js').CanvasView, e) {
+  onContextMenu(this: import('./canvas-view.js').CanvasView, e: MouseEvent) {
     if (e.defaultPrevented || e.target !== this.wrapperEl || this.readonly) return;
     e.preventDefault();
     this.deselectAll();
@@ -443,7 +450,7 @@ export abstract class CanvasInteractions extends CanvasViewport {
     menu.showAtMouseEvent(e);
   }
 
-  onSelectionContextMenu(this: import('./canvas-view.js').CanvasView, e) {
+  onSelectionContextMenu(this: import('./canvas-view.js').CanvasView, e: MouseEvent) {
     if (e.defaultPrevented) return;
     e.preventDefault();
     const menu = new Menu(this.app);
@@ -473,7 +480,7 @@ export abstract class CanvasInteractions extends CanvasViewport {
    * 拖拽通用：靠近视口边缘时自动平移（原版 handleDragWithPan）。
    * handlers.start 在拖拽真正开始（越过阈值）时调用一次：原版 oM 把临时节点的创建放在工厂里，纯点击不建临时节点、不留残影。
    */
-  handleDragWithPan(this: import('./canvas-view.js').CanvasView, e, handlers) {
+  handleDragWithPan(this: import('./canvas-view.js').CanvasView, e: PointerEvent, handlers: CanvasDragPanHandlers) {
     const rect = this.wrapperEl.getBoundingClientRect();
     const inner = { minX: rect.x + 30, minY: rect.y + 30, maxX: rect.right - 30, maxY: rect.bottom - 30 };
     this.setDragging(true);
@@ -485,7 +492,7 @@ export abstract class CanvasInteractions extends CanvasViewport {
       if (start) start();
       return {
         ...rest,
-        move: (ev) => {
+        move: (ev: PointerEvent) => {
           panX = 0; panY = 0;
           if (ev.clientX < inner.minX) panX = ev.clientX - inner.minX;
           else if (ev.clientX > inner.maxX) panX = ev.clientX - inner.maxX;
@@ -517,7 +524,7 @@ export abstract class CanvasInteractions extends CanvasViewport {
   }
 
   /** 拖动选中节点（分组会带上内部节点；mac 按住 Alt / 其他平台按住 Ctrl 改为克隆整组）。 */
-  handleSelectionDrag(this: import('./canvas-view.js').CanvasView, e, nodeEl, node?) {
+  handleSelectionDrag(this: import('./canvas-view.js').CanvasView, e: PointerEvent, nodeEl: HTMLElement, node?: CanvasNode) {
     if (this.readonly) return;
     if (document.activeElement !== this.wrapperEl) this.wrapperEl.focus({ preventScroll: true });
     const start = this.posFromEvt(e);
@@ -529,7 +536,7 @@ export abstract class CanvasInteractions extends CanvasViewport {
       if (el.isGroup) for (const child of this.getContainingNodes(el.getBBox())) items.add(child);
     }
     const originals = Array.from<CanvasNode>(items);
-    const origin = new Map();
+    const origin = new Map<CanvasNode, CanvasPoint>();
     for (const item of originals) {
       origin.set(item, { x: item.x, y: item.y });
       item.nodeEl.addClass('is-dragging');
@@ -537,14 +544,14 @@ export abstract class CanvasInteractions extends CanvasViewport {
     }
     // 拖动中按住克隆键：原件归位，替身跟着指针走；松开则原件回到替身位置（原版 d()）
     let dragged = originals;
-    let clones = null;
-    const setCloneMode = (ev) => {
+    let clones: CanvasNode[] | null = null;
+    const setCloneMode = (ev: Pick<MouseEvent, 'altKey' | 'ctrlKey'>) => {
       const cloneKey = IS_MAC ? ev.altKey : ev.ctrlKey;
       if (cloneKey && !clones) {
         clones = [];
         dragged = clones;
         for (const item of originals) {
-          const from = origin.get(item);
+          const from = origin.get(item)!;
           const dummy = this.createDummyNode();
           clones.push(dummy);
           origin.set(dummy, from);
@@ -565,12 +572,12 @@ export abstract class CanvasInteractions extends CanvasViewport {
         dragged = originals;
       }
     };
-    const boxAt = (item, dx, dy) => {
-      const from = origin.get(item);
+    const boxAt = (item: CanvasNode, dx: number, dy: number) => {
+      const from = origin.get(item)!;
       return bboxOf({ x: from.x + dx, y: from.y + dy, width: item.width, height: item.height });
     };
     /** 拖动位移 + 吸附（原版 m()）：Shift 锁轴、canSnap 为假时只认同轴完全对齐。 */
-    const deltaFor = (ev) => {
+    const deltaFor = (ev: PointerEvent) => {
       const pos = this.posFromEvt(ev);
       const delta = { x: pos.x - start.x, y: pos.y - start.y };
       if (ev.shiftKey) { if (Math.abs(delta.x) > Math.abs(delta.y)) delta.y = 0; else delta.x = 0; }
@@ -602,16 +609,16 @@ export abstract class CanvasInteractions extends CanvasViewport {
       return { x: delta.x + snap.x, y: delta.y + snap.y };
     };
     this.handleDragWithPan(e, {
-      move: (ev) => {
+      move: (ev: PointerEvent) => {
         this.clearSnapPoints();
         setCloneMode(ev);
         const delta = deltaFor(ev);
         for (const item of dragged) {
-          const from = origin.get(item);
+          const from = origin.get(item)!;
           item.moveTo({ x: from.x + delta.x, y: from.y + delta.y });
         }
       },
-      end: (ev) => {
+      end: (ev: PointerEvent) => {
         for (const item of originals) item.nodeEl.removeClass('is-dragging');
         if (clones) {
           const delta = deltaFor(ev);
@@ -624,14 +631,14 @@ export abstract class CanvasInteractions extends CanvasViewport {
         this.requestSave();
       },
       cancel: () => {
-        for (const item of originals) { item.moveTo(origin.get(item)); item.nodeEl.removeClass('is-dragging'); }
+        for (const item of originals) { item.moveTo(origin.get(item)!); item.nodeEl.removeClass('is-dragging'); }
       },
       cleanup: () => {
         if (clones) for (const clone of clones) this.removeDummyNode(clone);
         if (nodeEl) suppressClick(nodeEl);
       },
-      keydown: (ev) => setCloneMode(ev),
-      keyup: (ev) => setCloneMode(ev),
+      keydown: (ev: KeyboardEvent) => setCloneMode(ev),
+      keyup: (ev: KeyboardEvent) => setCloneMode(ev),
     });
   }
 
@@ -639,11 +646,11 @@ export abstract class CanvasInteractions extends CanvasViewport {
    * 背景框选（原版 handleDragToSelect）：拖动时挂 .canvas-selection 矩形，分组需被完整包含才算命中，
    * Shift 与已有选择异或；收尾按住 Mod 时按 defaultModDragBehavior 建卡或弹建卡菜单。
    */
-  handleDragToSelect(this: import('./canvas-view.js').CanvasView, e, shift, prev) {
+  handleDragToSelect(this: import('./canvas-view.js').CanvasView, e: PointerEvent, shift: boolean, prev: Set<CanvasNode | CanvasEdge>) {
     const start = this.posFromEvt(e);
     const marquee = new CanvasSelectionBox(this);
     this.handleDragWithPan(e, {
-      move: (ev) => {
+      move: (ev: PointerEvent) => {
         const pos = this.posFromEvt(ev);
         const box = {
           minX: Math.min(start.x, pos.x),
@@ -652,8 +659,8 @@ export abstract class CanvasInteractions extends CanvasViewport {
           maxY: Math.max(start.y, pos.y),
         };
         marquee.update(box);
-        const hits = this.getIntersectingNodes(box).filter((node) => !node.isGroup || containsBox(box, node.getBBox()));
-        let next = new Set(hits);
+        const hits = this.getIntersectingNodes(box).filter((node: CanvasNode) => !node.isGroup || containsBox(box, node.getBBox()));
+        let next = new Set<CanvasNode | CanvasEdge>(hits);
         if (shift) {
           next = new Set(prev);
           for (const node of hits) {
@@ -663,7 +670,7 @@ export abstract class CanvasInteractions extends CanvasViewport {
         }
         this.selectAll(next);
       },
-      end: (ev) => {
+      end: (ev: PointerEvent) => {
         this.finishDragToSelect(marquee, ev);
         suppressClick(this.wrapperEl);
       },
@@ -672,7 +679,7 @@ export abstract class CanvasInteractions extends CanvasViewport {
   }
 
   /** 框选收尾（原版 end）：未按 Mod 收起框；按 Mod 时按 defaultModDragBehavior 用框的尺寸建卡或弹建卡菜单。 */
-  finishDragToSelect(this: import('./canvas-view.js').CanvasView, marquee, ev) {
+  finishDragToSelect(this: import('./canvas-view.js').CanvasView, marquee: CanvasSelectionBox, ev: PointerEvent) {
     const isMod = IS_MAC ? ev.metaKey : ev.ctrlKey;
     if (!isMod) { marquee.hide(); return; }
     const rect = rectFromBBox(marquee.bbox);
@@ -710,13 +717,13 @@ export abstract class CanvasInteractions extends CanvasViewport {
    * 原版 dragTempNode（app.js 3346799）：虚影建在 oM 的工厂里（纯点击不建、不留 .is-dummy 蓝框），
    * 用目标尺寸（文本卡 250×60、笔记/媒体 400×400）、以指针为中心、随 getSnapping 吸附，落下建同尺寸节点。
    */
-  dragTempNode(this: import('./canvas-view.js').CanvasView, e, size, cb) {
+  dragTempNode(this: import('./canvas-view.js').CanvasView, e: PointerEvent, size: CanvasSize, cb: (position: CanvasPoint, size: CanvasSize) => void) {
     if (!e.isPrimary || e.button !== 0) return;
     e.preventDefault();
     const canvas = this;
-    let dummy = null;
-    let box = null;   // 虚影当前位置：cleanup 先于 end 执行，落点必须留副本
-    const place = (pos, ev) => {
+    let dummy: CanvasDummyNode | null = null;
+    let box: CanvasRect | null = null;   // 虚影当前位置：cleanup 先于 end 执行，落点必须留副本
+    const place = (pos: CanvasPoint, ev: MouseEvent) => {
       const next = {
         x: pos.x - size.width / 2, y: pos.y - size.height / 2, width: size.width, height: size.height,
       };
@@ -737,7 +744,7 @@ export abstract class CanvasInteractions extends CanvasViewport {
         next.y += snap.y;
       }
       box = next;
-      dummy.moveAndResize(next);
+      dummy?.moveAndResize(next);
     };
     this.handleDragWithPan(e, {
       start: () => {
@@ -745,11 +752,11 @@ export abstract class CanvasInteractions extends CanvasViewport {
         dummy.nodeEl.addClass('is-dragging');
         place(canvas.posFromEvt(e), e);
       },
-      move: (ev) => {
+      move: (ev: PointerEvent) => {
         if (!dummy) return;
         place(canvas.posFromEvt(ev), ev);
       },
-      end: (ev) => {
+      end: (ev: { clientX: number; clientY: number; }) => {
         if (!box) return;
         if (canvas.posInViewport(canvas.domPosFromEvt(ev))) cb({ x: box.x, y: box.y }, size);
       },

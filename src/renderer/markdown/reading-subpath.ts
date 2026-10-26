@@ -8,7 +8,7 @@
 
 const BLOCK_ID_RE = /(?:^|\s)\^([A-Za-z0-9-]+)\s*$/;
 
-export function cssEscape(s) {
+export function cssEscape(s: string) {
   return String(s).replace(/["\\]/g, '\\$&');
 }
 
@@ -16,7 +16,7 @@ export function cssEscape(s) {
  * 为阅读 DOM 中的块元素（p, li, blockquote, pre）识别末尾的 ^block-id。
  * 标记 data-block-id 与 id，并将标记文本包裹为 .block-ref-id 便于样式或清理。
  */
-export function annotateBlocks(el) {
+export function annotateBlocks(el: HTMLElement | null) {
   if (!el) return;
   const blocks = el.querySelectorAll('p, li, blockquote, pre');
   for (const block of blocks) {
@@ -47,7 +47,7 @@ export function annotateBlocks(el) {
  * @param {string} subpath - 标题（如 #Title、Title）或块引用（如 #^block-id、^block-id）
  * @returns {boolean} 是否成功找到并滚动到目标
  */
-export function scrollToSubpath(container: HTMLElement, subpath) {
+export function scrollToSubpath(container: HTMLElement, subpath: string) {
   if (!subpath || !container) return false;
   const target = String(subpath).trim();
 

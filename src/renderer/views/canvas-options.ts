@@ -11,12 +11,15 @@
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 /* Canvas options — one .obsidian/canvas.json shared by the settings tab and every canvas view. */
+import { JsonRecord } from '../core/settings-types.js';
+import type { CanvasOptions } from './canvas-types.js';
+import { CanvasView } from './canvas-view.js';
 import { TFolder } from '../core/vault.js';
 
 export const CANVAS_OPTIONS_FILE = 'canvas.json';
 
 /** 原版画布插件的选项默认值（app.js 3417469 之后的 onEnable：{ snapToObjects: true, snapToGrid: true }）。 */
-export const DEFAULT_CANVAS_OPTIONS = { snapToObjects: true, snapToGrid: true };
+export const DEFAULT_CANVAS_OPTIONS: CanvasOptions = { snapToObjects: true, snapToGrid: true };
 
 /** 读取 .obsidian/canvas.json；缺省键回落到原版默认值。 */
 export function loadCanvasOptions(app: App) {
@@ -29,7 +32,7 @@ export function loadCanvasOptions(app: App) {
 }
 
 /** 写回 .obsidian/canvas.json（合并写，不清掉别的键）。 */
-export function saveCanvasOptions(app: App, options) {
+export function saveCanvasOptions(app: App, options: CanvasOptions) {
   try {
     app.settings.savePluginData(CANVAS_OPTIONS_FILE, options);
   } catch (e) { /* 选项写盘失败不影响使用 */ }
@@ -39,10 +42,11 @@ export function saveCanvasOptions(app: App, options) {
  * 原版 rerenderCanvases：把选项灌进所有画布视图并重绘节点。
  * 逐节点 render 会重算卡片标签可见性（updateNodeLabel）与缩放断点（updateBreakpoint）。
  */
-export function applyCanvasOptions(app: App, options) {
+export function applyCanvasOptions(app: App, options: CanvasOptions) {
   const leaves = app.workspace.getLeavesOfType('canvas');
   for (const leaf of leaves) {
     const view = leaf.view;
+    if (!(view instanceof CanvasView)) continue;
     if (!view || !view.nodes) continue;
     view.options = { ...view.options, ...options };
     for (const node of view.nodes.values()) {
@@ -53,7 +57,7 @@ export function applyCanvasOptions(app: App, options) {
 }
 
 /** 原版 getNewFileParent：folder → 指定文件夹；current → 当前文件所在文件夹；其余 → 仓库根。 */
-export function canvasNewFileParent(app: App, options, sourcePath) {
+export function canvasNewFileParent(app: App, options: CanvasOptions, sourcePath?: string) {
   const vault = app.vault;
   const location = (options && options.newFileLocation) || 'root';
   if (location === 'folder') {

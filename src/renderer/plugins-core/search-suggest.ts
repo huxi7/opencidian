@@ -22,7 +22,8 @@ const MIN_WIDTH = 300;
 const GAP = 5;
 
 /** 原版 w2：算子建议表（name 用于前缀匹配，token 用于插入，descKey 为说明文案）。 */
-export const OPERATORS = [
+type SuggestValue = { type: 'operator'; name: string; token: string; descKey: string } | { type: 'group'; name: string; icon: string; iconTooltip: string; callback(): void } | { type: 'history' | 'string'; name: string };
+export const OPERATORS: Extract<SuggestValue, { type: 'operator' }>[] = [
   { type: 'operator', name: 'path:', token: 'path:', descKey: 'plugins.search.label-path-option-description' },
   { type: 'operator', name: 'file:', token: 'file:', descKey: 'plugins.search.label-file-name-option-description' },
   { type: 'operator', name: 'tag:', token: 'tag:', descKey: 'plugins.search.label-tag-option-description' },
@@ -40,16 +41,16 @@ function docsUrl() {
 
 export class SearchSuggest {
   declare app: App;
-  declare inputEl: any;
-  declare showHistory: any;
-  declare values: any[];
-  declare items: any[];
+  declare inputEl: HTMLInputElement;
+  declare showHistory: boolean;
+  declare values: SuggestValue[];
+  declare items: HTMLElement[];
   declare selectedIndex: number;
-  declare popoverEl: any;
-  declare _autoClose: any;
-  declare _listeners: any[];
+  declare popoverEl: HTMLDivElement | null;
+  declare _autoClose: ReturnType<typeof setTimeout> | null;
+  declare _listeners: Array<[string, EventListener]>;
 
-  constructor(app: App, inputEl, options: Record<string, any> = {}) {
+  constructor(app: App, inputEl: HTMLInputElement, options: { showHistory?: boolean } = {}) {
     this.app = app;
     this.inputEl = inputEl;
     this.showHistory = options.showHistory !== false;
@@ -65,9 +66,10 @@ export class SearchSuggest {
     this._bind('keydown', (ev) => this.onKeyDown(ev));
   }
 
-  _bind(type, handler) {
-    this.inputEl.addEventListener(type, handler);
-    this._listeners.push([type, handler]);
+  _bind<K extends keyof HTMLElementEventMap>(type: K, handler: (event: HTMLElementEventMap[K]) => void) {
+    const listener = handler as EventListener;
+    this.inputEl.addEventListener(type, listener);
+    this._listeners.push([type, listener]);
   }
 
   destroy() {
@@ -82,7 +84,7 @@ export class SearchSuggest {
 
   /* ------------------------------------------------------------ 历史 */
 
-  loadHistory() {
+  loadHistory(): string[] {
     try {
       const raw = localStorage.getItem(HISTORY_KEY);
       const list = raw ? JSON.parse(raw) : null;
@@ -93,7 +95,7 @@ export class SearchSuggest {
   }
 
   /** 原版 saveSearch：最近在前、去重、最多 20 条。 */
-  saveHistory(query) {
+  saveHistory(query: string) {
     const text = String(query || '').trim();
     if (!text) return;
     const list = this.loadHistory().filter((item) => item !== text);
@@ -110,13 +112,13 @@ export class SearchSuggest {
   /* ------------------------------------------------------------ 建议 */
 
   /** 原版 k2.getSuggestions：算子建议 + 空输入时的历史组。 */
-  getSuggestions() {
+  getSuggestions(): SuggestValue[] {
     const value = this.inputEl.value;
     if (this.inputEl.selectionStart !== this.inputEl.selectionEnd) return [];
     const token = this.token();
     const context = this.contextSuggestions();
     if (context) return context;
-    const out = [];
+    const out: SuggestValue[] = [];
     // 原版：算子名按当前词元前缀匹配；词元已含冒号说明是算子上下文（原版走匹配器栈分支，不再给算子建议）
     if (!token.text.includes(':')) {
       const lower = token.text.toLowerCase();
@@ -149,8 +151,8 @@ export class SearchSuggest {
   }
 
   /** 原版 k2 的上下文分支：tag: 后给标签、path: 后给目录。 */
-  contextSuggestions() {
-    const before = this.inputEl.value.slice(0, this.inputEl.selectionStart);
+  contextSuggestions(): SuggestValue[] | null {
+    const before = this.inputEl.value.slice(0, this.inputEl.selectionStart || 0);
     const tagMatch = /(?:^|\s)tag:([^\s]*)$/.exec(before);
     if (tagMatch) {
       const prefix = tagMatch[1].toLowerCase();
@@ -159,7 +161,7 @@ export class SearchSuggest {
       if (!matched.length) return null;
       return [
         { type: 'group', name: t('plugins.search.label-tags-group'), icon: 'info', iconTooltip: t('plugins.search.tooltip-read-more'), callback: () => this.openDocs() },
-        ...matched.map((tag) => ({ type: 'string', name: tag })),
+        ...matched.map((tag): SuggestValue => ({ type: 'string', name: tag })),
       ];
     }
     const pathMatch = /(?:^|\s)path:([^\s]*)$/.exec(before);
@@ -174,8 +176,8 @@ export class SearchSuggest {
 
   /** 库内目录路径（原版 app.vault.getAllLoadedFiles 的目录部分）。 */
   folders() {
-    const out = [];
-    const walk = (folder) => {
+    const out: string[] = [];
+    const walk = (folder: TFolder) => {
       for (const child of (folder && folder.children) || []) {
         if (!(child instanceof TFolder)) continue;
         out.push(child.path);
@@ -190,8 +192,8 @@ export class SearchSuggest {
   /** 当前词元：空白与括号为界；算子后的取值（tag:/path: 之后）单独成词元。 */
   token() {
     const value = this.inputEl.value;
-    const pos = this.inputEl.selectionStart;
-    const isDelim = (ch) => ch === undefined || /[\s()[\]]/.test(ch);
+    const pos = this.inputEl.selectionStart || 0;
+    const isDelim = (ch: string|undefined) => ch === undefined || /[\s()[\]]/.test(ch);
     let start = pos;
     let end = pos;
     while (start > 0 && !isDelim(value[start - 1])) start--;
@@ -228,15 +230,16 @@ export class SearchSuggest {
       document.body.appendChild(this.popoverEl);
       // 原版 suggestEl.on("mousedown", ".suggestion-item", preventDefault)：点条目时输入框不失焦
       this.popoverEl.addEventListener('mousedown', (ev) => {
-        if (ev.target && ev.target.closest && ev.target.closest('.suggestion-item')) ev.preventDefault();
+        if (ev.target instanceof Element && ev.target.closest('.suggestion-item')) ev.preventDefault();
       });
     }
-    const inner = this.popoverEl.firstElementChild;
+    const inner = this.popoverEl.querySelector<HTMLElement>('.suggestion');
+    if (!inner) return;
     inner.empty();
     this.items = this.values.map((value, index) => this.renderItem(value, index, inner));
   }
 
-  renderItem(value, index, parent) {
+  renderItem(value: SuggestValue, index: number, parent: HTMLElement) {
     const el = parent.createDiv('suggestion-item');
     el.addClass('mod-complex');
     el.addClass('search-suggest-item');
@@ -256,7 +259,7 @@ export class SearchSuggest {
       const icon = aux.createDiv('list-item-part search-suggest-icon clickable-icon');
       setIcon(icon, value.icon);
       icon.setAttr('aria-label', value.iconTooltip);
-      icon.onclick = (ev) => {
+      icon.onclick = (ev: { preventDefault: () => void; stopPropagation: () => void; }) => {
         ev.preventDefault();
         ev.stopPropagation();
         if (value.callback) value.callback();
@@ -264,7 +267,7 @@ export class SearchSuggest {
       };
     }
     el.onmousemove = () => this.setSelected(index);
-    el.onclick = (ev) => {
+    el.onclick = (ev: { preventDefault: () => void; }) => {
       ev.preventDefault();
       this.setSelected(index);
       this.apply(value, ev);
@@ -284,7 +287,7 @@ export class SearchSuggest {
     this.values = [];
     this.items = [];
     this.selectedIndex = -1;
-    clearTimeout(this._autoClose);
+    clearTimeout(this._autoClose ?? undefined);
     this._autoClose = null;
   }
 
@@ -299,14 +302,14 @@ export class SearchSuggest {
 
   /** 原版 setAutoDestroy：输入框不可见时收起面板。 */
   scheduleAutoClose() {
-    clearTimeout(this._autoClose);
+    clearTimeout(this._autoClose ?? undefined);
     this._autoClose = setTimeout(() => {
       this._autoClose = null;
       if (!this.inputEl.isShown || !this.inputEl.isShown()) this.close();
     }, AUTO_CLOSE_DELAY);
   }
 
-  setSelected(index) {
+  setSelected(index: number) {
     const count = this.values.length;
     if (!count) { this.selectedIndex = -1; return; }
     if (index < 0) index = count - 1;
@@ -321,7 +324,7 @@ export class SearchSuggest {
     }
   }
 
-  onKeyDown(ev) {
+  onKeyDown(ev: KeyboardEvent) {
     if (!this.isOpen || ev.isComposing) return;
     const key = ev.key;
     if (key === 'ArrowDown') { ev.preventDefault(); this.setSelected(this.selectedIndex + 1); }
@@ -333,7 +336,7 @@ export class SearchSuggest {
   }
 
   /** 原版 selectSuggestion：算子插入 token（末尾带括号时光标前移一格），标签/目录插入原文并补空格。 */
-  apply(value, ev) {
+  apply(value: SuggestValue | undefined, ev?: Pick<Event, 'preventDefault'>) {
     if (!value || value.type === 'group') {
       if (ev) ev.preventDefault();
       return;

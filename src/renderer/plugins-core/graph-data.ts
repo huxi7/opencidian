@@ -4,15 +4,18 @@
  * [POS]: 纯构图模块；先构建有向图，再按局部深度与方向裁剪。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
-import { TFile } from '../core/vault.js';
+import type { GraphData, GraphNodeData, GraphOptions, GraphColor } from './graph-types.js';
+import { CachedMetadata } from '../core/metadata-types.js';
+import { MetadataCache } from '../core/metadata.js';
+import { TFile, Vault } from '../core/vault.js';
 import { has } from './graph-utils.js';
 
 /* 原版 bQ：图谱节点记录。type ∈ ''|'attachment'|'tag'|'unresolved'|'focused' */
-export function createNode(type = ''): { type: string; links: Record<string, boolean>; color?: string } {
+export function createNode(type = ''): GraphNodeData {
   return { type, links: {} };
 }
 /* 原版 wQ：局部图谱用的浅拷贝（保留颜色，链接表重建） */
-export function cloneNode(node) {
+export function cloneNode(node: GraphNodeData) {
   if (!node) return createNode();
   const out = createNode(node.type);
   if (node.color) out.color = node.color;
@@ -20,13 +23,13 @@ export function cloneNode(node) {
 }
 const TAG_TYPE = { tag: true };
 /* 原版 ou：取小写扩展名，无扩展名返回空串 */
-export function getExtension(path) {
+export function getExtension(path: string) {
   const i = path.lastIndexOf('.');
   return i < 0 || i === path.length - 1 || i === 0 ? '' : path.slice(i + 1).toLowerCase();
 }
 const NOTE_EXTENSIONS = ['md', 'canvas', 'base']; // 原版 Wy：这些不是附件
 /* 原版 Ky：不是笔记/画布/数据库的文件按附件节点处理 */
-export function isAttachmentPath(path) {
+export function isAttachmentPath(path: string) {
   return !NOTE_EXTENSIONS.includes(getExtension(path));
 }
 
@@ -34,7 +37,7 @@ export function isAttachmentPath(path) {
 // 图谱数据构建（原版 MJ.render 内的 c() 函数）
 // ---------------------------------------------------------------------------
 /* 原版 xT：文件缓存里的全部标签（项目解析器已把 frontmatter 标签并入 cache.tags） */
-function getAllTags(cache) {
+function getAllTags(cache: CachedMetadata|null) {
   if (!cache || !cache.tags) return null;
   return cache.tags.map((entry) => entry.tag);
 }
@@ -47,29 +50,29 @@ function getAllTags(cache) {
  * @param {(path: string, type: string) => boolean|object} nodeFilter 返回 false 剔除，返回对象作为节点颜色
  * @param {number} progression 生长动画进度：0 表示完整图谱
  */
-export function buildGraphData(metadataCache, vault, options, nodeFilter, progression) {
+export function buildGraphData(metadataCache: MetadataCache, vault: Vault, options: GraphOptions, nodeFilter: (path: string, type: string) => boolean | GraphColor, progression: number) {
   const resolvedLinks = metadataCache.resolvedLinks;
   const unresolvedLinks = metadataCache.unresolvedLinks;
   const showAttachments = options.showAttachments;
   const hideUnresolved = options.hideUnresolved;
   const showTags = options.showTags;
-  const tagLookup = {};
+  const tagLookup: Record<string, string> = {};
   if (showTags) {
     const tags = metadataCache.getTags();
     for (const key in tags) if (has(tags, key)) tagLookup[key.toLowerCase()] = key;
   }
-  const nodes = {};
+  const nodes: Record<string, GraphNodeData> = {};
   let numLinks = 0;
   // 本项目缓存只收录 Markdown；节点清单必须从 vault 取，才能包含附件和 Canvas。
   const paths = vault.getFiles().map((file) => file.path);
   if (progression) {
     /* 原版：生长动画按创建时间（ctime 与 mtime 的较小者）排序文件 */
-    const times = {};
+    const times: Record<string, number> = {};
     for (const path of paths) {
       const file = vault.getAbstractFileByPath(path);
       times[path] = file instanceof TFile ? Math.min(file.stat.ctime, file.stat.mtime) : Infinity;
     }
-    paths.sort((a, b) => times[a] - times[b]);
+    paths.sort((a: string|number, b: string|number) => times[a] - times[b]);
   }
   let lastNodeId = '';
   for (const path of paths) {
@@ -132,9 +135,9 @@ export function buildGraphData(metadataCache, vault, options, nodeFilter, progre
 }
 
 /* 原版 render 内联函数：剔除既无出链、也无人引用的孤立节点 */
-export function removeOrphans(data) {
+export function removeOrphans(data: GraphData) {
   const nodes = data.nodes;
-  const referenced = {};
+  const referenced: Record<string, boolean> = {};
   for (const id in nodes) if (has(nodes, id)) {
     const links = nodes[id].links;
     for (const target in links) if (has(links, target) && id !== target) referenced[target] = true;
@@ -154,10 +157,10 @@ export function removeOrphans(data) {
  * 以 localFile 为起点按 localJumps 层扩散：正向链接与反向链接各由开关控制，
  * 每层权重 30 - (30/jumps)*(i+1)，localFile 权重 30（供节点大小使用）。
  */
-export function filterLocalGraph(data, options) {
+export function filterLocalGraph(data: GraphData, options: GraphOptions) {
   const nodes = data.nodes;
-  const out = {};
-  const weights = {};
+  const out: Record<string, GraphNodeData> = {};
+  const weights: Record<string, number> = {};
   const localFile = options.localFile;
   const jumps = options.localJumps;
   const interlinks = options.localInterlinks;
@@ -170,8 +173,8 @@ export function filterLocalGraph(data, options) {
     return { nodes: out, weights };
   }
   out[localFile] = cloneNode(nodes[localFile]);
-  const expand = (weight) => {
-    const added = {};
+  const expand = (weight: number) => {
+    const added: Record<string, GraphNodeData> = {};
     for (const id in nodes) if (has(nodes, id)) {
       const node = nodes[id];
       if (node.type === 'tag') continue;

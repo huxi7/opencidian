@@ -10,18 +10,25 @@
  * behind the image context menu (reset size / delete image).
  */
 import { isolateHistory } from '@codemirror/commands';
+import type MarkdownIt from 'markdown-it';
+import type Token from 'markdown-it/lib/token.mjs';
+import type { Text } from '@codemirror/state';
+import type { Editor } from '../editor/editor.js';
+import type { Menu } from '../core/menu.js';
+import type { TFile } from '../core/vault.js';
+
 import { tt } from '../core/i18n.js';
 import { Notice } from '../core/notices.js';
 
-export function escapeHtml(s) {
+export function escapeHtml(s: unknown) {
   return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
-export function escapeAttr(s) {
+export function escapeAttr(s: unknown) {
   return escapeHtml(s).replace(/"/g, '&quot;');
 }
 
 /** 去掉开头的 YAML frontmatter，返回正文（必是原文本的后缀）。 */
-export function stripFrontmatter(text) {
+export function stripFrontmatter(text: string) {
   const lines = text.split('\n');
   if (lines[0] === undefined || lines[0].trim() !== '---') return text;
   for (let i = 1; i < lines.length; i++) {
@@ -36,14 +43,14 @@ export function stripFrontmatter(text) {
 const IMAGE_SIZE_RE = /^\s*(\d+)\s*(?:x\s*(\d+)\s*)?$/;
 
 /** 原版 Vx(e)：解析 `300` 或 `300x200`（允许两侧空白），解析失败返回 null。 */
-export function parseImageSize(text) {
+export function parseImageSize(text: string | null | undefined) {
   const m = IMAGE_SIZE_RE.exec(text == null ? '' : String(text));
   if (!m) return null;
   return { x: parseInt(m[1], 10), y: m[2] ? parseInt(m[2], 10) : 0 };
 }
 
 /** 原版 Hx：尺寸落成 img 属性。无高度参数时只写 width，高度由浏览器按原始比例缩放。 */
-export function sizeAttrText(size) {
+export function sizeAttrText(size: { x: number; y: number } | null) {
   if (!size || size.x <= 0) return '';
   return ` width="${size.x}"` + (size.y > 0 ? ` height="${size.y}"` : '');
 }
@@ -52,7 +59,7 @@ export function sizeAttrText(size) {
  * 原版 image transformer：`![alt|300](url)` 的尺寸段必须跟在竖线后。
  * 没有竖线时整段都算 alt——`![300](url)` 不生效。
  */
-export function splitImageSize(text) {
+export function splitImageSize(text: string | null | undefined) {
   const s = text == null ? '' : String(text);
   const i = s.lastIndexOf('|');
   if (i === -1) return { size: null, text: s };
@@ -64,7 +71,7 @@ export function splitImageSize(text) {
  * 原版 d6.applyTitle：`![[pic.png|300]]` 的别名没有竖线时整段按尺寸判定，
  * 尺寸段被摘掉后别名回退到文件名。
  */
-export function splitEmbedSize(text) {
+export function splitEmbedSize(text: string | null | undefined) {
   const s = text == null ? '' : String(text);
   const i = s.lastIndexOf('|');
   if (i === -1) {
@@ -79,7 +86,7 @@ export function splitEmbedSize(text) {
  * 原版 c6 的删除分支：定位文本里要移除的尺寸段（含前导竖线）。
  * 无尺寸段返回 null；整段就是尺寸时返回整段。
  */
-export function imageSizeSpan(text) {
+export function imageSizeSpan(text: string | null | undefined) {
   const s = text == null ? '' : String(text);
   if (!s) return null;
   if (parseImageSize(s)) return { start: 0, end: s.length };
@@ -92,7 +99,7 @@ export function imageSizeSpan(text) {
 // 源区间标注（原版 widget.start / widget.end 的等价物）
 // ---------------------------------------------------------------------------
 /** 行内子 token 在源文本里的字面量；返回 null 表示无法定位，标注就地停止。 */
-function childNeedle(child) {
+function childNeedle(child: Token) {
   switch (child.type) {
     case 'text': return child.content;
     case 'code_inline': { const m = child.markup || '`'; return m + child.content + m; }
@@ -112,7 +119,7 @@ function childNeedle(child) {
  * 把行内图片与嵌入在源文本里的绝对起点记进 token.meta.srcFrom。
  * 光标随 token 顺序单调推进，任一字面量对不上就停止标注——宁可没有区间，也不写错位置。
  */
-export function installSourceOffsets(md) {
+export function installSourceOffsets(md: MarkdownIt) {
   md.core.ruler.push('obsidian_source_offsets', (state) => {
     const src = state.src;
     const lineStarts = [0];
@@ -143,7 +150,7 @@ export function installSourceOffsets(md) {
  * 把"这段链接文本在源文件中的位置"写进 DOM：来源文件 + 内层文本起点 + 内层原文 + 语法种类。
  * 阅读视图图片右键据此改写源文本。
  */
-export function sourceRangeAttrs(env, token, innerText) {
+export function sourceRangeAttrs(env: { sourcePath?: string }, token: Token, innerText: string) {
   const meta = token && token.meta;
   if (!meta || typeof meta.srcFrom !== 'number' || !env.sourcePath) return '';
   const kind = token.type === 'wikilink_embed' ? 'wiki' : 'md';
@@ -155,20 +162,20 @@ export function sourceRangeAttrs(env, token, innerText) {
 // 图片右键：重置大小 / 删除图片（原版 h6）
 // ---------------------------------------------------------------------------
 /** 图片目标解析为库内文件；外部 URL 返回 null（原版 d6 与 p6 的分野）。 */
-function resolveEmbeddedFile(app: App, href, sourcePath) {
+function resolveEmbeddedFile(app: App, href: string | null, sourcePath: string) {
   if (!href) return null;
   let clean = href;
   try { clean = decodeURIComponent(href); } catch (e) { /* 保留原样 */ }
   const dest = app.metadataCache.getFirstLinkpathDest(clean, sourcePath || '');
-  const path = dest && dest.path ? dest.path : dest;
+  const path = dest;
   return typeof path === 'string' ? app.vault.getFileByPath(path) : null;
 }
 
 /** 找到承载这段阅读 DOM 的源编辑器；跨文件（嵌套嵌入、悬停预览）返回 null。 */
-function findReadingEditor(app: App, el) {
+function findReadingEditor(app: App, el: Element): Editor | null {
   const workspace = app.workspace;
   if (!workspace || !workspace.iterateAllLeaves) return null;
-  let found = null;
+  let found: Editor | null = null;
   workspace.iterateAllLeaves((leaf) => {
     const view = leaf && leaf.view;
     if (found || !view || !view.editor || !view.readingEl || !view.editor.cm) return;
@@ -182,10 +189,10 @@ function findReadingEditor(app: App, el) {
  * 这里补齐前言偏移并逐字校验；校验不过再退回"全文唯一出现"定位，
  * 仍不成立返回 null——绝不改错位置。
  */
-function locateInnerRange(editor, holder, innerText) {
+function locateInnerRange(editor: Editor, holder: Element, innerText: string) {
   const path = holder.getAttr('data-source-path');
   if (!path || path !== editor.sourcePath || !innerText) return null;
-  const base = parseInt(holder.getAttr('data-source-from'), 10);
+  const base = parseInt(holder.getAttr('data-source-from') || '', 10);
   if (!Number.isFinite(base)) return null;
   const doc = editor.cm.state.doc;
   const full = doc.toString();
@@ -193,7 +200,7 @@ function locateInnerRange(editor, holder, innerText) {
   let delta = full.length - body.length;
   if (delta < 0 || full.slice(delta) !== body) delta = full.indexOf(body);
   if (delta < 0) return null;
-  const verify = (from) => (doc.sliceString(from, from + innerText.length) === innerText
+  const verify = (from: number) => (doc.sliceString(from, from + innerText.length) === innerText
     ? { from, to: from + innerText.length } : null);
   const direct = verify(delta + base);
   if (direct) return direct;
@@ -203,7 +210,7 @@ function locateInnerRange(editor, holder, innerText) {
 }
 
 /** 整段链接文本的区间：`![[...]]` 按固定括号，`![...](...)` 扫到配对右括号。 */
-function embedTextRange(doc, kind, innerRange) {
+function embedTextRange(doc: Text, kind: string | null, innerRange: { from: number; to: number }) {
   if (kind === 'wiki') return { from: innerRange.from - 3, to: innerRange.to + 2 };
   if (kind !== 'md' || doc.sliceString(innerRange.to, innerRange.to + 1) !== '(') return null;
   let depth = 0;
@@ -218,7 +225,7 @@ function embedTextRange(doc, kind, innerRange) {
 }
 
 /** 原版 h6 的 reset-size 项：img 上有 width 属性且能定位源区间时才出现。 */
-function addResetSizeItem(app: App, menu, img, holder) {
+function addResetSizeItem(app: App, menu: Menu, img: HTMLImageElement, holder: Element) {
   if (img.getAttribute('width') === null) return;
   const innerText = holder.getAttr('data-source-text') || '';
   const span = imageSizeSpan(innerText);
@@ -243,7 +250,7 @@ function addResetSizeItem(app: App, menu, img, holder) {
 }
 
 /** 原版 h6 的 delete-image 项：先走库内删除确认，确认后连同整段链接文本一起移除。 */
-function addDeleteImageItem(app: App, menu, img, holder, file) {
+function addDeleteImageItem(app: App, menu: Menu, img: HTMLImageElement, holder: Element, file: TFile) {
   const innerText = holder.getAttr('data-source-text') || '';
   const editor = findReadingEditor(app, img);
   if (!editor || !innerText) return;
@@ -264,7 +271,7 @@ function addDeleteImageItem(app: App, menu, img, holder, file) {
 }
 
 /** 复制图片：库内文件读二进制，URL/data 走 fetch（原版 interface.menu.copy-image）。 */
-function addCopyImageItem(app: App, menu, href, sourcePath) {
+function addCopyImageItem(app: App, menu: Menu, href: string | null, sourcePath: string) {
   menu.addItem((i) => i.setSection('image').setTitle(tt('interface.menu.copy-image', 'Copy image')).setIcon('lucide-copy')
     .onClick(async () => {
       try {
@@ -281,15 +288,15 @@ function addCopyImageItem(app: App, menu, href, sourcePath) {
           if (blob.type) type = blob.type;
         }
         if (!bytes) throw new Error('no image');
-        await navigator.clipboard.write([new ClipboardItem({ [type]: new Blob([bytes], { type }) })]);
+        await navigator.clipboard.write([new ClipboardItem({ [type]: new Blob([Uint8Array.from(bytes)], { type }) })]);
       } catch (e) {
         new Notice(tt('interface.copy-failed', 'Failed to copy'));
       }
     }));
 }
 
-function mimeForExtension(ext) {
-  const map = {
+function mimeForExtension(ext: string) {
+  const map: Record<string, string> = {
     png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif',
     webp: 'image/webp', bmp: 'image/bmp', svg: 'image/svg+xml', avif: 'image/avif',
   };
@@ -301,7 +308,7 @@ function mimeForExtension(ext) {
  * 复制图片 → 库内图片再挂链接菜单 → 重置大小（仅带 width）→ 删除图片。
  * 分节表 addSections(['title','image'])：图片项自成一节，链接菜单项排在其后，danger 段在末尾。
  */
-export function fillImageContextMenu(app: App, menu, img, sourcePath, ev) {
+export function fillImageContextMenu(app: App, menu: Menu, img: HTMLImageElement, sourcePath: string, ev: MouseEvent) {
   // 原版 addSections(["title","image"])：图片项自成一节，链接菜单项排列其后，danger 段在末尾
   menu.addSections(['title', 'image']);
   const holder = img.closest('[data-source-text]') || img.closest('[data-href]');

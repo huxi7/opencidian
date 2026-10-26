@@ -10,7 +10,9 @@
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 /* Canvas selection toolbar + arrange operations — original q3 and its align/distribute/justify/arrange closures. */
+import type { CanvasBBox } from './canvas-utils.js';
 import { unionBBox, expandBBox, clamp, parseCanvasColor } from './canvas-utils.js';
+import { CanvasGroupNode } from './canvas-group-node.js';
 import { CanvasNode } from './canvas-node.js';
 import { CanvasFileNode } from './canvas-file-node.js';
 import { CanvasEdge } from './canvas-edge.js';
@@ -20,20 +22,24 @@ import { Menu } from '../core/menu.js';
 import { setIcon } from '../core/icons.js';
 import { t } from '../core/i18n.js';
 
+interface CanvasMenuDom {
+  containerEl: HTMLDivElement; menuEl: HTMLDivElement; selection: CanvasSelectionBox;
+  state: { submenuEl: HTMLDivElement | null; submenuKind: string; submenuButton: HTMLElement | null };
+}
 /* ---------------------------------------------------------------- 排布运算 */
 
 /** 原版 C()：排布对象与参照包围盒。单选分组时对象是其内部节点，包围盒取组框内缩 20。 */
-export function alignTargets(canvas: import('./canvas-view.js').CanvasView, selected, single, last) {
-  if (single && last && last.isGroup) {
+export function alignTargets(canvas: import('./canvas-view.js').CanvasView, selected: Array<CanvasNode | CanvasEdge>, single: boolean, last: CanvasNode | CanvasEdge | undefined) {
+  if (single && last instanceof CanvasGroupNode) {
     const box = last.getBBox();
-    return { nodes: canvas.getContainingNodes(box).filter((node) => node !== last), box: expandBBox(box, -20) };
+    return { nodes: canvas.getContainingNodes(box).filter((node: CanvasNode) => node !== last), box: expandBBox(box, -20) };
   }
   const nodes = selected.filter((el) => el instanceof CanvasNode);
-  return { nodes, box: unionBBox(nodes.map((node) => node.getBBox())) };
+  return { nodes, box: unionBBox(nodes.map((node: CanvasNode) => node.getBBox())) };
 }
 
 /** align：6 向对齐到包围盒对应边（左/右/上/下/水平居中/垂直居中）。 */
-export function alignNodes(mode, nodes, box) {
+export function alignNodes(mode: string, nodes: CanvasNode[], box: CanvasBBox) {
   for (const node of nodes) {
     if (mode === 'left') node.moveTo({ x: box.minX, y: node.y });
     else if (mode === 'right') node.moveTo({ x: box.maxX - node.width, y: node.y });
@@ -45,12 +51,12 @@ export function alignNodes(mode, nodes, box) {
 }
 
 /** distribute：首尾不动，按元素尺寸平分剩余空隙（原版按轴取宽或高）。 */
-export function distributeNodes(axis, nodes, box) {
+export function distributeNodes(axis: string, nodes: CanvasNode[], box: CanvasBBox) {
   if (nodes.length <= 1) return;
   if (axis === 'horizontal') {
     let total = 0;
     for (const node of nodes) total += node.width;
-    nodes.sort((a, b) => (a.x !== b.x ? a.x - b.x : a.y - b.y));
+    nodes.sort((a: { x: number; y: number; }, b: { x: number; y: number; }) => (a.x !== b.x ? a.x - b.x : a.y - b.y));
     const gap = (box.maxX - box.minX - total) / (nodes.length - 1);
     for (let i = 1; i < nodes.length - 1; i++) {
       const prev = nodes[i - 1];
@@ -59,7 +65,7 @@ export function distributeNodes(axis, nodes, box) {
   } else if (axis === 'vertical') {
     let total = 0;
     for (const node of nodes) total += node.height;
-    nodes.sort((a, b) => (a.y !== b.y ? a.y - b.y : a.x - b.x));
+    nodes.sort((a: { y: number; x: number; }, b: { y: number; x: number; }) => (a.y !== b.y ? a.y - b.y : a.x - b.x));
     const gap = (box.maxY - box.minY - total) / (nodes.length - 1);
     for (let i = 1; i < nodes.length - 1; i++) {
       const prev = nodes[i - 1];
@@ -69,7 +75,7 @@ export function distributeNodes(axis, nodes, box) {
 }
 
 /** justify：把每个元素沿轴拉伸到包围盒整幅（宽度或高度与包围盒对齐）。 */
-export function justifyNodes(axis, nodes, box) {
+export function justifyNodes(axis: string, nodes: CanvasNode[], box: CanvasBBox) {
   if (nodes.length <= 1) return;
   for (const node of nodes) {
     if (axis === 'horizontal') node.moveAndResize({ x: box.minX, y: node.y, width: box.maxX - box.minX, height: node.height });
@@ -78,10 +84,10 @@ export function justifyNodes(axis, nodes, box) {
 }
 
 /** arrange：先按 y 重叠切行（行内按 x 排序），再按行/列/网格以 gridSpacing 落位。 */
-export function arrangeNodes(mode, nodes, box, spacing) {
+export function arrangeNodes(mode: string, nodes: CanvasNode[], box: CanvasBBox, spacing: number) {
   if (nodes.length <= 1) return;
-  nodes.sort((a, b) => a.y - b.y);
-  const rows = [];
+  nodes.sort((a: { y: number; }, b: { y: number; }) => a.y - b.y);
+  const rows: CanvasNode[][] = [];
   let rowBottom = -Infinity;
   for (const node of nodes) {
     if (node.y < rowBottom) {
@@ -128,18 +134,18 @@ export function buildCanvasMenu(canvas: import('./canvas-view.js').CanvasView) {
   const containerEl = createDiv('canvas-menu-container');
   const menuEl = containerEl.createDiv('canvas-menu');
   const selection = new CanvasSelectionBox(canvas, 'mod-group-selection');
-  const state = { submenuEl: null, submenuKind: '', submenuButton: null };
+  const state: CanvasMenuDom['state'] = { submenuEl: null, submenuKind: '', submenuButton: null };
   const boxEl = selection.selectionEl;
-  boxEl.addEventListener('contextmenu', (e) => { canvas.onSelectionContextMenu(e); e.preventDefault(); });
-  boxEl.addEventListener('pointerdown', (e) => {
+  boxEl.addEventListener('contextmenu', (e: MouseEvent) => { canvas.onSelectionContextMenu(e); e.preventDefault(); });
+  boxEl.addEventListener('pointerdown', (e: PointerEvent) => {
     if (e.isPrimary && e.button === 0 && !e.defaultPrevented) canvas.handleSelectionDrag(e, boxEl);
   });
   return {
     containerEl,
     menuEl,
     selection,
-    updateZIndex(z) { containerEl.style.zIndex = String(z); },
-    render(redraw) { renderMenu(canvas, { containerEl, menuEl, selection, state }, redraw); },
+    updateZIndex(z: number) { containerEl.style.zIndex = String(z); },
+    render(redraw: boolean) { renderMenu(canvas, { containerEl, menuEl, selection, state }, redraw); },
     detach() {
       containerEl.detach();
       menuEl.empty();
@@ -148,7 +154,7 @@ export function buildCanvasMenu(canvas: import('./canvas-view.js').CanvasView) {
   };
 }
 
-function renderMenu(canvas: import('./canvas-view.js').CanvasView, menu, redraw) {
+function renderMenu(canvas: import('./canvas-view.js').CanvasView, menu: CanvasMenuDom, redraw: boolean) {
   const { containerEl, menuEl, selection, state } = menu;
   const selected = Array.from(canvas.selection);
   if (!selected.length) {
@@ -159,7 +165,7 @@ function renderMenu(canvas: import('./canvas-view.js').CanvasView, menu, redraw)
     state.submenuButton = null;
     return;
   }
-  selected.sort((a, b) => (a as CanvasNode).zIndex - (b as CanvasNode).zIndex);
+  selected.sort((a, b) => a instanceof CanvasNode && b instanceof CanvasNode ? a.zIndex - b.zIndex : 0);
   const single = selected.length === 1;
   const last = selected[selected.length - 1];
   const box = unionBBox(selected.map((el) => el.getBBox()));
@@ -182,17 +188,17 @@ function renderMenu(canvas: import('./canvas-view.js').CanvasView, menu, redraw)
 }
 
 /** 按钮：只读画布隐藏非 always 项（原版 b()）。 */
-function addButton(canvas: import('./canvas-view.js').CanvasView, menuEl, title, icon, onClick, always?) {
+function addButton(canvas: import('./canvas-view.js').CanvasView, menuEl: HTMLElement, title: string, icon: string, onClick: (event: MouseEvent, button: HTMLButtonElement) => unknown, always?: boolean|undefined) {
   if (canvas.readonly && !always) return null;
   const el = menuEl.createEl('button', 'clickable-icon');
   el.setAttr('aria-label', title);
   setIcon(el, icon);
-  el.addEventListener('click', onClick);
+  el.addEventListener('click', event => onClick(event, el));
   return el;
 }
 
 /** 子菜单锚定在按钮下方（原版 showAtPosition({x, y: bottom, width, overlap})）。 */
-function openSubmenu(canvas: import('./canvas-view.js').CanvasView, buttonEl, build) {
+function openSubmenu(canvas: import('./canvas-view.js').CanvasView, buttonEl: HTMLElement, build: (menu: Menu) => void) {
   if (!buttonEl || buttonEl.hasClass('has-active-menu')) return;
   const rect = buttonEl.getBoundingClientRect();
   const submenu = new Menu(canvas.app);
@@ -200,10 +206,10 @@ function openSubmenu(canvas: import('./canvas-view.js').CanvasView, buttonEl, bu
   submenu.setParentElement(buttonEl).showAtPosition({ x: rect.x, y: rect.bottom });
 }
 
-function buildButtons(canvas: import('./canvas-view.js').CanvasView, menu, selected, single, last) {
+function buildButtons(canvas: import('./canvas-view.js').CanvasView, menu: CanvasMenuDom, selected: Array<CanvasNode | CanvasEdge>, single: boolean, last: CanvasNode | CanvasEdge | undefined|CanvasEdge) {
   const { menuEl, state } = menu;
   addButton(canvas, menuEl, t('plugins.canvas.action-remove'), 'lucide-trash-2', () => canvas.deleteSelection());
-  addButton(canvas, menuEl, t('plugins.canvas.action-set-color'), 'lucide-palette', (ev) => openColorSubmenu(canvas, menu, ev.currentTarget, selected));
+  addButton(canvas, menuEl, t('plugins.canvas.action-set-color'), 'lucide-palette', (ev, button) => openColorSubmenu(canvas, menu, button, selected));
   addButton(canvas, menuEl, `${t('plugins.canvas.action-zoom-to-selection')}\n(${hotkeyLabel(['Shift', '2'])})`, 'zoom-to-selection', () => canvas.zoomToSelection(), true);
   if (!single && last instanceof CanvasNode) {
     addButton(canvas, menuEl, t('plugins.canvas.action-create-group'), 'create-group', () => {
@@ -211,29 +217,29 @@ function buildButtons(canvas: import('./canvas-view.js').CanvasView, menu, selec
       canvas.createGroupNode({ pos: { x: box.minX, y: box.minY }, size: { width: box.maxX - box.minX, height: box.maxY - box.minY } });
     });
   }
-  const arrangeVisible = (!single && last instanceof CanvasNode) || (single && last && last.isGroup);
+  const arrangeVisible = (!single && last instanceof CanvasNode) || (single && last instanceof CanvasGroupNode);
   if (arrangeVisible) {
-    addButton(canvas, menuEl, t('plugins.canvas.action-align'), 'lucide-align-start-vertical', (ev) => {
-      openSubmenu(canvas, ev.currentTarget, (submenu) => buildArrangeSubmenu(canvas, submenu, selected, single, last));
+    addButton(canvas, menuEl, t('plugins.canvas.action-align'), 'lucide-align-start-vertical', (ev, button) => {
+      openSubmenu(canvas, button, (submenu) => buildArrangeSubmenu(canvas, submenu, selected, single, last));
     });
   }
   if (single && last instanceof CanvasEdge) buildEdgeButtons(canvas, menuEl, last);
   if (single && last instanceof CanvasNode && !last.isGroup && last.isEditable()) {
     addButton(canvas, menuEl, t('interface.menu.edit'), 'lucide-edit', () => last.startEditing());
   }
-  if (single && last && last.isGroup) {
+  if (single && last instanceof CanvasGroupNode) {
     addButton(canvas, menuEl, t('plugins.canvas.action-edit-label'), 'lucide-edit', () => last.focusLabel());
   }
 }
 
-function buildEdgeButtons(canvas: import('./canvas-view.js').CanvasView, menuEl, edge) {
+function buildEdgeButtons(canvas: import('./canvas-view.js').CanvasView, menuEl: HTMLElement, edge: CanvasEdge) {
   const edges = Array.from(canvas.selection).filter((el) => el instanceof CanvasEdge);
   const directionIcon = edge.from.end === 'arrow'
     ? 'lucide-move-horizontal'
     : (edge.to.end === 'none' ? 'line-horizontal' : 'lucide-arrow-right');
-  addButton(canvas, menuEl, t('plugins.canvas.label-line-direction'), directionIcon, (ev) => {
-    openSubmenu(canvas, ev.currentTarget, (submenu) => {
-      const setEnds = (fromEnd, toEnd) => {
+  addButton(canvas, menuEl, t('plugins.canvas.label-line-direction'), directionIcon, (_ev, button) => {
+    openSubmenu(canvas, button, (submenu) => {
+      const setEnds = (fromEnd: string, toEnd: string) => {
         for (const item of edges) { item.from.end = fromEnd; item.to.end = toEnd; canvas.markDirty(item); }
         canvas.requestSave();
       };
@@ -248,37 +254,37 @@ function buildEdgeButtons(canvas: import('./canvas-view.js').CanvasView, menuEl,
   if (edge.labelElement) {
     addButton(canvas, menuEl, t('plugins.canvas.action-remove-label'), 'lucide-x-square', () => {
       edge.setLabel('');
-      edge.labelElement.destroy();
+      edge.labelElement?.destroy();
       canvas.requestSave();
-      canvas.menu.render(true);
+      canvas.menu?.render(true);
     });
   }
   addButton(canvas, menuEl, t('plugins.canvas.action-edit-label'), 'lucide-edit', () => edge.editLabel());
 }
 
 /** 排布子菜单：6 向对齐 + 3 种排列 + 2 向分布 + 2 向拉伸（原版 align 子菜单逐项对应）。 */
-function buildArrangeSubmenu(canvas: import('./canvas-view.js').CanvasView, submenu, selected, single, last) {
-  const runAlign = (mode) => () => {
+function buildArrangeSubmenu(canvas: import('./canvas-view.js').CanvasView, submenu: Menu, selected: Array<CanvasNode | CanvasEdge>, single: boolean, last: CanvasNode | CanvasEdge | undefined|CanvasEdge) {
+  const runAlign = (mode: string) => () => {
     const { nodes, box } = alignTargets(canvas, selected, single, last);
     alignNodes(mode, nodes, box);
     canvas.requestSave();
   };
-  const runDistribute = (axis) => () => {
+  const runDistribute = (axis: string) => () => {
     const { nodes, box } = alignTargets(canvas, selected, single, last);
     distributeNodes(axis, nodes, box);
     canvas.requestSave();
   };
-  const runJustify = (axis) => () => {
+  const runJustify = (axis: string) => () => {
     const { nodes, box } = alignTargets(canvas, selected, single, last);
     justifyNodes(axis, nodes, box);
     canvas.requestSave();
   };
-  const runArrange = (mode) => () => {
+  const runArrange = (mode: string) => () => {
     const { nodes, box } = alignTargets(canvas, selected, single, last);
     arrangeNodes(mode, nodes, box, canvas.gridSpacing);
     canvas.requestSave();
   };
-  const item = (title, icon, onClick) => submenu.addItem((it) => it.setTitle(title).setIcon(icon).onClick(onClick));
+  const item = (title: string, icon: string, onClick: { (): void; (): void; (): void; (): void; (): void; (): void; (): void; (): void; (): void; (): void; (): void; (): void; (): void; }) => submenu.addItem((it) => it.setTitle(title).setIcon(icon).onClick(onClick));
   item(t('plugins.canvas.action-align-left'), 'lucide-align-start-vertical', runAlign('left'));
   item(t('plugins.canvas.action-align-center'), 'lucide-align-center-vertical', runAlign('center'));
   item(t('plugins.canvas.action-align-right'), 'lucide-align-end-vertical', runAlign('right'));
@@ -295,17 +301,17 @@ function buildArrangeSubmenu(canvas: import('./canvas-view.js').CanvasView, subm
 }
 
 /** 颜色子菜单（原版 canvas-submenu）：无色 + 1..6 主题色 + 自定义取色器。 */
-function openColorSubmenu(canvas: import('./canvas-view.js').CanvasView, menu, buttonEl, selected) {
+function openColorSubmenu(canvas: import('./canvas-view.js').CanvasView, menu: CanvasMenuDom, buttonEl: HTMLElement, selected: Array<CanvasNode | CanvasEdge>) {
   const { menuEl, state } = menu;
   if (state.submenuEl && state.submenuKind === 'color' && state.submenuButton === buttonEl) {
-    state.submenuButton.removeClass('is-active');
+    state.submenuButton?.removeClass('is-active');
     state.submenuEl.remove();
     state.submenuEl = null;
     state.submenuButton = null;
     return;
   }
   if (state.submenuEl) {
-    state.submenuButton.removeClass('is-active');
+    state.submenuButton?.removeClass('is-active');
     state.submenuEl.remove();
     state.submenuEl = null;
   }
@@ -314,14 +320,14 @@ function openColorSubmenu(canvas: import('./canvas-view.js').CanvasView, menu, b
   state.submenuKind = 'color';
   const submenuEl = state.submenuEl = menuEl.createDiv('canvas-submenu');
   let current = selected[selected.length - 1].color || '';
-  const apply = (color, close) => {
+  const apply = (color: string, close: boolean) => {
     for (const el of selected) el.setColor(color, !close);
     current = color;
-    if (close) { submenuEl.remove(); state.submenuEl = null; state.submenuButton.removeClass('is-active'); state.submenuButton = null; }
+    if (close) { submenuEl.remove(); state.submenuEl = null; state.submenuButton?.removeClass('is-active'); state.submenuButton = null; }
     canvas.requestSave();
   };
   let matched = false;
-  const addSwatch = (color) => {
+  const addSwatch = (color: string) => {
     const swatch = submenuEl.createDiv('canvas-color-picker-item');
     if (current === color) { swatch.addClass('is-active'); matched = true; }
     if (color) swatch.addClass('mod-canvas-color-' + color);
@@ -344,18 +350,18 @@ function openColorSubmenu(canvas: import('./canvas-view.js').CanvasView, menu, b
   input.addEventListener('input', () => apply(input.value, false));
 }
 
-function toHex(rgb) {
-  const part = (v) => v.toString(16).padStart(2, '0');
+function toHex(rgb: { r: number; g: number; b: number }) {
+  const part = (v: { toString: (arg0: number) => string; }) => v.toString(16).padStart(2, '0');
   return '#' + part(rgb.r) + part(rgb.g) + part(rgb.b);
 }
 
 /** 工具条落位：多选取包围盒中心，高度按分组/文件卡片抬高（原版 render 尾部）。 */
-function positionMenu(canvas: import('./canvas-view.js').CanvasView, containerEl, menuEl, box, selected, last) {
+function positionMenu(canvas: import('./canvas-view.js').CanvasView, containerEl: { setCssStyles: (arg0: { left: string; top: string; }) => void; }, menuEl: HTMLElement, box: CanvasBBox, selected: Array<CanvasNode | CanvasEdge>, last: CanvasNode|CanvasEdge) {
   const scale = canvas.scale;
   const rect = canvas.canvasRect;
   let left = (box.minX + box.maxX) / 2;
   let top = box.minY - 10 / scale;
-  if (selected.some((el) => el.isGroup)) top = box.minY - 35 / Math.sqrt(scale);
+  if (selected.some(el => el instanceof CanvasNode && el.isGroup)) top = box.minY - 35 / Math.sqrt(scale);
   else if (last instanceof CanvasFileNode) top = box.minY - 30 / Math.sqrt(scale);
   const domRect = menuEl.getBoundingClientRect();
   left = (left - canvas.x) * scale - domRect.width / 2 + rect.width / 2;

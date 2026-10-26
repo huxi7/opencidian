@@ -4,14 +4,16 @@
  * [POS]: 文档转移协调器。新窗口就绪后再移除来源，失败保留原文档。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
+import type { WorkspaceLeaf } from './workspace-model.js';
+import type { View } from './view.js';
 import { Desktop } from './ipc.js';
 import { Notice } from './notices.js';
 import { t } from './i18n.js';
 
-export function canOpenLeafInWindow(app: App, leaf) {
+export function canOpenLeafInWindow(app: App, leaf: WorkspaceLeaf | null | undefined): leaf is WorkspaceLeaf & { view: View } {
   return !!leaf?.view && app.workspace._sideOf(leaf) === 'center' && leaf.view.getViewType() !== 'empty';
 }
-export async function openLeafInWindow(app: App, leaf, move: boolean | string = false) {
+export async function openLeafInWindow(app: App, leaf: WorkspaceLeaf | null | undefined, move: boolean | string = false) {
   if (!canOpenLeafInWindow(app, leaf)) return false;
   const view = leaf.view;
   if (view.save && await view.save() === false) return false;
@@ -36,7 +38,7 @@ export function registerDocumentWindowCommands(app: App) {
   for (const [id, key, move] of [
     ['workspace:move-to-new-window', 'commands.move-to-new-window', true],
     ['workspace:open-in-new-window', 'commands.open-in-new-window', false],
-  ]) app.commands.addCommand({ id, name: t(key), icon: move ? 'lucide-picture-in-picture' : 'lucide-picture-in-picture-2', checkCallback(checking) {
+  ] as const) app.commands.addCommand({ id, name: t(key), icon: move ? 'lucide-picture-in-picture' : 'lucide-picture-in-picture-2', checkCallback(checking) {
     const leaf = app.workspace.activeLeaf;
     if (!canOpenLeafInWindow(app, leaf)) return false;
     if (!checking) openLeafInWindow(app, leaf, move).catch(error => new Notice(error.message));

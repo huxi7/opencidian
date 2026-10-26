@@ -8,12 +8,13 @@
  */
 /* Bounded snapshot stack for canvas undo/redo. */
 
+import type { CanvasData } from './canvas-types.js';
 export class CanvasHistory {
-  declare data: any[];
+  declare data: CanvasData[];
   declare current: number;
-  declare max: any;
+  declare max: number;
 
-  constructor(max) {
+  constructor(max: number) {
     this.data = [];
     this.current = 0;
     this.max = max;
@@ -35,7 +36,7 @@ export class CanvasHistory {
     return this.data[this.current];
   }
 
-  push(entry) {
+  push(entry: CanvasData) {
     const data = this.data;
     // 从历史中间 push 会截断重做尾部
     if (data.length - 1 > this.current) data.length = this.current + 1;
@@ -45,7 +46,7 @@ export class CanvasHistory {
   }
 
   /** 用当前数据替换当前条目（加载期修正后避免撤销回到修正前）。 */
-  replace(entry) {
+  replace(entry: CanvasData) {
     const data = this.data;
     if (data.length === 0) {
       data.push(entry);

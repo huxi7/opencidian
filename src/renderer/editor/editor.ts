@@ -10,11 +10,11 @@
  * Editor — CodeMirror 6 wrapper exposing the Obsidian `Editor` API subset.
  * Positions are {line, ch} 0-based (EditorPosition / EditorRange / EditorSelection).
  */
-import { EditorState, EditorSelection, Compartment, Prec } from '@codemirror/state';
+import { EditorState, EditorSelection, Compartment, Prec, type Extension } from '@codemirror/state';
 import {
   EditorView, keymap as cmKeymap, drawSelection, dropCursor, highlightActiveLine,
   highlightActiveLineGutter, highlightSpecialChars, lineNumbers, rectangularSelection,
-  crosshairCursor, placeholder as cmPlaceholder, ViewPlugin,
+  crosshairCursor, placeholder as cmPlaceholder, ViewPlugin, type ViewUpdate,
 } from '@codemirror/view';
 import { defaultKeymap, history, historyKeymap, indentWithTab, undo, redo } from '@codemirror/commands';
 import {
@@ -27,13 +27,14 @@ import { livePreviewExtension } from './live-preview.js';
 import { saveAttachment, pastedImageBaseName } from './attachments.js';
 import { LinkSuggest } from './link-suggest.js';
 import { eventToHotkey } from '../core/keymap.js';
+import { TFile } from '../core/vault.js';
 import { markdownEditing, foldingExtensions, unfoldDisabledFolds } from './folding.js';
 import { codeHighlighter } from '../markdown/highlight.js';
 
 // ---------------------------------------------------------------------------
 // Theme
 // ---------------------------------------------------------------------------
-function themeSpec(dark) {
+function themeSpec(dark: boolean) {
   return EditorView.theme({
     '&': {
       color: 'var(--text-normal)',
@@ -109,7 +110,16 @@ const markdownHighlightDark = HighlightStyle.define([
 // Editor
 // ---------------------------------------------------------------------------
 /** 从剪贴板数据挑选图片：文件优先，其次 HTML 里的 data URL（原版同序）。 */
-function pickClipboardImage(dt: DataTransfer) {
+function isFileDrop(value: unknown): value is { type: 'file'; path: string } {
+  return value !== null && typeof value === 'object' && 'type' in value && value.type === 'file' && 'path' in value && typeof value.path === 'string';
+}
+type ClipboardImage = { kind: 'file'; file: File } | { kind: 'dataurl'; dataUrl: string; ext: string };
+export interface EditorPosition { line: number; ch: number; }
+export interface EditorRange { anchor: EditorPosition; head: EditorPosition; }
+export interface EditorOptions { doc?: string; readOnly?: boolean; livePreview?: boolean; onSaveRequest?: () => void; }
+type CursorSide = 'from' | 'to' | 'anchor' | 'head';
+
+function pickClipboardImage(dt: DataTransfer): ClipboardImage | null {
   const files = dt.files ? Array.from(dt.files) : [];
   const direct = files.find((f) => /^image\//.test(f.type || ''));
   if (direct) return { kind: 'file', file: direct };
@@ -127,7 +137,7 @@ function pickClipboardImage(dt: DataTransfer) {
   return null;
 }
 
-async function readClipboardImage(picked) {
+async function readClipboardImage(picked: ClipboardImage) {
   if (picked.kind === 'file') {
     const type = (picked.file.type || '').toLowerCase();
     const ext = type === 'image/jpeg' ? 'jpg' : ((type.split('/')[1] || 'png').replace('svg+xml', 'svg'));
@@ -141,12 +151,13 @@ async function readClipboardImage(picked) {
 }
 
 export class Editor {
+  inTableCell?: boolean;
   declare app: App;
-  declare containerEl: any;
-  declare options: any;
+  declare containerEl: HTMLElement;
+  declare options: EditorOptions;
   declare sourcePath: string;
-  declare changeListeners: any[];
-  declare selectionListeners: any[];
+  declare changeListeners: Array<(text: string, update: ViewUpdate | null) => void>;
+  declare selectionListeners: Array<() => void>;
   declare _themeCompartment: Compartment;
   declare _livePreviewCompartment: Compartment;
   declare _readonlyCompartment: Compartment;
@@ -157,18 +168,18 @@ export class Editor {
   declare _indentCompartment: Compartment;
   declare _bracketsCompartment: Compartment;
   declare _foldingCompartment: Compartment;
-  declare _foldHeading: any;
-  declare _foldIndent: any;
-  declare _extensions: any[];
+  declare _foldHeading: boolean;
+  declare _foldIndent: boolean;
+  declare _extensions: Extension[];
   declare cm: EditorView;
   declare linkSuggest: LinkSuggest;
-  declare _containerKeyHandler: any;
-  declare sizerEl: any;
-  declare contentContainerEl: any;
+  declare _containerKeyHandler: (event: KeyboardEvent) => void;
+  declare sizerEl: HTMLElement;
+  declare contentContainerEl: HTMLElement;
   declare _focused: boolean | undefined;
   declare livePreview: boolean | undefined;
 
-  constructor(containerEl, app: App, options: Record<string, any> = {}) {
+  constructor(containerEl: HTMLElement, app: App, options: EditorOptions = {}) {
     this.app = app;
     this.containerEl = containerEl;
     this.options = options;
@@ -256,7 +267,7 @@ export class Editor {
       syntaxHighlighting(codeHighlighter),
       highlightSelectionMatches(),
       this._themeCompartment.of(themeSpec(dark)),
-      this._livePreviewCompartment.of(livePreviewExtension(app, () => this.sourcePath)),
+      this._livePreviewCompartment.of(this.options.livePreview === false ? [] : livePreviewExtension(app, () => this.sourcePath)),
       this._lineNumbersCompartment.of((app.settings && app.settings.appSettings.showLineNumber) ? [lineNumbers(), highlightActiveLineGutter()] : []),
       this._wrapCompartment.of(EditorView.lineWrapping),
       this._extCompartment.of(this._extensions),
@@ -290,7 +301,7 @@ export class Editor {
   }
 
   /** 文件树拖入编辑器：在落点插入内部链接；系统外部文件：复制进库并插入嵌入（原版 handleDropIntoEditor）。 */
-  _handleDrop(event, view) {
+  _handleDrop(event: DragEvent, view: EditorView) {
     const dt = event.dataTransfer;
     if (!dt) return false;
     const files = dt.files && dt.files.length ? Array.from(dt.files) : [];
@@ -299,23 +310,23 @@ export class Editor {
       this._insertDroppedFiles(files, view, event);
       return true;
     }
-    let payload = null;
+    let payload: unknown = null;
     try { payload = JSON.parse(dt.getData('text/plain')); } catch (e) { payload = null; }
     const pos = view.posAtCoords({ x: event.clientX, y: event.clientY });
     const from = pos == null ? view.state.selection.main.head : pos;
     // 原版 IR：type=files 时按顺序插入全部文件链接，type=file 插入单条
-    if (payload && payload.type === 'files' && Array.isArray(payload.items)) {
+    if (payload && typeof payload === 'object' && 'type' in payload && payload.type === 'files' && 'items' in payload && Array.isArray(payload.items)) {
       const files = payload.items
-        .filter((item) => item && item.type === 'file')
-        .map((item) => this.app.vault.getFileByPath(item.path))
-        .filter(Boolean);
+        .filter(isFileDrop)
+        .map(item => this.app.vault.getFileByPath(item.path))
+        .filter((file) => file instanceof TFile);
       if (!files.length) return false;
       event.preventDefault();
       const links = files.map((file) => this.app.fileManager.generateMarkdownLink(file, this.sourcePath || '', '', '', undefined)).join('\n');
       view.dispatch({ changes: { from, insert: links }, selection: { anchor: from + links.length } });
       return true;
     }
-    if (!payload || typeof payload.path !== 'string' || payload.type !== 'file') return false;
+    if (!isFileDrop(payload)) return false;
     const file = this.app.vault.getFileByPath(payload.path);
     if (!file) return false;
     event.preventDefault();
@@ -328,7 +339,7 @@ export class Editor {
    * 原版粘贴：剪贴板图片（截图 / 复制的图片 / HTML data URL）落盘为
    * 'Pasted image <时间戳>.png' 并插入嵌入；纯文本粘贴交回 CM6。
    */
-  _handlePaste(event) {
+  _handlePaste(event: ClipboardEvent) {
     const dt = event.clipboardData;
     if (!dt) return false;
     const picked = pickClipboardImage(dt);
@@ -338,7 +349,7 @@ export class Editor {
     return true;
   }
 
-  async _insertClipboardImage(picked) {
+  async _insertClipboardImage(picked: ClipboardImage) {
     const { bytes, ext } = await readClipboardImage(picked).catch(() => ({ bytes: null, ext: 'png' }));
     if (!bytes) return;
     const file = await saveAttachment(this.app, pastedImageBaseName(), ext, bytes, this.sourcePath);
@@ -350,7 +361,7 @@ export class Editor {
    * 原版 handleDropIntoEditor：外部文件复制进库（附件目录）并插入 `![[…]]`；
    * 按住 Alt（macOS，其它平台 Ctrl）时直接链接：库内文件 → 内链，库外 → file:// 链接。
    */
-  async _insertDroppedFiles(files, view, event) {
+  async _insertDroppedFiles(files: File[], view: EditorView, event: DragEvent) {
     const pos = view.posAtCoords({ x: event.clientX, y: event.clientY });
     const from = pos == null ? view.state.selection.main.head : pos;
     const isMac = /mac/i.test(navigator.platform || '');
@@ -378,7 +389,7 @@ export class Editor {
   }
 
   /** Alt/Ctrl 拖入：解析系统路径；库内文件转内链，库外生成 file:// 链接；无路径返回 null 走复制路径。 */
-  _linkForExternalFile(file) {
+  _linkForExternalFile(file: File) {
     let abs = '';
     try {
       const { webUtils } = require('electron');
@@ -396,14 +407,14 @@ export class Editor {
   // -------------------------------------------------------------------------
   // Change events
   // -------------------------------------------------------------------------
-  onChange(cb) { this.changeListeners.push(cb); }
-  onSelectionChange(cb) { this.selectionListeners.push(cb); }
+  onChange(cb: (text: string, update: ViewUpdate | null) => void) { this.changeListeners.push(cb); }
+  onSelectionChange(cb: () => void) { this.selectionListeners.push(cb); }
   _emitSelection() {
     for (const cb of this.selectionListeners) {
       try { cb(); } catch (e) { console.error(e); }
     }
   }
-  _emitChange(update) {
+  _emitChange(update: ViewUpdate | null) {
     const text = this.getValue();
     for (const cb of this.changeListeners) {
       try { cb(text, update); } catch (e) { console.error(e); }
@@ -417,7 +428,7 @@ export class Editor {
   getDoc() { return this.cm.state.doc; }
   getValue() { return this.cm.state.doc.toString(); }
 
-  setValue(content) {
+  setValue(content: string) {
     const insert = typeof content === 'string' ? content : content == null ? '' : String(content);
     // 撤销栈不跨文档边界：装载/整文档替换必须重建历史。
     // 否则一次 Mod+Z 会撤消"装入"本身（空文档被自动保存写盘），
@@ -431,13 +442,13 @@ export class Editor {
     this._emitChange(null);
   }
 
-  getLine(line) {
+  getLine(line: number) {
     const doc = this.cm.state.doc;
     const n = Math.max(1, Math.min(doc.lines, line + 1));
     return doc.line(n).text;
   }
 
-  setLine(line, text) {
+  setLine(line: number, text: string) {
     const doc = this.cm.state.doc;
     const n = Math.max(1, Math.min(doc.lines, line + 1));
     const l = doc.line(n);
@@ -461,14 +472,14 @@ export class Editor {
     }));
   }
 
-  setSelection(anchor, head?) {
+  setSelection(anchor: EditorPosition | number, head?: EditorPosition | number) {
     if (typeof anchor === 'number') anchor = this.offsetToPos(anchor);
     if (head === undefined) head = anchor;
     else if (typeof head === 'number') head = this.offsetToPos(head);
     this.cm.dispatch({ selection: { anchor: this.posToOffset(anchor), head: this.posToOffset(head) } });
   }
 
-  setSelections(ranges) {
+  setSelections(ranges: EditorRange[]) {
     this.cm.dispatch({
       selection: EditorSelection.create(ranges.map((r) => EditorSelection.range(this.posToOffset(r.anchor), this.posToOffset(r.head)))),
     });
@@ -476,13 +487,13 @@ export class Editor {
 
   somethingSelected() { return !this.cm.state.selection.main.empty; }
 
-  getCursor(string) {
+  getCursor(string?: CursorSide) {
     const sel = this.cm.state.selection.main;
     const offset = string === 'from' ? sel.from : string === 'to' ? sel.to : string === 'head' ? sel.head : sel.anchor;
     return this.offsetToPos(offset);
   }
 
-  setCursor(line, ch) {
+  setCursor(line: number | EditorPosition | CursorSide, ch?: number) {
     if (line && typeof line === 'object') {
       this.setSelection(line);
       return;
@@ -493,19 +504,19 @@ export class Editor {
     }
     const sel = this.cm.state.selection.main;
     const map = { from: sel.from, to: sel.to, anchor: sel.anchor, head: sel.head };
-    const offset = map[line];
+    const offset = typeof line === 'string' ? map[line] : undefined;
     if (offset !== undefined) this.cm.dispatch({ selection: { anchor: offset, head: offset } });
   }
 
-  getRange(from, to) {
+  getRange(from: EditorPosition, to: EditorPosition) {
     return this.cm.state.sliceDoc(this.posToOffset(from), this.posToOffset(to));
   }
 
-  replaceRange(replacement, from, to) {
+  replaceRange(replacement: string, from: EditorPosition, to?: EditorPosition) {
     this.cm.dispatch({ changes: { from: this.posToOffset(from), to: this.posToOffset(to === undefined ? from : to), insert: replacement } });
   }
 
-  replaceSelection(replacement) {
+  replaceSelection(replacement: string) {
     const sel = this.cm.state.selection.main;
     this.cm.dispatch({ changes: { from: sel.from, to: sel.to, insert: replacement }, selection: { anchor: sel.from + replacement.length } });
   }
@@ -517,18 +528,18 @@ export class Editor {
   blur() { this.cm.contentDOM.blur(); }
   hasFocus() { return this.cm.hasFocus; }
 
-  scrollIntoView(range, center = false) {
-    const from = this.posToOffset(range.from || range);
-    const to = this.posToOffset(range.to || range);
+  scrollIntoView(range: EditorPosition | { from: EditorPosition; to?: EditorPosition }, center = false) {
+    const from = this.posToOffset('from' in range ? range.from : range);
+    const to = this.posToOffset('from' in range ? range.to || range.from : range);
     this.cm.dispatch({ effects: EditorView.scrollIntoView(EditorSelection.range(from, to), { y: center ? 'center' : 'nearest' }) });
   }
 
-  scrollTo(line, ch = 0) {
+  scrollTo(line: number, ch = 0) {
     const l = Math.max(0, Math.min(this.cm.state.doc.lines - 1, line));
     this.scrollIntoView({ from: { line: l, ch }, to: { line: l, ch } }, true);
   }
 
-  posToOffset(pos) {
+  posToOffset(pos: EditorPosition | null | undefined) {
     const doc = this.cm.state.doc;
     if (!pos) return 0;
     const line = Math.max(0, Math.min(doc.lines - 1, pos.line || 0));
@@ -537,7 +548,7 @@ export class Editor {
     return l.from + ch;
   }
 
-  offsetToPos(offset) {
+  offsetToPos(offset: number) {
     const doc = this.cm.state.doc;
     const len = doc.length;
     offset = Math.max(0, Math.min(len, offset));
@@ -545,7 +556,7 @@ export class Editor {
     return { line: line.number - 1, ch: offset - line.from };
   }
 
-  transaction(tx) {
+  transaction(tx: string | { changes?: string; selection?: { from: number; to?: number } }) {
     // Obsidian EditorTransaction subset: changes (string) and selection
     if (typeof tx === 'string') {
       this.replaceSelection(tx);
@@ -566,18 +577,18 @@ export class Editor {
   // -------------------------------------------------------------------------
   refresh() { this.cm.requestMeasure(); }
 
-  addExtensions(ext) {
-    this._extensions.push(...[].concat(ext));
+  addExtensions(ext: Extension) {
+    this._extensions.push(...(Array.isArray(ext) ? ext : [ext]));
     this.cm.dispatch({ effects: this._extCompartment.reconfigure(this._extensions) });
   }
 
-  removeExtensions(ext) {
-    const arr = [].concat(ext);
+  removeExtensions(ext: Extension) {
+    const arr: Extension[] = Array.isArray(ext) ? ext : [ext];
     this._extensions = this._extensions.filter((e) => !arr.includes(e));
     this.cm.dispatch({ effects: this._extCompartment.reconfigure(this._extensions) });
   }
 
-  toggleLineNumbers(show) {
+  toggleLineNumbers(show: boolean) {
     const ext = show ? [lineNumbers(), highlightActiveLineGutter()] : [];
     this.cm.dispatch({ effects: this._lineNumbersCompartment.reconfigure(ext) });
   }
@@ -596,15 +607,15 @@ export class Editor {
     this.cm.dispatch({ effects: this._indentCompartment.reconfigure(this._indentUnitExt()) });
   }
 
-  setCloseBrackets(enabled) {
+  setCloseBrackets(enabled: boolean) {
     this.cm.dispatch({ effects: this._bracketsCompartment.reconfigure(enabled ? closeBrackets() : []) });
   }
 
-  setSpellcheck(enabled) {
+  setSpellcheck(enabled: boolean) {
     if (this.cm && this.cm.contentDOM) this.cm.contentDOM.spellcheck = !!enabled;
   }
 
-  setFolding(heading, indent) {
+  setFolding(heading: boolean, indent: boolean) {
     heading = !!heading;
     indent = !!indent;
     if (heading === this._foldHeading && indent === this._foldIndent) return;
@@ -616,15 +627,15 @@ export class Editor {
     this.cm.dom.classList.toggle('is-folding', heading || indent);
   }
 
-  setReadOnly(ro) {
+  setReadOnly(ro: boolean) {
     this.cm.dispatch({ effects: this._readonlyCompartment.reconfigure(EditorView.editable.of(!ro)) });
   }
 
-  setLineWrapping(wrap) {
+  setLineWrapping(wrap: boolean) {
     this.cm.dispatch({ effects: this._wrapCompartment.reconfigure(wrap ? EditorView.lineWrapping : []) });
   }
 
-  setLivePreview(enabled) {
+  setLivePreview(enabled: boolean) {
     this.livePreview = !!enabled;
     this.cm.dispatch({
       effects: this._livePreviewCompartment.reconfigure(enabled ? livePreviewExtension(this.app, () => this.sourcePath) : []),
@@ -641,7 +652,7 @@ export class Editor {
   closeSearch() { closeSearchPanel(this.cm); }
 
   getScrollInfo() { return { top: this.cm.scrollDOM.scrollTop, left: this.cm.scrollDOM.scrollLeft }; }
-  applyScrollInfo(info) {
+  applyScrollInfo(info: { top?: number; left?: number } | null) {
     if (!info) return;
     this.cm.scrollDOM.scrollTop = info.top || 0;
     this.cm.scrollDOM.scrollLeft = info.left || 0;
@@ -656,7 +667,7 @@ export class Editor {
   // -------------------------------------------------------------------------
   // Key handling: let editor-specific Obsidian commands run first
   // -------------------------------------------------------------------------
-  _onKeyDown(ev) {
+  _onKeyDown(ev: KeyboardEvent) {
     const app = this.app;
     if (!app || !app.hotkeyManager) return;
     const manager = app.hotkeyManager;
@@ -681,7 +692,7 @@ export class Editor {
   }
 }
 
-function hotkeyToCanonical(hk) {
+function hotkeyToCanonical(hk: { modifiers?: string[]; key?: string } | null | undefined) {
   if (!hk) return null;
   const order = ['Mod', 'Ctrl', 'Meta', 'Alt', 'Shift'];
   const mods = new Set(hk.modifiers || []);

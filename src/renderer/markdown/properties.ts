@@ -1,6 +1,6 @@
 /**
  * [INPUT]: i18n、图标、PromptModal、properties-types 库级类型与 properties-menu 属性操作。
- * [OUTPUT]: 导出 renderProperties(app, container, file, options)、buildMetadataContainer(app, file, options)
+ * [OUTPUT]: 导出属性渲染入口与 PropertiesOptions；未知属性值由控件逐类校验。
  * [POS]: markdown/ 的属性面板渲染器。live-preview.js 的 PropertiesWidget 与 markdown-view.js 阅读模式共同调用。DOM 逐字对齐原版：error-container → heading → metadata-content(properties + add-button)。写回经 fileManager.processFrontMatter。
  *        阅读、实时预览与侧栏共用类型和写回路径；保留不兼容值并显示类型警告，修改只写用户编辑的键。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
@@ -19,14 +19,17 @@ import { setIcon } from '../core/icons.js';
 import { PromptModal } from '../core/modals.js';
 import { getPropertyTypes } from './properties-types.js';
 import { attachPropertyRowMenu, showPropertyTypeMenu } from './properties-menu.js';
+import type { TFile } from '../core/vault.js';
+import type { PropertyRow, PropertyRenderOptions as PropertiesOptions } from './reading-types.js';
+export type { PropertyRenderOptions as PropertiesOptions } from './reading-types.js';
 
-export function renderProperties(app: App, container, file, options: Record<string, any> = {}) {
+export function renderProperties(app: App, container: HTMLElement, file: TFile, options: PropertiesOptions = {}) {
   container.empty();
   const metadataEl = buildMetadataContainer(app, file, options);
   if (metadataEl) container.appendChild(metadataEl);
 }
 
-export function buildMetadataContainer(app: App, file, options: Record<string, any> = {}) {
+export function buildMetadataContainer(app: App, file: TFile, options: PropertiesOptions = {}) {
   const cache = app.metadataCache.getFileCache(file);
   const fm = options.frontmatter !== undefined ? options.frontmatter : ((cache && cache.frontmatter) || null);
 
@@ -52,7 +55,7 @@ export function buildMetadataContainer(app: App, file, options: Record<string, a
   const addIcon = addBtn.createSpan('text-button-icon');
   setIcon(addIcon, 'plus');
   addBtn.createSpan({ cls: 'text-button-label', text: t('properties.label-add-property-button') || 'Add property' });
-  addBtn.onclick = () => promptNewProperty(app, file, metadataEl, options);
+  addBtn.onclick = () => promptNewProperty(app, file);
 
   // invalid YAML: show the error container with a "show source" escape hatch
   if (options.fmError) {
@@ -70,7 +73,7 @@ export function buildMetadataContainer(app: App, file, options: Record<string, a
   errorEl.toggle(false);
 
   const types = getPropertyTypes(app);
-  const props = [];
+  const props: { key: string; value: unknown; }[] = [];
   if (fm && Object.keys(fm).length > 0) {
     for (const [key, value] of Object.entries(fm)) {
       props.push({ key, value });
@@ -95,7 +98,7 @@ export function buildMetadataContainer(app: App, file, options: Record<string, a
   return metadataEl;
 }
 
-function displayValue(value, type) {
+function displayValue(value: unknown, type: string) {
   if (value === null || value === undefined) return '';
   if (Array.isArray(value)) return value.join(', ');
   if (typeof value === 'boolean') return value ? 'true' : 'false';
@@ -103,7 +106,7 @@ function displayValue(value, type) {
   return String(value);
 }
 
-function renderPropertyRow(app: App, container, file, prop, options) {
+function renderPropertyRow(app: App, container: HTMLDivElement, file: TFile, prop: PropertyRow, options: PropertiesOptions) {
   const editable = options.editable !== false;
   const row = container.createDiv('metadata-property');
   row.setAttr('data-property-key', prop.key);
@@ -115,7 +118,7 @@ function renderPropertyRow(app: App, container, file, prop, options) {
   if (editable) {
     icon.setAttr('aria-label', t('properties.option-property-type'));
     icon.onclick = event => showPropertyTypeMenu(app, prop, icon, event, file);
-    icon.onkeydown = event => { if (event.key === 'Enter' || event.key === ' ') icon.onclick(event); };
+    icon.onkeydown = event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); icon.click(); } };
   }
   const keyInput = keyEl.createEl('input', { cls: 'metadata-property-key-input', type: 'text' });
   keyInput.value = prop.key;
@@ -153,23 +156,25 @@ function renderPropertyRow(app: App, container, file, prop, options) {
   const input = text
     ? valueEl.createDiv({ cls: 'metadata-input-longtext', attr: { contenteditable: editable ? 'true' : 'false', role: 'textbox', tabindex: editable ? '0' : '-1' } })
     : valueEl.createEl('input', { cls: 'metadata-input metadata-input-text' + (prop.type === 'number' ? ' metadata-input-number' : ' mod-' + prop.type), type: prop.type === 'number' ? 'number' : prop.type === 'datetime' ? 'datetime-local' : 'date' });
-  const getValue = () => text ? input.textContent : input.value;
-  const setValue = value => { if (text) input.textContent = value; else input.value = value; };
+  const getValue = () => input instanceof HTMLInputElement ? input.value : input.textContent || '';
+  const setValue = (value: string) => { if (input instanceof HTMLInputElement) input.value = value; else input.textContent = value; };
   setValue(displayValue(prop.value, prop.type));
   input.setAttr('placeholder', t('properties.label-no-value'));
-  input.readOnly = !editable;
-  if (prop.type === 'number') { input.step = 'any'; input.inputMode = 'decimal'; }
+  if (input instanceof HTMLInputElement) {
+    input.readOnly = !editable;
+    if (prop.type === 'number') { input.step = 'any'; input.inputMode = 'decimal'; }
+  }
   if (!editable) return;
   let last = getValue();
   const commit = async () => {
     if (getValue() === last) return;
     const raw = getValue();
-    let value = raw === '' && (prop.type === 'date' || prop.type === 'datetime') ? null : raw;
+    let value: string | number | null = raw === '' && (prop.type === 'date' || prop.type === 'datetime') ? null : raw;
     if (prop.type === 'number') {
-      if (!input.validity.valid || (raw !== '' && !Number.isFinite(Number(raw)))) { input.setAttr('aria-invalid', 'true'); return; }
+      if (!(input instanceof HTMLInputElement) || !input.validity.valid || (raw !== '' && !Number.isFinite(Number(raw)))) { input.setAttr('aria-invalid', 'true'); return; }
       value = raw === '' ? null : Number(raw);
     }
-    if ((prop.type === 'date' || prop.type === 'datetime') && (!input.validity.valid || (raw && !getPropertyTypes(app).getWidget(prop.type).validate(raw)))) {
+    if ((prop.type === 'date' || prop.type === 'datetime') && (!(input instanceof HTMLInputElement) || !input.validity.valid || (raw && !getPropertyTypes(app).getWidget(prop.type).validate(raw)))) {
       input.setAttr('aria-invalid', 'true'); return;
     }
     input.removeAttribute('aria-invalid');
@@ -192,7 +197,7 @@ function renderPropertyRow(app: App, container, file, prop, options) {
   }
 }
 
-function bindKeyInput(app: App, file, prop, input) {
+function bindKeyInput(app: App, file: TFile, prop: PropertyRow, input: HTMLInputElement) {
   let last = prop.key;
   const commit = async () => {
     const next = input.value.trim();
@@ -213,13 +218,13 @@ function bindKeyInput(app: App, file, prop, input) {
   };
   input.commitMetadata = commit;
   input.onblur = commit;
-  input.onkeydown = event => {
+  input.onkeydown = (event: { key: string; preventDefault: () => void; }) => {
     if (event.key === 'Enter') { event.preventDefault(); commit(); }
     if (event.key === 'Escape') { event.preventDefault(); input.value = last; input.blur(); }
   };
 }
 
-function renderList(app: App, file, prop, valueEl, editable) {
+function renderList(app: App, file: TFile, prop: PropertyRow, valueEl: HTMLDivElement, editable: boolean) {
   const values = Array.isArray(prop.value) ? prop.value : prop.value == null || prop.value === '' ? [] : [prop.value];
   const pills = valueEl.createDiv('multi-select-container');
   for (const value of values) {
@@ -228,10 +233,11 @@ function renderList(app: App, file, prop, valueEl, editable) {
     if (editable) {
       const remove = pill.createDiv('multi-select-pill-remove-button');
       setIcon(remove, 'lucide-x');
-      remove.onclick = async event => {
+      remove.onclick = async (event: { stopPropagation: () => void; }) => {
         event.stopPropagation();
         await app.fileManager.processFrontMatter(file, fm => {
-          const current = Array.isArray(fm[prop.key]) ? fm[prop.key] : fm[prop.key] == null ? [] : [fm[prop.key]];
+          const stored = fm[prop.key];
+          const current: unknown[] = Array.isArray(stored) ? stored : stored == null ? [] : [stored];
           fm[prop.key] = current.filter(item => String(item) !== String(value));
         });
       };
@@ -245,20 +251,21 @@ function renderList(app: App, file, prop, valueEl, editable) {
     if (prop.type === 'tags' && /\s/.test(raw)) { input.setAttr('aria-invalid', 'true'); input.title = t('properties.msg-invalid-tag'); return; }
     input.value = '';
     await app.fileManager.processFrontMatter(file, fm => {
-      const current = Array.isArray(fm[prop.key]) ? [...fm[prop.key]] : fm[prop.key] == null || fm[prop.key] === '' ? [] : [fm[prop.key]];
+      const stored = fm[prop.key];
+      const current: unknown[] = Array.isArray(stored) ? [...stored] : stored == null || stored === '' ? [] : [stored];
       if (!current.some(value => String(value) === raw)) current.push(raw);
       fm[prop.key] = current;
     });
   };
   input.commitMetadata = commit;
   input.onblur = commit;
-  input.onkeydown = event => {
+  input.onkeydown = (event: { key: string; preventDefault: () => void; }) => {
     if (event.key === 'Enter') { event.preventDefault(); commit(); }
     if (event.key === 'Escape') { event.preventDefault(); input.value = ''; input.blur(); }
   };
 }
 
-async function promptNewProperty(app: App, file, container, options) {
+async function promptNewProperty(app: App, file: TFile) {
   new PromptModal(app, {
     title: t('properties.label-add-property-button'),
     placeholder: 'key',

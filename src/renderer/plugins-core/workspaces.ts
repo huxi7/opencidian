@@ -10,8 +10,12 @@ import { Notice } from '../core/notices.js';
 import { Modal } from '../core/modals.js';
 import { SuggestModal } from '../core/suggest.js';
 import { setIcon } from '../core/icons.js';
+import { WorkspaceLeaf } from '../core/workspace-model.js';
+import { Command,CommandDefinition } from '../core/commands.js';
 
-const moment = require('moment');
+import moment from 'moment';
+import { isJsonRecord } from '../core/settings-types.js';
+import { assertWorkspaceLayout } from '../core/workspace-layout.js';
 
 export const nameKey = 'plugins.workspaces';
 export const DATA_FILE = 'workspaces.json';
@@ -21,11 +25,11 @@ export const DATA_FILE = 'workspaces.json';
  * ------------------------------------------------------------------------ */
 class Workspaces {
   declare app: App;
-  declare workspaces: any;
+  declare workspaces: Record<string, unknown>;
   declare activeWorkspace: string;
-  declare _ribbonEl: any;
-  declare _commandIds: any[];
-  declare _loading: any;
+  declare _ribbonEl: HTMLDivElement | null;
+  declare _commandIds: string[];
+  declare _loading: Promise<unknown>;
 
   constructor(app: App) {
     this.app = app;
@@ -44,9 +48,9 @@ class Workspaces {
     });
   }
 
-  saveWorkspace(name) {
+  saveWorkspace(name: string) {
     return this.enqueue(async () => {
-      const leaves = [];
+      const leaves: WorkspaceLeaf[] = [];
       this.app.workspace.iterateAllLeaves((leaf) => leaves.push(leaf));
       for (const leaf of leaves) {
         if (leaf.view && typeof leaf.view.save === 'function' && await leaf.view.save() === false) throw new Error('文档尚未保存，已取消工作区操作');
@@ -59,24 +63,25 @@ class Workspaces {
     });
   }
 
-  setActiveWorkspace(name) {
+  setActiveWorkspace(name: string) {
     this.activeWorkspace = name;
     this.saveData();
   }
 
-  loadWorkspace(name) {
+  loadWorkspace(name: string) {
     return this.enqueue(() => this._loadWorkspace(name));
   }
 
-  enqueue(action) {
+  enqueue<T>(action: () => T | Promise<T>): Promise<T> {
     const operation = this._loading.then(action);
     this._loading = operation.catch(() => {});
     return operation;
   }
 
-  async _loadWorkspace(name) {
+  async _loadWorkspace(name: string) {
     if (!Object.prototype.hasOwnProperty.call(this.workspaces, name)) return false;
-    const layout = JSON.parse(JSON.stringify(this.workspaces[name]));
+    const layout: unknown = JSON.parse(JSON.stringify(this.workspaces[name]));
+    assertWorkspaceLayout(layout);
     if (!layout.main || !layout.left || !layout.right) throw new Error('Invalid workspace layout');
     const workspace = this.app.workspace;
     const active = await workspace.loadLayout(layout);
@@ -90,7 +95,7 @@ class Workspaces {
     return true;
   }
 
-  deleteWorkspace(name) {
+  deleteWorkspace(name: string) {
     return this.enqueue(() => {
       delete this.workspaces[name];
       if (this.activeWorkspace === name) this.activeWorkspace = '';
@@ -105,7 +110,7 @@ class Workspaces {
       try {
         await this.saveWorkspace(name);
         new Notice(tt('plugins.workspaces.msg-save-layout-success', 'Successfully saved layout "{{name}}"', { name }));
-      } catch (error) { new Notice(error.message || String(error)); }
+      } catch (error) { new Notice(error instanceof Error ? error.message : String(error)); }
     } else {
       new ManageWorkspacesModal(this.app, this).open();
     }
@@ -115,8 +120,8 @@ class Workspaces {
     const data = this.app.settings.loadPluginData(DATA_FILE, {});
     this.workspaces = Object.assign(Object.create(null),
       data.workspaces && !Array.isArray(data.workspaces) && typeof data.workspaces === 'object' ? data.workspaces : {});
-    this.activeWorkspace = Object.prototype.hasOwnProperty.call(this.workspaces, data.active) ? data.active : '';
-    const add = (command) => {
+    this.activeWorkspace = typeof data.active === 'string' && Object.prototype.hasOwnProperty.call(this.workspaces, data.active) ? data.active : '';
+    const add = (command: Command|CommandDefinition) => {
       this.app.commands.addCommand(command);
       this._commandIds.push(command.id);
     };
@@ -166,11 +171,11 @@ class Workspaces {
  * ManageWorkspacesModal — 原版 Lee：输入名称保存 + 列表（加载/删除）
  * ------------------------------------------------------------------------ */
 class ManageWorkspacesModal extends Modal {
-  declare plugin: any;
-  declare nameEl: any;
-  declare listContainerEl: any;
+  declare plugin: Workspaces;
+  declare nameEl: HTMLInputElement;
+  declare listContainerEl: HTMLDivElement;
 
-  constructor(app: App, plugin) {
+  constructor(app: App, plugin: Workspaces) {
     super(app);
     this.plugin = plugin;
     this.setTitle(tt('plugins.workspaces.action-manage-layouts', 'Manage workspace layouts'));
@@ -202,7 +207,8 @@ class ManageWorkspacesModal extends Modal {
     const container = this.listContainerEl;
     container.empty();
     for (const name of Object.keys(this.plugin.workspaces)) {
-      const layout = this.plugin.workspaces[name];
+      const saved = this.plugin.workspaces[name];
+      const layout = isJsonRecord(saved) ? saved : {};
       const row = container.createDiv('list-item');
       row.style.cssText = 'display:flex;align-items:center;gap:var(--size-4-2);padding:var(--size-4-2) var(--size-4-3);border-radius:var(--radius-s);';
       const info = row.createDiv('list-item-part mod-extended');
@@ -215,7 +221,7 @@ class ManageWorkspacesModal extends Modal {
           text: tt('setting.appearance.label-currently-active', 'Active'),
         });
       }
-      if (layout.mtime) {
+      if (typeof layout.mtime === 'string') {
         info.createDiv('list-item-desc').createDiv({
           cls: 'list-item-part',
           text: tt('plugins.workspaces.label-workspace-modified-time', 'Modified {{time}}', { time: moment(layout.mtime).fromNow() }),
@@ -230,7 +236,7 @@ class ManageWorkspacesModal extends Modal {
       loadBtn.onclick = async () => {
         loadBtn.disabled = true;
         try { await this.plugin.loadWorkspace(name); this.close(); }
-        catch (error) { new Notice(error.message || String(error)); }
+        catch (error) { new Notice(error instanceof Error ? error.message : String(error)); }
         finally { loadBtn.disabled = false; }
       };
       const deleteBtn = actions.createDiv('list-item-part clickable-icon');
@@ -248,7 +254,7 @@ class ManageWorkspacesModal extends Modal {
       return;
     }
     try { await this.plugin.saveWorkspace(name); }
-    catch (error) { new Notice(error.message || String(error)); return; }
+    catch (error) { new Notice(error instanceof Error ? error.message : String(error)); return; }
     this.plugin.setActiveWorkspace(name);
     new Notice(tt('plugins.workspaces.msg-save-layout-success', 'Successfully saved layout "{{name}}"', { name }));
     this.nameEl.value = '';
@@ -259,12 +265,12 @@ class ManageWorkspacesModal extends Modal {
 /* --------------------------------------------------------------------------
  * LoadWorkspaceModal — 原版 Iee：SuggestModal 选择布局加载
  * ------------------------------------------------------------------------ */
-class LoadWorkspaceModal extends SuggestModal {
-  declare plugin: any;
-  declare shouldSave: any;
-  declare emptyStateText: any;
+class LoadWorkspaceModal extends SuggestModal<string> {
+  declare plugin: Workspaces;
+  declare shouldSave: boolean;
+  declare emptyStateText: string;
 
-  constructor(app: App, plugin, shouldSave) {
+  constructor(app: App, plugin: Workspaces, shouldSave: boolean) {
     super(app);
     this.plugin = plugin;
     this.shouldSave = shouldSave;
@@ -283,28 +289,28 @@ class LoadWorkspaceModal extends SuggestModal {
     ];
   }
 
-  getSuggestions(query) {
+  getSuggestions(query: string) {
     const q = (query || '').toLowerCase();
     return Object.keys(this.plugin.workspaces).filter((name) => !q || name.toLowerCase().includes(q));
   }
 
-  renderSuggestion(name, el) {
+  renderSuggestion(name: string, el: HTMLDivElement) {
     el.setText(name);
     if (name === this.plugin.activeWorkspace) {
       el.createSpan({ cls: 'flair mod-pop', text: tt('setting.appearance.label-currently-active', 'Active') });
     }
   }
 
-  async onChooseSuggestion(name) {
+  async onChooseSuggestion(name: string) {
     if (this.shouldSave) {
       const active = this.plugin.activeWorkspace;
       if (active && Object.prototype.hasOwnProperty.call(this.plugin.workspaces, active)) {
         try { await this.plugin.saveWorkspace(active); }
-        catch (error) { new Notice(error.message || String(error)); return; }
+        catch (error) { new Notice(error instanceof Error ? error.message : String(error)); return; }
       }
     }
     try { await this.plugin.loadWorkspace(name); }
-    catch (error) { new Notice(error.message || String(error)); }
+    catch (error) { new Notice(error instanceof Error ? error.message : String(error)); }
   }
 }
 
@@ -319,9 +325,9 @@ export function create(app: App) {
     deregisterCommands() { plugin.deregisterCommands(); },
     deregister() { plugin.onunload(); },
     // 公开 API
-    saveWorkspace: (name) => plugin.saveWorkspace(name),
-    loadWorkspace: (name) => plugin.loadWorkspace(name),
-    deleteWorkspace: (name) => plugin.deleteWorkspace(name),
+    saveWorkspace: (name: string) => plugin.saveWorkspace(name),
+    loadWorkspace: (name: string) => plugin.loadWorkspace(name),
+    deleteWorkspace: (name: string) => plugin.deleteWorkspace(name),
     getWorkspaces: () => plugin.workspaces,
   };
 }

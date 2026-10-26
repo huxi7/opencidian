@@ -11,7 +11,7 @@
 const MAX_DP_CELLS = 4_000_000;
 
 /** 按行切分；末尾无换行时补一行，空文本视为单个空行。 */
-function splitLines(text) {
+function splitLines(text: string | null) {
   const normalized = text == null ? '' : String(text);
   const padded = normalized.endsWith('\n') ? normalized : normalized + '\n';
   const lines = padded.split('\n');
@@ -20,8 +20,8 @@ function splitLines(text) {
 }
 
 /** 行级 LCS，输出 ['equal'|'delete'|'insert', line] 序列；超大输入降级为整块替换。 */
-function lineOps(a, b) {
-  const ops = [];
+function lineOps(a: string[], b: string[]): Array<['equal' | 'delete' | 'insert', string]> {
+  const ops: Array<['equal' | 'delete' | 'insert', string]> = [];
   const n = a.length;
   const m = b.length;
   if (n * m > MAX_DP_CELLS) {
@@ -50,7 +50,7 @@ function lineOps(a, b) {
   return ops;
 }
 
-function tokenize(line) {
+function tokenize(line: string) {
   return line.match(/\s+|\S+/g) || [];
 }
 
@@ -58,7 +58,7 @@ function tokenize(line) {
  * 一对改动行的行内差异：前后缀裁剪后，中间段标 diff-changed。
  * 差异过大（超过较长一行的字符数一半）返回 null，交由调用方整行标记。
  */
-function pairFragments(left, right) {
+function pairFragments(left: string, right: string) {
   if (left === right) return null;
   let prefix = 0;
   const prefixLimit = Math.min(left.length, right.length);
@@ -76,10 +76,10 @@ function pairFragments(left, right) {
   let ts = 0;
   while (ts < lt.length - tp && ts < rt.length - tp && lt[lt.length - 1 - ts] === rt[rt.length - 1 - ts]) ts += 1;
 
-  const build = (tokens) => {
+  const build = (tokens: string[]) => {
     const frag = document.createDocumentFragment();
-    const plain = (text) => { if (text) frag.appendChild(document.createTextNode(text)); };
-    const marked = (text) => {
+    const plain = (text: string) => { if (text) frag.appendChild(document.createTextNode(text)); };
+    const marked = (text: string|null) => {
       if (!text) return;
       const span = document.createElement('span');
       span.className = 'diff-changed';
@@ -94,7 +94,7 @@ function pairFragments(left, right) {
   return [build(lt), build(rt)];
 }
 
-function createRow(content, side) {
+function createRow(content: string|DocumentFragment|null, side: string|null) {
   const row = document.createElement('div');
   row.className = 'diff-line' + (side ? ' mod-' + side : '');
   if (typeof content === 'string') row.textContent = content;
@@ -108,13 +108,13 @@ function createRow(content, side) {
  * @param {string} prevText 旧版本内容（可为空串）
  * @param {string} nextText 新版本内容
  */
-export function renderDiffView(prevText, nextText) {
+export function renderDiffView(prevText: string, nextText: string) {
   const container = document.createElement('div');
   container.className = 'diff-view';
   const ops = lineOps(splitLines(prevText), splitLines(nextText));
-  let context = [];
-  let leftRows = [];
-  let rightRows = [];
+  let context: HTMLDivElement[] = [];
+  let leftRows: HTMLDivElement[] = [];
+  let rightRows: HTMLDivElement[] = [];
 
   const flushPairs = () => {
     if (!leftRows.length && !rightRows.length) return;
@@ -124,12 +124,12 @@ export function renderDiffView(prevText, nextText) {
     rightRows = [];
   };
 
-  const flushContext = (isTail) => {
+  const flushContext = (isTail: boolean) => {
     if (!context.length) return;
     const first = container.childNodes.length === 0;
     const threshold = first || isTail ? 5 : 10;
     if (context.length > threshold) {
-      const folded = [];
+      const folded: HTMLDivElement[] = [];
       const collapse = document.createElement('div');
       collapse.className = 'diff-collapsed';
       collapse.addEventListener('click', () => {
@@ -160,12 +160,12 @@ export function renderDiffView(prevText, nextText) {
     context = [];
   };
 
-  const pushEqual = (line) => {
+  const pushEqual = (line: string|DocumentFragment|null) => {
     flushPairs();
     context.push(createRow(line, null));
   };
 
-  const pushChanged = (left, right) => {
+  const pushChanged = (left: string | null, right: string | null) => {
     flushContext(false);
     const pair = left != null && right != null ? pairFragments(left, right) : null;
     if (pair) {

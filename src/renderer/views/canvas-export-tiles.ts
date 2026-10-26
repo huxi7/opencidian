@@ -6,16 +6,18 @@
  * 导出期间锁住画布交互；finally 恢复 DOM、视口、选择与正文挂载状态。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
+import type { CanvasExportOptions, CanvasExportMetrics } from './canvas-export-types.js';
+import type { CanvasNode } from './canvas-node.js';
 import { ipcInvoke } from '../core/ipc.js';
 import { assertCanvasExportBudget } from './canvas-export-limits.js';
 import { prepareCanvasPrivacy } from './canvas-export-privacy.js';
 
 const GUTTER = 2;
 const nextPaint = () => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
-const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
+const pause = (ms: number|undefined) => new Promise(resolve => setTimeout(resolve, ms));
 
 /** 输出坐标一律为整数，不累计世界坐标的小数误差。 */
-export function planCanvasTiles(width, height, tileWidth, tileHeight) {
+export function planCanvasTiles(width: number, height: number, tileWidth: number, tileHeight: number) {
   if (![width, height, tileWidth, tileHeight].every(n => Number.isInteger(n) && n > 0)) {
     throw new Error('画布导出分块尺寸无效');
   }
@@ -47,7 +49,7 @@ const captureStyles = `
 `;
 
 /** 不开辅助窗口。截图失败直接报错，拒绝退回简化重绘冒充成功。 */
-export async function renderCanvasTiles(canvas: import('./canvas-view.js').CanvasView, metrics, options: Record<string, any> = {}, decorate) {
+export async function renderCanvasTiles(canvas: import('./canvas-view.js').CanvasView, metrics: CanvasExportMetrics, options: CanvasExportOptions = {}, decorate?: (ctx: CanvasRenderingContext2D, width: number, height: number) => void) {
   if (canvas.screenshotting) throw new Error('画布正在导出');
   assertCanvasExportBudget(metrics, options);
   const wrapper = canvas.wrapperEl;
@@ -59,7 +61,7 @@ export async function renderCanvasTiles(canvas: import('./canvas-view.js').Canva
     wrapperStyle: wrapper.getAttribute('style'),
     screenshotting: wrapper.classList.contains('is-screenshotting'),
     garbled: wrapper.classList.contains('is-text-garbled'),
-    nodes: [...canvas.nodes.values()].map(node => [node, node.isContentMounted, node.nodeEl.style.zIndex]),
+    nodes: [...canvas.nodes.values()].map((node: CanvasNode): [CanvasNode, boolean, string] => [node, node.isContentMounted, node.nodeEl.style.zIndex]),
   };
   const stylesheet = document.createElement('style');
   stylesheet.textContent = captureStyles;
@@ -67,10 +69,11 @@ export async function renderCanvasTiles(canvas: import('./canvas-view.js').Canva
   output.width = metrics.width;
   output.height = metrics.height;
   const ctx = output.getContext('2d');
-  let privacy;
+  if (!ctx) throw Error('画布导出无法创建绘图上下文');
+  let privacy: ReturnType<typeof prepareCanvasPrivacy> | undefined;
   canvas.screenshotting = true;
   // 不改 x/y/zoom 或选择集合。暂停交互，避免异步截图期间状态被指针覆盖。
-  const block = event => { event.preventDefault(); event.stopImmediatePropagation(); };
+  const block = (event: { preventDefault: () => void; stopImmediatePropagation: () => void; }) => { event.preventDefault(); event.stopImmediatePropagation(); };
   const blocked = ['pointerdown', 'wheel', 'keydown'];
   try {
     document.head.appendChild(stylesheet);
@@ -140,7 +143,7 @@ export async function renderCanvasTiles(canvas: import('./canvas-view.js').Canva
     }
     canvas.screenshotting = false;
     if (saved.ownRequestFrame) canvas.requestFrame = saved.requestFrame;
-    else delete canvas.requestFrame;
+    else Reflect.deleteProperty(canvas, 'requestFrame');
     if (wrapper.isConnected) canvas.markViewportChanged();
     await nextPaint();
   }

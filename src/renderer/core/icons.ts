@@ -17,6 +17,11 @@ import iconTable from '../../../assets/icons.json';
 import obsidianIcons from '../../../assets/icons-obsidian.json';
 import iconAliases from '../../../assets/icon-aliases.json';
 
+type IconPart = Array<string | number>;
+interface ResolvedIcon { key: string; nodes?: IconPart[]; raw?: string; runtime?: boolean; }
+const ICONS: Record<string, IconPart[]> = iconTable;
+const BUILTINS: Record<string, string> = obsidianIcons;
+const ALIASES: Record<string, string> = iconAliases;
 const SVG_NS = 'http://www.w3.org/2000/svg';
 
 // default svg attrs — original `jm`
@@ -30,58 +35,58 @@ const RUNTIME_ATTRS = { viewBox: '0 0 100 100' };
 
 // Tag ids used by the icon table:
 // 0 = line, 1 = circle, 2 = polyline, 3 = polygon, 4 = ellipse, 5 = rect, 6 = path
-function buildNode(tag, args) {
+function buildNode(tag: string | number, args: Array<string | number>) {
   let el;
   switch (tag) {
     case 0: el = document.createElementNS(SVG_NS, 'line');
-      el.setAttribute('x1', args[0]); el.setAttribute('y1', args[1]);
-      el.setAttribute('x2', args[2]); el.setAttribute('y2', args[3]);
+      el.setAttribute('x1', String(args[0])); el.setAttribute('y1', String(args[1]));
+      el.setAttribute('x2', String(args[2])); el.setAttribute('y2', String(args[3]));
       break;
     case 1: el = document.createElementNS(SVG_NS, 'circle');
-      el.setAttribute('cx', args[0]); el.setAttribute('cy', args[1]); el.setAttribute('r', args[2]);
+      el.setAttribute('cx', String(args[0])); el.setAttribute('cy', String(args[1])); el.setAttribute('r', String(args[2]));
       break;
-    case 2: el = document.createElementNS(SVG_NS, 'polyline'); el.setAttribute('points', args[0]); break;
-    case 3: el = document.createElementNS(SVG_NS, 'polygon'); el.setAttribute('points', args[0]); break;
+    case 2: el = document.createElementNS(SVG_NS, 'polyline'); el.setAttribute('points', String(args[0])); break;
+    case 3: el = document.createElementNS(SVG_NS, 'polygon'); el.setAttribute('points', String(args[0])); break;
     case 4: el = document.createElementNS(SVG_NS, 'ellipse');
-      el.setAttribute('cx', args[0]); el.setAttribute('cy', args[1]);
-      el.setAttribute('rx', args[2]); el.setAttribute('ry', args[3]);
+      el.setAttribute('cx', String(args[0])); el.setAttribute('cy', String(args[1]));
+      el.setAttribute('rx', String(args[2])); el.setAttribute('ry', String(args[3]));
       break;
     case 5: el = document.createElementNS(SVG_NS, 'rect');
-      el.setAttribute('x', args[0]); el.setAttribute('y', args[1]);
-      el.setAttribute('width', args[2]); el.setAttribute('height', args[3]);
-      if (args[4] !== undefined) el.setAttribute('rx', args[4]);
-      if (args[5] !== undefined) el.setAttribute('ry', args[5]);
+      el.setAttribute('x', String(args[0])); el.setAttribute('y', String(args[1]));
+      el.setAttribute('width', String(args[2])); el.setAttribute('height', String(args[3]));
+      if (args[4] !== undefined) el.setAttribute('rx', String(args[4]));
+      if (args[5] !== undefined) el.setAttribute('ry', String(args[5]));
       break;
-    case 6: el = document.createElementNS(SVG_NS, 'path'); el.setAttribute('d', args[0]); break;
+    case 6: el = document.createElementNS(SVG_NS, 'path'); el.setAttribute('d', String(args[0])); break;
     default: return null;
   }
   return el;
 }
 
 // Ym — icons added at runtime through addIcon()
-const runtimeIcons = {};
+const runtimeIcons: Record<string, string> = {};
 
-const hasOwn = (obj, key) => Object.prototype.hasOwnProperty.call(obj, key);
+const hasOwn = (obj: object, key: PropertyKey) => Object.prototype.hasOwnProperty.call(obj, key);
 
 /**
  * Resolve an icon name to its source — mirrors the original Zm().
  * Returns { key, nodes } for lucide icons, { key, raw, runtime } for raw markup,
  * or null when the name is unknown.
  */
-export function resolveIcon(name) {
+export function resolveIcon(name: string): ResolvedIcon | null {
   if (!name || typeof name !== 'string') return null;
   if (name.startsWith('lucide-')) {
     const bare = name.slice(7);
-    return hasOwn(iconTable, bare) ? { key: name, nodes: iconTable[bare] } : null;
+    return hasOwn(iconTable, bare) ? { key: name, nodes: ICONS[bare] } : null;
   }
   if (hasOwn(runtimeIcons, name)) return { key: name, raw: runtimeIcons[name], runtime: true };
-  if (hasOwn(obsidianIcons, name)) return { key: name, raw: obsidianIcons[name] };
-  const alias = hasOwn(iconAliases, name) ? iconAliases[name] : name;
-  return hasOwn(iconTable, alias) ? { key: 'lucide-' + alias, nodes: iconTable[alias] } : null;
+  if (hasOwn(obsidianIcons, name)) return { key: name, raw: BUILTINS[name] };
+  const alias = hasOwn(iconAliases, name) ? ALIASES[name] : name;
+  return hasOwn(iconTable, alias) ? { key: 'lucide-' + alias, nodes: ICONS[alias] } : null;
 }
 
 /** Build an svg element for an icon name. Returns an empty svg when unknown. */
-export function createIcon(name) {
+export function createIcon(name: string) {
   const svg = document.createElementNS(SVG_NS, 'svg');
   const resolved = resolveIcon(name);
   const attrs = resolved && resolved.runtime ? { ...SVG_ATTRS, ...RUNTIME_ATTRS } : SVG_ATTRS;
@@ -92,7 +97,7 @@ export function createIcon(name) {
   if (resolved.raw) {
     svg.innerHTML = resolved.raw;
   } else {
-    for (const entry of resolved.nodes) {
+    for (const entry of resolved.nodes || []) {
       const node = buildNode(entry[0], entry.slice(1));
       if (node) svg.appendChild(node);
     }
@@ -104,10 +109,10 @@ export function createIcon(name) {
  * Replace the element's first child with the requested icon.
  * Skips re-render when the first child is an svg carrying the requested name.
  */
-export function setIcon(el, iconName) {
+export function setIcon(el: Element | null | undefined, iconName: string) {
   if (!el) return null;
   const first = el.firstChild;
-  if (first && first.nodeType === 1 && first.tagName.toLowerCase() === 'svg'
+  if (first instanceof Element && first.tagName.toLowerCase() === 'svg'
     && first.classList && first.classList.contains(iconName)) {
     return first;
   }
@@ -119,12 +124,12 @@ export function setIcon(el, iconName) {
 }
 
 /** Lucide node data for a name, or null. Kept for plugin-API compatibility. */
-export function getIconData(name) {
+export function getIconData(name: string) {
   const resolved = resolveIcon(name);
   return resolved && resolved.nodes ? resolved.nodes : null;
 }
 
-export function iconExists(name) {
+export function iconExists(name: string) {
   return !!resolveIcon(name);
 }
 
@@ -136,12 +141,12 @@ export function getIconIds() {
 }
 
 /** Register a custom icon from raw svg markup — original ev(). */
-export function addIcon(name, svgMarkup) {
+export function addIcon(name: string, svgMarkup: string) {
   runtimeIcons[name] = svgMarkup;
 }
 
 /** Remove a runtime icon — original tv(). */
-export function removeIcon(name) {
+export function removeIcon(name: string) {
   delete runtimeIcons[name];
 }
 

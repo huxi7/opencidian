@@ -1,5 +1,5 @@
 /**
- * [INPUT]: 图标、DOM 助手与 native-menu 的系统菜单桥。
+ * [INPUT]: 具体菜单项、键鼠事件、图标、DOM 助手与 native-menu 的系统菜单桥。
  * [OUTPUT]: 导出 Menu（addItem/addSeparator/addSections/setSectionSubmenu/setParentElement/showAtMouseEvent/showAtPosition/close）与 MenuItem（title/icon/checked/section/submenu/callback）。
  * macOS 默认使用原生菜单；显式关闭后保留主题 DOM 菜单。
  * [POS]: core/ 的通用菜单层。菜单挂 document.body，外部 mousedown/contextmenu 关闭，键盘上下/Enter/Esc 导航。
@@ -9,25 +9,30 @@
  */
 /* Menu — context menus & dropdown menus with keyboard navigation. */
 import { setIcon } from './icons.js';
+export type MenuEvent = MouseEvent | KeyboardEvent;
+interface SectionConfig { title: string; icon?: string; disabled?: boolean; }
 import { usesNativeMenu, showNativeMenu, closeNativeMenu } from './native-menu.js';
 
 export class MenuItem {
-  declare isSeparator: boolean;
+  isVault?: boolean;
+  isSeparator = false;
 
-  declare menu: any;
+  declare menu: Menu;
   declare title: string;
   declare icon: string;
   declare checked: boolean;
   declare disabled: boolean;
   declare section: string;
-  declare submenu: any;
-  declare callback: any;
+  declare submenu: Menu | null;
+  declare callback: ((event: MenuEvent) => unknown) | null;
   declare warning: boolean;
   declare isLabel: boolean;
-  declare dom: any;
+  declare dom: HTMLDivElement | null;
+  checkIconEl: HTMLElement | null = null;
+  _inSubmenu?: Menu | null;
   declare _checkable: boolean | undefined;
 
-  constructor(menu) {
+  constructor(menu: Menu) {
     this.menu = menu;
     this.title = '';
     this.icon = '';
@@ -40,42 +45,46 @@ export class MenuItem {
     this.isLabel = false;
     this.dom = null;
   }
-  setTitle(title) { this.title = title; this.update(); return this; }
-  setIcon(icon) { this.icon = icon; this.update(); return this; }
-  setIsLabel(isLabel) { this.isLabel = isLabel; this.update(); return this; }
-  setChecked(checked) { this.checked = checked; this._checkable = true; this.update(); return this; }
-  setDisabled(disabled) { this.disabled = disabled; this.update(); return this; }
-  setSection(section) { this.section = section; return this; }
+  setTitle(title: string) { this.title = title; this.update(); return this; }
+  setIcon(icon: string) { this.icon = icon; this.update(); return this; }
+  setIsLabel(isLabel: boolean) { this.isLabel = isLabel; this.update(); return this; }
+  setChecked(checked: boolean) { this.checked = checked; this._checkable = true; this.update(); return this; }
+  setDisabled(disabled: boolean) { this.disabled = disabled; this.update(); return this; }
+  setSection(section: string) { this.section = section; return this; }
   removeIcon() { this.icon = ''; this.update(); return this; }
-  setWarning(warning) { this.warning = warning; this.update(); return this; }
-  onClick(callback) { this.callback = callback; return this; }
+  setWarning(warning: boolean) { this.warning = warning; this.update(); return this; }
+  onClick(callback: (event: MenuEvent) => unknown) { this.callback = callback; return this; }
   setSubmenu() { this.submenu = new Menu(this.menu.app); return this.submenu; }
   update() { if (this.dom) renderMenuItem(this, this.dom); }
 }
 
 export class Menu {
-  declare onShow: () => void;
+  onShow?: () => void;
   declare _sectioned: boolean;
-  declare onHide: () => void;
+  onHide?: () => void;
 
-  declare app: App;
-  declare items: any[];
-  declare sections: any[];
-  declare submenuConfigs: any;
-  declare orderedItems: any;
-  declare dom: any;
+  declare app: App | null;
+  declare items: MenuItem[];
+  declare sections: string[];
+  declare submenuConfigs: Record<string, SectionConfig>;
+  declare orderedItems: MenuItem[] | null;
+  declare dom: HTMLDivElement | null;
   declare selected: number;
-  declare parentMenu: any;
-  declare parentEl: any;
-  declare _scrollEl: any;
-  declare _docMouseDown: ((ev: any) => void) | null | undefined;
-  declare _docKeyDown: ((ev: any) => void) | undefined;
-  declare _docContext: ((ev: any) => void) | undefined;
-  declare _submenuTimer: any;
-  declare _openSubmenuRef: any;
-  declare _selectedEl: any;
+  declare parentMenu: Menu | null;
+  declare parentEl: HTMLElement | null;
+  _scrollEl: HTMLDivElement | null = null;
+  _docMouseDown: ((ev: MouseEvent) => void) | null = null;
+  _docKeyDown: ((ev: KeyboardEvent) => void) | undefined;
+  _docContext: ((ev: MouseEvent) => void) | undefined;
+  _submenuTimer: ReturnType<typeof setTimeout> | null = null;
+  _openSubmenuRef: Menu | null = null;
+  _selectedEl: HTMLElement | null = null;
 
-  constructor(app: App) {
+  _ownerItem?: MenuItem;
+  _nativeToken: number | null = null;
+  nativeResult: Promise<void> | null = null;
+
+  constructor(app: App | null) {
     this.app = app;
     this.items = [];
     this.sections = [];
@@ -88,10 +97,10 @@ export class Menu {
   }
 
   /** 绑定触发元素：菜单打开期间元素带 has-active-menu（原版 setParentElement 语义）。 */
-  setParentElement(el) { this.parentEl = el; return this; }
+  setParentElement(el: HTMLElement) { this.parentEl = el; return this; }
 
   /** 原版 qg.addSections：在 "" 之前插入未登记的分节名。 */
-  addSections(sections) {
+  addSections(sections: string[]) {
     const fresh = sections.filter((s) => !this.sections.includes(s));
     const at = this.sections.indexOf('');
     this.sections.splice(at < 0 ? this.sections.length : at, 0, ...fresh);
@@ -99,12 +108,12 @@ export class Menu {
   }
 
   /** 原版 qg.setSectionSubmenu：把 section 及其子节（section.*）收编为一个子菜单项。 */
-  setSectionSubmenu(section, config) {
+  setSectionSubmenu(section: string, config: SectionConfig) {
     this.submenuConfigs[section] = config;
     return this;
   }
 
-  addItem(cb) {
+  addItem(cb?: (item: MenuItem) => unknown) {
     const item = new MenuItem(this);
     this.items.push(item);
     if (cb) cb(item);
@@ -118,11 +127,11 @@ export class Menu {
     if (this.dom) this.renderDom();
     return item;
   }
-  showAtMouseEvent(ev) {
+  showAtMouseEvent(ev: MouseEvent) {
     this.showAtPosition({ x: ev.clientX, y: ev.clientY });
   }
 
-  showAtPosition(pos) {
+  showAtPosition(pos: { x: number; y: number; width?: number; overlap?: boolean; left?: boolean }): HTMLDivElement | null {
     this.close();
     if (usesNativeMenu(this)) return showNativeMenu(this, pos);
     // 原版 qg：.menu > .menu-grabber + .menu-scroll + .suggestion-bg（滚动在 menu-scroll 上）
@@ -153,22 +162,23 @@ export class Menu {
     this._docMouseDown = (ev) => {
       // 子菜单挂在本菜单 dom 之外：真实鼠标按下子菜单项时不能先关父菜单，
       // 否则 mousedown →（菜单被移除）→ click 永远到不了 item.onclick。
-      let menuEl = ev.target && ev.target.closest ? ev.target.closest('.menu') : null;
-      let owner = menuEl && menuEl.__menu;
+      const menuEl = ev.target instanceof Element ? ev.target.closest<HTMLElement>('.menu') : null;
+      let owner: Menu | null | undefined = menuEl?.__menu;
       while (owner) {
         if (owner === this) return;
         owner = owner.parentMenu;
       }
-      if (!dom.contains(ev.target)) this.close();
+      if (!dom.contains(ev.target instanceof Node ? ev.target : null)) this.close();
     };
     this._docKeyDown = (ev) => this.onKeyDown(ev);
     this._docContext = (ev) => {
-      if (!dom.contains(ev.target)) this.close();
+      if (!dom.contains(ev.target instanceof Node ? ev.target : null)) this.close();
     };
     setTimeout(() => {
-      document.addEventListener('mousedown', this._docMouseDown, true);
-      document.addEventListener('contextmenu', this._docContext, true);
-      document.addEventListener('keydown', this._docKeyDown, true);
+      if (this.dom !== dom) return;
+      if (this._docMouseDown) document.addEventListener('mousedown', this._docMouseDown, true);
+      if (this._docContext) document.addEventListener('contextmenu', this._docContext, true);
+      if (this._docKeyDown) document.addEventListener('keydown', this._docKeyDown, true);
     }, 0);
     if (this.parentEl) this.parentEl.addClass('has-active-menu');
     this.onShow && this.onShow();
@@ -185,7 +195,7 @@ export class Menu {
     const grouped = this._sectioned || this.sections.length > 0 || Object.keys(this.submenuConfigs).length > 0;
     const ordered = grouped ? this._sort() : this.items.slice();
     this.orderedItems = ordered;
-    let group = null;
+    let group: HTMLDivElement | null = null;
     for (const item of ordered) {
       if (item.isSeparator) {
         group = null;
@@ -227,7 +237,7 @@ export class Menu {
    */
   _sort() {
     const sections = this.sections;
-    const groups = { '': [] };
+    const groups: Record<string, MenuItem[]> = { '': [] };
     for (const item of this.items) {
       // 已收编进【本菜单的】子菜单的项不参与二次分组；进入子菜单自身排序时正常参与
       if (item._inSubmenu && item._inSubmenu !== this) continue;
@@ -235,10 +245,10 @@ export class Menu {
       if (section === '' || !sections.includes(section)) sections.push(section);
       (groups[section] || (groups[section] = [])).push(item);
     }
-    const out = [];
+    const out: MenuItem[] = [];
     const separator = () => { const s = new MenuItem(this); s.isSeparator = true; return s; };
-    let current = null;
-    let submenu = null;
+    let current: string | null = null;
+    let submenu: Menu | null = null;
     let currentSubmenuKey = '';
     for (const section of sections) {
       if (!Object.prototype.hasOwnProperty.call(groups, section)) continue;
@@ -266,7 +276,7 @@ export class Menu {
         }
         for (const item of groups[section]) {
           if (!item.isSeparator) { item.setSection(relative); item._inSubmenu = submenu; }
-          submenu.items.push(item);
+          submenu?.items.push(item);
         }
       } else {
         if (current !== root) { if (current !== null) out.push(separator()); current = section; }
@@ -279,7 +289,7 @@ export class Menu {
   }
 
   /** 原版 qg.openSubmenuSoon：悬停 250ms 后才展开，移开即取消。 */
-  _scheduleSubmenu(item, itemEl) {
+  _scheduleSubmenu(item: MenuItem, itemEl: HTMLElement) {
     if (this._openSubmenuRef && this._openSubmenuRef._ownerItem === item) return;
     this._closeSubmenu();
     this._submenuTimer = setTimeout(() => {
@@ -288,9 +298,10 @@ export class Menu {
     }, 250);
   }
 
-  _openSubmenu(item, itemEl, selectFirst?) {
+  _openSubmenu(item: MenuItem, itemEl: HTMLElement, selectFirst?: boolean) {
     this._closeSubmenu();
     const sub = item.submenu;
+    if (!sub) return null;
     sub.parentMenu = this;
     sub._ownerItem = item;
     const rect = itemEl.getBoundingClientRect();
@@ -314,7 +325,7 @@ export class Menu {
   }
 
   /** 选中第 index 个可导航项（键盘进入子菜单时选第一项）。 */
-  select(index) {
+  select(index: number) {
     const list = this._selectableItems();
     const item = list[index];
     if (item && item.dom) {
@@ -323,13 +334,13 @@ export class Menu {
     }
   }
 
-  _setSelectedDom(el) {
+  _setSelectedDom(el: HTMLElement | null) {
     if (this._selectedEl) this._selectedEl.removeClass('is-selected');
     this._selectedEl = el;
     if (el) el.addClass('is-selected');
   }
 
-  onKeyDown(ev) {
+  onKeyDown(ev: KeyboardEvent) {
     if (!this.dom) return;
     // 子菜单打开时按键归子菜单处理（原版 keymap scope 分层语义）
     if (this._openSubmenuRef && this._openSubmenuRef.dom) return;
@@ -341,17 +352,17 @@ export class Menu {
       ev.preventDefault();
       idx = (idx + 1) % selectable.length;
       this._setSelectedDom(selectable[idx].dom);
-      selectable[idx].dom.scrollIntoView({ block: 'nearest' });
+      selectable[idx].dom?.scrollIntoView({ block: 'nearest' });
     } else if (ev.key === 'ArrowUp') {
       ev.preventDefault();
       idx = (idx - 1 + selectable.length) % selectable.length;
       this._setSelectedDom(selectable[idx].dom);
-      selectable[idx].dom.scrollIntoView({ block: 'nearest' });
+      selectable[idx].dom?.scrollIntoView({ block: 'nearest' });
     } else if (ev.key === 'Enter' || ev.key === ' ') {
       if (idx >= 0) {
         ev.preventDefault();
         const item = selectable[idx];
-        if (item.submenu) { this._openSubmenu(item, item.dom, true); return; }
+        if (item.submenu) { item.dom && this._openSubmenu(item, item.dom, true); return; }
         if (item.callback) item.callback(ev);
         this._closeRoot();
       }
@@ -360,7 +371,7 @@ export class Menu {
       ev.stopPropagation();
       this._closeRoot();
     } else if (ev.key === 'ArrowRight') {
-      if (idx >= 0 && selectable[idx].submenu) this._openSubmenu(selectable[idx], selectable[idx].dom, true);
+      if (idx >= 0) { const item = selectable[idx]; if (item.submenu && item.dom) this._openSubmenu(item, item.dom, true); }
     } else if (ev.key === 'ArrowLeft') {
       // 原版 onArrowLeft：子菜单收起回到父菜单
       if (this.parentMenu) { ev.preventDefault(); this.close(); }
@@ -369,7 +380,7 @@ export class Menu {
 
   /** 原版语义：选中项或 Esc 关闭整条菜单链（含所有上层菜单）。 */
   _closeRoot() {
-    let menu = this;
+    let menu: Menu = this;
     while (menu.parentMenu) menu = menu.parentMenu;
     menu.close();
   }
@@ -385,8 +396,8 @@ export class Menu {
     if (this.parentMenu && this.parentMenu._openSubmenuRef === this) this.parentMenu._openSubmenuRef = null;
     if (this._docMouseDown) {
       document.removeEventListener('mousedown', this._docMouseDown, true);
-      document.removeEventListener('contextmenu', this._docContext, true);
-      document.removeEventListener('keydown', this._docKeyDown, true);
+      if (this._docContext) document.removeEventListener('contextmenu', this._docContext, true);
+      if (this._docKeyDown) document.removeEventListener('keydown', this._docKeyDown, true);
       this._docMouseDown = null;
     }
     if (this.parentEl) this.parentEl.removeClass('has-active-menu');
@@ -394,7 +405,7 @@ export class Menu {
   }
 }
 
-function renderMenuItem(item, el) {
+function renderMenuItem(item: MenuItem, el: HTMLElement) {
   el.empty();
   // 原版 Bg：勾选项保留原图标，右侧追加 .menu-item-icon.mod-checked + lucide-check
   el.toggleClass('mod-checked', !!item.checked);

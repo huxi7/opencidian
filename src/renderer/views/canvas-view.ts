@@ -6,7 +6,7 @@
  *          依赖 ./canvas-controls.js 的 buildCardMenu/buildControls（建卡菜单与控件组的 DOM 构建）；依赖 ./canvas-arrange.js 的 buildCanvasMenu（选择浮动工具条与多选包围盒）；依赖 ./canvas-export.js 的 renderCanvasImage/exportCanvasImage；
  *          依赖 ./canvas-clipboard.js 的 handleCanvasCopy/handleCanvasCut/handleCanvasPaste；依赖 ./canvas-drop.js 的 installCanvasDrop；
  *          依赖 ./canvas-options.js 的 loadCanvasOptions/saveCanvasOptions（.obsidian/canvas.json，与白板设定页共用同一份选项）
- *          节点创建委托 canvas-node-factory.js；保存委托 core/window-save.js。
+ *          节点创建委托 canvas-node-factory.js；保存委托 core/window-save.js；canvas-data.js 校验外部 JSON。
  * [OUTPUT]: 导出 CanvasView 类（含 renderCanvasImage 渲染入口、generateHDImage 导出入口与 promptImageSavePath 保存对话框入口）
  * [POS]: views/ 画布类链的末端：View → CanvasViewport（视口）→ CanvasInteractions（交互）→ CanvasView（装配与调度）。持有 .canvas-wrapper DOM、节点/边集合、选择集合、JSON Canvas 读写。
  *        ResizeObserver 在挂载后更新视口。节点与边几何分层；数据防抖 500ms 写回，关闭时 flush。
@@ -29,6 +29,7 @@
  */
 /* Canvas view — DOM assembly + scheduling on top of the viewport and interaction layers. */
 import { CanvasInteractions } from './canvas-interactions.js';
+import { parseCanvasData } from './canvas-data.js';
 import { CanvasHistory } from './canvas-history.js';
 import { t } from '../core/i18n.js';
 import { setIcon } from '../core/icons.js';
@@ -38,7 +39,7 @@ import { Desktop } from '../core/ipc.js';
 import { saveWindowView, hasUnsavedWindowView, reportWindowSaveError } from '../core/window-save.js';
 import { debounce } from '../core/events.js';
 import {
-  genId, boxesIntersect, containsBox, expandBBox, nearestSide, distanceToBox, rectOf, MultiMap,
+  genId, boxesIntersect, containsBox, expandBBox, nearestSide, distanceToBox, rectOf, MultiMap, type CanvasBBox,
 } from './canvas-utils.js';
 import {
   CanvasNode, CanvasDummyNode,
@@ -61,11 +62,16 @@ import { createTextNode, createFileNode, createLinkNode, createGroupNode } from 
 
 const SAVE_DELAY = 500;
 
-import type { CanvasSharedState } from './canvas-types.js';
+import type { CanvasData, CanvasSharedState, CanvasNodeOptions, CanvasPromptOptions } from './canvas-types.js';
+import type { CanvasPoint } from './canvas-utils.js';
+import type { CanvasEndpoint } from './canvas-edge.js';
+import { WorkspaceLeaf } from '../core/workspace-model.js';
+import { TFile, VaultEntry } from '../core/vault.js';
+import { Menu } from '../core/menu.js';
 export interface CanvasView extends CanvasSharedState {}
 export class CanvasView extends CanvasInteractions {
 
-  constructor(leaf) {
+  constructor(leaf: WorkspaceLeaf) {
     super(leaf);
     this.icon = 'lucide-layout-dashboard';
     this.navigation = true;
@@ -122,7 +128,7 @@ export class CanvasView extends CanvasInteractions {
   /* ------------------------------------------------------------ 视图身份 */
 
   getViewType() { return 'canvas'; }
-  getIcon() { return this.icon; }
+  getIcon() { return this.icon || 'lucide-layout-dashboard'; }
   getDisplayText() { return this.file ? this.file.basename : (this._failedFilePath || t('plugins.canvas.name') || 'Canvas'); }
 
   getState() {
@@ -132,19 +138,21 @@ export class CanvasView extends CanvasInteractions {
     };
   }
 
-  async setState(state) {
+  async setState(state: Record<string,unknown>) {
     state = state || {};
-    if (state.file && (!this.file || this.file.path !== state.file)) {
+    if (typeof state.file === 'string' && (!this.file || this.file.path !== state.file)) {
       if (await this.loadFile(state.file) === false) return false;
     }
     if (state.viewState) {
       const vs = state.viewState;
-      this.setViewport(vs.x || 0, vs.y || 0, vs.zoom || 0);
+      if (typeof vs === 'object' && vs !== null) {
+        this.setViewport('x' in vs && typeof vs.x === 'number' ? vs.x : 0, 'y' in vs && typeof vs.y === 'number' ? vs.y : 0, 'zoom' in vs && typeof vs.zoom === 'number' ? vs.zoom : 0);
+      }
     }
   }
 
   getEphemeralState() { return {}; }
-  setEphemeralState(state) {
+  setEphemeralState(state: Record<string,unknown>) {
     if (state && state.focus && this.wrapperEl) this.wrapperEl.focus({ preventScroll: true });
   }
 
@@ -155,17 +163,17 @@ export class CanvasView extends CanvasInteractions {
     this._resizeObserver = new ResizeObserver(() => this.onResize());
     this._resizeObserver.observe(this.wrapperEl);
     this.options = { ...this.loadOptions() };
-    window.addEventListener('keydown', this.onGlobalKeydown);
-    window.addEventListener('keyup', this.onGlobalKeyup);
+    if (this.onGlobalKeydown) window.addEventListener('keydown', this.onGlobalKeydown);
+    if (this.onGlobalKeyup) window.addEventListener('keyup', this.onGlobalKeyup);
     // 原版文本文件视图基类行为：外部修改（同步、文件恢复）重载磁盘内容
     this._modifyRef = this.app.vault.on('modify', (file) => this.onExternalModify(file));
     // 只读标记随重命名/删除迁移（原版 localDataManager.handleRename/handleDelete）
     this._renameRef = this.app.vault.on('rename', (file, oldPath) => {
-      if (file && file.extension === 'canvas') migrateCanvasLocalData(oldPath, file.path);
+      if (file instanceof TFile && file.extension === 'canvas') migrateCanvasLocalData(oldPath, file.path);
       this.updateGroupBackgrounds(file, oldPath, false);
     });
     this._deleteRef = this.app.vault.on('delete', (file) => {
-      if (file && file.extension === 'canvas') dropCanvasLocalData(file.path);
+      if (file instanceof TFile && file.extension === 'canvas') dropCanvasLocalData(file.path);
       this.updateGroupBackgrounds(file, file ? file.path : '', true);
     });
   }
@@ -174,8 +182,8 @@ export class CanvasView extends CanvasInteractions {
     if (this._closed) return true;
     if (await this.save() === false) return false;
     if (this._closed) return true; this._closed = true;
-    window.removeEventListener('keydown', this.onGlobalKeydown);
-    window.removeEventListener('keyup', this.onGlobalKeyup);
+    if (this.onGlobalKeydown) window.removeEventListener('keydown', this.onGlobalKeydown);
+    if (this.onGlobalKeyup) window.removeEventListener('keyup', this.onGlobalKeyup);
     if (this._modifyRef) { this._modifyRef.unregister(); this._modifyRef = null; }
     if (this._renameRef) { this._renameRef.unregister(); this._renameRef = null; }
     if (this._deleteRef) { this._deleteRef.unregister(); this._deleteRef = null; }
@@ -258,7 +266,7 @@ export class CanvasView extends CanvasInteractions {
     return { ...this.data, nodes, edges };
   }
 
-  getSelectionData(elements) {
+  getSelectionData(elements?: Iterable<CanvasNode | CanvasEdge>) {
     const selected = new Set<CanvasNode | CanvasEdge>(elements || this.selection);
     const nodes = [];
     const edges = [];
@@ -276,7 +284,7 @@ export class CanvasView extends CanvasInteractions {
 
   getViewData() { return JSON.stringify(this.getData(), null, '\t'); }
 
-  setData(data) {
+  setData(data: CanvasData) {
     if (!data || Object.keys(data).length === 0) { this.createPlaceholder(); return; }
     this.importData(data, true);
     this.data = data;
@@ -287,10 +295,10 @@ export class CanvasView extends CanvasInteractions {
    * 原版 importData：按 id 复用节点与边；prune=true 时移除数据中已不存在的项（不清历史/视口）。
    * 返回本次数据覆盖的节点集合（原版返回该集合，供粘贴/克隆后就地选中）。
    */
-  importData(data, prune) {
+  importData(data: CanvasData, prune = false) {
     const nodes = Array.isArray(data.nodes) ? data.nodes : [];
     const edges = Array.isArray(data.edges) ? data.edges : [];
-    const keptNodes = new Set();
+    const keptNodes = new Set<CanvasNode>();
     let maxZ = 0;
     for (const nodeData of nodes) {
       if (!nodeData || !nodeData.id) continue;
@@ -317,7 +325,7 @@ export class CanvasView extends CanvasInteractions {
         if (!keptNodes.has(node)) this.removeNode(node);
       }
     }
-    const keptEdges = new Set();
+    const keptEdges = new Set<CanvasEdge>();
     for (const edgeData of edges) {
       if (!edgeData || !edgeData.id || !edgeData.fromNode || !edgeData.toNode) continue;
       const from = this.nodes.get(edgeData.fromNode);
@@ -362,10 +370,10 @@ export class CanvasView extends CanvasInteractions {
       t('plugins.canvas.label-space-drag-pan'),
       `${IS_MAC ? '⌘' : 'Ctrl'} + ${t('plugins.canvas.label-scroll-to-zoom')}`,
     ];
-    this.canvasPlaceholderEl = this.canvasEl.createDiv('canvas-placeholder-message');
+    const placeholder = this.canvasPlaceholderEl = this.canvasEl.createDiv('canvas-placeholder-message');
     lines.forEach((line, i) => {
-      if (i > 0) this.canvasPlaceholderEl.createEl('br');
-      this.canvasPlaceholderEl.appendText(line);
+      if (i > 0) placeholder.createEl('br');
+      placeholder.appendText(line);
     });
   }
 
@@ -381,33 +389,33 @@ export class CanvasView extends CanvasInteractions {
   }
 
   /** 原版 canSnap：macOS 按住 Ctrl、其他平台按住 Alt 时临时关闭吸附与参考线。 */
-  canSnap(e) { return IS_MAC ? !e.ctrlKey : !e.altKey; }
+  canSnap(e: Pick<MouseEvent, 'ctrlKey' | 'altKey'>) { return IS_MAC ? !e.ctrlKey : !e.altKey; }
 
   /** 原版 cloneData：深拷贝选中数据并为节点/边换新 id，可整体平移。 */
-  cloneData(data, offset) {
-    const map = {};
-    for (const node of data.nodes) {
+  cloneData(data: CanvasData, offset?: CanvasPoint) {
+    const map: Record<string, string> = {};
+    for (const node of data.nodes || []) {
       const oldId = node.id;
       node.id = genId();
-      map[oldId] = node.id;
-      if (offset) { node.x += offset.x; node.y += offset.y; }
+      if (oldId) map[oldId] = node.id;
+      if (offset) { node.x = (node.x || 0) + offset.x; node.y = (node.y || 0) + offset.y; }
     }
-    for (const edge of data.edges) {
-      edge.fromNode = map[edge.fromNode] || '';
-      edge.toNode = map[edge.toNode] || '';
+    for (const edge of data.edges || []) {
+      edge.fromNode = map[edge.fromNode || ''] || '';
+      edge.toNode = map[edge.toNode || ''] || '';
       edge.id = genId();
     }
     return data;
   }
 
-  addNode(node, attach = true) {
+  addNode(node: CanvasNode, attach = true) {
     this.nodes.set(node.id, node);
     if (this.canvasPlaceholderEl) { this.canvasPlaceholderEl.detach(); this.canvasPlaceholderEl = null; }
     if (attach) { node.attach(); node.render(); }
     this.markMoved(node);
   }
 
-  removeNode(node) {
+  removeNode(node: CanvasNode) {
     for (const edge of this.getEdgesForNode(node)) this.removeEdge(edge);
     this.deselect(node);
     this.nodes.delete(node.id);
@@ -417,7 +425,7 @@ export class CanvasView extends CanvasInteractions {
     this.requestFrame();
   }
 
-  addEdge(edge, attach = true) {
+  addEdge(edge: CanvasEdge, attach = true) {
     this.edges.set(edge.id, edge);
     this.edgeFrom.add(edge.from.node, edge);
     this.edgeTo.add(edge.to.node, edge);
@@ -425,7 +433,7 @@ export class CanvasView extends CanvasInteractions {
     this.markMoved(edge);
   }
 
-  removeEdge(edge) {
+  removeEdge(edge: CanvasEdge) {
     if (!this.edges.has(edge.id)) return;
     this.deselect(edge);
     this.edges.delete(edge.id);
@@ -437,11 +445,11 @@ export class CanvasView extends CanvasInteractions {
     this.requestFrame();
   }
 
-  getEdgesForNode(node) {
+  getEdgesForNode(node: CanvasNode) {
     return this.edgeFrom.getArray(node).concat(this.edgeTo.getArray(node));
   }
 
-  getIntersectingNodes(box) {
+  getIntersectingNodes(box: CanvasBBox) {
     const out = [];
     for (const node of this.nodes.values()) {
       if (boxesIntersect(node.getBBox(), box)) out.push(node);
@@ -449,15 +457,15 @@ export class CanvasView extends CanvasInteractions {
     return out;
   }
 
-  getContainingNodes(box) {
-    return this.getIntersectingNodes(box).filter((node) => containsBox(box, node.getBBox()));
+  getContainingNodes(box: CanvasBBox) {
+    return this.getIntersectingNodes(box).filter((node: CanvasNode) => containsBox(box, node.getBBox()));
   }
 
   /** 连线吸附：找指针附近最近的节点，返回它朝向指针的那一侧。 */
-  findSnapTarget(pos, nodes, dist) {
+  findSnapTarget(pos: CanvasPoint, nodes: CanvasNode[], dist: number) {
     const point = { x: pos.x, y: pos.y };
     const probe = { minX: pos.x, minY: pos.y, maxX: pos.x, maxY: pos.y };
-    let best = null;
+    let best: { node: CanvasNode; side: string; dist: number } | null = null;
     for (const node of nodes) {
       const box = node.getBBox();
       if (!boxesIntersect(expandBBox(box, dist), probe)) continue;
@@ -472,7 +480,7 @@ export class CanvasView extends CanvasInteractions {
    * 拖线端点与连线手柄只把它当几何占位（原版从不 attach/render），
    * 一旦挂进 DOM 就会露出 100×100 的 accent 方框。
    */
-  createDummyNode(options: Record<string, any> = {}) {
+  createDummyNode(options: { attach?: boolean } = {}) {
     const dummy = new CanvasDummyNode(this);
     if (!options || options.attach !== false) {
       dummy.attach();
@@ -481,7 +489,7 @@ export class CanvasView extends CanvasInteractions {
     return dummy;
   }
 
-  removeDummyNode(dummy) {
+  removeDummyNode(dummy: CanvasNode) {
     dummy.destroy();
     this.moved.delete(dummy);
     this.dirty.delete(dummy);
@@ -489,15 +497,15 @@ export class CanvasView extends CanvasInteractions {
 
   /* ------------------------------------------------------------ 创建节点 */
 
-  createTextNode(opts: Record<string, any> = {}) { return createTextNode(this, opts); }
+  createTextNode(opts: CanvasNodeOptions = {}) { return createTextNode(this, opts); }
 
-  createFileNode(opts: Record<string, any> = {}) { return createFileNode(this, opts); }
+  createFileNode(opts: CanvasNodeOptions = {}) { return createFileNode(this, opts); }
 
-  createLinkNode(opts: Record<string, any> = {}) { return createLinkNode(this, opts); }
+  createLinkNode(opts: CanvasNodeOptions = {}) { return createLinkNode(this, opts); }
 
-  createGroupNode(opts: Record<string, any> = {}) { return createGroupNode(this, opts); }
+  createGroupNode(opts: CanvasNodeOptions = {}) { return createGroupNode(this, opts); }
 
-  createEdge(from, to, save = true) {
+  createEdge(from: CanvasEndpoint, to: CanvasEndpoint, save = true) {
     const edge = new CanvasEdge(this, genId(), from, to);
     this.addEdge(edge);
     if (save) this.requestSave();
@@ -505,7 +513,7 @@ export class CanvasView extends CanvasInteractions {
   }
 
   /** 「添加笔记 / 添加媒体」：文件选择弹窗。 */
-  promptAddFileNode(opts: Record<string, any> = {}) {
+  promptAddFileNode(opts: CanvasPromptOptions<CanvasFileNode> = {}) {
     let chosen = false;
     const modal = new FileSuggestModal(this.app, (file) => {
       chosen = true;
@@ -519,7 +527,7 @@ export class CanvasView extends CanvasInteractions {
   }
 
   /** 「添加网页」：网址输入弹窗。 */
-  promptAddLinkNode(opts: Record<string, any> = {}) {
+  promptAddLinkNode(opts: CanvasPromptOptions<CanvasLinkNode> = {}) {
     let chosen = false;
     const modal = new LinkSuggestModal(this.app, (url) => {
       chosen = true;
@@ -533,7 +541,7 @@ export class CanvasView extends CanvasInteractions {
   }
 
   /** 「更换网址」：预填当前 URL 的输入弹窗（原版 I5.showMenu 的 change url）。 */
-  promptLinkUrl(node) {
+  promptLinkUrl(node: CanvasLinkNode) {
     const modal = new LinkSuggestModal(this.app, (url) => {
       node.setUrl(url);
       this.requestSave();
@@ -544,7 +552,7 @@ export class CanvasView extends CanvasInteractions {
   /* ------------------------------------------------------------ 只读模式 */
 
   /** 只读模式（原版 setReadonly）：更新快速设置按钮的图标与提示，供快速设置菜单切换。 */
-  setReadonly(readonly) {
+  setReadonly(readonly: boolean) {
     this.readonly = readonly;
     const btn = this.quickSettingsButton;
     if (btn) {
@@ -570,7 +578,7 @@ export class CanvasView extends CanvasInteractions {
    * delete=true 时 file 已从 vault 索引移除；否则 file 是重命名后的根文件/文件夹，
    * oldPath 可能是背景文件本身，也可能是包含背景文件的文件夹。
    */
-  updateGroupBackgrounds(file, oldPath, deleted) {
+  updateGroupBackgrounds(file: VaultEntry, oldPath: string, deleted: boolean) {
     if (!oldPath) return;
     const prefix = oldPath + '/';
     let changed = false;
@@ -611,14 +619,15 @@ export class CanvasView extends CanvasInteractions {
   }
 
   /** 应用历史快照：重建节点后写盘，不推进历史（原版 applyHistory）。 */
-  applyHistory(entry) {
+  applyHistory(entry: CanvasData|null) {
+    if (!entry) return;
     this.importData(entry, true);
     this.data = entry;
     this.requestSave(false);
     this.updateHistoryUI();
   }
 
-  pushHistory(entry) {
+  pushHistory(entry: CanvasData) {
     this.history.push(entry);
     this.updateHistoryUI();
   }
@@ -656,10 +665,10 @@ export class CanvasView extends CanvasInteractions {
     });
   }
 
-  async loadFile(path) {
+  async loadFile(path: string) {
     const sequence = this._loadSequence = (this._loadSequence || 0) + 1;
     if (this.file) {
-      clearTimeout(this._saveTimer);
+      if (this._saveTimer) clearTimeout(this._saveTimer);
       this._saveTimer = null;
       this.data = this.getData();
       if (await this.save() === false) return false;
@@ -669,7 +678,7 @@ export class CanvasView extends CanvasInteractions {
   }
 
   /** 外部修改：磁盘内容与已保存内容一致时视为自身写入的 watcher 回声，跳过重载。 */
-  onExternalModify(file) {
+  onExternalModify(file: TFile) {
     if (!file || !this.file || this._closed || this._writing || file.path !== this.file.path || file.extension !== 'canvas') return;
     const path = this.file.path;
     const fileRef = this.file;
@@ -683,29 +692,26 @@ export class CanvasView extends CanvasInteractions {
   }
 
   /** 读取磁盘内容并重建节点/边；keepViewport 为真表示外部重载：保留视口与撤销历史。 */
-  async _applyFileFromDisk(path, opts?) {
+  async _applyFileFromDisk(path: string, opts: { keepViewport?: boolean; text?: string } = {}) {
     const sequence = this._loadSequence;
     const keepViewport = !!(opts && opts.keepViewport);
-    const file = this.app.vault.getFileByPath(path) || this.app.vault.getAbstractFileByPath(path);
+    const file = this.app.vault.getFileByPath(path);
     if (!file || file.extension !== 'canvas') {
       this.file = null;
       this.renderMissingFile(path);
       return;
     }
     let text = '';
-    let data = null;
+    let data: CanvasData | null = null;
     try {
       text = opts?.text ?? await this.app.vault.cachedRead(file);
       if (text.trim()) {
-        data = JSON.parse(text);
-        if (!data || typeof data !== 'object' || Array.isArray(data)
-          || (data.nodes !== undefined && !Array.isArray(data.nodes))
-          || (data.edges !== undefined && !Array.isArray(data.edges))) throw new Error('白板必须包含节点和连线数组');
+        data = parseCanvasData(text);
       }
     } catch (error) {
       if (sequence !== this._loadSequence || this._closed) return false;
       if (!this.file) this.renderMissingFile(path, '无法读取白板');
-      new Notice('无法读取白板：' + path + '\n' + error.message);
+      new Notice('无法读取白板：' + path + '\n' + (error instanceof Error ? error.message : String(error)));
       return false;
     }
     if (sequence !== this._loadSequence || this._closed) return false;
@@ -736,18 +742,18 @@ export class CanvasView extends CanvasInteractions {
     this.app.workspace.trigger('canvas:file-loaded', this.file, this);
   }
 
-  renderMissingFile(path, title?) {
+  renderMissingFile(path?: string, message?: string) {
     if (path) this._failedFilePath = path;
     this.contentEl.empty();
     const state = this.contentEl.createDiv('empty-state');
-    state.createDiv('empty-state-title', (el) => el.setText(title || t('plugins.canvas.name') || 'Canvas'));
+    state.createDiv('empty-state-title', (el) => el.setText(message || t('plugins.canvas.name') || 'Canvas'));
     if (path) state.createDiv('empty-state-description', (el) => el.setText(path));
   }
 
   /* ------------------------------------------------------------ 分组跳转 */
 
   getGroupNodes() {
-    return Array.from(this.nodes.values()).filter((node) => node.isGroup);
+    return Array.from(this.nodes.values()).filter((node): node is CanvasGroupNode => node instanceof CanvasGroupNode);
   }
 
   /** 命令 canvas:jump-to-group 用。 */
@@ -767,20 +773,20 @@ export class CanvasView extends CanvasInteractions {
   /* ------------------------------------------------------------ 导出图片 */
 
   /** 视图头部「更多选项」按钮（原版 pane menu：导出图片）。 */
-  _fillViewActions(actions) { installCanvasViewActions(this, actions); }
-  onPaneMenu(menu, source) { super.onPaneMenu(menu, source); showCanvasPaneMenu(this, menu); }
+  _fillViewActions(actions: HTMLElement) { installCanvasViewActions(this, actions); }
+  onPaneMenu(menu: Menu, source: string) { super.onPaneMenu(menu, source); showCanvasPaneMenu(this, menu); }
 
   /** 可测试的渲染入口：返回 { dataURL, width, height, scale }，空画布返回 null。 */
-  renderCanvasImage(opts) { return renderCanvasImage(this, opts); }
+  renderCanvasImage(opts?: import('./canvas-export-types.js').CanvasExportOptions) { return renderCanvasImage(this, opts); }
 
   /** 命令 canvas:export-as-image 与面板菜单入口：设置弹窗 → 渲染 → 保存对话框 → 写 PNG（原版 generateHDImage）。 */
-  generateHDImage(opts?) { return exportCanvasImage(this, opts); }
+  generateHDImage(opts?: import('./canvas-export-types.js').CanvasExportOptions) { return exportCanvasImage(this, opts); }
 
   /**
    * 保存对话框（原版 electron dialog.showSaveDialog）。验收场景替换本方法即可跳过原生对话框，
    * 其余导出链路（渲染、写盘、通知）保持真实执行。
    */
-  promptImageSavePath(defaultPath) {
+  promptImageSavePath(defaultPath: string) {
     return Desktop.saveDialog({
       defaultPath,
       filters: [{ name: 'PNG Files', extensions: ['png'] }, { name: 'All Files', extensions: ['*'] }],

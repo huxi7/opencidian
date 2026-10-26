@@ -1,16 +1,17 @@
 /**
  * [INPUT]: 依赖 ./modals.js 的 Modal；依赖 ./keymap.js 的 IS_MAC。
- * [OUTPUT]: 导出模糊匹配、SuggestModal、GenericSuggester 与输入建议层。
+ * [OUTPUT]: 导出具体结果泛型的模糊匹配、SuggestModal、GenericSuggester 与输入建议层。
  * [POS]: 命令、模板、文件选择的公共入口。SuggestModal 的 DOM 与按键逐字对齐原版 OT/IT：
  *         `.prompt` 直挂输入容器/结果/指令栏；选择器环绕、分页、Home/End、Ctrl+P/N、Tab 补全，
  *         悬停不滚动，回车交给 onChooseSuggestion。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 /* Suggestion framework: fuzzy matching + SuggestModal (quick switcher etc). */
+import type { KeymapScope } from './keymap.js';
 import { Modal } from './modals.js';
 import { IS_MAC } from './keymap.js';
 
-export function fuzzyMatch(query, text) {
+export function fuzzyMatch(query: string, text: string): { score: number; matches: number[] } | null {
   if (!query) return { score: 0, matches: [] };
   const q = query.toLowerCase();
   const t = text.toLowerCase();
@@ -41,16 +42,17 @@ export function fuzzyMatch(query, text) {
   return { score, matches };
 }
 
-export function renderHighlightedText(el, text, matches) {
+export function renderHighlightedText(el: HTMLElement, text: string, matches: Array<number | number[]> | null) {
   el.empty();
   if (!matches || !matches.length) { el.setText(text); return; }
   // 兼容两种匹配表示：索引数组（旧 fuzzyMatch）与区间数组 [start,end]（原版 ux/cx）。
-  let ranges;
+  const ranges: Array<[number, number]> = [];
   if (Array.isArray(matches[0])) {
-    ranges = matches.map((range) => [range[0], range[1]]).sort((a, b) => a[0] - b[0]);
+    for (const range of matches) if (Array.isArray(range)) ranges.push([range[0], range[1]]);
+    ranges.sort((a, b) => a[0] - b[0]);
   } else {
-    ranges = [];
-    for (const index of [...matches].sort((a, b) => a - b)) {
+    const indices = matches.filter((value) => typeof value === 'number').sort((a, b) => a - b);
+    for (const index of indices) {
       const last = ranges[ranges.length - 1];
       if (last && last[1] === index) last[1] = index + 1;
       else ranges.push([index, index + 1]);
@@ -73,12 +75,14 @@ export function renderHighlightedText(el, text, matches) {
  * 子类契约（与原版一致）：
  *   getSuggestions(query) -> values[]；null 值表示「创建项」
  *   renderSuggestion(value, el, query)
- *   onChooseSuggestion(value, ev)
+ *   onChooseSuggestion(value: T | null, ev: MouseEvent | KeyboardEvent)
  *   onNoSuggestion()  可覆写；默认按 supportsCreate 决定创建项或空态文案
  *   getCompletionText(value)  Tab 补全文本；返回 null 表示不补全
  */
-export class SuggestModal extends Modal {
-  declare onSelectedChange: (item: unknown, event?: Event) => void;
+export interface SuggestionInstruction { command: string; purpose: string; }
+
+export class SuggestModal<T = unknown> extends Modal {
+  onSelectedChange?: (item: T | null, event?: Event | null) => void;
 
   declare limit: number;
   declare emptyStateText: string;
@@ -94,15 +98,15 @@ export class SuggestModal extends Modal {
   declare shouldShowNonFileBookmarks: boolean;
   declare context: string;
   declare _selectedIndex: number;
-  declare results: any[];
-  declare suggestions: any[];
-  declare inputEl: any;
-  declare ctaEl: any;
-  declare clearButtonEl: any;
-  declare resultContainerEl: any;
-  declare instructionsEl: any;
-  declare scope: any;
-  declare instructions: any;
+  declare results: Array<T | null>;
+  declare suggestions: HTMLDivElement[];
+  declare inputEl: HTMLInputElement;
+  declare ctaEl: HTMLDivElement;
+  declare clearButtonEl: HTMLDivElement;
+  declare resultContainerEl: HTMLDivElement;
+  declare instructionsEl: HTMLDivElement;
+  declare scope: KeymapScope | null;
+  declare instructions: SuggestionInstruction[] | undefined;
 
   constructor(app: App) {
     super(app);
@@ -179,7 +183,7 @@ export class SuggestModal extends Modal {
       });
     }
   }
-  setInstructions(instructions) {
+  setInstructions(instructions: SuggestionInstruction[]) {
     this.instructions = instructions;
     this.renderInstructions(instructions);
     if (instructions && instructions.length) {
@@ -189,7 +193,7 @@ export class SuggestModal extends Modal {
     }
     return this;
   }
-  setPlaceholder(text) { this.inputEl.placeholder = text; return this; }
+  setPlaceholder(text: string) { this.inputEl.placeholder = text; return this; }
 
   onOpen() {
     this.inputEl.value = '';
@@ -198,15 +202,15 @@ export class SuggestModal extends Modal {
   }
   onInput() { this.updateSuggestions(); }
 
-  getSuggestions(query) { return []; }
-  renderSuggestion(value, el, query?: string): void { el.setText(String(value)); }
-  onChooseSuggestion(value, ev) {}
-  getCompletionText(value, query?: string) { return null; }
+  getSuggestions(query: string): Array<T | null> | Promise<Array<T | null>> { return []; }
+  renderSuggestion(value: T | null, el: HTMLElement, query?: string): void { el.setText(String(value)); }
+  onChooseSuggestion(value: T | null, ev: MouseEvent | KeyboardEvent) {}
+  getCompletionText(value: T | null, query?: string): string | null { return null; }
 
   updateSuggestions() {
     const query = this.inputEl.value;
     const values = this.getSuggestions(query);
-    const apply = (list) => {
+    const apply = (list: Array<T | null>) => {
       if (list && list.length) {
         if (this.limit && this.limit > 0) list = list.slice(0, this.limit);
         this.setSuggestions(list);
@@ -232,7 +236,7 @@ export class SuggestModal extends Modal {
     });
   }
 
-  setSuggestions(values) {
+  setSuggestions(values: Array<T | null> | null) {
     this.results = values ? values.slice() : [];
     this.resultContainerEl.empty();
     const query = this.inputEl.value;
@@ -254,7 +258,7 @@ export class SuggestModal extends Modal {
   }
 
   /** 原版 IT.setSelectedItem：越界环绕；键盘触发滚动，鼠标悬停不滚动。 */
-  setSelectedIndex(index, ev) {
+  setSelectedIndex(index: number, ev: MouseEvent | KeyboardEvent | null) {
     const n = this.results.length;
     if (!n) { this._selectedIndex = 0; return; }
     if (index < 0) index = n - 1;
@@ -278,7 +282,7 @@ export class SuggestModal extends Modal {
     const rowHeight = this.rowHeight();
     return rowHeight > 0 ? Math.floor(this.resultContainerEl.clientHeight / rowHeight) : 0;
   }
-  pageUp(ev) {
+  pageUp(ev: KeyboardEvent) {
     const rowHeight = this.rowHeight();
     if (!rowHeight) return;
     const container = this.resultContainerEl;
@@ -288,7 +292,7 @@ export class SuggestModal extends Modal {
     if (this._selectedIndex <= row) row -= visible;
     this.setSelectedIndex(Math.max(0, row), ev);
   }
-  pageDown(ev) {
+  pageDown(ev: KeyboardEvent) {
     const rowHeight = this.rowHeight();
     if (!rowHeight) return;
     const container = this.resultContainerEl;
@@ -300,7 +304,7 @@ export class SuggestModal extends Modal {
   }
 
   /** Tab：把选中项的补全文本写入输入框；已相等则补一个 "/"（原版 D5 的 Tab 补全）。 */
-  completeSelection(ev) {
+  completeSelection(ev: KeyboardEvent) {
     const value = this.results[this._selectedIndex];
     if (value === undefined) return;
     let text = this.getCompletionText(value, this.inputEl.value);
@@ -310,7 +314,7 @@ export class SuggestModal extends Modal {
     this.updateSuggestions();
   }
 
-  onInputKeyDown(ev) {
+  onInputKeyDown(ev: KeyboardEvent) {
     if (ev.isComposing) return;
     const key = ev.key;
     if (key === 'ArrowDown') { ev.preventDefault(); this.setSelectedIndex(this._selectedIndex + 1, ev); }
@@ -329,25 +333,24 @@ export class SuggestModal extends Modal {
     }
   }
 
-  selectActiveSuggestion(ev) {
+  selectActiveSuggestion(ev: KeyboardEvent) {
     const value = this.results[this._selectedIndex];
     if (value === undefined) return;
     this.selectSuggestion(value, ev);
   }
-  selectSuggestion(value, ev) {
+  selectSuggestion(value: T | null, ev: MouseEvent | KeyboardEvent) {
     this.close();
     this.onChooseSuggestion(value, ev);
   }
 }
 
-export class GenericSuggester extends SuggestModal {
-  declare onClose: () => void;
+export type LabeledSuggestion = string | { label?: string };
+export interface SuggesterOptions<T> { placeholder?: string; emptyStateText?: string; title?: string; onChoose?(item: T): unknown; }
+export class GenericSuggester<T extends LabeledSuggestion> extends SuggestModal<T> {
+  items: T[];
+  options: SuggesterOptions<T>;
 
-  declare items: any;
-  declare options: any;
-  declare emptyStateText: any;
-
-  constructor(app: App, items, options: Record<string, any> = {}) {
+  constructor(app: App, items: T[], options: SuggesterOptions<T> = {}) {
     super(app);
     this.items = items;
     this.options = options;
@@ -355,49 +358,47 @@ export class GenericSuggester extends SuggestModal {
     this.emptyStateText = options.emptyStateText || 'No results';
     this.setTitle(options.title || '');
   }
-  getSuggestions(query) {
+  getSuggestions(query: string): T[] {
     if (!query) return this.items;
-    const out = [];
+    const out: Array<{ item: T; score: number }> = [];
     for (const item of this.items) {
       const text = typeof item === 'string' ? item : (item.label || '');
-      const m = fuzzyMatch(query, text);
-      if (m) out.push({ item, score: m.score });
+      const match = fuzzyMatch(query, text);
+      if (match) out.push({ item, score: match.score });
     }
     out.sort((a, b) => b.score - a.score);
-    return out.map((o) => o.item);
+    return out.map(entry => entry.item);
   }
-  renderSuggestion(value, el, query) {
+  renderSuggestion(value: T | null, el: HTMLElement, query: string): void {
+    if (value === null) return;
     const label = typeof value === 'string' ? value : (value.label || '');
-    const m = fuzzyMatch(query, label);
-    if (m) renderHighlightedText(el, label, m.matches);
+    const match = fuzzyMatch(query, label);
+    if (match) renderHighlightedText(el, label, match.matches);
     else el.setText(label);
   }
-  onChooseSuggestion(value) {
-    this.options.onChoose && this.options.onChoose(value);
+  onChooseSuggestion(value: T | null): void {
+    if (value !== null) this.options.onChoose?.(value);
   }
 }
 
-export function suggest(app: App, items, options: Record<string, any> = {}) {
-  return new Promise((resolve) => {
-    const s = new GenericSuggester(app, items, {
-      ...options,
-      onChoose: (item) => resolve(item),
-    });
-    s.onClose = () => queueMicrotask(() => resolve(null));
-    s.open();
+export function suggest<T extends LabeledSuggestion>(app: App, items: T[], options: SuggesterOptions<T> = {}): Promise<T | null> {
+  return new Promise(resolve => {
+    const selector = new GenericSuggester(app, items, { ...options, onChoose: item => resolve(item) });
+    selector.onClose = () => queueMicrotask(() => resolve(null));
+    selector.open();
   });
 }
 
 // Inline input suggestions (used by properties, aliases, etc.)
-export class AbstractInputSuggest {
+export class AbstractInputSuggest<T = string> {
   declare app: App;
-  declare inputEl: any;
+  declare inputEl: HTMLInputElement;
   declare limit: number;
-  declare popoverEl: any;
-  declare suggestions: any[];
+  declare popoverEl: HTMLDivElement | null;
+  declare suggestions: T[];
   declare selectedIndex: number;
 
-  constructor(app: App, inputEl) {
+  constructor(app: App, inputEl: HTMLInputElement) {
     this.app = app;
     this.inputEl = inputEl;
     this.limit = 100;
@@ -409,9 +410,9 @@ export class AbstractInputSuggest {
     inputEl.addEventListener('blur', () => setTimeout(() => this.close(), 150));
     inputEl.addEventListener('keydown', (ev) => this.onKeyDown(ev));
   }
-  getSuggestions(query) { return []; }
-  renderSuggestion(value, el, query?: string): void { el.setText(String(value)); }
-  selectSuggestion(value) {}
+  getSuggestions(query: string): T[] { return []; }
+  renderSuggestion(value: T, el: HTMLElement, query?: string): void { el.setText(String(value)); }
+  selectSuggestion(value: T) {}
   update() {
     const query = this.inputEl.value;
     const results = (this.getSuggestions(query) || []).slice(0, this.limit);
@@ -425,19 +426,21 @@ export class AbstractInputSuggest {
       this.popoverEl = createDiv('suggestion-container input-suggest');
       document.body.appendChild(this.popoverEl);
     }
+    const popover = this.popoverEl;
+    if (!popover) return;
     const rect = this.inputEl.getBoundingClientRect();
     this.popoverEl.style.left = rect.left + 'px';
     this.popoverEl.style.top = (rect.bottom + 2) + 'px';
     this.popoverEl.style.minWidth = Math.max(rect.width, 180) + 'px';
     this.popoverEl.empty();
     this.suggestions.forEach((value, i) => {
-      const el = this.popoverEl.createDiv('suggestion-item');
+      const el = popover.createDiv('suggestion-item');
       el.toggleClass('is-selected', i === this.selectedIndex);
       this.renderSuggestion(value, el);
       el.onmousedown = (ev) => { ev.preventDefault(); this.pick(i); };
     });
   }
-  onKeyDown(ev) {
+  onKeyDown(ev: KeyboardEvent) {
     if (!this.popoverEl) return;
     if (ev.key === 'ArrowDown') {
       ev.preventDefault();
@@ -456,7 +459,7 @@ export class AbstractInputSuggest {
       this.close();
     }
   }
-  pick(i) {
+  pick(i: number) {
     const value = this.suggestions[i];
     this.close();
     if (value !== undefined) {

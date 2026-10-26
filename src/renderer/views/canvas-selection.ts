@@ -9,7 +9,7 @@
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 /* Canvas selection box — original V3: marquee + multi-select bounding box with resizers. */
-import { bboxOf, expandBBox } from './canvas-utils.js';
+import { bboxOf, type CanvasBBox, type CanvasPoint, type CanvasRect, expandBBox } from './canvas-utils.js';
 import { CanvasNode } from './canvas-node.js';
 import { uniqueSnapPoints, findSnapMatches } from './canvas-viewport.js';
 
@@ -18,7 +18,7 @@ const CORNER_SIDES = ['topright', 'bottomright', 'bottomleft', 'topleft'];
 const BOX_PADDING = 10;
 
 /** 原版 k3：按手柄方位把「被拖动的边」折成缩放源矩形，并给出该手柄控制的轴。 */
-export function resizeSourceFrom(side, pos, rect) {
+export function resizeSourceFrom(side: string, pos: CanvasPoint, rect: CanvasRect) {
   let source;
   let resizeX = false;
   let resizeY = false;
@@ -43,11 +43,11 @@ export function resizeSourceFrom(side, pos, rect) {
 
 export class CanvasSelectionBox {
   declare canvas: import('./canvas-view.js').CanvasView;
-  declare bbox: any;
-  declare resizerEls: any[];
-  declare selectionEl: any;
+  declare bbox: CanvasBBox;
+  declare resizerEls: HTMLDivElement[];
+  declare selectionEl: HTMLDivElement;
 
-  constructor(canvas: import('./canvas-view.js').CanvasView, extraClass?) {
+  constructor(canvas: import('./canvas-view.js').CanvasView, extraClass?: string|undefined) {
     this.canvas = canvas;
     this.bbox = { minX: 0, minY: 0, maxX: 0, maxY: 0 };
     this.resizerEls = [];
@@ -56,7 +56,7 @@ export class CanvasSelectionBox {
     for (const side of CORNER_SIDES) this.createResizer(side);
   }
 
-  createResizer(side) {
+  createResizer(side: string) {
     const el = createDiv({ cls: 'canvas-node-resizer', attr: { 'data-resize': side } });
     el.addEventListener('pointerdown', (e) => {
       if (e.target === el && e.pointerType === 'mouse') this.onResizePointerdown(e, side);
@@ -65,7 +65,7 @@ export class CanvasSelectionBox {
   }
 
   /** 定位到 bbox（外扩 10px），容器首次使用时挂到 .canvas。 */
-  update(bbox) {
+  update(bbox: CanvasBBox) {
     this.bbox = bbox;
     const boxEl = this.selectionEl;
     if (!boxEl.parentNode) this.canvas.canvasEl.appendChild(boxEl);
@@ -81,7 +81,7 @@ export class CanvasSelectionBox {
   hide() { this.selectionEl.remove(); }
 
   /** 手柄拖动：框内全部节点按相对位置等比缩放（原版 V3.onResizePointerdown）。 */
-  onResizePointerdown(e, side) {
+  onResizePointerdown(e: PointerEvent, side: string) {
     if (!e.isPrimary || e.button !== 0 || e.pointerType !== 'mouse') return;
     const canvas = this.canvas;
     e.preventDefault();
@@ -89,8 +89,8 @@ export class CanvasSelectionBox {
     const rect = { x: bbox.minX, y: bbox.minY, width: bbox.maxX - bbox.minX, height: bbox.maxY - bbox.minY };
     const targets = Array.from(canvas.selection).filter((el) => el instanceof CanvasNode);
     if (!targets.length) return;
-    const origins = [];
-    const ratios = [];
+    const origins: CanvasRect[] = [];
+    const ratios: Array<CanvasBBox & { width: number; height: number }> = [];
     for (const node of targets) {
       node.nodeEl.addClass('is-dragging');
       origins.push({ x: node.x, y: node.y, width: node.width, height: node.height });
@@ -108,7 +108,7 @@ export class CanvasSelectionBox {
     const minWidth = canvas.config.minContainerDimension / Math.min(...ratios.map((r) => r.width));
     const minHeight = canvas.config.minContainerDimension / Math.min(...ratios.map((r) => r.height));
     canvas.handleDragWithPan(e, {
-      move: (ev) => {
+      move: (ev: PointerEvent) => {
         const pos = canvas.posFromEvt(ev);
         canvas.clearSnapPoints();
         let offsetX = 0;

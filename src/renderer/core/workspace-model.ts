@@ -9,6 +9,11 @@
  * 模型不导入 Workspace，确保构造器身份唯一。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
+import type { DropZone } from './workspace-types.js';
+import type { Workspace } from './workspace.js';
+import type { View } from './view.js';
+import type { ViewState } from '../../contracts.js';
+import type { WorkspaceLayoutNode } from './workspace-layout.js';
 import { setIcon } from './icons.js';
 import { t } from './i18n.js';
 import { Menu } from './menu.js';
@@ -16,12 +21,12 @@ import { Menu } from './menu.js';
 function genId() { return Math.random().toString(16).slice(2, 10) + Math.random().toString(16).slice(2, 10); }
 
 export class WorkspaceItem {
-  declare workspace: any;
-  declare app: App;
-  declare parent: any;
-  declare id: any;
+  workspace: Workspace;
+  app: App;
+  parent: WorkspaceSplit | WorkspaceTabs | null;
+  id: string;
 
-  constructor(workspace) {
+  constructor(workspace: Workspace) {
     this.workspace = workspace;
     this.app = workspace.app;
     this.parent = null;
@@ -30,16 +35,18 @@ export class WorkspaceItem {
 }
 
 export class WorkspaceSplit extends WorkspaceItem {
-  declare dimension: number;
+  declare parent: WorkspaceSplit | null;
+  dimension: number | undefined;
 
-  declare direction: any;
-  declare children: any[];
-  declare size: any;
-  declare side: any;
+  direction: 'vertical' | 'horizontal';
+  children: WorkspaceNode[];
+  size: number | null;
+  side: 'left' | 'right' | 'center' | null;
   declare collapsed: boolean;
-  declare containerEl: any;
+  isRoot = false;
+  containerEl: HTMLElement | null;
 
-  constructor(workspace, direction) {
+  constructor(workspace: Workspace, direction: 'vertical' | 'horizontal') {
     super(workspace);
     this.direction = direction; // 'vertical' (children side by side) | 'horizontal' (rows)
     this.children = [];
@@ -48,11 +55,11 @@ export class WorkspaceSplit extends WorkspaceItem {
     this.collapsed = false;
     this.containerEl = null;
   }
-  insertChild(index, child) {
+  insertChild(index: number, child: WorkspaceNode) {
     child.parent = this;
     this.children.splice(index, 0, child);
   }
-  removeChild(child) {
+  removeChild(child: WorkspaceNode) {
     const i = this.children.indexOf(child);
     if (i >= 0) this.children.splice(i, 1);
     child.parent = null;
@@ -60,16 +67,20 @@ export class WorkspaceSplit extends WorkspaceItem {
 }
 
 export class WorkspaceTabs extends WorkspaceItem {
-  declare dimension: number;
+  declare parent: WorkspaceSplit | null;
+  dimension: number | undefined;
 
-  declare children: any[];
+  children: WorkspaceLeaf[];
   declare currentTab: number;
-  declare containerEl: any;
-  declare _headersInner: any;
-  declare _tabContainerEl: any;
+  containerEl: HTMLElement | null;
+  _headersInner: HTMLElement | null;
+  _tabContainerEl: HTMLElement | null;
   declare isStacked: boolean;
+  _headersOuter: HTMLElement | null = null;
+  _slidingObserver: ResizeObserver | null = null;
+  _animatedLeaves: Set<WorkspaceLeaf> | undefined;
 
-  constructor(workspace) {
+  constructor(workspace: Workspace) {
     super(workspace);
     this.children = [];
     this.currentTab = 0;
@@ -79,7 +90,7 @@ export class WorkspaceTabs extends WorkspaceItem {
     this.isStacked = false;        // 原版 VD.isStacked，序列化键 stacked
   }
   get activeLeaf() { return this.children[this.currentTab] || null; }
-  addLeaf(leaf, index?, active = true) {
+  addLeaf(leaf: WorkspaceLeaf, index?: number | null, active = true) {
     const selected = this.activeLeaf;
     leaf.parent = this;
     if (index === undefined || index === null || index < 0 || index > this.children.length) this.children.push(leaf);
@@ -87,7 +98,7 @@ export class WorkspaceTabs extends WorkspaceItem {
     // 后台插入按叶子身份保留当前项，不能保留会随插入漂移的数字索引。
     this.currentTab = this.children.indexOf(active || !selected ? leaf : selected);
   }
-  removeLeaf(leaf) {
+  removeLeaf(leaf: WorkspaceLeaf) {
     const i = this.children.indexOf(leaf);
     if (i >= 0) this.children.splice(i, 1);
     leaf.parent = null;
@@ -99,7 +110,7 @@ export class WorkspaceTabs extends WorkspaceItem {
    * 原版 VD.setStacked：切换 mod-stacked，刷新标签显示，并请求布局保存。
    * 未渲染（反序列化、装载中）时只记状态；容器类由 renderer 建时按状态落上。
    */
-  setStacked(stacked) {
+  setStacked(stacked: boolean) {
     stacked = !!stacked;
     if (this.isStacked === stacked) return;
     this.isStacked = stacked;
@@ -119,7 +130,7 @@ export class WorkspaceTabs extends WorkspaceItem {
     const container = this._tabContainerEl;
     if (!container) return;
     const inner = this._headersInner;
-    const bindDrag = (leaf) => {
+    const bindDrag = (leaf: WorkspaceLeaf) => {
       const header = leaf._tabHeaderEl;
       const host = header && header.parentElement;
       if (!header || !host) return;
@@ -152,8 +163,8 @@ export class WorkspaceTabs extends WorkspaceItem {
   syncHeaderOrder() {
     const inner = this._headersInner;
     if (!inner || this.isStacked) return;
-    const current = Array.from<HTMLElement>(inner.children).filter((el) => el._leaf);
-    const desired = this.children.map((leaf) => leaf._tabHeaderEl).filter(Boolean);
+    const current = Array.from(inner.children).filter((el) => el._leaf);
+    const desired = this.children.map((leaf) => leaf._tabHeaderEl).filter((header) => header !== null);
     if (current.length === desired.length && current.every((el, i) => el === desired[i])) return;
     for (const header of desired) if (header.parentElement === inner) inner.appendChild(header);
   }
@@ -214,7 +225,7 @@ export class WorkspaceTabs extends WorkspaceItem {
   }
 
   /** 原版 VD.scrollIntoView：横向滚动，使指定标签的头与 pane 完整进入视口。 */
-  scrollIntoView(index) {
+  scrollIntoView(index: number) {
     const container = this._tabContainerEl;
     const leaf = this.children[index];
     if (!container || !leaf || typeof container.scrollTo !== 'function') return;
@@ -241,7 +252,7 @@ export class WorkspaceTabs extends WorkspaceItem {
    * 原版 VD 的标签列表菜单：action（堆叠/取消堆叠）→ close（全部关闭）→ tablist（每个标签）。
    * 原版把该菜单建在 Tabs 类内部，本实现同层放置；侧栏组不提供文档标签菜单。
    */
-  showTabListMenu(ev, parentEl) {
+  showTabListMenu(ev: MouseEvent, parentEl: HTMLElement) {
     if (!this.workspace._sideOf || this.workspace._sideOf(this) !== 'center') return;
     const menu = new Menu(this.workspace.app);
     // 原版 VD 的分节表：action（堆叠/取消堆叠）→ close（全部关闭）→ tablist（每个标签）
@@ -278,38 +289,54 @@ export class WorkspaceTabs extends WorkspaceItem {
  * （该文件本批不改），因此模型在挂载时补一层装饰器：只读写 tabs 节点的 stacked 键。
  * 序列化/反序列化的递归经实例属性回到装饰后的版本，整棵树的键一致。
  */
-export function installStackedSerialization(workspace) {
+export function installStackedSerialization(workspace: Workspace) {
   if (workspace._stackedSerialization) return;
   workspace._stackedSerialization = true;
   const serializeNode = workspace.serializeNode.bind(workspace);
-  workspace.serializeNode = (node) => {
+  workspace.serializeNode = ((node: WorkspaceNode) => {
     const data = serializeNode(node);
-    if (data && data.type === 'tabs' && node.isStacked) data.stacked = true;
+    if (data && data.type === 'tabs' && node instanceof WorkspaceTabs && node.isStacked) data.stacked = true;
     return data;
-  };
+  }) as typeof workspace.serializeNode;
   const deserializeNode = workspace.deserializeNode.bind(workspace);
   workspace.deserializeNode = async (data) => {
     const node = await deserializeNode(data);
-    if (node instanceof WorkspaceTabs && data && data.stacked) node.setStacked(true);
+    if (node instanceof WorkspaceTabs && data?.type === 'tabs' && data.stacked) node.setStacked(true);
     return node;
   };
 }
 
 export class WorkspaceLeaf extends WorkspaceItem {
-  declare _tabHeaderEl: HTMLElement;
-  declare dimension: number;
-  declare _pendingState: Record<string, unknown>;
+  _viewNavBackEl?: HTMLElement;
+  _viewNavForwardEl?: HTMLElement;
+  _viewTitleParentEl?: HTMLElement;
+  _updateTitleFade?: () => void;
+  declare parent: WorkspaceTabs | WorkspaceSplit | null;
+  _tabHeaderEl: HTMLElement | null = null;
+  _leafEl: HTMLElement | null = null;
+  _dragHost: HTMLElement | null = null;
+  _headersOuter?: HTMLElement;
+  _viewHeaderEl?: HTMLElement;
+  _viewActionsEl?: HTMLElement;
+  _viewTitleEl?: HTMLElement;
+  _resizeObserver: ResizeObserver | null = null;
+  _resizePending = false;
+  _detachPending: Promise<boolean> | null = null;
+  pinned = false;
+  _dropZone: DropZone | undefined;
+  dimension: number | undefined;
+  _pendingState: ViewState | null = null;
 
-  declare view: any;
-  declare viewState: any;
-  declare containerEl: any;
-  declare contentEl: any;
+  view: View | null;
+  viewState: ViewState | null;
+  containerEl: HTMLElement | null;
+  contentEl: HTMLElement | null;
   declare width: number;
   declare height: number;
   declare activeTime: number;
   declare _closed: boolean;
 
-  constructor(workspace) {
+  constructor(workspace: Workspace) {
     super(workspace);
     this.view = null;
     this.viewState = null;
@@ -322,7 +349,7 @@ export class WorkspaceLeaf extends WorkspaceItem {
   }
   get active() { return this.workspace.activeLeaf === this; }
 
-  async setViewState(state, eState?) {
+  async setViewState(state: ViewState, eState?: Record<string, unknown>) {
     if (!state || !state.type) return;
     const prev = this.view;
     const sameType = prev && prev.getViewType() === state.type;
@@ -388,6 +415,8 @@ export class WorkspaceLeaf extends WorkspaceItem {
   detach() { return this.workspace.detachLeaf(this); }
 
   getEphemeralState() { return this.view ? this.view.getEphemeralState() : {}; }
-  setEphemeralState(state) { this.view && this.view.setEphemeralState(state); }
+  setEphemeralState(state: Record<string, unknown>) { this.view && this.view.setEphemeralState(state); }
   open() { return this.setViewState({ type: 'empty' }); }
 }
+
+export type WorkspaceNode = WorkspaceSplit | WorkspaceTabs | WorkspaceLeaf;

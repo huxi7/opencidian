@@ -1,19 +1,25 @@
 /**
  * [INPUT]: keymap 提供平台 Mod 判定；依赖 node 内置 fs/path（探测 .obsidian/bookmarks.json 是否存在）；依赖 ../core/events.js 的 Events；依赖 ../core/i18n.js 的 t；依赖 ../core/icons.js 的 setIcon；依赖 ../core/notices.js 的 Notice；依赖 ../core/vault.js 的 TFolder；依赖 ../views/bookmarks-view.js 的 BookmarksView
  * [OUTPUT]: 导出 nameKey、create(app)（插件实例：items/hasValidData/getItemTitle/openItem/removeItem/renameItem/createGroup/addItem/bookmarkCurrentView/on('changed')），注册 'bookmarks' 视图与 5 条命令（open/bookmark-current-view/unbookmark-current-view/bookmark-current-search/bookmark-current-heading）
- * [POS]: 文件与全局关系图可收藏。graph 选项深复制为快照，打开经真实视图注册表恢复。目录改名同步子路径。
+ * [POS]: changed 事件不带载荷。文件与全局关系图可收藏。graph 选项深复制为快照，打开经真实视图注册表恢复。目录改名同步子路径。
  * 数据存 bookmarks.json，缺失时迁移 starred.json。视图只渲染；文件书签带 subpath 打开；头部动作经 mod-bookmark 显隐。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 /* Core plugin: bookmarks — bookmark files, folders, searches and groups. */
-import { Events } from '../core/events.js';
+import { Events, type EventRef } from '../core/events.js';
 import { t } from '../core/i18n.js';
 import { setIcon } from '../core/icons.js';
 import { Notice } from '../core/notices.js';
-import { TFolder } from '../core/vault.js';
+import { TFolder, VaultEntry } from '../core/vault.js';
 import { BookmarksView } from '../views/bookmarks-view.js';
 import { writeGraphOptions } from './graph-options.js';
 import { IS_MAC } from '../core/keymap.js';
+import { WorkspaceLeaf } from '../core/workspace-model.js';
+import { View } from '../core/view.js';
+import { ActiveEditorHost, Command,CommandDefinition } from '../core/commands.js';
+import { GraphView } from '../views/graph-view.js';
+import { SearchView } from './global-search.js';
+import { Editor } from '../editor/editor.js';
 
 /* 渲染进程 nodeIntegration:true；同步探测数据文件存在性，区分"缺失"与"损坏"。 */
 const fs = require('fs');
@@ -26,6 +32,15 @@ const LEGACY_FILE = 'starred.json';
 
 /* 父项链用 Symbol 挂在项上（原版 IJ），JSON 序列化自动忽略。 */
 const PARENT = Symbol('parent');
+interface BookmarkBase { title?: string; ctime?: number; id?: string; [PARENT]?: Extract<BookmarkItem, { type: 'group' }> | null; }
+export type BookmarkItem = BookmarkBase & (
+  | { type: 'file'; path: string; subpath?: string }
+  | { type: 'folder'; path: string }
+  | { type: 'search'; query: string }
+  | { type: 'url'; url: string }
+  | { type: 'graph'; options?: Record<string, unknown> }
+  | { type: 'group'; items: BookmarkItem[] }
+);
 
 function untitledGroup() {
   return t('plugins.bookmarks.label-untitled-group') || 'Untitled group';
@@ -34,14 +49,14 @@ function untitledGroup() {
 /* --------------------------------------------------------------------------
  * BookmarksPlugin — 插件实例（core/plugins.js 直接调用其 onload/onunload）
  * ------------------------------------------------------------------------ */
-class BookmarksPlugin extends Events {
+class BookmarksPlugin extends Events<{ changed: [] }> {
   declare app: App;
-  declare items: any[];
+  declare items: BookmarkItem[];
   declare hasValidData: boolean;
   declare _dataFileExists: boolean;
-  declare bookmarkLookup: any;
-  declare _refs: any[];
-  declare _commandIds: any[];
+  declare bookmarkLookup: Record<string, Extract<BookmarkItem, { type: 'file' | 'folder' }>>;
+  declare _refs: EventRef[];
+  declare _commandIds: string[];
 
   constructor(app: App) {
     super();
@@ -123,7 +138,7 @@ class BookmarksPlugin extends Events {
     this._onItemsChanged(true);
   }
 
-  _setParents(items, parent) {
+  _setParents(items: BookmarkItem[], parent: Extract<BookmarkItem, { type: 'group' }> | null) {
     for (const item of items) {
       item[PARENT] = parent;
       if (item.type === 'group' && Array.isArray(item.items)) this._setParents(item.items, item);
@@ -133,7 +148,7 @@ class BookmarksPlugin extends Events {
   /** 只索引 folder 与无 subpath 的 file（原版 rebuildBookmarkCache）。 */
   rebuildLookup() {
     this.bookmarkLookup = {};
-    const walk = (items) => {
+    const walk = (items: BookmarkItem[]): void => {
       for (const item of items) {
         if (item.type === 'folder' || (item.type === 'file' && !item.subpath)) this.bookmarkLookup[item.path] = item;
         if (item.type === 'group' && Array.isArray(item.items)) walk(item.items);
@@ -146,7 +161,7 @@ class BookmarksPlugin extends Events {
     this.app.settings.savePluginData(DATA_FILE, { items: this.items });
   }
 
-  _onItemsChanged(save) {
+  _onItemsChanged(save: boolean) {
     this.trigger('changed');
     this.rebuildLookup();
     this.updateViewActions();
@@ -154,7 +169,7 @@ class BookmarksPlugin extends Events {
   }
 
   /* ---------------------------------------------------------------- 增删改查 */
-  addItem(item, parent) {
+  addItem(item: BookmarkItem, parent: Extract<BookmarkItem, { type: 'group' }> | null = null) {
     item[PARENT] = parent || null;
     if (parent) {
       if (!Array.isArray(parent.items)) parent.items = [];
@@ -166,7 +181,9 @@ class BookmarksPlugin extends Events {
     return item;
   }
 
-  removeItem(item) {
+  getParentItem(item: BookmarkItem): Extract<BookmarkItem, { type: 'group' }> | null { return item[PARENT] || null; }
+
+  removeItem(item: BookmarkItem) {
     const parent = item[PARENT];
     const list = parent ? parent.items || [] : this.items;
     const index = list.indexOf(item);
@@ -174,19 +191,19 @@ class BookmarksPlugin extends Events {
     this._onItemsChanged(true);
   }
 
-  renameItem(item, title) {
+  renameItem(item: BookmarkItem, title: string) {
     item.title = title;
     this._onItemsChanged(true);
   }
 
-  createGroup(parentItem) {
-    const group = { type: 'group', ctime: Date.now(), items: [], title: untitledGroup() };
+  createGroup(parentItem?: Extract<BookmarkItem, { type: 'group' }> | null) {
+    const group: Extract<BookmarkItem, { type: 'group' }> = { type: 'group', ctime: Date.now(), items: [], title: untitledGroup() };
     this.addItem(group, parentItem || null);
     return group;
   }
 
   /** 项显示名：自定义 title 优先；file/folder 取 vault 内名字；search 取 query。 */
-  getItemTitle(item) {
+  getItemTitle(item: BookmarkItem | null | undefined) {
     if (!item) return '';
     if (item.title) return item.title;
     if (item.type === 'file' && item.subpath) return this._fileTitle(item.path) + item.subpath;
@@ -202,12 +219,12 @@ class BookmarksPlugin extends Events {
     return '';
   }
 
-  _fileTitle(path) {
+  _fileTitle(path: string) {
     const name = String(path || '').split('/').pop() || '';
     return name.replace(/\.md$/i, '');
   }
 
-  _walkItems(callback, items = this.items) {
+  _walkItems(callback: (item: BookmarkItem) => boolean | void, items: BookmarkItem[] = this.items): boolean {
     for (const item of items || []) {
       if (callback(item) === false) return false;
       if (item.type === 'group' && this._walkItems(callback, item.items) === false) return false;
@@ -215,8 +232,8 @@ class BookmarksPlugin extends Events {
     return true;
   }
 
-  _findFileItem(path, subpath) {
-    let found = null;
+  _findFileItem(path: string, subpath: string) {
+    let found: BookmarkItem | null = null;
     this._walkItems((item) => {
       if (item.type === 'file' && item.path === path && (item.subpath || '') === (subpath || '')) { found = item; return false; }
       return true;
@@ -224,8 +241,8 @@ class BookmarksPlugin extends Events {
     return found;
   }
 
-  _findSearchItem(query) {
-    let found = null;
+  _findSearchItem(query: string) {
+    let found: BookmarkItem | null = null;
     this._walkItems((item) => {
       if (item.type === 'search' && item.query === query) { found = item; return false; }
       return true;
@@ -234,7 +251,7 @@ class BookmarksPlugin extends Events {
   }
 
   /* ---------------------------------------------------------------- 打开 */
-  async openItem(item, event) {
+  async openItem(item: BookmarkItem, event?: Pick<MouseEvent, 'button' | 'metaKey' | 'ctrlKey'>) {
     if (!item) return;
     const newTab = event?.button === 1 || !!(IS_MAC ? event?.metaKey : event?.ctrlKey);
     if (item.type === 'file') {
@@ -245,7 +262,7 @@ class BookmarksPlugin extends Events {
       if (!this.app.plugins.getInternalPlugin('graph')?.enabled) return;
       const leaf = this.app.workspace.getLeaf(newTab ? 'tab' : false);
       if (await leaf.setViewState({ type: 'graph', state: {} }) === false) return;
-      if (!leaf.view?.dataEngine) return;
+      if (!(leaf.view instanceof GraphView) || !leaf.view.dataEngine) return;
       const options = JSON.parse(JSON.stringify(item.options || {}));
       leaf.view.dataEngine.setOptions(options);
       writeGraphOptions(this.app, leaf.view.dataEngine.getOptions());
@@ -259,7 +276,7 @@ class BookmarksPlugin extends Events {
     }
   }
 
-  _revealFolder(path) {
+  _revealFolder(path: string) {
     const folder = this.app.vault.getAbstractFileByPath(path);
     if (!folder) return;
     const leaf = this.app.workspace.getLeavesOfType('file-explorer')[0];
@@ -269,11 +286,11 @@ class BookmarksPlugin extends Events {
     }
   }
 
-  _openSearch(query) {
+  _openSearch(query: string) {
     const existing = this.app.workspace.getLeavesOfType('search')[0];
-    const open = (leaf) => {
+    const open = (leaf: WorkspaceLeaf) => {
       this.app.workspace.revealLeaf(leaf);
-      if (leaf.view && leaf.view.setQuery) leaf.view.setQuery(query);
+      if (leaf.view instanceof SearchView) leaf.view.setQuery(query);
     };
     if (existing) open(existing);
     else this.app.workspace.ensureSideLeaf('search', 'left', { state: { query } }).then(open);
@@ -288,23 +305,23 @@ class BookmarksPlugin extends Events {
     return this.app.workspace.activeLeaf ? this.app.workspace.activeLeaf.view : null;
   }
 
-  _getSearchQuery(view?) {
+  _getSearchQuery(view?: View | null) {
     let target = view;
     if (!target) {
       const leaf = this.app.workspace.getLeavesOfType('search')[0];
       target = leaf && leaf.view;
     }
     if (!target) return '';
-    const query = target._query !== undefined ? target._query : (target.getState ? (target.getState() || {}).query : '');
-    return (query || '').trim();
+    const query = target instanceof SearchView ? target._query : target.getState().query;
+    return typeof query === 'string' ? query.trim() : '';
   }
 
   /** 视图 → 可收藏项（原版 R2 的 markdown/search 分支）。 */
-  _bookmarkableItemForView(view) {
+  _bookmarkableItemForView(view: View|null|undefined): BookmarkItem | null {
     if (!view || !view.getViewType) return null;
     const type = view.getViewType();
     if (view.file) return { type: 'file', ctime: Date.now(), path: view.file.path };
-    if (type === 'graph' && view.dataEngine) return {
+    if (view instanceof GraphView && view.dataEngine) return {
       type: 'graph', ctime: Date.now(), title: t('plugins.bookmarks.label-untitled-graph'),
       options: JSON.parse(JSON.stringify(view.dataEngine.getOptions())),
     };
@@ -315,7 +332,7 @@ class BookmarksPlugin extends Events {
     return null;
   }
 
-  _findExistingItem(item) {
+  _findExistingItem(item: BookmarkItem) {
     if (item.type === 'file') return this._findFileItem(item.path, item.subpath || '');
     if (item.type === 'search') return this._findSearchItem(item.query);
     if (item.type === 'folder') return this.bookmarkLookup[item.path] || null;
@@ -326,7 +343,7 @@ class BookmarksPlugin extends Events {
    * 收藏/取消收藏当前视图（切换语义）。返回 false 表示当前视图无法收藏。
    * 书签面板 "+" 按钮、视图头部图标与 bookmarks:bookmark-current-view 命令共用。
    */
-  bookmarkCurrentView(view?) {
+  bookmarkCurrentView(view?: View|null|undefined) {
     const target = view || this._activeView();
     const item = this._bookmarkableItemForView(target);
     if (!item) return false;
@@ -337,7 +354,7 @@ class BookmarksPlugin extends Events {
   }
 
   /** 收藏光标所在章节（原版 WA 语义：光标行之前最近的标题）。 */
-  bookmarkHeading(editor, view) {
+  bookmarkHeading(editor: Editor, view: ActiveEditorHost) {
     const file = view && view.file;
     if (!file || !editor) return false;
     const cache = this.app.metadataCache.getFileCache(file);
@@ -351,7 +368,7 @@ class BookmarksPlugin extends Events {
     if (!heading) return false;
     const subpath = '#' + heading.heading;
     if (this._findFileItem(file.path, subpath)) return true;
-    const item: { type: string; ctime: number; path: string; subpath: string; title?: string } = { type: 'file', ctime: Date.now(), path: file.path, subpath };
+    const item: Extract<BookmarkItem, { type: 'file' }> = { type: 'file', ctime: Date.now(), path: file.path, subpath };
     if (editor.somethingSelected && editor.somethingSelected()) {
       /* 本复刻 editor.getSelection() 返回 {anchor,head}，文本须经 getRange 取。 */
       item.title = editor.getRange(editor.getCursor('from'), editor.getCursor('to')).trim();
@@ -362,7 +379,7 @@ class BookmarksPlugin extends Events {
 
   /* ---------------------------------------------------------------- 命令 */
   _registerCommands() {
-    const add = (command) => {
+    const add = (command: Command|CommandDefinition) => {
       this.app.commands.addCommand(command);
       this._commandIds.push(command.id);
     };
@@ -389,7 +406,7 @@ class BookmarksPlugin extends Events {
       icon: 'lucide-bookmark-minus',
       checkCallback: (checking) => {
         const view = this._activeView();
-        const existing = view && view.getViewType && view.file
+        const existing = view && view.file
           ? this.bookmarkLookup[view.file.path]
           : null;
         if (!existing) return false;
@@ -433,8 +450,8 @@ class BookmarksPlugin extends Events {
       const actions = leaf._viewActionsEl;
       if (!actions) return;
       const view = leaf.view;
-      const bookmarkable = view && view.getViewType && view.file;
-      let btn = actions.querySelector('.view-action.mod-bookmark');
+      const bookmarkable = view && view.file;
+      let btn = actions.querySelector<HTMLElement>('.view-action.mod-bookmark');
       if (!bookmarkable) {
         if (btn) btn.detach();
         return;
@@ -446,7 +463,7 @@ class BookmarksPlugin extends Events {
         btn.addEventListener('mousedown', (ev) => ev.preventDefault());
         btn.onclick = () => this.bookmarkCurrentView(view);
       }
-      const bookmarked = !!this.bookmarkLookup[view.file.path];
+      const bookmarked = !!(view?.file && this.bookmarkLookup[view.file.path]);
       btn.toggleClass(['mod-bookmarked', 'mod-filled'], bookmarked);
       btn.setAttr('aria-label', bookmarked
         ? (t('plugins.bookmarks.label-bookmarked') || 'Bookmarked')
@@ -458,13 +475,13 @@ class BookmarksPlugin extends Events {
     this.app.workspace.iterateAllLeaves((leaf) => {
       const actions = leaf._viewActionsEl;
       if (!actions) return;
-      const btn = actions.querySelector('.view-action.mod-bookmark');
+      const btn = actions.querySelector<HTMLElement>('.view-action.mod-bookmark');
       if (btn) btn.detach();
     });
   }
 
   /* ---------------------------------------------------------------- 重命名 */
-  _onFileRename(file, oldPath) {
+  _onFileRename(file: VaultEntry, oldPath: string) {
     let changed = false;
     this._walkItems((item) => {
       if ((item.type === 'file' || item.type === 'folder') &&

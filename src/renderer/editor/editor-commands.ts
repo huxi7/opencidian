@@ -6,6 +6,7 @@
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 /* Built-in editor / markdown commands (ported behaviors from the original). */
+import type { EditorPosition } from './editor.js';
 import { t } from '../core/i18n.js';
 import { Notice } from '../core/notices.js';
 import { Desktop } from '../core/ipc.js';
@@ -13,6 +14,10 @@ import { saveAttachment, pastedImageBaseName } from './attachments.js';
 import { foldAll, unfoldAll } from '@codemirror/language';
 import { moveLineUp, moveLineDown } from '@codemirror/commands';
 import { foldSelectionStep } from './folding.js';
+import { Command,CommandDefinition } from '../core/commands.js';
+import { EditorState,Transaction } from '@codemirror/state';
+import { EditorView } from '@codemirror/view';
+import { Editor } from './editor.js';
 
 /** 编辑器解析入口：workspace.activeEditor 优先（画布卡片正文可被 editor:* 命令作用）。 */
 function getEditor(app: App) {
@@ -23,7 +28,7 @@ function getEditor(app: App) {
   return active.editor;
 }
 
-function wrap(editor, before, after = before) {
+function wrap(editor: Editor, before: string, after = before) {
   const sel = editor.listSelections();
   if (!sel.length) return;
   const changes = [];
@@ -44,15 +49,15 @@ function wrap(editor, before, after = before) {
   applyMultiChanges(editor, changes);
 }
 
-function applyMultiChanges(editor, changes) {
+function applyMultiChanges(editor: Editor, changes: Array<{ from: EditorPosition; to: EditorPosition; text: string }>) {
   // apply from bottom to top so earlier offsets stay valid
   const cm = editor.cm;
   const specs = changes.map((c) => ({ from: editor.posToOffset(c.from), to: editor.posToOffset(c.to), insert: c.text }))
-    .sort((a, b) => b.from - a.from);
+    .sort((a: { from: number; }, b: { from: number; }) => b.from - a.from);
   cm.dispatch({ changes: specs });
 }
 
-function unwrapIfWrapped(editor, marker) {
+function unwrapIfWrapped(editor: Editor, marker: string) {
   const sel = editor.listSelections();
   let rewrote = false;
   const changes = [];
@@ -71,14 +76,14 @@ function unwrapIfWrapped(editor, marker) {
   return false;
 }
 
-function toggleWrapCommand(before, after) {
-  return (editor) => {
+function toggleWrapCommand(before: string, after: string) {
+  return (editor: Editor) => {
     const marker = before;
     if (!unwrapIfWrapped(editor, marker)) wrap(editor, before, after);
   };
 }
 
-function eachLine(editor, fn) {
+function eachLine(editor: Editor, fn: (line: string, number: number) => string | null | undefined) {
   const ranges = editor.listSelections();
   const seen = new Set();
   const changes = [];
@@ -94,12 +99,12 @@ function eachLine(editor, fn) {
 }
 
 export function registerEditorCommands(app: App) {
-  const add = (spec) => app.commands.addCommand(spec);
+  const add = (spec: Command|CommandDefinition) => app.commands.addCommand(spec);
 
-  const editorCmd = (id, name, cb) => add({ id, name, editorCallback: (editor) => cb(editor) });
-  const editorCheckCmd = (id, name, cb) => add({ id, name, editorCheckCallback: (checking, editor) => { if (checking) return true; cb(editor); } });
+  const editorCmd = (id: string, name: string, cb: (editor: Editor) => unknown) => add({ id, name, editorCallback: (editor: Editor) => cb(editor) });
+  const editorCheckCmd = (id: string, name: string, cb: (arg0: Editor) => void) => add({ id, name, editorCheckCallback: (checking, editor) => { if (checking) return true; cb(editor); } });
 
-  editorCmd('editor:save-file', 'Save current file', (editor) => {
+  editorCmd('editor:save-file', 'Save current file', (editor: Editor) => {
     const view = app.workspace.activeLeaf && app.workspace.activeLeaf.view;
     if (view && view.save) view.save();
   });
@@ -114,14 +119,14 @@ export function registerEditorCommands(app: App) {
     },
   });
 
-  editorCmd('editor:undo', 'Undo', (e) => e.undo());
-  editorCmd('editor:redo', 'Redo', (e) => e.redo());
-  editorCmd('editor:select-all', 'Select all', (e) => e.setSelection({ line: 0, ch: 0 }, { line: e.lastLine(), ch: e.getLine(e.lastLine()).length }));
+  editorCmd('editor:undo', 'Undo', (e: Editor) => e.undo());
+  editorCmd('editor:redo', 'Redo', (e: Editor) => e.redo());
+  editorCmd('editor:select-all', 'Select all', (e: Editor) => e.setSelection({ line: 0, ch: 0 }, { line: e.lastLine(), ch: e.getLine(e.lastLine()).length }));
   /* 系统剪贴板：渲染层有 nodeIntegration，优先用 Electron clipboard（菜单点击后编辑器失焦，execCommand 会空转） */
   const sysClipboard = () => {
     try { const cb = require('electron').clipboard; return cb && cb.readText ? cb : null; } catch (e) { return null; }
   };
-  editorCmd('editor:copy', 'Copy', (e) => {
+  editorCmd('editor:copy', 'Copy', (e: Editor) => {
     const text = e.getRange(e.getCursor('from'), e.getCursor('to'));
     if (!text) return;
     const cb = sysClipboard();
@@ -150,7 +155,7 @@ export function registerEditorCommands(app: App) {
       if (e && text) e.replaceSelection(text);
     } catch (err) {}
   });
-  editorCmd('editor:cut', 'Cut', async (e) => {
+  editorCmd('editor:cut', 'Cut', async (e: Editor) => {
     if (!e) return;
     const text = e.getRange(e.getCursor('from'), e.getCursor('to'));
     const cb = sysClipboard();
@@ -167,8 +172,8 @@ export function registerEditorCommands(app: App) {
   editorCmd('editor:toggle-comments', 'Toggle comment', toggleWrapCommand('%%', '%%'));
   editorCmd('editor:toggle-inline-math', 'Toggle inline math', toggleWrapCommand('$', '$'));
 
-  editorCmd('editor:toggle-checklist-status', 'Toggle checklist status', (editor) => {
-    eachLine(editor, (line) => {
+  editorCmd('editor:toggle-checklist-status', 'Toggle checklist status', (editor: Editor) => {
+    eachLine(editor, (line: string) => {
       const m = line.match(/^(\s*(?:[-*+]|\d+[.)])\s+)\[([ xX])\]/);
       if (!m) return null;
       const next = m[2].toLowerCase() === 'x' ? '[ ]' : '[x]';
@@ -176,34 +181,34 @@ export function registerEditorCommands(app: App) {
     });
   });
 
-  editorCmd('editor:toggle-bullet-list', 'Toggle bullet list', (editor) => {
+  editorCmd('editor:toggle-bullet-list', 'Toggle bullet list', (editor: Editor) => {
     eachLine(editor, (line) => {
       const m = line.match(/^(\s*)([-*+]|\d+[.)])\s+/);
       if (m) return line.slice(m[0].length);
-      const indent = line.match(/^\s*/)[0];
+      const indent = line.match(/^\s*/)?.[0] || '';
       return indent + '- ' + line.slice(indent.length);
     });
   });
-  editorCmd('editor:toggle-numbered-list', 'Toggle numbered list', (editor) => {
+  editorCmd('editor:toggle-numbered-list', 'Toggle numbered list', (editor: Editor) => {
     eachLine(editor, (line) => {
       const m = line.match(/^(\s*)([-*+]|\d+[.)])\s+/);
       if (m) return line.slice(m[0].length);
-      const indent = line.match(/^\s*/)[0];
+      const indent = line.match(/^\s*/)?.[0] || '';
       return indent + '1. ' + line.slice(indent.length);
     });
   });
-  editorCmd('editor:cycle-list-checklist', 'Cycle bullet/checkbox', (editor) => {
+  editorCmd('editor:cycle-list-checklist', 'Cycle bullet/checkbox', (editor: Editor) => {
     eachLine(editor, (line) => {
       let m = line.match(/^(\s*)[-*+]\s+\[[ xX]\]\s+/);
       if (m) return m[1] + '- ' + line.slice(m[0].length);
       m = line.match(/^(\s*)[-*+]\s+/);
       if (m) return m[1] + '- [ ] ' + line.slice(m[0].length);
-      const indent = line.match(/^\s*/)[0];
+      const indent = line.match(/^\s*/)?.[0] || '';
       return indent + '- ' + line.slice(indent.length);
     });
   });
 
-  editorCmd('editor:insert-link', 'Insert markdown link', (editor) => {
+  editorCmd('editor:insert-link', 'Insert markdown link', (editor: Editor) => {
     const sel = editor.getSelection();
     const text = editor.getRange(sel.anchor, sel.head);
     if (sel.anchor.line === sel.head.line && sel.anchor.ch === sel.head.ch) editor.replaceSelection('[[]]');
@@ -213,65 +218,65 @@ export function registerEditorCommands(app: App) {
       editor.setCursor({ line: editor.getCursor().line, ch: ch - 2 });
     }
   });
-  editorCmd('editor:insert-wikilink', 'Insert link', (editor) => {
+  editorCmd('editor:insert-wikilink', 'Insert link', (editor: Editor) => {
     editor.replaceSelection('[[]]');
     const c = editor.getCursor();
     editor.setCursor({ line: c.line, ch: c.ch - 2 });
   });
-  editorCmd('editor:insert-embed', 'Insert embed', (editor) => {
+  editorCmd('editor:insert-embed', 'Insert embed', (editor: Editor) => {
     editor.replaceSelection('![[]]');
     const c = editor.getCursor();
     editor.setCursor({ line: c.line, ch: c.ch - 2 });
   });
-  editorCmd('editor:insert-tag', 'Insert tag', (editor) => { editor.replaceSelection('#'); });
+  editorCmd('editor:insert-tag', 'Insert tag', (editor: { replaceSelection: (arg0: string) => void; }) => { editor.replaceSelection('#'); });
 
-  editorCmd('editor:insert-callout', 'Insert callout', (editor) => {
+  editorCmd('editor:insert-callout', 'Insert callout', (editor: { replaceSelection: (arg0: string) => void; }) => {
     editor.replaceSelection('> [!note]\n> ');
   });
-  editorCmd('editor:insert-codeblock', 'Insert code block', (editor) => {
+  editorCmd('editor:insert-codeblock', 'Insert code block', (editor: Editor) => {
     editor.replaceSelection('```\n\n```');
     const c = editor.getCursor();
     editor.setCursor({ line: c.line - 1, ch: 0 });
   });
-  editorCmd('editor:insert-mathblock', 'Insert math block', (editor) => {
+  editorCmd('editor:insert-mathblock', 'Insert math block', (editor: Editor) => {
     editor.replaceSelection('$$\n\n$$');
     const c = editor.getCursor();
     editor.setCursor({ line: c.line - 1, ch: 0 });
   });
-  editorCmd('editor:insert-table', 'Insert table', (editor) => {
+  editorCmd('editor:insert-table', 'Insert table', (editor: { replaceSelection: (arg0: string) => void; }) => {
     editor.replaceSelection('| Column 1 | Column 2 | Column 3 |\n| -------- | -------- | -------- |\n|          |          |          |');
   });
-  editorCmd('editor:insert-footnote', 'Insert footnote', (editor) => {
+  editorCmd('editor:insert-footnote', 'Insert footnote', (editor: { replaceSelection: (arg0: string) => void; }) => {
     editor.replaceSelection('[^1]\n\n[^1]: ');
   });
-  editorCmd('editor:insert-horizontal-rule', 'Insert horizontal rule', (editor) => {
+  editorCmd('editor:insert-horizontal-rule', 'Insert horizontal rule', (editor: { replaceSelection: (arg0: string) => void; }) => {
     editor.replaceSelection('\n---\n');
   });
 
   // 原版 editor:set-heading-1..6 与“正文”（菜单项的 checked 由当前标题层级决定）
-  const setHeading = (editor, level) => {
+  const setHeading = (editor: Editor, level: number) => {
     eachLine(editor, (line) => {
-      const indent = line.match(/^\s*/)[0];
+      const indent = line.match(/^\s*/)?.[0] || '';
       const rest = line.slice(indent.length).replace(/^#{1,6}\s+/, '');
       if (level === 0) return indent + rest;
       return indent + '#'.repeat(level) + ' ' + rest;
     });
   };
   for (let level = 1; level <= 6; level += 1) {
-    editorCmd('editor:set-heading-' + level, 'Set as heading ' + level, (e) => setHeading(e, level));
+    editorCmd('editor:set-heading-' + level, 'Set as heading ' + level, (e: Editor) => setHeading(e, level));
   }
-  editorCmd('editor:set-heading-0', 'Set as body text', (e) => setHeading(e, 0));
+  editorCmd('editor:set-heading-0', 'Set as body text', (e: Editor) => setHeading(e, 0));
 
-  editorCmd('editor:toggle-blockquote', 'Toggle blockquote', (editor) => {
+  editorCmd('editor:toggle-blockquote', 'Toggle blockquote', (editor: Editor) => {
     eachLine(editor, (line) => {
       const m = line.match(/^(\s*)>\s?/);
       if (m) return m[1] + line.slice(m[0].length);
-      const indent = line.match(/^\s*/)[0];
+      const indent = line.match(/^\s*/)?.[0] || '';
       return indent + '> ' + line.slice(indent.length);
     });
   });
 
-  editorCmd('editor:clear-formatting', 'Clear formatting', (editor) => {
+  editorCmd('editor:clear-formatting', 'Clear formatting', (editor: Editor) => {
     const changes = [];
     for (const range of editor.listSelections()) {
       const text = editor.getRange(range.from, range.to);
@@ -291,7 +296,7 @@ export function registerEditorCommands(app: App) {
   });
 
   // 原版 editor:attach-file：选文件 → 复制进库（附件目录）→ 插入嵌入链接
-  editorCmd('editor:attach-file', 'Insert attachment', async (editor) => {
+  editorCmd('editor:attach-file', 'Insert attachment', async (editor: Editor) => {
     let result = null;
     try { result = Desktop.openDialog({ properties: ['openFile', 'multiSelections'] }); } catch (e) { result = null; }
     if (!result || result.canceled || !result.filePaths || !result.filePaths.length) return;
@@ -310,7 +315,7 @@ export function registerEditorCommands(app: App) {
     }
   });
 
-  editorCmd('editor:delete-paragraph', 'Delete paragraph', (editor) => {
+  editorCmd('editor:delete-paragraph', 'Delete paragraph', (editor: Editor) => {
     const cur = editor.getCursor();
     let start = cur.line, end = cur.line;
     while (start > 0 && editor.getLine(start - 1).trim() !== '') start--;
@@ -323,47 +328,47 @@ export function registerEditorCommands(app: App) {
   });
 
   // 复用CM6事务：整体移动选中的行，并保留正向/反向选区与撤销历史。
-  editorCmd('editor:swap-line-up', 'Swap line up', (editor) => moveLineUp(editor.cm));
-  editorCmd('editor:swap-line-down', 'Swap line down', (editor) => moveLineDown(editor.cm));
+  editorCmd('editor:swap-line-up', 'Swap line up', (editor: { cm: { state: EditorState; dispatch: (transaction: Transaction) => void; }; }) => moveLineUp(editor.cm));
+  editorCmd('editor:swap-line-down', 'Swap line down', (editor: { cm: { state: EditorState; dispatch: (transaction: Transaction) => void; }; }) => moveLineDown(editor.cm));
 
-  editorCmd('editor:indent-list', 'Indent list', (editor) => {
-    eachLine(editor, (line) => line.match(/^\s*(?:[-*+]|\d+[.)]|>)/) ? '  ' + line : null);
+  editorCmd('editor:indent-list', 'Indent list', (editor: Editor) => {
+    eachLine(editor, (line: string) => line.match(/^\s*(?:[-*+]|\d+[.)]|>)/) ? '  ' + line : null);
   });
-  editorCmd('editor:outdent-list', 'Outdent list', (editor) => {
-    eachLine(editor, (line) => {
+  editorCmd('editor:outdent-list', 'Outdent list', (editor: Editor) => {
+    eachLine(editor, (line: string) => {
       const m = line.match(/^(\t| {1,2})/);
       if (m && line.match(/^\s*(?:[-*+]|\d+[.)]|>)/)) return line.slice(m[0].length);
       return null;
     });
   });
 
-  editorCmd('editor:fold-less', 'Fold less', (editor) => foldSelectionStep(editor.cm, false));
-  editorCmd('editor:fold-more', 'Fold more', (editor) => foldSelectionStep(editor.cm, true));
-  editorCmd('editor:fold-all', 'Fold all', (editor) => { try { foldAll(editor.cm); } catch (e) {} });
-  editorCmd('editor:unfold-all', 'Unfold all', (editor) => { try { unfoldAll(editor.cm); } catch (e) {} });
+  editorCmd('editor:fold-less', 'Fold less', (editor: { cm: EditorView; }) => foldSelectionStep(editor.cm, false));
+  editorCmd('editor:fold-more', 'Fold more', (editor: { cm: EditorView; }) => foldSelectionStep(editor.cm, true));
+  editorCmd('editor:fold-all', 'Fold all', (editor: { cm: EditorView; }) => { try { foldAll(editor.cm); } catch (e) {} });
+  editorCmd('editor:unfold-all', 'Unfold all', (editor: { cm: EditorView; }) => { try { unfoldAll(editor.cm); } catch (e) {} });
 
-  editorCmd('editor:open-search', 'Search current file', (editor) => {
+  editorCmd('editor:open-search', 'Search current file', (editor: Editor) => {
     editor.openSearch();
-    const input = editor.cm.dom.querySelector('.cm-search input[name="search"]');
+    const input = editor.cm.dom.querySelector<HTMLInputElement>('.cm-search input[name="search"]');
     if (input) input.focus();
   });
-  editorCmd('editor:open-search-replace', 'Search & replace in current file', (editor) => {
+  editorCmd('editor:open-search-replace', 'Search & replace in current file', (editor: Editor) => {
     editor.openSearch();
-    const input = editor.cm.dom.querySelector('.cm-search input[name="replace"]');
+    const input = editor.cm.dom.querySelector<HTMLInputElement>('.cm-search input[name="replace"]');
     if (input) input.focus();
   });
 
-  editorCmd('editor:focus', 'Focus editor', (e) => e.focus());
-  editorCmd('editor:focus-top', 'Move cursor to start', (e) => { e.setCursor({ line: 0, ch: 0 }); e.focus(); });
-  editorCmd('editor:focus-bottom', 'Move cursor to end', (e) => { const l = e.lastLine(); e.setCursor({ line: l, ch: e.getLine(l).length }); e.focus(); });
+  editorCmd('editor:focus', 'Focus editor', (e: Editor) => e.focus());
+  editorCmd('editor:focus-top', 'Move cursor to start', (e: { setCursor: (arg0: { line: number; ch: number; }) => void; focus: () => void; }) => { e.setCursor({ line: 0, ch: 0 }); e.focus(); });
+  editorCmd('editor:focus-bottom', 'Move cursor to end', (e: Editor) => { const l = e.lastLine(); e.setCursor({ line: l, ch: e.getLine(l).length }); e.focus(); });
 
-  editorCmd('editor:follow-link', 'Follow link under cursor', (editor) => followLink(app, editor, false));
-  editorCmd('editor:open-link-in-new-leaf', 'Open link under cursor in new tab', (editor) => followLink(app, editor, 'tab'));
-  editorCmd('editor:open-link-in-new-split', 'Open link under cursor to the right', (editor) => followLink(app, editor, 'split'));
+  editorCmd('editor:follow-link', 'Follow link under cursor', (editor: Editor) => followLink(app, editor, false));
+  editorCmd('editor:open-link-in-new-leaf', 'Open link under cursor in new tab', (editor: Editor) => followLink(app, editor, 'tab'));
+  editorCmd('editor:open-link-in-new-split', 'Open link under cursor to the right', (editor: Editor) => followLink(app, editor, 'split'));
 
   // Section navigation
-  editorCmd('editor:go-to-next-heading', 'Go to next heading', (editor) => gotoHeading(app, editor, 1));
-  editorCmd('editor:go-to-previous-heading', 'Go to previous heading', (editor) => gotoHeading(app, editor, -1));
+  editorCmd('editor:go-to-next-heading', 'Go to next heading', (editor: Editor) => gotoHeading(app, editor, 1));
+  editorCmd('editor:go-to-previous-heading', 'Go to previous heading', (editor: Editor) => gotoHeading(app, editor, -1));
 
   // markdown view commands
   add({
@@ -372,7 +377,7 @@ export function registerEditorCommands(app: App) {
     checkCallback: (checking) => {
       const view = app.workspace.activeLeaf && app.workspace.activeLeaf.view;
       if (!view || view.getViewType() !== 'markdown') return false;
-      if (!checking) view.toggleMode();
+      if (!checking) view.toggleMode?.();
       return true;
     },
   });
@@ -412,7 +417,7 @@ export function registerEditorCommands(app: App) {
   });
 }
 
-async function followLink(app: App, editor, newLeaf) {
+async function followLink(app: App, editor: Editor, newLeaf: string|boolean) {
   const cur = editor.getCursor();
   const line = editor.getLine(cur.line);
   // find link under cursor
@@ -422,7 +427,7 @@ async function followLink(app: App, editor, newLeaf) {
     const start = m.index, end = m.index + m[0].length;
     if (cur.ch >= start && cur.ch <= end) {
       const inner = m[2].split('|')[0];
-      await app.workspace.openLinkText(inner, app.workspace.getActiveFile() ? app.workspace.getActiveFile().path : '', newLeaf === 'tab');
+      await app.workspace.openLinkText(inner, app.workspace.getActiveFile()?.path || '', newLeaf === 'tab');
       return;
     }
   }
@@ -432,7 +437,7 @@ async function followLink(app: App, editor, newLeaf) {
     if (cur.ch >= start && cur.ch <= end) {
       const url = m[2];
       if (/^https?:/i.test(url)) Desktop.openExternal(url);
-      else await app.workspace.openLinkText(decodeURIComponent(url), app.workspace.getActiveFile() ? app.workspace.getActiveFile().path : '', newLeaf === 'tab');
+      else await app.workspace.openLinkText(decodeURIComponent(url), app.workspace.getActiveFile()?.path || '', newLeaf === 'tab');
       return;
     }
   }
@@ -446,7 +451,7 @@ async function followLink(app: App, editor, newLeaf) {
   }
 }
 
-function gotoHeading(app: App, editor, dir) {
+function gotoHeading(app: App, editor: Editor, dir: number) {
   const file = app.workspace.getActiveFile();
   if (!file) return;
   const cache = app.metadataCache.getFileCache(file);

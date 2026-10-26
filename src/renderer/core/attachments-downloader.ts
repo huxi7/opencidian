@@ -12,11 +12,14 @@ import { Notice } from './notices.js';
 import { t } from './i18n.js';
 import { Desktop } from './ipc.js';
 import { saveAttachment } from '../editor/attachments.js';
+import type { TFile } from './vault.js';
+import type { RequestUrlResult } from '../../ipc-contracts.js';
+interface ParsedDataUrl { contentType: string; properties: Record<string, string>; isBase64: boolean; data: string; }
 
 /** 原版图片扩展名表：frontmatter 值只有命中它才算外部附件。 */
 const IMAGE_EXTENSIONS = ['bmp', 'png', 'jpg', 'jpeg', 'gif', 'svg', 'webp', 'avif'];
 /** 原版 content-type → 扩展名表（audio/video/pdf 项在本流程不可达，故不收录）。 */
-const CONTENT_TYPE_EXTENSIONS = {
+const CONTENT_TYPE_EXTENSIONS: Record<string, string> = {
   'image/avif': 'avif',
   'image/bmp': 'bmp',
   'image/gif': 'gif',
@@ -33,7 +36,7 @@ const CONTENT_TYPE_EXTENSIONS = {
 // ---------------------------------------------------------------------------
 
 /** 原版 Yc：http/https URL。data: 不在此列（frontmatter 只用 http(s) 值）。 */
-function isHttpUrl(value) {
+function isHttpUrl(value: string) {
   try {
     const parsed = new URL(value);
     return parsed.protocol === 'http:' || parsed.protocol === 'https:';
@@ -43,29 +46,29 @@ function isHttpUrl(value) {
 }
 
 /** 原版 ou：扩展名（小写、不含点）；无扩展名返回空串。 */
-function extensionOf(name) {
+function extensionOf(name: string) {
   const dot = name.lastIndexOf('.');
   return dot === -1 || dot === name.length - 1 || dot === 0 ? '' : name.substring(dot + 1).toLowerCase();
 }
 
 /** 原版 iu：去掉扩展名的文件名。 */
-function nameWithoutExtension(name) {
+function nameWithoutExtension(name: string) {
   const dot = name.lastIndexOf('.');
   return dot === -1 || dot === name.length - 1 || dot === 0 ? name : name.substring(0, dot);
 }
 
 /** 原版 pu：content-type → 扩展名，未知返回空串。 */
-function extensionFromContentType(contentType) {
+function extensionFromContentType(contentType: string | null | undefined) {
   const key = String(contentType || '').trim().toLowerCase();
   return Object.hasOwn(CONTENT_TYPE_EXTENSIONS, key) ? CONTENT_TYPE_EXTENSIONS[key] : '';
 }
 
 /** 原版 ry：data URL → { contentType, properties, isBase64, data }；非 data URL 返回 null。 */
-function parseDataUrl(url) {
+function parseDataUrl(url: string): ParsedDataUrl | null {
   const match = /^data:([^,]*),([\s\S]*)$/.exec(String(url).trim());
   if (!match) return null;
   const params = (match[1] || 'text/plain;charset=us-ascii').split(';').map((part) => part.toLowerCase());
-  const properties = {};
+  const properties: Record<string, string> = {};
   for (const param of params.slice(1)) {
     const eq = param.indexOf('=');
     if (eq > 0 && param !== 'base64') properties[param.slice(0, eq)] = param.slice(eq + 1);
@@ -74,7 +77,7 @@ function parseDataUrl(url) {
 }
 
 /** data URL 载荷 → 字节（base64 或百分号编码）。 */
-function dataUrlBytes(parsed) {
+function dataUrlBytes(parsed: ParsedDataUrl) {
   if (!parsed.isBase64) return new TextEncoder().encode(decodeURIComponent(parsed.data));
   const binary = atob(parsed.data.replace(/\s+/g, ''));
   const bytes = new Uint8Array(binary.length);
@@ -86,7 +89,7 @@ function dataUrlBytes(parsed) {
  * 原版 promptForImageDownload 的远程文件名规则：取 URL 路径最后一段；
  * 含非法文件名字符、无扩展名或扩展名非字母数字时返回空串（该项改由响应头命名）。
  */
-function fileNameFromUrl(url) {
+function fileNameFromUrl(url: string) {
   let pathname;
   try {
     pathname = new URL(url).pathname;
@@ -102,7 +105,7 @@ function fileNameFromUrl(url) {
 }
 
 /** 原版 dy：响应头大小写不敏感查找。 */
-function getHeader(headers, name) {
+function getHeader(headers: RequestUrlResult['headers'] | null | undefined, name: string) {
   if (!headers) return '';
   const wanted = String(name).toLowerCase();
   for (const key of Object.keys(headers)) if (key.toLowerCase() === wanted) return headers[key];
@@ -110,9 +113,9 @@ function getHeader(headers, name) {
 }
 
 /** 掩掉围栏代码块：同长度空白替换，保留换行与全部 offset。 */
-function maskFencedCode(text) {
+function maskFencedCode(text: string) {
   const lines = text.split('\n');
-  let fence = null;
+  let fence: string | null = null;
   for (let i = 0; i < lines.length; i += 1) {
     const line = lines[i];
     if (fence === null) {
@@ -128,7 +131,7 @@ function maskFencedCode(text) {
 }
 
 /** 匹配位置是否落在同行未闭合的行内代码里。 */
-function isInsideInlineCode(text, offset) {
+function isInsideInlineCode(text: string, offset: number) {
   const lineStart = text.lastIndexOf('\n', offset - 1) + 1;
   const ticks = text.slice(lineStart, offset).split('`').length - 1;
   return ticks % 2 === 1;
@@ -140,7 +143,7 @@ function isInsideInlineCode(text, offset) {
  * 正文：`![alt](url)` 且 url 以 http(s):// 或 data: 开头（排除围栏代码与行内代码）→ { url, alt, position }。
  * urls：两处 URL 合并去重（保持 frontmatter 在前的顺序）。
  */
-function scanExternalAttachments(text) {
+function scanExternalAttachments(text: string) {
   const source = String(text == null ? '' : text);
   const parsed = parseFrontmatterText(source);
   const frontmatterValues = [];
@@ -176,19 +179,19 @@ function scanExternalAttachments(text) {
 }
 
 /** 原版 metadataCache.fileToLinktext(file, '', false) 的等效：全库同名唯一时取文件名，否则取完整路径。 */
-function uniqueAttachmentLinktext(app: App, file) {
+function uniqueAttachmentLinktext(app: App, file: TFile) {
   const sameName = app.vault.getFiles().filter((candidate) => candidate.name === file.name);
   return sameName.length <= 1 ? file.name : file.path;
 }
 
 /** 取请求函数：优先 app.requestUrl（验收可替换），否则走 Desktop IPC。 */
-function requestUrl(app: App, url) {
+function requestUrl(app: App, url: string) {
   const fetcher = (app && app.requestUrl) || Desktop.requestUrl;
   return fetcher({ url });
 }
 
 /** 响应体 → 字节。 */
-function toBytes(body) {
+function toBytes(body: unknown) {
   if (!body) return new Uint8Array(0);
   if (body instanceof ArrayBuffer) return new Uint8Array(body);
   if (ArrayBuffer.isView(body)) return new Uint8Array(body.buffer, body.byteOffset, body.byteLength);
@@ -202,13 +205,13 @@ function toBytes(body) {
 /** 原版 wI：复选框默认勾选、点整块切换、缩略图直接用源 URL。 */
 class DownloadAttachmentItem {
   declare name: string;
-  declare url: any;
+  declare url: string;
   declare checked: boolean;
-  declare el: any;
-  declare checkboxEl: any;
-  declare nameEl: any;
+  declare el: HTMLDivElement;
+  declare checkboxEl: HTMLInputElement;
+  declare nameEl: HTMLDivElement;
 
-  constructor(url) {
+  constructor(url: string) {
     this.name = '';
     this.url = url;
     this.checked = false;
@@ -229,13 +232,13 @@ class DownloadAttachmentItem {
     this.nameEl = this.el.createDiv({ cls: 'download-attachment-name', text: tooltip });
   }
 
-  setName(name) {
+  setName(name: string) {
     this.name = name;
     if (this.nameEl) this.nameEl.setText(name);
     return this;
   }
 
-  setChecked(value) {
+  setChecked(value: boolean) {
     if (this.checked === value) return;
     this.checked = value;
     this.checkboxEl.checked = value;
@@ -244,10 +247,10 @@ class DownloadAttachmentItem {
 }
 
 /** 确认按钮先结算结果再关窗；Esc / 背景 / 关闭钮走 onClose 结算 false。 */
-function openModalPrompt(modal) {
-  return new Promise((resolve) => {
+function openModalPrompt(modal: Modal): Promise<boolean> {
+  return new Promise<boolean>((resolve) => {
     let settled = false;
-    const finish = (value) => { if (settled) return; settled = true; resolve(value); };
+    const finish = (value: boolean) => { if (settled) return; settled = true; resolve(value); };
     modal.onClose = () => finish(false);
     const cta = modal.buttonContainerEl.createEl('button', { cls: 'mod-cta', text: t('dialogue.button-download') });
     cta.onclick = () => { finish(true); modal.close(); };
@@ -257,7 +260,7 @@ function openModalPrompt(modal) {
 }
 
 /** 下载单项。返回落盘 TFile；未勾选或该 URL 未命名成功时由调用方处理。 */
-async function downloadOne(app: App, noteFile, item) {
+async function downloadOne(app: App, noteFile: TFile, item: DownloadAttachmentItem) {
   const url = item.url;
   if (url.startsWith('data:')) {
     const parsed = parseDataUrl(url);
@@ -290,13 +293,13 @@ async function downloadOne(app: App, noteFile, item) {
  * 原版 promptForImageDownload：画廊模态 → 逐项下载。
  * 取消返回 null；确认返回 { 源URL: TFile }（仅含成功下载的项）。
  */
-async function promptForImageDownload(app: App, noteFile, urls) {
+async function promptForImageDownload(app: App, noteFile: TFile, urls: string[]) {
   if (!urls.length) return null;
   const modal = new Modal(app);
   modal.setTitle(t('dialogue.label-download-attachments'));
   modal.modalEl.addClass('mod-scrollable-content');
   const items = [];
-  const byUrl = {};
+  const byUrl: Record<string, DownloadAttachmentItem> = {};
   for (const url of urls) {
     const item = new DownloadAttachmentItem(url);
     items.push(item);
@@ -312,7 +315,7 @@ async function promptForImageDownload(app: App, noteFile, urls) {
   const gallery = modal.contentEl.createDiv('attachments-gallery');
   for (const item of items) gallery.appendChild(item.el);
   if (!(await openModalPrompt(modal))) return null;
-  const saved = {};
+  const saved: Record<string, TFile> = {};
   modal.contentEl.addClass('is-loading');
   try {
     for (const url of urls) {
@@ -337,7 +340,7 @@ async function promptForImageDownload(app: App, noteFile, urls) {
 // ---------------------------------------------------------------------------
 
 /** 原版 downloadAttachmentsForNote：无外部附件提示；确认后改写嵌入与 frontmatter 值。 */
-export async function downloadAttachmentsForNote(app: App, file) {
+export async function downloadAttachmentsForNote(app: App, file: TFile) {
   try {
     if (!file || file.extension !== 'md') return null;
     let text = await app.vault.read(file);
@@ -376,7 +379,7 @@ export async function downloadAttachmentsForNote(app: App, file) {
     }
     return saved;
   } catch (err) {
-    new Notice(String((err && err.message) || err));
+    new Notice(err instanceof Error ? err.message : String(err));
     return null;
   }
 }

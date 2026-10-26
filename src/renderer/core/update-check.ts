@@ -11,7 +11,7 @@ import { Notice } from './notices.js';
 import { tt } from './i18n.js';
 
 /** 语义化版本比较（数字段逐个比，容忍 v 前缀与后缀段）。 */
-export function compareVersions(a, b) {
+export function compareVersions(a: string | number | null | undefined, b: string | number | null | undefined) {
   const pa = String(a || '').replace(/^v/i, '').split(/[.+-]/).map((s) => parseInt(s, 10));
   const pb = String(b || '').replace(/^v/i, '').split(/[.+-]/).map((s) => parseInt(s, 10));
   for (let i = 0; i < Math.max(pa.length, pb.length); i += 1) {
@@ -24,16 +24,17 @@ export function compareVersions(a, b) {
 }
 
 /** 解析更新源响应：GitHub Release（tag_name/html_url）或自建静态 JSON（version/url）。 */
-export function parseReleaseMeta(json) {
-  if (!json || typeof json !== 'object') return null;
-  const rawVersion = json.version || json.tag_name || json.name || '';
+export function parseReleaseMeta(json: unknown) {
+  if (!json || typeof json !== 'object' || Array.isArray(json)) return null;
+  const data = json as Record<string, unknown>;
+  const rawVersion = data.version || data.tag_name || data.name || '';
   const version = String(rawVersion).replace(/^v/i, '').trim();
   if (!version) return null;
-  const url = json.url || json.html_url || json.download_url || json.page || '';
+  const url = data.url || data.html_url || data.download_url || data.page || '';
   return { version, url: String(url || '') };
 }
 
-function decodeBody(body) {
+function decodeBody(body: unknown) {
   try {
     if (typeof body === 'string') return body;
     if (body instanceof ArrayBuffer) return new TextDecoder('utf-8').decode(new Uint8Array(body));
@@ -48,7 +49,7 @@ function decodeBody(body) {
  * @param {{silent?: boolean}} options silent=true 时失败/无更新不弹提示（启动后台检查用）
  * @returns {Promise<{status:'no-feed'|'error'|'update'|'latest', version?:string, url?:string, current?:string}>}
  */
-export async function checkForUpdates(app: App, options: Record<string, any> = {}) {
+export async function checkForUpdates(app: App, options: { silent?: boolean } = {}) {
   const silent = !!options.silent;
   const settings = (app.settings && app.settings.appSettings) || {};
   const feed = String(settings.updateFeed || '').trim();

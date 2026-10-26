@@ -5,20 +5,27 @@
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 export const RENDER_ABORTED = Symbol('render-aborted');
-function settleRender(state, failed, value) {
-  if (!state.resolve) return;
-  const settle = failed ? state.reject : state.resolve;
-  state.signal.removeEventListener('abort', state.abort);
-  state.resolve = state.reject = state.signal = state.abort = null;
-  settle(value);
+interface RenderWaitState<T> {
+  resolve: ((value: T | typeof RENDER_ABORTED) => void) | null;
+  reject: ((reason: unknown) => void) | null;
+  signal: AbortSignal | null;
+  abort: (() => void) | null;
 }
-export function waitForRender(promise, signal) {
+function settleRender<T>(state: RenderWaitState<T>, outcome: { ok: true; value: T | typeof RENDER_ABORTED } | { ok: false; error: unknown }) {
+  if (!state.resolve) return;
+  const resolve = state.resolve, reject = state.reject;
+  if (state.signal && state.abort) state.signal.removeEventListener('abort', state.abort);
+  state.resolve = state.reject = state.signal = state.abort = null;
+  if (outcome.ok) resolve(outcome.value);
+  else reject?.(outcome.error);
+}
+export function waitForRender<T>(promise: T | PromiseLike<T>, signal?: AbortSignal): Promise<T | typeof RENDER_ABORTED> {
   if (!signal) return Promise.resolve(promise);
-  const state = { resolve: null, reject: null, signal, abort: null };
-  const waiting = new Promise((resolve, reject) => { state.resolve = resolve; state.reject = reject; });
+  const state: RenderWaitState<T> = { resolve: null, reject: null, signal, abort: null };
+  const waiting = new Promise<T | typeof RENDER_ABORTED>((resolve, reject) => { state.resolve = resolve; state.reject = reject; });
   // 底层 Promise 只持有可清空的状态，不捕获宿主的词法环境。
-  state.abort = settleRender.bind(null, state, false, RENDER_ABORTED);
-  Promise.resolve(promise).then(settleRender.bind(null, state, false), settleRender.bind(null, state, true));
+  state.abort = () => settleRender(state, { ok: true, value: RENDER_ABORTED });
+  Promise.resolve(promise).then(value => settleRender(state, { ok: true, value }), error => settleRender(state, { ok: false, error }));
   if (signal.aborted) state.abort();
   else signal.addEventListener('abort', state.abort, { once: true });
   return waiting;

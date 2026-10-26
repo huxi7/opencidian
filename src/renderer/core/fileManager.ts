@@ -6,13 +6,14 @@
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 /* File manager — create/rename/delete/move with automatic link updates. */
-import { TFile, TFolder, normalizePath, parentPathOf } from './vault.js';
+import { TFile, TFolder, normalizePath, parentPathOf, type VaultEntry } from './vault.js';
 import { t, tt } from './i18n.js';
 import { getUniquePath } from './vault-utils.js';
 import { Notice } from './notices.js';
 import { Modal, confirmDialog } from './modals.js';
 import { downloadAttachmentsForNote as downloadNoteAttachments } from './attachments-downloader.js';
-import { processFrontMatter } from './frontmatter-write.js';
+import { processFrontMatter, type FrontmatterChange } from './frontmatter-write.js';
+interface AffectedLinks { links: number; files: number; sources: Record<string, Set<string>>; }
 
 export class FileManager {
   declare app: App;
@@ -21,7 +22,7 @@ export class FileManager {
     this.app = app;
   }
 
-  getNewFileParent(sourcePath) {
+  getNewFileParent(sourcePath?: string) {
     const settings = this.app.settings.appSettings;
     const loc = settings.newFileLocation;
     if (loc === 'root') return this.app.vault.getRoot();
@@ -37,7 +38,7 @@ export class FileManager {
     return this.app.vault.getRoot();
   }
 
-  async getAvailablePathForAttachment(filename, sourcePath) {
+  async getAvailablePathForAttachment(filename: string, sourcePath?: string) {
     const settings = this.app.settings.appSettings;
     let folderPath = settings.attachmentFolderPath || '/';
     if (folderPath === './' || folderPath === '.') {
@@ -55,11 +56,11 @@ export class FileManager {
     return getUniquePath(this.app, normalizePath(base + filename));
   }
 
-  async createNewMarkdownFile(folder, filename, content = '') {
+  async createNewMarkdownFile(folder: TFolder | null, filename: string, content = '') {
     return this.createNewFile(folder, filename, content);
   }
 
-  async createNewFile(folder, filename, content = '') {
+  async createNewFile(folder: TFolder | null, filename: string, content = '') {
     if (!folder) folder = this.app.vault.getRoot();
     let path = filename;
     if (!path.toLowerCase().endsWith('.md') && !path.includes('.')) path += '.md';
@@ -69,10 +70,10 @@ export class FileManager {
     return file;
   }
 
-  async getUniquePath(path) {
+  async getUniquePath(path: string) {
     if (!this.app.vault.getAbstractFileByPath(path)) return path;
     const dir = parentPathOf(path);
-    const name = path.split('/').pop();
+    const name = path.split('/').pop() || '';
     const dot = name.lastIndexOf('.');
     const base = dot > 0 ? name.slice(0, dot) : name;
     const ext = dot > 0 ? name.slice(dot) : '';
@@ -83,7 +84,7 @@ export class FileManager {
     return path;
   }
 
-  getUniqueFilename(folder, base, ext) {
+  getUniqueFilename(folder: TFolder, base: string, ext: string) {
     const prefix = folder.path === '/' ? '' : folder.path + '/';
     if (!this.app.vault.getAbstractFileByPath(prefix + base + ext)) return base;
     for (let i = 1; i < 1000; i++) {
@@ -92,7 +93,7 @@ export class FileManager {
     return base;
   }
 
-  generateMarkdownLink(file, sourcePath, subpath, alias, linkStyle) {
+  generateMarkdownLink(file: TFile, sourcePath: string, subpath?: string, alias?: string, linkStyle?: 'wiki' | 'markdown') {
     const settings = this.app.settings.appSettings;
     let linktext;
     // linkStyle: 'wiki' | 'markdown' 强制链接格式（更新既有链接时保持原格式）；缺省跟随设置
@@ -134,12 +135,12 @@ export class FileManager {
     return `[[${inner}]]`;
   }
 
-  async renameFile(file, newPath) {
+  async renameFile(file: VaultEntry, newPath: string) {
     newPath = normalizePath(newPath);
     if (newPath === file.path) return true;
     if (!newPath) return false;
     // ensure extension
-    if (file instanceof TFile && file.extension && !newPath.split('/').pop().includes('.')) newPath += '.' + file.extension;
+    if (file instanceof TFile && file.extension && !(newPath.split('/').pop() || '').includes('.')) newPath += '.' + file.extension;
     if (this.app.vault.getAbstractFileByPath(newPath)) {
       new Notice('File already exists: ' + newPath, 4000);
       return false;
@@ -147,7 +148,7 @@ export class FileManager {
     const oldPath = file.path;
     // 链接更新必须在 metadataCache.onFileRename 之前完成：onFileRename 会迁移 resolvedLinks 的键，
     // 迁移后 updateLinks 按旧路径查找将一无所获。
-    const affected = file instanceof TFile ? this._countAffectedLinks(oldPath) : { links: 0, files: 0 };
+    const affected = file instanceof TFile ? this._countAffectedLinks(oldPath) : { links: 0, files: 0, sources: {} };
     try {
       await this.app.vault.rename(file, newPath);
     } catch (e) {
@@ -165,7 +166,7 @@ export class FileManager {
    * affected 是 renameFile 在重命名前采集的快照（sources: 源文件 → 命中链接目标集合）：
    * 弹窗等待期间 metadataCache 会重解析并清掉旧键，只有快照才能精确定位受影响的链接。
    */
-  async updateLinks(oldPath, file, affected) {
+  async updateLinks(oldPath: string, file: TFile, affected?: AffectedLinks) {
     const resolved = this.app.metadataCache.resolvedLinks;
     const useSnapshot = !!(affected && affected.sources);
     const sources = useSnapshot ? Object.keys(affected.sources) : Object.keys(resolved);
@@ -174,7 +175,7 @@ export class FileManager {
       if (!useSnapshot && !(links && links[oldPath])) continue;
       const snapshot = useSnapshot && affected.sources[source] && affected.sources[source].size
         ? affected.sources[source] : null;
-      const isHit = (target, dest) => {
+      const isHit = (target: string, dest: string | null) => {
         if (snapshot) {
           if (snapshot.has(target)) return true;
           try { return snapshot.has(decodeURIComponent(target)); } catch (e) { return false; }
@@ -233,16 +234,16 @@ export class FileManager {
   }
 
   /** 统计指向 oldPath 的链接数与来源文件数，并快照每个源文件中命中的链接目标（对齐原版 labelLinkAffected）。 */
-  _countAffectedLinks(oldPath) {
+  _countAffectedLinks(oldPath: string): AffectedLinks {
     const resolved = this.app.metadataCache.resolvedLinks || {};
     let links = 0, files = 0;
-    const sources = {};
+    const sources: Record<string, Set<string>> = {};
     for (const source of Object.keys(resolved)) {
       const n = resolved[source] && resolved[source][oldPath];
       if (!n) continue;
       files++;
       links += n;
-      const targets = new Set();
+      const targets = new Set<string>();
       const cache = this.app.metadataCache.getCache(source);
       if (cache) {
         for (const entry of [...(cache.links || []), ...(cache.embeds || [])]) {
@@ -264,7 +265,7 @@ export class FileManager {
    * 重命名后的链接更新（对齐原版语义）：
    * alwaysUpdateLinks=true → 静默更新并提示；否则弹窗（总是更新 / 仅此一次 / 不做更新）。
    */
-  async _confirmLinkUpdate(oldPath, file, affected) {
+  async _confirmLinkUpdate(oldPath: string, file: TFile, affected?: AffectedLinks) {
     const info = affected && affected.sources ? affected : this._countAffectedLinks(oldPath);
     const { links, files } = info;
     if (!links) return;
@@ -281,7 +282,7 @@ export class FileManager {
       modal.titleEl.setText(tt('dialogue.label-update-links', '更新链接'));
       modal.contentEl.createEl('p', { text: tt('dialogue.label-confirm-update-link-to-file', '你是否需要更新与此文件相关联的内部链接？') });
       modal.contentEl.createEl('p', { text: tt('dialogue.label-link-affected', `这将影响 ${files} 个文件中的 ${links} 处链接。`, { files, links }) });
-      const finish = async (update, always) => {
+      const finish = async (update: boolean, always: boolean) => {
         modal.close();
         if (always) this.app.settings.updateAppSettings({ alwaysUpdateLinks: true });
         if (update) await doUpdate();
@@ -295,7 +296,7 @@ export class FileManager {
     });
   }
 
-  async renameFolder(folder, newPath) {
+  async renameFolder(folder: TFolder, newPath: string) {
     const oldPath = folder.path;
     try {
       await this.app.vault.rename(folder, newPath);
@@ -306,7 +307,7 @@ export class FileManager {
     }
   }
 
-  async deleteFile(file, force = false) {
+  async deleteFile(file: VaultEntry, force = false) {
     const settings = this.app.settings.appSettings;
     const permanent = settings.trashOption === 'none' || settings.trashOption === 'permanent';
     const promptDelete = settings.promptDelete !== undefined ? settings.promptDelete !== false : settings.deleteConfirm !== false;
@@ -328,29 +329,29 @@ export class FileManager {
     return true;
   }
 
-  async trashFile(file) {
+  async trashFile(file: VaultEntry) {
     return this.deleteFile(file, false);
   }
 
-  async processFrontMatter(file, fn) {
+  async processFrontMatter(file: TFile, fn: FrontmatterChange) {
     return processFrontMatter(this.app, file, fn);
   }
 
-  async promptForDeletion(file) {
+  async promptForDeletion(file: VaultEntry) {
     return this.deleteFile(file, false);
   }
 
   /** 原版 downloadAttachmentsForNote：扫描外部附件 → 下载 → 改写笔记。实现见 core/attachments-downloader.js。 */
-  downloadAttachmentsForNote(file) {
+  downloadAttachmentsForNote(file: TFile) {
     return downloadNoteAttachments(this.app, file);
   }
 
-  async moveFile(file, folder) {
+  async moveFile(file: VaultEntry, folder: TFolder) {
     const newPath = normalizePath((folder.path === '/' ? '' : folder.path + '/') + file.name);
     return this.renameFile(file, newPath);
   }
 
-  async copyFile(file, folder) {
+  async copyFile(file: VaultEntry, folder: TFolder) {
     let newPath = normalizePath((folder.path === '/' ? '' : folder.path + '/') + file.name);
     newPath = await this.getUniquePath(newPath);
     await this.app.vault.copy(file, newPath);
@@ -358,7 +359,7 @@ export class FileManager {
   }
 }
 
-function relativePath(fromDir, toPath) {
+function relativePath(fromDir: string, toPath: string) {
   const fromParts = fromDir ? fromDir.split('/') : [];
   const toParts = toPath.split('/');
   const toFile = toParts.pop();

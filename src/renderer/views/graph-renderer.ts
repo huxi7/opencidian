@@ -10,8 +10,9 @@
  *        放大 5 倍，对应原版仅移动端才画的 alpha=1e-4 的 500 半径透明圆（500/100）。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
+import type { GraphColor, GraphData, GraphForceOptions, GraphOptions } from '../plugins-core/graph-types.js';
 import { ForceSim } from '../plugins-core/graph-simulation.js';
-import { has, clamp, displayName, parseColor, COLOR_CLASSES } from '../plugins-core/graph-utils.js';
+import { has, clamp, parseColor, COLOR_CLASSES } from '../plugins-core/graph-utils.js';
 import { GraphNode, GraphLink, GRAPH_FADE as FADE } from './graph-primitives.js';
 import { GraphTouchController } from './graph-touch.js';
 
@@ -23,13 +24,15 @@ const WRAP_WIDTH = 300; // 原版 TextStyle.wordWrapWidth
    桌面端不设置 isMobile，命中区即节点实心圆本身。 */
 export const MOBILE_HIT_SCALE = 5;
 const FONT_FAMILY = 'ui-sans-serif, -apple-system, BlinkMacSystemFont, system-ui, "Segoe UI", Roboto, "Inter", "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Microsoft YaHei Light", sans-serif';
-const lerp = (a, b, ratio = 0.9) => a * ratio + b * (1 - ratio); // 原版 dQ
-const colorLerp = (a, b) => ((lerp(a >> 16 & 255, b >> 16 & 255) << 16) + (lerp(a >> 8 & 255, b >> 8 & 255) << 8) + (0 | lerp(a & 255, b & 255))); // 原版 fQ
-const disjoint = (viewport, rect) => rect.right < viewport.left || rect.left > viewport.right || rect.bottom < viewport.top || rect.top > viewport.bottom; // 原版 mQ
-const rectAt = (x, y, radius) => ({ left: x - radius, right: x + radius, top: y - radius, bottom: y + radius }); // 原版 vQ
-const rgba = (rgb, alpha) => `rgba(${(rgb >> 16) & 255},${(rgb >> 8) & 255},${rgb & 255},${alpha})`;
+const lerp = (a: number, b: number, ratio = 0.9) => a * ratio + b * (1 - ratio); // 原版 dQ
+const colorLerp = (a: number, b: number) => ((lerp(a >> 16 & 255, b >> 16 & 255) << 16) + (lerp(a >> 8 & 255, b >> 8 & 255) << 8) + (0 | lerp(a & 255, b & 255))); // 原版 fQ
+interface GraphRect { left: number; right: number; top: number; bottom: number; }
+type GraphColors = Record<keyof typeof COLOR_CLASSES, GraphColor>;
+const disjoint = (viewport: GraphRect, rect: GraphRect) => rect.right < viewport.left || rect.left > viewport.right || rect.bottom < viewport.top || rect.top > viewport.bottom; // 原版 mQ
+const rectAt = (x: number, y: number, radius: number) => ({ left: x - radius, right: x + radius, top: y - radius, bottom: y + radius }); // 原版 vQ
+const rgba = (rgb: number, alpha: number) => `rgba(${(rgb >> 16) & 255},${(rgb >> 8) & 255},${rgb & 255},${alpha})`;
 /* 原版 PIXI wordWrap：按空格折行，宽度超过 300 才折 */
-function wrapText(ctx, text, maxWidth) {
+function wrapText(ctx: CanvasRenderingContext2D, text: string, maxWidth: number) {
   if (ctx.measureText(text).width <= maxWidth) return [text];
   const lines = [];
   let line = '';
@@ -42,14 +45,14 @@ function wrapText(ctx, text, maxWidth) {
 }
 // 渲染器（原版 TQ）：canvas 2D 承担原版 PIXI 的场景与事件；pan 与缩放中心用设备像素
 export class GraphRenderer {
-  declare containerEl: any;
-  declare canvasEl: any;
-  declare ctx: any;
-  declare nodeLookup: any;
-  declare nodes: any[];
-  declare links: any[];
-  declare dragNode: any;
-  declare highlightNode: any;
+  declare containerEl: HTMLElement;
+  declare canvasEl: HTMLCanvasElement;
+  declare ctx: CanvasRenderingContext2D | null;
+  declare nodeLookup: Record<string, GraphNode>;
+  declare nodes: GraphNode[];
+  declare links: GraphLink[];
+  declare dragNode: GraphNode | null;
+  declare highlightNode: GraphNode | null;
   declare scale: number;
   declare nodeScale: number;
   declare textAlpha: number;
@@ -58,49 +61,48 @@ export class GraphRenderer {
   declare panY: number;
   declare panvX: number;
   declare panvY: number;
-  declare keyboardActions: any;
+  declare keyboardActions: Record<string, boolean>;
   declare panning: boolean;
   declare width: number;
   declare height: number;
-  declare viewport: any;
+  declare viewport: GraphRect;
   declare zoomCenterX: number;
   declare zoomCenterY: number;
   declare fNodeSizeMult: number;
   declare fLineSizeMult: number;
   declare fTextShowMult: number;
   declare fShowArrow: boolean;
-  declare mouseX: any;
-  declare mouseY: any;
-  declare colors: any;
+  declare mouseX: number | null;
+  declare mouseY: number | null;
+  declare colors: GraphColors;
   declare idleFrames: number;
-  declare renderTimer: any;
+  declare renderTimer: number | null;
   declare frameTime: number;
   declare hitScale: number;
   declare sim: ForceSim;
-  declare onNodeClick: any;
-  declare onNodeRightClick: any;
-  declare onNodeHover: any;
-  declare onNodeUnhover: any;
-  declare touch: GraphTouchController;
-  declare windowMouseMove: any;
-  declare windowMouseUp: any;
-  declare windowBlur: any;
-  declare renderCallback: any;
-  declare resizeObserver: ResizeObserver;
+  declare onNodeClick: ((event: MouseEvent, id: string, type: string) => unknown) | null;
+  declare onNodeRightClick: ((event: MouseEvent, id: string, type: string) => unknown) | null;
+  declare onNodeHover: ((event: Pick<MouseEvent, 'clientX' | 'clientY'>, id: string, type: string) => unknown) | null;
+  declare onNodeUnhover: (() => void) | null;
+  declare touch: GraphTouchController | null;
+  declare windowMouseMove: (event: MouseEvent) => void;
+  declare windowMouseUp: (event: MouseEvent) => void;
+  declare windowBlur: () => void;
+  declare renderCallback: (() => void) | null;
+  declare resizeObserver: ResizeObserver | null;
   declare destroyed: boolean | undefined;
-  declare interactionButton: any;
-  declare dragStart: { x: any; y: any; } | undefined;
+  declare interactionButton: number | undefined;
+  declare dragStart: { x: number; y: number; } | undefined;
   declare dragMoved: boolean | undefined;
-  declare panStart: { x: any; y: any; } | undefined;
+  declare panStart: { x: number; y: number; } | undefined;
   declare panOrigin: { x: number; y: number; } | undefined;
   declare lastPanTime: number | undefined;
 
   /* 原版移动端命中区放大倍数（500 半径透明圆 / 100 半径可见圆） */
   static MOBILE_HIT_SCALE = MOBILE_HIT_SCALE;
 
-  constructor(containerEl) {
+  constructor(containerEl: HTMLElement) {
     this.containerEl = containerEl;
-    this.canvasEl = null;
     this.ctx = null;
     this.nodeLookup = {};
     this.nodes = [];
@@ -127,7 +129,6 @@ export class GraphRenderer {
     this.fTextShowMult = 1;
     this.fShowArrow = false;
     this.mouseX = this.mouseY = null;
-    this.colors = {};
     this.idleFrames = 0;
     this.renderTimer = null;
     this.frameTime = 0;
@@ -151,14 +152,14 @@ export class GraphRenderer {
     canvas.addEventListener('mousedown', (ev) => { ev.preventDefault(); this.onMouseDown(ev); });
     /* 触屏/触控笔：PointerEvent 在触摸拖动期间持续派发；mouse 事件只在抬手后合成。
        原版（PIXI events + TouchEvent）同时支持触屏平移/捏合与节点拖动。 */
-    canvas.addEventListener('pointerdown', (ev) => this.touch.onPointerDown(ev));
+    canvas.addEventListener('pointerdown', (ev) => this.touch?.onPointerDown(ev));
     canvas.addEventListener('wheel', (ev) => this.onWheel(ev), { passive: false });
     canvas.addEventListener('mousemove', (ev) => {
       if (!this.dragNode && !this.panning) this.onMouseMove(ev);
     }, { passive: true });
     canvas.addEventListener('mouseout', () => this.onMouseOut());
     canvas.addEventListener('contextmenu', (ev) => this.onContextMenu(ev));
-    this.windowMouseMove = (ev) => { if (this.dragNode || this.panning) this.onMouseMove(ev); };
+    this.windowMouseMove = (ev: { clientX: number; clientY: number; }) => { if (this.dragNode || this.panning) this.onMouseMove(ev); };
     this.windowMouseUp = (ev) => this.onMouseUp(ev);
     this.windowBlur = () => this.cancelInteraction();
     window.addEventListener('mousemove', this.windowMouseMove);
@@ -190,7 +191,7 @@ export class GraphRenderer {
   }
 
   // 全局移动事件的 offset 属于事件目标；统一由画布矩形换算。
-  canvasPoint(ev) {
+  canvasPoint(ev: { clientX: number; clientY: number; }) {
     const rect = this.canvasEl.getBoundingClientRect();
     return { x: ev.clientX - rect.left, y: ev.clientY - rect.top };
   }
@@ -211,7 +212,7 @@ export class GraphRenderer {
 
   /* 原版 testCSS：用探针元素读取 11 个颜色类别的计算颜色与透明度 */
   testCSS() {
-    const probe = (cls) => {
+    const probe = (cls: string) => {
       const el = document.body.createDiv({ cls: 'graph-view ' + cls });
       const style = getComputedStyle(el);
       const color = parseColor(style.color);
@@ -220,7 +221,7 @@ export class GraphRenderer {
       const alpha = Number.isNaN(opacity) ? 1 : opacity;
       return color ? { a: alpha * color.a, rgb: color.r << 16 | color.g << 8 | color.b } : { a: alpha, rgb: 8947848 };
     };
-    for (const key in COLOR_CLASSES) if (has(COLOR_CLASSES, key)) this.colors[key] = probe(COLOR_CLASSES[key]);
+    this.colors = Object.fromEntries(Object.entries(COLOR_CLASSES).map(([key, cls]) => [key, probe(cls)])) as GraphColors;
     this.changed();
   }
   getHighlightNode() { return this.dragNode || this.highlightNode; }
@@ -228,24 +229,24 @@ export class GraphRenderer {
   /* 原版：鼠标坐标乘 devicePixelRatio 后换算到世界坐标，命中半径 = 节点实心圆半径 */
   /* 原版 PIXI 的 Graphics 命中区就是实心圆本身（半径 = size×nodeScale）；
      移动端另有 500 半径透明圆（MOBILE_HIT_SCALE 倍），桌面端没有。 */
-  hitRadius(node) {
+  hitRadius(node: { getSize: () => number; }) {
     return node.getSize() * this.nodeScale * this.hitScale;
   }
 
   /* 原版移动端规则开关：命中半径放大 5 倍（PIXI 里 alpha=1e-4 的 500 半径透明圆）。 */
-  setHitScale(scale) {
-    this.hitScale = Number.isFinite(scale) && scale > 0 ? scale : 1;
+  setHitScale(scale: unknown) {
+    this.hitScale = typeof scale === 'number' && Number.isFinite(scale) && scale > 0 ? scale : 1;
     this.changed();
   }
 
-  nodeAt(ev) {
+  nodeAt(ev: Pick<MouseEvent, 'clientX' | 'clientY'>) {
     const dpr = window.devicePixelRatio;
     const point = this.canvasPoint(ev);
     const worldX = (point.x * dpr - this.panX) / this.scale;
     const worldY = (point.y * dpr - this.panY) / this.scale;
     for (let i = this.nodes.length - 1; i >= 0; i--) {
       const node = this.nodes[i];
-      if (node.x === null) continue;
+      if (node.x === null || node.y === null) continue;
       const radius = this.hitRadius(node);
       const dx = node.x - worldX;
       const dy = node.y - worldY;
@@ -255,7 +256,7 @@ export class GraphRenderer {
   }
 
   /* 原版 onWheel：1.5^(-deltaY/120)；缩小时以视口中心为锚点，放大时以光标为锚点 */
-  onWheel(ev) {
+  onWheel(ev: WheelEvent) {
     ev.preventDefault();
     let delta = ev.deltaY;
     if (ev.deltaMode === 1) delta *= 40;
@@ -271,7 +272,7 @@ export class GraphRenderer {
     this.changed();
   }
 
-  onMouseDown(ev) {
+  onMouseDown(ev: MouseEvent & { pointerType?: string }) {
     if (ev.button !== 0 && ev.button !== 1) return;
     /* 触摸后 Chromium 可能补发兼容 mousedown；由 PointerEvent 路径处理，避免重复打开/拖动 */
     if (ev.pointerType === undefined && this.touch && this.touch.lastTouchAt &&
@@ -293,13 +294,13 @@ export class GraphRenderer {
     if (!ev.pointerType || ev.pointerType === 'mouse') document.body.addClass('is-grabbing');
   }
 
-  onMouseMove(ev) {
+  onMouseMove(ev: { clientX: number; clientY: number; }) {
     const point = this.canvasPoint(ev);
     this.mouseX = point.x;
     this.mouseY = point.y;
     const dpr = window.devicePixelRatio;
     const node = this.dragNode;
-    if (node) {
+    if (node && this.dragStart) {
       /* 原版：拖出 5px 才算拖拽；节点被钉在光标世界坐标上，alpha 抬到 0.3 */
       const dx = (ev.clientX - this.dragStart.x) * dpr;
       const dy = (ev.clientY - this.dragStart.y) * dpr;
@@ -312,10 +313,10 @@ export class GraphRenderer {
       this.changed();
       return;
     }
-    if (this.panning) {
+    if (this.panning && this.panOrigin && this.panStart) {
       /* 原版：平移跟随光标（设备像素），同时平滑出速度供惯性使用 */
       const now = performance.now();
-      this.frameTime = lerp(this.frameTime, now - this.lastPanTime, 0.8);
+      this.frameTime = lerp(this.frameTime, now - (this.lastPanTime ?? now), 0.8);
       this.lastPanTime = now;
       const targetX = this.panOrigin.x + (ev.clientX - this.panStart.x) * dpr;
       const targetY = this.panOrigin.y + (ev.clientY - this.panStart.y) * dpr;
@@ -348,14 +349,14 @@ export class GraphRenderer {
   }
 
   /* 原版：右键（macOS 的 ctrl+左键）命中节点时交给引擎弹菜单 */
-  onContextMenu(ev) {
+  onContextMenu(ev: { preventDefault: () => void; }) {
     ev.preventDefault();
     if (!(ev instanceof MouseEvent)) return;
     const node = this.nodeAt(ev);
     if (node && this.onNodeRightClick) this.onNodeRightClick(ev, node.id, node.type);
   }
 
-  onMouseUp(ev) {
+  onMouseUp(ev: MouseEvent) {
     if (ev.button !== this.interactionButton) return;
     const node = this.dragNode;
     if (node) {
@@ -372,7 +373,7 @@ export class GraphRenderer {
     if (!this.panning) return;
     this.panning = false;
     document.body.removeClass('is-grabbing');
-    const elapsed = performance.now() - this.lastPanTime;
+    const elapsed = performance.now() - (this.lastPanTime ?? performance.now());
     this.frameTime = lerp(this.frameTime, elapsed, 0.8);
     if (elapsed > 100) { this.panvX = 0; this.panvY = 0; }
     else if (this.frameTime > 0) { this.panvX /= this.frameTime; this.panvY /= this.frameTime; }
@@ -380,7 +381,7 @@ export class GraphRenderer {
   }
 
   /* 原版 setData：差量增删节点/连线，新节点按邻居质心或环形散布落位 */
-  setData(data) {
+  setData(data: GraphData) {
     if (this.destroyed) return;
     const nodeLookup = this.nodeLookup;
     const nodes = this.nodes;
@@ -392,7 +393,7 @@ export class GraphRenderer {
     let changedProps = false;
     let maxRadiusSq = 0;
     for (const node of nodes) {
-      if (has(data.nodes, node.id)) maxRadiusSq = Math.max(maxRadiusSq, node.x * node.x + node.y * node.y);
+      if (has(data.nodes, node.id)) maxRadiusSq = Math.max(maxRadiusSq, (node.x ?? 0) ** 2 + (node.y ?? 0) ** 2);
       else { deadNodes.push(node); changed = true; }
     }
     const maxRadius = Math.sqrt(maxRadiusSq);
@@ -430,7 +431,7 @@ export class GraphRenderer {
         changed = true;
       }
     }
-    const removeLink = (link) => {
+    const removeLink = (link: GraphLink) => {
       const index = links.indexOf(link);
       if (index >= 0) links.splice(index, 1);
       delete link.source.forward[link.target.id];
@@ -487,14 +488,14 @@ export class GraphRenderer {
     } else if (changedProps) this.changed();
   }
 
-  setRenderOptions(options) {
-    if (Number.isFinite(options.nodeSizeMultiplier)) this.fNodeSizeMult = options.nodeSizeMultiplier;
-    if (Number.isFinite(options.lineSizeMultiplier)) this.fLineSizeMult = options.lineSizeMultiplier;
-    if (Number.isFinite(options.textFadeMultiplier)) this.fTextShowMult = options.textFadeMultiplier;
+  setRenderOptions(options: Partial<Pick<GraphOptions, 'nodeSizeMultiplier' | 'lineSizeMultiplier' | 'textFadeMultiplier' | 'showArrow'>>) {
+    if (typeof options.nodeSizeMultiplier === 'number' && Number.isFinite(options.nodeSizeMultiplier)) this.fNodeSizeMult = options.nodeSizeMultiplier;
+    if (typeof options.lineSizeMultiplier === 'number' && Number.isFinite(options.lineSizeMultiplier)) this.fLineSizeMult = options.lineSizeMultiplier;
+    if (typeof options.textFadeMultiplier === 'number' && Number.isFinite(options.textFadeMultiplier)) this.fTextShowMult = options.textFadeMultiplier;
     if (typeof options.showArrow === 'boolean') this.fShowArrow = options.showArrow;
     this.changed();
   }
-  setForces(forces) { this.sim.setForces(forces); this.changed(); }
+  setForces(forces: GraphForceOptions) { this.sim.setForces(forces); this.changed(); }
 
   /* 原版 updateZoom：目标缩放按 0.85 逼近，围绕缩放中心保持世界坐标不动 */
   updateZoom() {
@@ -517,17 +518,17 @@ export class GraphRenderer {
     this.setPan(this.panX, this.panY);
     this.setScale(scale);
   }
-  setPan(x, y) { this.panX = x; this.panY = y; }
+  setPan(x: number, y: number) { this.panX = x; this.panY = y; }
 
   /* 原版 setScale：节点缩放取 1/√scale，文本透明度 = log2(scale)+1-阈值 钳到 [0,1] */
-  setScale(scale) {
+  setScale(scale: number) {
     this.scale = scale;
     this.nodeScale = Math.sqrt(1 / scale);
     this.textAlpha = clamp(Math.log(scale) / Math.log(2) + 1 - this.fTextShowMult, 0, 1);
   }
 
-  zoomTo(scale, center) {
-    if (!Number.isFinite(scale) || scale <= 0) return;
+  zoomTo(scale: unknown, center?: { x: number; y: number; }) {
+    if (typeof scale !== 'number' || !Number.isFinite(scale) || scale <= 0) return;
     this.targetScale = scale;
     if (center) { this.zoomCenterX = center.x; this.zoomCenterY = center.y; } else { this.zoomCenterX = 0; this.zoomCenterY = 0; }
     this.changed();
@@ -613,6 +614,7 @@ export class GraphRenderer {
     const top = -this.panY / scale;
     this.viewport = { left, top, right: left + this.width / scale * dpr, bottom: top + this.height / scale * dpr };
     const ctx = this.ctx;
+    if (!ctx) return;
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.clearRect(0, 0, this.canvasEl.width, this.canvasEl.height);
     ctx.setTransform(scale, 0, 0, scale, this.panX, this.panY);
@@ -623,7 +625,7 @@ export class GraphRenderer {
     /* 原版：鼠标已移出悬停节点的半径（size×nodeScale+2 的容差）时取消高亮。
        命中区本身是实心圆（无 +2），这里的 +2 是原版渲染回调的取消阈值。 */
     const { mouseX, mouseY, highlightNode } = this;
-    if (mouseX !== null && mouseY !== null && highlightNode) {
+    if (mouseX !== null && mouseY !== null && highlightNode && highlightNode.x !== null && highlightNode.y !== null) {
       const worldX = (mouseX * dpr - this.panX) / scale;
       const worldY = (mouseY * dpr - this.panY) / scale;
       const dx = highlightNode.x - worldX;
@@ -638,12 +640,13 @@ export class GraphRenderer {
   }
 
   /* 原版 SQ.render：连线两端各缩进节点半径；双向链接只画一条；箭头随缩放淡入 */
-  drawLinks(ctx) {
+  drawLinks(ctx: CanvasRenderingContext2D) {
     const viewport = this.viewport;
     const highlight = this.getHighlightNode();
     for (const link of this.links) {
       const source = link.source;
       const target = link.target;
+      if (source.x === null || source.y === null || target.x === null || target.y === null) continue;
       const related = source === highlight || target === highlight;
       const intensity = !highlight || related ? 1 : FADE;
       const lineColor = related ? this.colors.lineHighlight : this.colors.line;
@@ -699,12 +702,12 @@ export class GraphRenderer {
   }
 
   /* 原版 MQ.render：圆点 + 高亮圆环 + 文本（fadeAlpha/moveText 逐帧插值） */
-  drawNodes(ctx) {
+  drawNodes(ctx: CanvasRenderingContext2D) {
     const viewport = this.viewport;
     const highlight = this.getHighlightNode();
     const nodeScale = this.nodeScale;
     for (const node of this.nodes) {
-      if (node.x === null) continue;
+      if (node.x === null || node.y === null) continue;
       const size = node.getSize();
       const fill = node.getFillColor();
       const related = !highlight || highlight === node || has(node.forward, highlight.id) || has(node.reverse, highlight.id);

@@ -8,17 +8,22 @@
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 /* Canvas menus and pickers — split out of canvas-view to keep it under 800 lines. */
+import type { TFile } from '../core/vault.js';
+import { CanvasGroupNode } from './canvas-group-node.js';
 import { t } from '../core/i18n.js';
 import { SuggestModal, fuzzyMatch } from '../core/suggest.js';
 import { PromptModal } from '../core/modals.js';
 import { Notice } from '../core/notices.js';
 import { installViewMoreAction } from '../core/view-pane-menu.js';
+import { Menu } from '../core/menu.js';
+import { CanvasEdge } from './canvas-edge.js';
+import { CanvasNode } from './canvas-node.js';
 
 const NOTE_EXTENSIONS = ['md', 'canvas'];
 const MEDIA_EXTENSIONS = ['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'bmp', 'avif', 'mp4', 'webm', 'ogv', 'mov', 'mkv', 'mp3', 'wav', 'm4a', 'ogg', 'flac', 'pdf'];
 
 /** 空白处右键 / 拖拽连线落空时的「新建」菜单。 */
-export function showCreationMenu(canvas: import('./canvas-view.js').CanvasView, menu, pos, size?) {
+export function showCreationMenu(canvas: import('./canvas-view.js').CanvasView, menu: Menu, pos: { x: number; y: number; width?: number; height?: number; }, size?: { x: number; y: number; width: number; height: number; }|undefined) {
   menu.addItem((item) => item.setSection('create').setTitle(t('plugins.canvas.action-add-card')).setIcon('lucide-sticky-note')
     .onClick(() => canvas.createTextNode({ pos, size })));
   menu.addItem((item) => item.setSection('create').setTitle(t('plugins.canvas.action-add-note')).setIcon('lucide-file-text')
@@ -32,7 +37,7 @@ export function showCreationMenu(canvas: import('./canvas-view.js').CanvasView, 
 }
 
 /** 快速设置：对齐网格 / 对齐物体 / 只读（原版选项逐项对应）。 */
-export function showQuickSettingsMenu(canvas: import('./canvas-view.js').CanvasView, menu) {
+export function showQuickSettingsMenu(canvas: import('./canvas-view.js').CanvasView, menu: Menu) {
   menu.addItem((item) => item.setSection('canvas').setTitle(t('plugins.canvas.option-snap-to-grid')).setIcon('lucide-grid')
     .setChecked(!!canvas.options.snapToGrid)
     .onClick(() => { canvas.options.snapToGrid = !canvas.options.snapToGrid; canvas.saveOptions(); }));
@@ -45,24 +50,24 @@ export function showQuickSettingsMenu(canvas: import('./canvas-view.js').CanvasV
 }
 
 /** 视图面板菜单（原版 CanvasView.onPaneMenu）：桌面端追加「导出图片」。 */
-export function showCanvasPaneMenu(canvas: import('./canvas-view.js').CanvasView, menu) {
+export function showCanvasPaneMenu(canvas: import('./canvas-view.js').CanvasView, menu: Menu) {
   menu.addItem((item) => item.setSection('action').setTitle(t('plugins.canvas.action-export-png')).setIcon('lucide-image')
     .onClick(() => canvas.generateHDImage()));
 }
 
 /** 视图头部「更多选项」按钮 → 面板菜单（原版标签页三点菜单）。 */
-export function installCanvasViewActions(canvas: import('./canvas-view.js').CanvasView, actions) {
+export function installCanvasViewActions(canvas: import('./canvas-view.js').CanvasView, actions: HTMLElement) {
   return installViewMoreAction(canvas, actions);
 }
 
 /** 文件选择弹窗：showAttachments=false 只列笔记，media=true 只列媒体。 */
-export class FileSuggestModal extends SuggestModal {
-  declare onChoose: any;
-  declare media: any;
-  declare allowCreateNewFile: any;
-  declare emptyStateText: any;
+export class FileSuggestModal extends SuggestModal<TFile> {
+  declare onChoose: (file: TFile) => void;
+  declare media: boolean;
+  declare allowCreateNewFile: boolean;
+  declare emptyStateText: string;
 
-  constructor(app: App, onChoose, options: Record<string, any> = {}) {
+  constructor(app: App, onChoose: (file: TFile) => void, options: { media?: boolean; allowCreateNewFile?: boolean; emptyStateText?: string } = {}) {
     super(app);
     this.onChoose = onChoose;
     this.media = !!options.media;
@@ -79,7 +84,7 @@ export class FileSuggestModal extends SuggestModal {
     });
   }
 
-  getSuggestions(query) {
+  getSuggestions(query: string) {
     const files = this.getFiles();
     if (!query) return files.slice(0, this.limit);
     const out = [];
@@ -91,12 +96,12 @@ export class FileSuggestModal extends SuggestModal {
     return out.map((o) => o.file);
   }
 
-  renderSuggestion(file, el) {
+  renderSuggestion(file: TFile, el: HTMLDivElement) {
     el.createDiv({ cls: 'suggestion-title', text: file.basename });
     el.createDiv({ cls: 'suggestion-note', text: file.path });
   }
 
-  onChooseSuggestion(file) {
+  onChooseSuggestion(file: TFile) {
     this.onChoose(file);
   }
 }
@@ -105,7 +110,7 @@ export class FileSuggestModal extends SuggestModal {
 export class LinkSuggestModal extends PromptModal {
   declare onClose: () => void;
 
-  constructor(app: App, onChoose, options: Record<string, any> = {}) {
+  constructor(app: App, onChoose: (url: string) => void, options: { title?: string; value?: string } = {}) {
     super(app, {
       title: options.title || t('plugins.canvas.label-enter-url'),
       placeholder: 'https://example.com',
@@ -125,12 +130,12 @@ export class LinkSuggestModal extends PromptModal {
 }
 
 /** 「跳跃至组」：列出所有分组，回车后缩放过去。 */
-export class JumpToGroupModal extends SuggestModal {
-  declare groups: any;
-  declare onChoose: any;
-  declare emptyStateText: any;
+export class JumpToGroupModal extends SuggestModal<CanvasGroupNode> {
+  declare groups: CanvasGroupNode[];
+  declare onChoose: (group: CanvasGroupNode) => void;
+  declare emptyStateText: string;
 
-  constructor(app: App, groups, onChoose) {
+  constructor(app: App, groups: CanvasGroupNode[], onChoose: (group: CanvasGroupNode) => void) {
     super(app);
     this.groups = groups;
     this.onChoose = onChoose;
@@ -143,7 +148,7 @@ export class JumpToGroupModal extends SuggestModal {
     ]);
   }
 
-  getSuggestions(query) {
+  getSuggestions(query: string) {
     if (!query) return this.groups;
     const out = [];
     for (const group of this.groups) {
@@ -155,11 +160,11 @@ export class JumpToGroupModal extends SuggestModal {
     return out.map((o) => o.group);
   }
 
-  renderSuggestion(group, el) {
+  renderSuggestion(group: CanvasGroupNode, el: HTMLDivElement) {
     el.setText(group.label || t('plugins.canvas.label-untitled-group'));
   }
 
-  onChooseSuggestion(group) {
+  onChooseSuggestion(group: CanvasGroupNode) {
     this.onChoose(group);
   }
 }

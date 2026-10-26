@@ -9,7 +9,7 @@
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 /* Inline widgets for the live preview layer. */
-import { WidgetType } from '@codemirror/view';
+import { WidgetType, type EditorView } from '@codemirror/view';
 import { Facet } from '@codemirror/state';
 import { Desktop } from '../core/ipc.js';
 import { attachMarkdownInteractions, renderMarkdown, stripFrontmatter } from '../markdown/reading.js';
@@ -19,18 +19,18 @@ import { tt } from '../core/i18n.js';
 import { createCanvasEmbedWidget, missingCanvasNote } from '../views/canvas-minimap.js';
 import { mountBaseEmbed } from '../plugins-core/bases-embed.js';
 
-export const appFacet = Facet.define({ combine: (values) => values[0] });
+export const appFacet = Facet.define<App, App | undefined>({ combine: (values) => values[0] });
 
 // ---------------------------------------------------------------------------
 // Inline widgets
 // ---------------------------------------------------------------------------
 export class CheckboxWidget extends WidgetType {
-  declare checked: any;
-  declare pos: any;
+  declare checked: boolean;
+  declare pos: number;
 
-  constructor(checked, pos) { super(); this.checked = checked; this.pos = pos; }
-  eq(other) { return other.checked === this.checked && other.pos === this.pos; }
-  toDOM(view) {
+  constructor(checked: boolean, pos: number) { super(); this.checked = checked; this.pos = pos; }
+  eq(other: CheckboxWidget) { return other.checked === this.checked && other.pos === this.pos; }
+  toDOM(view: EditorView) {
     const input = createEl('input', { type: 'checkbox', cls: 'task-list-item-checkbox' });
     input.checked = this.checked;
     input.onmousedown = (e) => {
@@ -44,12 +44,12 @@ export class CheckboxWidget extends WidgetType {
 }
 
 export class BulletWidget extends WidgetType {
-  declare ordered: any;
-  declare number: any;
-  declare silent: any;
+  declare ordered: boolean;
+  declare number: string | number | undefined;
+  declare silent: boolean;
 
-  constructor(ordered, number?, silent?) { super(); this.ordered = ordered; this.number = number; this.silent = !!silent; }
-  eq(other) {
+  constructor(ordered: boolean, number?: string | number, silent?: boolean) { super(); this.ordered = ordered; this.number = number; this.silent = !!silent; }
+  eq(other: BulletWidget) {
     return other.ordered === this.ordered && other.number === this.number && other.silent === this.silent;
   }
   toDOM() {
@@ -66,16 +66,16 @@ export class BulletWidget extends WidgetType {
 
 /** 图片部件：尺寸语法写进 img 的 width/height，无高度参数时高度按原始比例。 */
 export class ImageWidget extends WidgetType {
-  declare src: any;
-  declare alt: any;
-  declare width: any;
-  declare height: any;
+  declare src: string;
+  declare alt: string;
+  declare width: number;
+  declare height: number;
 
-  constructor(src, alt, width, height) {
+  constructor(src: string, alt: string, width: number, height: number) {
     super();
     this.src = src; this.alt = alt; this.width = width || 0; this.height = height || 0;
   }
-  eq(other) {
+  eq(other: ImageWidget) {
     return other.src === this.src && other.alt === this.alt
       && other.width === this.width && other.height === this.height;
   }
@@ -91,17 +91,17 @@ export class ImageWidget extends WidgetType {
   ignoreEvent() { return false; }
 }
 
-export function imageWidget(src, alt, size) {
+export function imageWidget(src: string, alt: string, size: { x: number; y: number } | null) {
   return new ImageWidget(src, alt, size ? size.x : 0, size ? size.y : 0);
 }
 
 export class MathWidget extends WidgetType {
-  declare tex: any;
-  declare display: any;
+  declare tex: string;
+  declare display: boolean;
 
-  constructor(tex, display) { super(); this.tex = tex; this.display = display; }
-  eq(other) { return other.tex === this.tex && other.display === this.display; }
-  toDOM(view) {
+  constructor(tex: string, display: boolean) { super(); this.tex = tex; this.display = display; }
+  eq(other: MathWidget) { return other.tex === this.tex && other.display === this.display; }
+  toDOM(view: EditorView) {
     const el = createSpan({ cls: this.display ? 'math math-block' : 'math math-inline' });
     renderMath(el, this.tex, this.display).then(() => {
       if (view.dom.isConnected) view.requestMeasure();
@@ -115,10 +115,10 @@ export class HrWidget extends WidgetType {
 }
 
 export class LangWidget extends WidgetType {
-  declare lang: any;
+  declare lang: string;
 
-  constructor(lang) { super(); this.lang = lang; }
-  eq(o) { return o.lang === this.lang; }
+  constructor(lang: string) { super(); this.lang = lang; }
+  eq(o: LangWidget) { return o.lang === this.lang; }
   toDOM() {
     // 原版 code-block-flair：语言名（无语言时给复制图标）
     const el = createSpan({ cls: 'code-block-flair' });
@@ -129,22 +129,22 @@ export class LangWidget extends WidgetType {
 }
 
 export class LinkWidget extends WidgetType {
-  declare text: any;
-  declare target: any;
-  declare embed: any;
-  declare sourcePath: any;
-  declare external: any;
+  declare text: string;
+  declare target: string;
+  declare embed: boolean;
+  declare sourcePath: string;
+  declare external: boolean;
 
-  constructor(text, target, embed, sourcePath, external?) {
+  constructor(text: string, target: string, embed: boolean, sourcePath: string, external?: boolean) {
     super();
     this.text = text; this.target = target; this.embed = embed;
     this.sourcePath = sourcePath || ''; this.external = !!external;
   }
-  eq(other) {
+  eq(other: LinkWidget) {
     return other.text === this.text && other.target === this.target &&
       other.embed === this.embed && other.sourcePath === this.sourcePath && other.external === this.external;
   }
-  toDOM(view) {
+  toDOM(view: EditorView) {
     const app = view.state.facet(appFacet);
     // 原版：![[笔记]] 在实时预览中渲染为 markdown-embed（只读预览 + 打开源文件按钮）
     if (this.embed && app) {
@@ -154,12 +154,12 @@ export class LinkWidget extends WidgetType {
         const wrap = createDiv({ cls: 'internal-embed bases-embed' });
         wrap.setAttr('tabindex', '-1');
         wrap._baseEmbedCleanup = mountBaseEmbed(app, wrap, file, { viewName: this.target.split('|')[0].split('#').slice(1).join('#'), sourcePath: this.sourcePath });
-        wrap._baseEmbedCleanup.ready.then(() => { if (view.dom.isConnected) view.requestMeasure(); });
+        wrap._baseEmbedCleanup.ready?.then(() => { if (view.dom.isConnected) view.requestMeasure(); });
         return wrap;
       }
       if (file && file.extension === 'canvas') {
         // 原版 cte：实时预览里的 ![[白板.canvas]] 是画布嵌入（div 容器 + 标题 + 缩略图）
-        const opts = { tag: 'div', linktext: this.target, href: file.path, sourcePath: this.sourcePath, tabindex: true };
+        const opts = { tag: 'div' as const, linktext: this.target, href: file.path, sourcePath: this.sourcePath, tabindex: true };
         return createCanvasEmbedWidget(app, file, opts, () => { if (view.dom.isConnected) view.requestMeasure(); });
       }
       if (!file && /\.canvas$/i.test(this.target)) {
@@ -205,7 +205,7 @@ export class LinkWidget extends WidgetType {
     };
     return span;
   }
-  destroy(dom) { dom._baseEmbedCleanup?.(); }
+  destroy(dom: HTMLElement) { dom._baseEmbedCleanup?.(); }
   ignoreEvent() { return false; }
 }
 

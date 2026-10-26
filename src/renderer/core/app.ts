@@ -2,6 +2,7 @@
  * [INPUT]: Vault、Settings、MetadataCache、Workspace、命令、插件与桌面 IPC。
  * 关闭前等待视图保存，失败保留输入；设置窗口不写主布局。
  * [OUTPUT]: 导出 App，装配启动、外观、事件与布局保存。
+ * 插件宿主在构造期可查询空注册表；initialize 才激活插件。
  * 文档独立窗口只加载来源视图，跳过主布局读写与启动打开行为。
  * [POS]: 应用组合根。新建和修改进入元数据解析，启动修复固定侧栏入口。isSettingsWindow（1.14.4 设置独立窗口）只跳过看门狗/后台索引/布局加载，其余状态照常装配。
  *        新库默认只展开左栏（右栏反链/大纲收起）；body 补 obsidian-app 与 show-inline-title，不再挂 body.is-folding。
@@ -14,6 +15,7 @@
  */
 import { Events } from './events.js';
 import { Vault, FileSystemAdapter, TFile, TFolder, normalizePath } from './vault.js';
+import type { VaultEvents } from './vault.js';
 import { MetadataCache } from './metadata.js';
 import { FileManager } from './fileManager.js';
 import { Workspace, WorkspaceTabs } from './workspace.js';
@@ -29,9 +31,16 @@ import { Notice } from './notices.js';
 import { flushWindowViews } from './window-save.js';
 import { PluginManager } from './plugins.js';
 
-const nodePath = require('path');
+const nodePath: typeof import('node:path') = require('path');
+function ready<T>(value: T | null, service: string): T {
+  if (value === null) throw new Error(`应用服务尚未初始化：${service}`);
+  return value;
+}
+export interface AppAction { action?: string; file?: string; command?: string; tab?: string; }
 
-export class App extends Events {
+type AppEvents = Pick<VaultEvents, 'create' | 'modify' | 'delete' | 'rename'> & { 'create-remote?': VaultEvents['create'] };
+
+export class App extends Events<AppEvents> {
   declare _recentCommands: string[];
   declare getVersion: () => string;
   declare _tableCellMenuHook: unknown;
@@ -42,48 +51,53 @@ export class App extends Events {
   declare _contextParamWaiters: Array<(params: unknown) => void>;
   declare setting: import('../views/settings-view.js').SettingsHost;
 
-  declare vault: any;
-  declare workspace: any;
-  declare metadataCache: any;
-  declare fileManager: any;
+  private _vault: Vault | null = null;
+  get vault(): Vault { return ready(this._vault, 'vault'); }
+  set vault(value: Vault) { this._vault = value; }
+  private _workspace: Workspace | null = null;
+  get workspace(): Workspace { return ready(this._workspace, 'workspace'); }
+  set workspace(value: Workspace) { this._workspace = value; }
+  private _metadataCache: MetadataCache | null = null;
+  get metadataCache(): MetadataCache { return ready(this._metadataCache, 'metadataCache'); }
+  set metadataCache(value: MetadataCache) { this._metadataCache = value; }
+  private _fileManager: FileManager | null = null;
+  get fileManager(): FileManager { return ready(this._fileManager, 'fileManager'); }
+  set fileManager(value: FileManager) { this._fileManager = value; }
   declare viewRegistry: ViewRegistry;
   declare commands: CommandManager;
   declare keymap: Keymap;
-  declare hotkeyManager: any;
-  declare settings: any;
-  declare plugins: PluginManager;
-  declare vaultId: any;
-  declare vaultPath: any;
+  private _hotkeyManager: HotkeyManager | null = null;
+  get hotkeyManager(): HotkeyManager { return ready(this._hotkeyManager, 'hotkeyManager'); }
+  set hotkeyManager(value: HotkeyManager) { this._hotkeyManager = value; }
+  private _settings: Settings | null = null;
+  get settings(): Settings { return ready(this._settings, 'settings'); }
+  set settings(value: Settings) { this._settings = value; }
+  plugins: PluginManager;
+  vaultId: string | undefined;
+  vaultPath = '';
   declare isSettingsWindow: boolean;
   declare bootTime: number | undefined;
   declare isDocumentWindow: boolean | undefined;
-  declare documentState: any;
-  declare documentLayout: any;
-  declare nouns: any;
-  declare _lastContextMenuParams: any;
+  documentState: import('../../contracts.js').ViewState | undefined;
+  documentLayout: unknown;
+  nouns: ReturnType<typeof getNouns> = getNouns();
+  _lastContextMenuParams: Electron.ContextMenuParams | null = null;
   declare _stopVaultCssWatch: (() => void) | undefined;
-  declare _stopPreferenceWatch: any;
-  declare _lastTranslucency: any;
+  _stopPreferenceWatch: (() => void) | undefined;
+  _lastTranslucency: boolean | undefined;
 
   constructor() {
     super();
-    this.vault = null;
-    this.workspace = null;
-    this.metadataCache = null;
-    this.fileManager = null;
     this.viewRegistry = new ViewRegistry();
     this.commands = new CommandManager(this);
     this.keymap = new Keymap(this);
-    this.hotkeyManager = null;
-    this.settings = null;
-    this.plugins = null;
-    this.vaultId = null;
-    this.vaultPath = null;
+    // 设置宿主先于 initialize 注册页签，只读取空注册表，不激活插件。
+    this.plugins = new PluginManager(this);
     // 设置独立窗口（1.14.4 popout）：入口 main.js 依 location.hash 设置；为真时跳过看门狗/后台索引/布局加载
     this.isSettingsWindow = false;
   }
 
-  async initialize() {
+  async initialize(): Promise<boolean> {
     this.bootTime = performance.now();
     // language
     setLanguage(detectLanguage());
@@ -98,7 +112,7 @@ export class App extends Events {
     if (!info || !info.path) {
       document.body.setText('No vault selected.');
       Desktop.openStarter();
-      return;
+      return false;
     }
     this.vaultId = info.id;
     this.vaultPath = info.path;
@@ -114,14 +128,13 @@ export class App extends Events {
 
     // vault
     this.vault = new Vault(new FileSystemAdapter(this.vaultPath));
-    globalThis.__electronTrash = async (p) => Desktop.trash(p);
+    globalThis.__electronTrash = async (p: string) => Desktop.trash(p);
     await this.vault.initialize();
     if (!this.isSettingsWindow) await this.vault.watch();
 
     this.metadataCache = new MetadataCache(this);
     this.fileManager = new FileManager(this);
     this.hotkeyManager = new HotkeyManager(this);
-    this.plugins = new PluginManager(this);
     this.nouns = getNouns();
 
     // vault events -> metadata
@@ -158,11 +171,11 @@ export class App extends Events {
     ipcOn('window-save-failed', (_event, message) => new Notice(message || '文档尚未保存，窗口保持打开'));
 
     // OBS_ACT handling (obsidian:// actions)
-    if (window.OBS_ACT) {
+    if (window.OBS_ACT && typeof window.OBS_ACT !== 'function') {
       this._handleObsAct(window.OBS_ACT);
       window.OBS_ACT = null;
     }
-    window.OBS_ACT = (act) => this._handleObsAct(act);
+    window.OBS_ACT = (act: AppAction) => this._handleObsAct(act);
 
     // background metadata scan
     if (!this.isSettingsWindow) this.metadataCache.initialize().catch((e) => console.error(e));
@@ -182,9 +195,9 @@ export class App extends Events {
         leaf = this.workspace.activeLeaf;
       } else {
         leaf = this.workspace.getLeaf(true);
-        await leaf.setViewState(this.documentState);
+        await leaf.setViewState(this.documentState || { type: 'empty' });
       }
-      if (leaf.view?.getViewType() !== this.documentState.type) throw new Error('文档窗口无法加载此视图');
+      if (!leaf || leaf.view?.getViewType() !== this.documentState?.type) throw new Error('文档窗口无法加载此视图');
       this.workspace.setActiveLeaf(leaf, { focus: true });
       this.workspace.updateTitle();
       this.workspace.on('file-open', () => this.workspace.updateTitle());
@@ -224,12 +237,13 @@ export class App extends Events {
 
     // notifications for vault ready
     this.vault.on('create', (file) => this.trigger('create-remote?', file));
+    return true;
   }
 
-  _onKeyDown(ev) {
+  _onKeyDown(ev: KeyboardEvent) {
     // let the keymap handle hotkeys; editor already handles its own keys first
     if (ev.defaultPrevented) return;
-    if (this.hotkeyManager) this.hotkeyManager.handleKeydown(ev);
+    if (this._hotkeyManager) this._hotkeyManager.handleKeydown(ev);
   }
 
   _applyTheme() {
@@ -292,7 +306,7 @@ export class App extends Events {
    * 旧版主题（themes/ 下的裸 .css）读 themes/<name>.css。
    */
   _applyCustomCss() {
-    const fs = require('fs');
+    const fs: typeof import('node:fs') = require('fs');
     const appearance = this.settings.appearance;
     // theme.css
     let themeEl = document.getElementById('obsidian-theme-css');
@@ -343,15 +357,16 @@ export class App extends Events {
   async _runOpeningBehavior() {
     if (this.isSettingsWindow || this.isDocumentWindow) return;
     const behavior = this.settings.appSettings.openBehavior || '';
-    if (window.OBS_ACT && window.OBS_ACT.action) return;
+    if (window.OBS_ACT && typeof window.OBS_ACT !== 'function' && window.OBS_ACT.action) return;
     try {
       if (behavior === 'new') {
-        await this.fileManager.createAndOpenMarkdownFile('');
+        const file = await this.fileManager.createNewMarkdownFile(this.fileManager.getNewFileParent(''), 'Untitled');
+        await this.workspace.openFile(file);
       } else if (behavior === 'daily') {
         const daily = this.plugins.getInternalPlugin('daily-notes');
         const instance = daily && daily.enabled && daily.instance;
         if (instance && typeof instance.getDailyNote === 'function') {
-          const file = await instance.getDailyNote();
+          const file = await instance.getDailyNote(undefined);
           if (file) await this.workspace.openFile(file);
         }
       } else if (behavior.startsWith('file:')) {
@@ -366,7 +381,7 @@ export class App extends Events {
   }
 
   async _loadWorkspace() {
-    const fs = require('fs');
+    const fs: typeof import('node:fs') = require('fs');
     const workspacePath = nodePath.join(this.vaultPath, '.obsidian', 'workspace.json');
     let data = null;
     try {
@@ -428,7 +443,7 @@ export class App extends Events {
     ws.setActiveLeaf(centerLeaf, { focus: false });
   }
 
-  _handleObsAct(act) {
+  _handleObsAct(act: AppAction | null | undefined) {
     if (!act) return;
     if (act.action === 'open') {
       if (act.file) {
@@ -459,7 +474,7 @@ export class App extends Events {
       if (view) ipcSend('document-window-state', { type: view.getViewType(), state: view.getState(), layout: this.workspace.getLayout() });
       return;
     }
-    const fs = require('fs');
+    const fs: typeof import('node:fs') = require('fs');
     const workspacePath = nodePath.join(this.vaultPath, '.obsidian', 'workspace.json');
     try {
       fs.mkdirSync(nodePath.dirname(workspacePath), { recursive: true });
@@ -470,14 +485,14 @@ export class App extends Events {
     }
   }
   async flushForClose() {
-    if (!this.workspace || this.isSettingsWindow) return { ok: true };
+    if (!this._workspace || this.isSettingsWindow) return { ok: true };
     const result = await flushWindowViews(this);
     if (result.ok) await this.saveLayout();
     return result;
   }
 }
 
-export function hexToHsl(hex) {
+export function hexToHsl(hex: string) {
   hex = hex.replace('#', '');
   if (hex.length === 3) hex = hex.split('').map((c) => c + c).join('');
   const r = parseInt(hex.slice(0, 2), 16) / 255;

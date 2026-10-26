@@ -10,29 +10,30 @@
  */
 /* Canvas export options modal — original CanvasExportModal (generateHDImage step 1). */
 import { Modal } from '../core/modals.js';
-import { Setting } from '../core/setting.js';
+import type { CanvasExportDialogMetrics, CanvasExportOptions } from './canvas-export-types.js';
+import { Setting, DropdownComponent, SliderComponent, ToggleComponent } from '../core/setting.js';
 import { t } from '../core/i18n.js';
 
 export class CanvasExportModal extends Modal {
   declare canvas: import('./canvas-view.js').CanvasView;
-  declare metrics: any;
-  declare frame: string;
+  declare metrics: CanvasExportDialogMetrics;
+  declare frame: 'full' | 'viewport';
   declare showLogo: boolean;
   declare privacyMode: boolean;
-  declare zoom: any;
-  declare frameDropdown: any;
+  declare zoom: number;
+  declare frameDropdown: DropdownComponent;
   declare zoomSetting: Setting | undefined;
-  declare zoomSlider: any;
+  declare zoomSlider: SliderComponent;
   declare logoSetting: Setting | undefined;
-  declare logoToggle: any;
+  declare logoToggle: ToggleComponent;
   declare privacySetting: Setting | undefined;
-  declare privacyToggle: any;
+  declare privacyToggle: ToggleComponent;
 
   /**
    * @param {CanvasView} canvas
    * @param {{worldWidth:number, worldHeight:number, maxSize:number, maxZoom:number, dimensionsFor:Function, onSave:Function}} metrics
    */
-  constructor(canvas: import('./canvas-view.js').CanvasView, metrics) {
+  constructor(canvas: import('./canvas-view.js').CanvasView, metrics: CanvasExportDialogMetrics) {
     super(canvas.app);
     this.canvas = canvas;
     this.metrics = metrics;
@@ -59,7 +60,7 @@ export class CanvasExportModal extends Modal {
         dropdown.addOption('full', t('plugins.canvas.option-export-png-frame-full'));
         dropdown.addOption('viewport', t('plugins.canvas.option-export-png-frame-viewport'));
         dropdown.setValue(this.frame);
-        dropdown.onChange((value) => { this.frame = value; this.syncFrameSettings(); });
+        dropdown.onChange((value) => { this.frame = value === 'viewport' ? 'viewport' : 'full'; this.syncFrameSettings(); });
       });
     this.zoomSetting = new Setting(this.contentEl)
       .setName(t('plugins.canvas.option-export-png-zoom'))
@@ -100,19 +101,19 @@ export class CanvasExportModal extends Modal {
   /** 范围切换：仅当前部分时隐藏缩放与水印（原版 setVisibility；无值的控件不参与导出）。 */
   syncFrameSettings() {
     const full = this.frame === 'full';
-    this.zoomSetting.settingEl.toggleClass('is-hidden', !full);
-    this.logoSetting.settingEl.toggleClass('is-hidden', !full);
+    this.zoomSetting?.settingEl.toggleClass('is-hidden', !full);
+    this.logoSetting?.settingEl.toggleClass('is-hidden', !full);
   }
 
   /** 预计图像尺寸：使用原版密度取整与 16284 长边限制，由注入的几何函数返回。 */
   syncDimensions() {
     const size = this.metrics.dimensionsFor(Math.pow(2, this.zoom));
     const dimensions = `${size.width.toLocaleString()}px x ${size.height.toLocaleString()}px`;
-    this.zoomSetting.setDesc(t('plugins.canvas.label-export-png-dimensions', { dimensions }));
+    this.zoomSetting?.setDesc(t('plugins.canvas.label-export-png-dimensions', { dimensions }));
   }
 
   submit() {
-    const options: { frame: string; showLogo: boolean; privacyMode: boolean; scale?: number } = {
+    const options: CanvasExportOptions = {
       frame: this.frame,
       showLogo: this.showLogo,
       privacyMode: this.privacyMode,

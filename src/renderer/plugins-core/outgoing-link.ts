@@ -11,6 +11,9 @@ import { View } from '../core/view.js';
 import { t } from '../core/i18n.js';
 import { setIcon } from '../core/icons.js';
 import { IS_MAC } from '../core/keymap.js';
+import { WorkspaceLeaf } from '../core/workspace-model.js';
+import type { EventRef } from '../core/events.js';
+import { TFile, VaultEntry } from '../core/vault.js';
 
 export const nameKey = 'plugins.outgoing-links';
 
@@ -19,25 +22,25 @@ export const OUTGOING_LINK_VIEW_TYPE = 'outgoing-link';
 // 原版 AT()：标题比较前去掉标点与空白。
 const HEADING_NOISE_RE = /[!"#$%&()*+,.:;<=>?@^`{|}~\/\[\]\\\r\n]/g;
 
-function headingKey(text) {
+function headingKey(text: string) {
   return String(text || '').replace(HEADING_NOISE_RE, ' ').replace(/\s+/g, ' ').trim().toLowerCase();
 }
 
 /** 原版 Ng.isModEvent：macOS 用 Meta，其余平台用 Ctrl。 */
-function isModEvent(ev) {
+function isModEvent(ev: Pick<MouseEvent, 'metaKey' | 'ctrlKey'>) {
   return IS_MAC ? !!ev.metaKey : !!ev.ctrlKey;
 }
 
 export class OutgoingLinkView extends View {
   declare icon: string;
   declare navigation: boolean;
-  declare _refs: any[];
-  declare _pending: any;
-  declare _pane: any;
+  declare _refs: EventRef[];
+  declare _pending: ReturnType<typeof setTimeout> | null;
+  declare _pane: HTMLDivElement | null;
   declare _linksCollapsed: boolean;
   declare _unlinkedCollapsed: boolean;
 
-  constructor(leaf) {
+  constructor(leaf: WorkspaceLeaf) {
     super(leaf);
     this.icon = 'links-going-out';
     this.navigation = true;
@@ -56,7 +59,7 @@ export class OutgoingLinkView extends View {
   }
   getState() { return { linksCollapsed: this._linksCollapsed, unlinkedCollapsed: this._unlinkedCollapsed }; }
 
-  async setState(state) {
+  async setState(state: Record<string,unknown>) {
     if (state && typeof state.linksCollapsed === 'boolean') this._linksCollapsed = state.linksCollapsed;
     if (state && typeof state.unlinkedCollapsed === 'boolean') this._unlinkedCollapsed = state.unlinkedCollapsed;
     this._render();
@@ -80,7 +83,7 @@ export class OutgoingLinkView extends View {
   onClose() {
     for (const ref of this._refs) ref.unregister && ref.unregister();
     this._refs = [];
-    clearTimeout(this._pending);
+    clearTimeout(this._pending ?? undefined);
     this._pending = null;
     this._pane = null;
   }
@@ -91,7 +94,7 @@ export class OutgoingLinkView extends View {
   }
 
   // --- 收集：links + embeds 按位置排序，dest.path/未解析路径 + subpath 去重 ---
-  _collectEntries(file) {
+  _collectEntries(file: VaultEntry) {
     const cache = this.app.metadataCache.getFileCache(file);
     if (!cache) return [];
     const links = [...(cache.links || []), ...(cache.embeds || [])]
@@ -118,7 +121,7 @@ export class OutgoingLinkView extends View {
   }
 
   /** 原版 IT()：把子路径解析为标题或块，供条目显示与图标选择。 */
-  _resolveSubpath(file, subpath) {
+  _resolveSubpath(file: VaultEntry, subpath: string): { type: 'block'; id: string } | { type: 'heading'; heading: string } | null {
     const cache = this.app.metadataCache.getFileCache(file);
     if (!cache || !subpath) return null;
     const parts = String(subpath).split('#').filter(Boolean);
@@ -175,14 +178,14 @@ export class OutgoingLinkView extends View {
     if (this._linksCollapsed) list.hide();
     if (!entries.length) {
       list.createDiv({ cls: 'pane-empty', text: t('plugins.outgoing-links.label-no-links') || 'No links found.' });
-    } else {
+    } else if (file) {
       for (const entry of entries) this._renderItem(list, file.path, entry);
     }
     if (file) this._renderUnlinked(pane, file);
   }
 
   /** 原版出链面板 Unlinked mentions 分节：在当前正文中查找其它笔记的未链接提及。 */
-  _renderUnlinked(pane, file) {
+  _renderUnlinked(pane: HTMLElement, file: TFile) {
     const unlinked = this._collectUnlinked(file);
     const header = pane.createDiv({ cls: 'tree-item-self is-clickable outgoing-links-header' });
     const collapseIcon = header.createSpan('tree-item-icon collapse-icon');
@@ -218,7 +221,7 @@ export class OutgoingLinkView extends View {
           cls: 'backlink-unlinked-link-button',
           text: t('plugins.backlinks.label-link-button-text') || 'Link',
         });
-        linkBtn.onclick = async (ev) => {
+        linkBtn.onclick = async (ev: { stopPropagation: () => void; }) => {
           ev.stopPropagation();
           const currentText = await this.app.vault.read(file);
           const currentLines = currentText.split('\n');
@@ -241,7 +244,7 @@ export class OutgoingLinkView extends View {
     }
   }
 
-  _collectUnlinked(file) {
+  _collectUnlinked(file: VaultEntry) {
     const cache = this.app.metadataCache.getFileCache(file);
     const text = (cache && cache._rawText) || '';
     if (!text) return [];
@@ -249,7 +252,7 @@ export class OutgoingLinkView extends View {
     const mdFiles = this.app.vault.getMarkdownFiles ? this.app.vault.getMarkdownFiles() : [];
     const resolved = this.app.metadataCache.resolvedLinks?.[file.path] || {};
     const existingLinks = [...(cache?.links || []), ...(cache?.embeds || [])];
-    const frontmatterEnd = cache?.frontmatterPosition ? cache.frontmatterPosition.end.offset : 0;
+    const frontmatterEnd = cache?.frontmatterPosition?.end.offset ?? 0;
     const results = [];
 
     for (const target of mdFiles) {
@@ -273,7 +276,7 @@ export class OutgoingLinkView extends View {
             const matchStart = charOffset + idx;
             const matchEnd = matchStart + name.length;
             if (matchStart >= frontmatterEnd) {
-              const inLink = existingLinks.some(l => l.position && l.position.start.offset <= matchStart && l.position.end.offset >= matchEnd);
+              const inLink = existingLinks.some(l => l.position && l.position.start.offset !== undefined && l.position.end.offset !== undefined && l.position.start.offset <= matchStart && l.position.end.offset >= matchEnd);
               if (!inLink) {
                 contexts.push({ line: i, text: line, start: idx, end: idx + name.length, name });
               }
@@ -295,7 +298,7 @@ export class OutgoingLinkView extends View {
   }
 
   // --- 原版 a7()：图标按 标题/块/文件/未解析 变化，副文本显示链接路径或目标文件夹 ---
-  _renderItem(container, sourcePath, entry) {
+  _renderItem(container: HTMLElement, sourcePath: string, entry: ReturnType<OutgoingLinkView['_collectEntries']>[number]) {
     const row = container.createDiv({ cls: 'tree-item-self is-clickable outgoing-link-item' });
     const iconEl = row.createSpan('tree-item-icon');
     let icon = 'link';
@@ -320,12 +323,12 @@ export class OutgoingLinkView extends View {
     const inner = row.createDiv('tree-item-inner');
     inner.createDiv({ cls: 'tree-item-inner-text', text: label });
     if (subtext) inner.createDiv({ cls: 'tree-item-inner-subtext', text: subtext });
-    row.onclick = (ev) => {
+    row.onclick = (ev: MouseEvent) => {
       if (ev.button !== 0 && ev.button !== 1) return;
       this.app.workspace.openLinkText(entry.linktext, sourcePath, isModEvent(ev));
     };
     // 原版出链条目：右键挂链接菜单（分节表 title/open/action/view/info/danger）
-    row.addEventListener('contextmenu', (ev) => {
+    row.addEventListener('contextmenu', (ev: MouseEvent) => {
       const menu = this.app.workspace.buildLinkMenu();
       const ok = this.app.workspace.handleLinkContextMenu(menu, entry.linktext, sourcePath, ev);
       if (!ok) return;
@@ -336,7 +339,7 @@ export class OutgoingLinkView extends View {
 }
 
 /** 在源文件中查找 name 的未链接提及上下文（原版 findContextsByName 同构）。 */
-function findUnlinkedContexts(app: App, source, name) {
+function findUnlinkedContexts(app: App, source: VaultEntry, name: string) {
   const cache = app.metadataCache.getFileCache(source);
   const text = (cache && cache._rawText) || '';
   const lines = text.split('\n');

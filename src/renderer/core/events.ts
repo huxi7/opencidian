@@ -5,9 +5,8 @@
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 /* Events — same shape as Obsidian's public Events class. */
-// 未声明事件表的宿主沿用动态 API；声明事件表的宿主校验名称和参数。
-// 该兼容类型仅位于事件分派边界，不向 Vault 数据模型传播。
-type DynamicEvents = Record<string, any[]>;
+// 未声明事件表时，订阅方必须先校验未知载荷。
+type DynamicEvents = Record<string, unknown[]>;
 type EventTable<T> = { [K in keyof T]: unknown[] };
 export interface EventRef<Args extends unknown[] = unknown[]> {
   name: string;

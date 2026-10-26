@@ -7,13 +7,14 @@
  */
 /* Core plugin: slides — full-window presentation overlay for the active markdown file. */
 import { tt } from '../core/i18n.js';
+import { TFile } from '../core/vault.js';
 import { SlidesPresentation } from '../views/slides-presentation.js';
 
 export const nameKey = 'plugins.slides';
 
 export function create(app: App) {
-  let presentation = null;
-  const start = (file) => {
+  let presentation: SlidesPresentation|null = null;
+  const start = (file: TFile) => {
     if (!file || file.extension !== 'md') return;
     if (presentation) { presentation.destroy(); presentation = null; }
     const leaf = app.workspace.activeLeaf;

@@ -7,12 +7,14 @@
  */
 /* Appearance + Interface settings tabs — DOM 1:1 with the original. */
 import { tt } from '../core/i18n.js';
-import { SettingGroup, SettingTab } from '../core/setting.js';
+import { ButtonComponent, ColorPickerComponent, ExtraButtonComponent, Setting, SettingGroup, SettingTab, SliderComponent } from '../core/setting.js';
 import { Notice } from '../core/notices.js';
 import { Desktop } from '../core/ipc.js';
 import { setIcon } from '../core/icons.js';
 import { syncTrafficLightPosition } from '../core/window-chrome.js';
 import { ThemeManagerModal, openFontPage, trackSliderFill, addSliderValue, readInstalledThemes } from './settings-tabs-dialogs.js';
+import { SettingsHost } from './settings-view.js';
+import { AppearanceSettings } from '../core/settings-types.js';
 
 const fs = require('fs');
 const nodePath = require('path');
@@ -22,19 +24,19 @@ function electronModule() {
 }
 
 /** 原版样式键：可导航行的行尾值（CSS 片段已启用数）与箭头。 */
-function addNavigableTail(setting, valueText?) {
+function addNavigableTail(setting: Setting, valueText?: string|null|undefined) {
   if (valueText !== undefined && valueText !== null) {
     setting.controlEl.createDiv('setting-item-value').setText(valueText);
   }
-  setting.controlEl.createDiv('setting-item-chevron', (el) => setIcon(el, 'lucide-chevron-right'));
+  setting.controlEl.createDiv('setting-item-chevron', (el: Element|null|undefined) => setIcon(el, 'lucide-chevron-right'));
 }
 
 export class AppearanceTab extends SettingTab {
-  declare name: any;
+  declare name: string;
   declare id: string;
   declare icon: string;
 
-  constructor(app: App, setting) {
+  constructor(app: App, setting: SettingsHost) {
     super(app, setting);
     this.name = tt('setting.appearance.name', '外观');
     this.id = 'appearance';
@@ -53,8 +55,8 @@ export class AppearanceTab extends SettingTab {
     try {
       if (!fs.existsSync(this.snippetsDir)) return [];
       return fs.readdirSync(this.snippetsDir)
-        .filter((name) => name.toLowerCase().endsWith('.css'))
-        .map((name) => name.replace(/\.css$/i, ''))
+        .filter((name: string) => name.toLowerCase().endsWith('.css'))
+        .map((name: string) => name.replace(/\.css$/i, ''))
         .sort();
     } catch (e) {
       return [];
@@ -72,7 +74,7 @@ export class AppearanceTab extends SettingTab {
   display() {
     const app = this.app;
     const appearance = app.settings.appearance;
-    const update = (patch) => app.settings.updateAppearance(patch);
+    const update = (patch: Partial<AppearanceSettings>) => app.settings.updateAppearance(patch);
     this.containerEl.empty();
 
     /* ---------------------------------------------------------- 基础 */
@@ -97,8 +99,8 @@ export class AppearanceTab extends SettingTab {
         .setDesc(tt('setting.appearance.option-accent-color-description', '为 OpenSidian 选择一个主题色。主题色将影响选中、链接等元素的颜色。'));
       // 原版 aliases：高亮/品牌/主色
       this.setting.setSettingAliases(s, [tt('setting.appearance.alias-accent-color', '高亮 品牌 主色')]);
-      let picker = null;
-      let resetBtn = null;
+      let picker: ColorPickerComponent|null = null;
+      let resetBtn: ExtraButtonComponent|null = null;
       const syncResetState = () => {
         if (resetBtn) resetBtn.extraSettingsEl.setAttr('aria-disabled', String(!appearance.accentColor));
       };
@@ -166,7 +168,7 @@ export class AppearanceTab extends SettingTab {
     /* ---------------------------------------------------------- 字体 */
     const fonts = new SettingGroup(this.containerEl).setHeading(tt('setting.appearance.option-font', '字体'));
     // 原版：三种字体都是可导航子页面（type:"page"），行尾显示已设字体数量
-    const addFontRow = (name, desc, key) => {
+    const addFontRow = (name: string, desc: string, key: string) => {
       fonts.addSetting((s) => {
         const current = String(appearance[key] || '').split(',').map((x) => x.trim()).filter(Boolean);
         s.setClass('mod-navigable');
@@ -187,8 +189,8 @@ export class AppearanceTab extends SettingTab {
     addFontRow(tt('setting.appearance.option-monospace-font', '代码字体'), tt('setting.appearance.option-monospace-font-description', '设置代码块、元数据源码等文本的字体。'), 'monospaceFontFamily');
 
     fonts.addSetting((s) => {
-      let slider = null;
-      const setSize = (v) => {
+      let slider: SliderComponent|null = null;
+      const setSize = (v: number) => {
         if (slider) slider.setValue(v);
         app.settings.updateAppearance({ baseFontSize: v });
       };
@@ -218,8 +220,8 @@ export class AppearanceTab extends SettingTab {
     const electron = electronModule();
     const adv = new SettingGroup(this.containerEl).setHeading(tt('setting.appearance.option-advanced', '高级'));
     adv.addSetting((s) => {
-      let relaunchBtn = null;
-      let resetBtn = null;
+      let relaunchBtn: ButtonComponent|null = null;
+      let resetBtn: ExtraButtonComponent|null = null;
       const renderDesc = () => {
         s.descEl.empty();
         const icon = (() => { try { return Desktop.getIcon(); } catch (e) { return null; } })();
@@ -235,7 +237,7 @@ export class AppearanceTab extends SettingTab {
           .onClick(() => {
             try { Desktop.setIcon(null); } catch (e) {}
             renderDesc();
-            if (relaunchBtn) relaunchBtn.buttonEl.show();
+            if (relaunchBtn) relaunchBtn?.buttonEl.show();
           });
       });
       renderDesc();
@@ -247,14 +249,14 @@ export class AppearanceTab extends SettingTab {
             properties: ['openFile', 'dontAddToRecent'],
             filters: [{ name: 'PNG/ICO/ICNS', extensions: ['png', 'ico', 'icns'] }],
           });
-          const filePath = res && !res.canceled && res.filePaths && res.filePaths[0];
+          const filePath = res && !res.canceled && res.filePaths && res.filePaths?.[0];
           if (!filePath) return;
-          const ext = String(filePath).split('.').pop().toLowerCase();
+          const ext = String(filePath).split('.').pop()?.toLowerCase() || '';
           if (!['png', 'ico', 'icns'].includes(ext)) { new Notice('Supported file types are: png, ico, icns'); return; }
           const ok = (() => { try { return Desktop.setIcon(filePath); } catch (e) { return false; } })();
           if (!ok) { new Notice(tt('setting.appearance.msg-set-icon-failed', '设置图标失败')); return; }
           renderDesc();
-          if (relaunchBtn) relaunchBtn.buttonEl.show();
+          if (relaunchBtn) relaunchBtn?.buttonEl.show();
         }));
       s.addButton((b) => {
         relaunchBtn = b;
@@ -283,7 +285,7 @@ export class AppearanceTab extends SettingTab {
     const app = this.app;
     this.setting.openPage({
       title: tt('setting.appearance.option-css-snippets', 'CSS 样式代码片段'),
-      build: (contentEl) => {
+      build: (contentEl: HTMLElement) => {
         const group = new SettingGroup(contentEl);
         group.addClass('mod-list');
         group.addClass('mod-no-icon');
@@ -332,7 +334,7 @@ export class AppearanceTab extends SettingTab {
     });
   }
 
-  openFolder(dir) {
+  openFolder(dir: string) {
     try {
       if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
       Desktop.openPath(dir);
@@ -350,12 +352,12 @@ export class AppearanceTab extends SettingTab {
  * 在新窗口中打开设置写 app.json 的 settingsPopoutWindow。
  */
 export class InterfaceTab extends SettingTab {
-  declare name: any;
+  declare name: string;
   declare id: string;
   declare icon: string;
-  declare _dragKey: any;
+  declare _dragKey: string | null;
 
-  constructor(app: App, setting) {
+  constructor(app: App, setting: SettingsHost) {
     super(app, setting);
     this.name = tt('setting.interface.name', '界面');
     this.id = 'interface';
@@ -365,7 +367,7 @@ export class InterfaceTab extends SettingTab {
   display() {
     const app = this.app;
     const appearance = app.settings.appearance;
-    const update = (patch) => app.settings.updateAppearance(patch);
+    const update = (patch: Partial<AppearanceSettings>) => app.settings.updateAppearance(patch);
     this.containerEl.empty();
 
     const group = new SettingGroup(this.containerEl);
@@ -390,14 +392,14 @@ export class InterfaceTab extends SettingTab {
     const electron = electronModule();
     const adv = new SettingGroup(this.containerEl).setHeading(tt('setting.appearance.option-advanced', '高级'));
     adv.addSetting((s) => {
-      let slider = null;
-      let resetBtn = null;
+      let slider: SliderComponent|null = null;
+      let resetBtn: ExtraButtonComponent|null = null;
       const webFrame = electron && electron.webFrame;
       const current = webFrame ? webFrame.getZoomLevel() : (appearance.zoomLevel || 0);
-      const syncResetState = (value) => {
+      const syncResetState = (value: number) => {
         if (resetBtn) resetBtn.extraSettingsEl.setAttr('aria-disabled', String(value === 0));
       };
-      const applyZoom = (v) => {
+      const applyZoom = (v: number) => {
         if (webFrame) { webFrame.setZoomLevel(v); syncTrafficLightPosition(); }
         app.settings.updateAppearance({ zoomLevel: v });
       };
@@ -417,7 +419,7 @@ export class InterfaceTab extends SettingTab {
           });
           sl.getValuePretty = () => Math.round(100 * Math.pow(1.2, sl.getValue())) + '%';
           trackSliderFill(sl);
-          addSliderValue(s, sl, (v) => Math.round(100 * Math.pow(1.2, v)) + '%');
+          addSliderValue(s, sl, (v: number) => Math.round(100 * Math.pow(1.2, v)) + '%');
         });
       syncResetState(current);
     });
@@ -429,7 +431,7 @@ export class InterfaceTab extends SettingTab {
       let currentFrame = 'hidden';
       try { currentFrame = electron.ipcRenderer.sendSync('frame') || 'hidden'; } catch (e) {}
       adv.addSetting((s) => {
-        let relaunchBtn = null;
+        let relaunchBtn: ButtonComponent|null = null;
         s.setName(tt('setting.appearance.option-frame-style', '窗口边框样式'))
           .setDesc(tt('setting.appearance.option-frame-description', '更改 OpenSidian 窗口边框的样式。该设置重启应用后生效。'))
           .addButton((b) => {
@@ -445,7 +447,7 @@ export class InterfaceTab extends SettingTab {
             d.setValue(currentFrame);
             d.onChange((v) => {
               try { electron.ipcRenderer.sendSync('frame', v); } catch (e) {}
-              relaunchBtn.buttonEl.show();
+              relaunchBtn?.buttonEl.show();
             });
           });
       });
@@ -476,7 +478,7 @@ export class InterfaceTab extends SettingTab {
     const ws = app.workspace;
     this.setting.openPage({
       title: tt('setting.appearance.option-configure-ribbon', '功能区'),
-      build: (contentEl) => {
+      build: (contentEl: HTMLElement) => {
         const registered = ws.getRibbonItems();
         const items = registered.slice().sort((a, b) => {
           if (a.el === b.el) return 0;
@@ -507,7 +509,7 @@ export class InterfaceTab extends SettingTab {
             s.settingEl.addEventListener('dragstart', (ev) => {
               this._dragKey = item.key;
               s.settingEl.addClass('is-being-dragged');
-              try { ev.dataTransfer.setData('text/plain', item.key); } catch (e) {}
+              try { ev.dataTransfer?.setData('text/plain', item.key); } catch (e) {}
             });
             s.settingEl.addEventListener('dragend', () => s.settingEl.removeClass('is-being-dragged'));
             s.settingEl.addEventListener('dragover', (ev) => {
@@ -574,12 +576,12 @@ function computedAccentHex() {
   return '#7f6df2';
 }
 
-function hslToHex(h, s, l) {
+function hslToHex(h: number, s: number, l: number) {
   const sat = s / 100;
   const light = l / 100;
-  const k = (n) => (n + h / 30) % 12;
+  const k = (n: number) => (n + h / 30) % 12;
   const a = sat * Math.min(light, 1 - light);
-  const f = (n) => light - a * Math.max(-1, Math.min(k(n) - 3, Math.min(9 - k(n), 1)));
-  const to = (x) => Math.round(255 * x).toString(16).padStart(2, '0');
+  const f = (n: number) => light - a * Math.max(-1, Math.min(k(n) - 3, Math.min(9 - k(n), 1)));
+  const to = (x: number) => Math.round(255 * x).toString(16).padStart(2, '0');
   return '#' + to(f(0)) + to(f(8)) + to(f(4));
 }

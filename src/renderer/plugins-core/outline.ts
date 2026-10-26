@@ -8,20 +8,26 @@ import { View } from '../core/view.js';
 import { t } from '../core/i18n.js';
 import { setIcon } from '../core/icons.js';
 import { Menu } from '../core/menu.js';
+import { WorkspaceLeaf } from '../core/workspace-model.js';
+import { CacheHeading } from '../core/metadata-types.js';
+import type { EventRef } from '../core/events.js';
+import { TFile } from '../core/vault.js';
+
+interface OutlineNode { heading: CacheHeading; item: HTMLDivElement; self: HTMLDivElement; children: HTMLDivElement; key: string; icon?: HTMLSpanElement; }
 
 export const nameKey = 'plugins.outline';
 
 export class OutlineView extends View {
   declare icon: string;
   declare navigation: boolean;
-  declare _refs: any[];
+  declare _refs: EventRef[];
   declare _followCursor: boolean;
-  declare _pending: any;
-  declare _filePath: any;
-  declare _collapsedHeadings: any;
-  declare _tree: any;
+  declare _pending: ReturnType<typeof setTimeout> | null;
+  declare _filePath: string | null;
+  declare _collapsedHeadings: Set<string>;
+  declare _tree: HTMLDivElement | null;
 
-  constructor(leaf) {
+  constructor(leaf: WorkspaceLeaf) {
     super(leaf);
     this.icon = 'list';
     this.navigation = true;
@@ -55,7 +61,7 @@ export class OutlineView extends View {
   onClose() {
     for (const r of this._refs) r.unregister && r.unregister();
     this._refs = [];
-    clearTimeout(this._pending);
+    clearTimeout(this._pending ?? undefined);
     this._pending = null;
     this._tree = null;
     this._collapsedHeadings.clear();
@@ -87,7 +93,7 @@ export class OutlineView extends View {
       this._tree.createDiv({ cls: 'pane-empty', text: t('plugins.outline.label-no-headings') || 'No headings found.' });
       return;
     }
-    const stack = [];
+    const stack: OutlineNode[] = [];
     const occurrences = new Map();
     const keys = new Set();
     for (const h of headings) {
@@ -104,7 +110,7 @@ export class OutlineView extends View {
       self.createDiv({ cls: 'tree-item-inner', text: h.heading });
       self.onclick = () => this._openHeading(file, h);
       const children = item.createDiv('tree-item-children');
-      const node = { heading: h, item, self, children, key };
+      const node: OutlineNode = { heading: h, item, self, children, key };
       if (parent && !parent.icon) this._makeCollapsible(parent);
       stack.push(node);
     }
@@ -112,13 +118,13 @@ export class OutlineView extends View {
   }
 
   // --- 每个标题归属最近的较高层标题；跳级不创建空节点 ---
-  _makeCollapsible(node) {
+  _makeCollapsible(node: OutlineNode) {
     node.self.addClass('mod-collapsible');
     const icon = node.self.createSpan('tree-item-icon collapse-icon');
     node.self.prepend(icon);
     node.icon = icon;
     setIcon(icon, 'right-triangle');
-    const setCollapsed = (collapsed) => {
+    const setCollapsed = (collapsed: boolean) => {
       node.item.toggleClass('is-collapsed', collapsed);
       icon.toggleClass('is-collapsed', collapsed);
       node.self.setAttr('aria-expanded', String(!collapsed));
@@ -127,29 +133,29 @@ export class OutlineView extends View {
       else this._collapsedHeadings.delete(node.key);
     };
     setCollapsed(this._collapsedHeadings.has(node.key));
-    icon.onclick = (event) => {
+    icon.onclick = (event: { stopPropagation: () => void; }) => {
       event.stopPropagation();
       setCollapsed(!node.item.hasClass('is-collapsed'));
     };
   }
 
-  _openHeading(file, heading) {
+  _openHeading(file: TFile, heading: CacheHeading) {
     const workspace = this.app.workspace;
     const leaves = workspace.getLeavesOfType('markdown').filter((leaf) =>
-      workspace._sideOf(leaf) === 'center' && leaf.view.file?.path === file.path);
+      workspace._sideOf(leaf) === 'center' && leaf.view?.file?.path === file.path);
     const leaf = leaves.find((item) => item === workspace.activeLeaf)
       || leaves.sort((a, b) => b.activeTime - a.activeTime)[0];
     const eState = { line: heading.position.start.line };
     if (!leaf) return workspace.openFile(file, { eState });
     workspace.setActiveLeaf(leaf, { focus: true });
-    leaf.view.setEphemeralState(eState);
+    leaf.view?.setEphemeralState(eState);
   }
 
-  _fillViewActions(actions) {
+  _fillViewActions(actions: HTMLElement) {
     const more = actions.createDiv('clickable-icon view-action');
     setIcon(more, 'more-horizontal');
     more.setAttr('aria-label', 'More options');
-    more.onclick = (ev) => {
+    more.onclick = (ev: MouseEvent) => {
       const menu = new Menu(this.app);
       menu.addItem((i) => i.setTitle(t('plugins.outline.label-follow-cursor') || 'Auto-scroll to current section').setChecked(this._followCursor).onClick(() => {
         this._followCursor = !this._followCursor;

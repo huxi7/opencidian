@@ -1,35 +1,36 @@
 /**
  * [INPUT]: Events、图标与 Keymap 的弹窗作用域。
- * [OUTPUT]: Modal、PromptModal、prompt、confirmDialog 和弹窗状态查询。
+ * [OUTPUT]: 具体输入与确认结果协议、Modal、PromptModal、prompt、confirmDialog 和弹窗状态查询。
  * [POS]: 弹窗生命周期基座。复开取消延迟卸载，确认值先于关闭回调结算。dimBackground/getRootEl 对齐原版，供设置独立窗口复用。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 /* Modal base class + prompt helpers. */
+import type { KeymapScope } from './keymap.js';
 import { Events } from './events.js';
 import { setIcon } from './icons.js';
 import { tt } from './i18n.js';
 
-const openModals = [];
+const openModals: Modal[] = [];
 
-export class Modal extends Events {
+export class Modal extends Events<{ closed: [] }> {
   onClose(): void {}
   onOpen(): void {}
 
   declare app: App;
   declare dimBackground: boolean;
   declare bgOpacity: string;
-  declare containerEl: any;
-  declare bgEl: any;
-  declare modalEl: any;
-  declare closeButtonEl: any;
-  declare headerEl: any;
-  declare titleEl: any;
-  declare contentEl: any;
-  declare buttonContainerEl: any;
-  declare _bgDown: { x: any; y: any; } | null;
-  declare scope: any;
+  declare containerEl: HTMLDivElement;
+  declare bgEl: HTMLDivElement;
+  declare modalEl: HTMLDivElement;
+  declare closeButtonEl: HTMLDivElement;
+  declare headerEl: HTMLDivElement;
+  declare titleEl: HTMLDivElement;
+  declare contentEl: HTMLDivElement;
+  declare buttonContainerEl: HTMLDivElement;
+  _bgDown: { x: number; y: number } | null = null;
+  declare scope: KeymapScope | null;
   declare _prevFocusEl: Element | null | undefined;
-  declare _onKeyDown: ((ev: any) => void) | undefined;
+  declare _onKeyDown: ((ev: KeyboardEvent) => void) | undefined;
   declare _closeTimer: NodeJS.Timeout | undefined;
 
   constructor(app: App) {
@@ -63,10 +64,10 @@ export class Modal extends Events {
   shouldCloseOnBgClick() { return true; }
   /** 原版 getRootEl：默认 modal-container；设置独立窗口覆写为 modalEl（body > .modal）。 */
   getRootEl() { return this.containerEl; }
-  setDimBackground(dim) { this.dimBackground = !!dim; return this; }
-  setBackgroundOpacity(opacity) { this.bgOpacity = opacity; return this; }
-  setTitle(title) { this.titleEl.setText(title); return this; }
-  setContent(content) {
+  setDimBackground(dim: boolean) { this.dimBackground = !!dim; return this; }
+  setBackgroundOpacity(opacity: string) { this.bgOpacity = opacity; return this; }
+  setTitle(title: string) { this.titleEl.setText(title); return this; }
+  setContent(content: string | Node | Node[]) {
     this.contentEl.empty();
     if (typeof content === 'string') this.contentEl.setText(content);
     else if (Array.isArray(content)) for (const c of content) this.contentEl.appendChild(c);
@@ -108,9 +109,9 @@ export class Modal extends Events {
   }
 
   /** 原版 Jy：Tab 焦点锁在弹窗内。 */
-  _trapTab(ev) {
-    const focusables = [...this.modalEl.querySelectorAll('button, a[href], input, select, textarea, [tabindex]:not([tabindex="-1"])')]
-      .filter((el) => !el.disabled && el.offsetParent !== null);
+  _trapTab(ev: KeyboardEvent) {
+    const focusables = [...this.modalEl.querySelectorAll<HTMLElement>('button, a[href], input, select, textarea, [tabindex]:not([tabindex="-1"])')]
+      .filter((el) => !('disabled' in el && el.disabled) && el.offsetParent !== null);
     if (!focusables.length) { ev.preventDefault(); return; }
     const first = focusables[0];
     const last = focusables[focusables.length - 1];
@@ -155,16 +156,21 @@ export function isModalOpen() { return openModals.length > 0; }
 // ---------------------------------------------------------------------------
 // Prompt-style dialogs
 // ---------------------------------------------------------------------------
+export interface PromptOptions {
+  title?: string; value?: string; cls?: string; placeholder?: string; cancelText?: string; okText?: string;
+  onCancel?(): unknown; onSubmit?(value: string): unknown;
+}
+export interface ConfirmOptions { cancelText?: string; cta?: string; warning?: boolean; }
+
 export class PromptModal extends Modal {
   onClose(): void {}
 
-  declare options: any;
-  declare value: any;
-  declare inputEl: any;
-  declare okBtn: any;
-  declare onOpen: any;
+  declare options: PromptOptions;
+  declare value: string;
+  declare inputEl: HTMLInputElement;
+  declare okBtn: HTMLButtonElement;
 
-  constructor(app: App, options: Record<string, any> = {}) {
+  constructor(app: App, options: PromptOptions = {}) {
     super(app);
     this.options = options;
     this.value = options.value || '';
@@ -195,8 +201,8 @@ export class PromptModal extends Modal {
   }
 }
 
-export function prompt(app: App, title, options: Record<string, any> = {}) {
-  return new Promise((resolve) => {
+export function prompt(app: App, title: string, options: PromptOptions = {}) {
+  return new Promise<string | null>((resolve) => {
     const modal = new PromptModal(app, {
       title,
       placeholder: options.placeholder,
@@ -215,13 +221,13 @@ export function prompt(app: App, title, options: Record<string, any> = {}) {
  * 校验顺序：空名 → 非法字符（\ / :）→ 点开头 → 链接不安全字符（# ^ [ ] |）。
  */
 export class FileNameModal extends Modal {
-  declare onSubmit: any;
-  declare inputEl: any;
-  declare errorEl: any;
-  declare saveBtnEl: any;
-  declare cancelBtnEl: any;
+  declare onSubmit: (value: string) => unknown;
+  declare inputEl: HTMLTextAreaElement;
+  declare errorEl: HTMLDivElement;
+  declare saveBtnEl: HTMLButtonElement;
+  declare cancelBtnEl: HTMLButtonElement;
 
-  constructor(app: App, defaultValue, onSubmit) {
+  constructor(app: App, defaultValue: string, onSubmit: (value: string) => unknown) {
     super(app);
     this.onSubmit = onSubmit;
     this.setTitle(tt('dialogue.label-rename-file-generic', 'File name'));
@@ -252,7 +258,7 @@ export class FileNameModal extends Modal {
     this.inputEl.style.height = this.inputEl.scrollHeight + 'px';
   }
 
-  validate(name) {
+  validate(name: string) {
     if (!name) return tt('plugins.file-explorer.msg-empty-file-name', 'File name cannot be empty.');
     if (/[\\/:]/.test(name)) {
       return tt('plugins.file-explorer.msg-invalid-characters', 'File name cannot contain any of these characters: ') + '\\ / :';
@@ -278,8 +284,8 @@ export class FileNameModal extends Modal {
   }
 }
 
-export function confirmDialog(app: App, title, body, options: Record<string, any> = {}) {
-  return new Promise((resolve) => {
+export function confirmDialog(app: App, title: string, body: string, options: ConfirmOptions = {}) {
+  return new Promise<boolean>((resolve) => {
     const modal = new Modal(app);
     modal.setTitle(title);
     modal.contentEl.createEl('p', { text: body });

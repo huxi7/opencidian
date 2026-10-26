@@ -13,6 +13,10 @@
  * mount 时装载 stacked 键的序列化装饰器（layout JSON 组装在 workspace.js）。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
+import type { RibbonItem } from './workspace.js';
+import type { RibbonAction } from './workspace-types.js';
+import type { Workspace } from './workspace.js';
+import type { WorkspaceNode } from './workspace-model.js';
 import { WorkspaceSplit, WorkspaceTabs, WorkspaceLeaf, installStackedSerialization } from './workspace-model.js';
 import { tt } from './i18n.js';
 import { createVaultProfile } from './workspace-profile.js';
@@ -25,7 +29,7 @@ import { renderViewHeader, fillViewHeader, syncNavButtons } from './view-header.
 import { animateTabIn, animateTabOut } from './tab-animation.js';
 import { syncTrafficLightPosition } from './window-chrome.js';
 
-export function mount(workspace, container) {
+export function mount(workspace: Workspace, container: HTMLElement) {
   workspace.containerEl = container;
   installStackedSerialization(workspace);
   container.addClass('workspace');
@@ -57,7 +61,7 @@ export function mount(workspace, container) {
   workspace.titlebarTextEl = inner.createDiv('titlebar-text');
   const buttonContainer = inner.createDiv('titlebar-button-container');
   if (!navigator.platform.startsWith('Mac')) {
-    const makeButton = (cls, icon, label, action) => {
+    const makeButton = (cls: string, icon: string, label: string, action: () => void) => {
       const btn = buttonContainer.createDiv('titlebar-button clickable-icon ' + cls);
       setIcon(btn, icon);
       btn.setAttr('aria-label', label);
@@ -72,7 +76,7 @@ export function mount(workspace, container) {
     refreshMaxIcon();
   } else {
     // 原版 macOS：双击标题栏空白切换缩放（排除可点击元素）
-    const dbl = (ev) => {
+    const dbl = (ev: MouseEvent) => {
       if ((ev.target as Element).closest('.clickable-icon, .workspace-tab-header, button, a, input, .titlebar-button')) return;
       Desktop.maximizeWindow();
     };
@@ -93,7 +97,7 @@ function installWindowState() {
   if (typeof window === 'undefined' || typeof document === 'undefined') return;
   // 回归测试的 VM 宿主没有定时器/DOM 事件系统：直接跳过窗口状态同步
   if (typeof setTimeout !== 'function' || typeof clearTimeout !== 'function') return;
-  let timer = null;
+  let timer: ReturnType<typeof setTimeout> | undefined;
   const sync = () => {
     clearTimeout(timer);
     timer = setTimeout(() => {
@@ -118,7 +122,7 @@ function installWindowState() {
   sync();
 }
 
-export function render(workspace) {
+export function render(workspace: Workspace) {
   cancelWorkspaceResize(workspace);
   settleSidebarTransitions(workspace);
   const rootEl = workspace._getRootEl();
@@ -133,7 +137,7 @@ export function render(workspace) {
       // 侧栏边界的分隔条：左邻是左栏 → 'left'；右邻是右栏 → 'right'；
       // 折叠时淡出并禁用指针（原版折叠整个 split 时分隔条随之消失；我们是 flex 兄弟节点，必须显式处理）
       const nextChild = workspace.rootSplit.children[i + 1];
-      const dividerSide = child.side === 'left' ? 'left' : (nextChild && nextChild.side === 'right' ? 'right' : null);
+      const dividerSide = child instanceof WorkspaceSplit && child.side === 'left' ? 'left' : (nextChild instanceof WorkspaceSplit && nextChild.side === 'right' ? 'right' : null);
       if (dividerSide) {
         handle.setAttr('data-divider-side', dividerSide);
         workspace._dividerHandles[dividerSide] = handle;
@@ -146,7 +150,7 @@ export function render(workspace) {
   workspace.trigger('layout-change');
 }
 
-export function _getRootEl(workspace) {
+export function _getRootEl(workspace: Workspace) {
   if (!workspace._rootEl) {
     workspace._rootEl = createDiv('workspace-split workspace-root');
     workspace.containerEl.appendChild(workspace._rootEl);
@@ -154,11 +158,11 @@ export function _getRootEl(workspace) {
   return workspace._rootEl;
 }
 
-function applyDimension(el, node) {
-  if (Number.isFinite(node.dimension) && node.dimension > 0) el.style.flex = `${node.dimension} 1 0%`;
+function applyDimension(el: HTMLElement, node: WorkspaceNode) {
+  if (typeof node.dimension === 'number' && Number.isFinite(node.dimension) && node.dimension > 0) el.style.flex = `${node.dimension} 1 0%`;
 }
 
-export function _renderNode(workspace, node) {
+export function _renderNode(workspace: Workspace, node: WorkspaceNode) {
   if (node instanceof WorkspaceSplit) {
     const el = createDiv('workspace-split');
     el.addClass('mod-' + node.direction);
@@ -166,7 +170,7 @@ export function _renderNode(workspace, node) {
     if (node.side === 'right') el.addClass('mod-right-split', 'mod-sidedock', 'mod-secondary-split');
     if (node.side === 'center') el.addClass('mod-root');
     node.containerEl = el;
-    if (!['left', 'right'].includes(node.side)) applyDimension(el, node);
+    if (node.side !== 'left' && node.side !== 'right') applyDimension(el, node);
     el._split = node;
     if (node.side && node.collapsed) {
       el.addClass('is-collapsed');   // 只挂类；inline display:none 会让 showSidebar 无法重新展开
@@ -198,7 +202,7 @@ export function _renderNode(workspace, node) {
   return createDiv();
 }
 
-export function _renderTabs(workspace, tabs) {
+export function _renderTabs(workspace: Workspace, tabs: WorkspaceTabs) {
   const el = createDiv('workspace-tabs');
   applyDimension(el, tabs);
   el._tabs = tabs;
@@ -254,7 +258,7 @@ export function _renderTabs(workspace, tabs) {
     const tabListIcon = tabListBtn.createSpan('clickable-icon');
     setIcon(tabListIcon, 'lucide-chevron-down');
     // 原版 VD：标签列表菜单由标签组自己弹出（含堆叠/取消堆叠项）；菜单以按钮内层为锚点
-    const showMenu = (ev) => {
+    const showMenu = (ev: MouseEvent) => {
       ev.preventDefault();
       ev.stopPropagation();
       if (tabListIcon.hasClass('has-active-menu')) return;
@@ -278,7 +282,7 @@ export function _renderTabs(workspace, tabs) {
   return el;
 }
 
-export function _renderLeaf(workspace, leaf) {
+export function _renderLeaf(workspace: Workspace, leaf: WorkspaceLeaf) {
   const el = createDiv('workspace-leaf');
   leaf._leafEl = el;
   el._leaf = leaf;
@@ -321,11 +325,11 @@ export function _renderLeaf(workspace, leaf) {
   return el;
 }
 
-export function _fillViewHeader(workspace, leaf) {
+export function _fillViewHeader(workspace: Workspace, leaf: WorkspaceLeaf) {
   return fillViewHeader(workspace, leaf);
 }
 
-export function _refreshLeafContent(workspace, leaf) {
+export function _refreshLeafContent(workspace: Workspace, leaf: WorkspaceLeaf) {
   if (!leaf.contentEl) return;
   const type = leaf.view ? leaf.view.getViewType() : 'empty';
   leaf.contentEl.setAttr('data-type', type);
@@ -343,7 +347,7 @@ export function _refreshLeafContent(workspace, leaf) {
   leaf.updateTabHeader();
 }
 
-export function _ensureLeafDom(workspace, leaf) {
+export function _ensureLeafDom(workspace: Workspace, leaf: WorkspaceLeaf) {
   if (leaf._leafEl && leaf._leafEl.isConnected) { workspace._refreshLeafContent(leaf); return; }
   const tabs = leaf.parent;
   if (!(tabs instanceof WorkspaceTabs)) {
@@ -353,6 +357,7 @@ export function _ensureLeafDom(workspace, leaf) {
     workspace.centerSplit.insertChild(workspace.centerSplit.children.length, newTabs);
   }
   const parentTabs = leaf.parent;
+  if (!(parentTabs instanceof WorkspaceTabs)) return;
   if (!parentTabs.containerEl || !parentTabs.containerEl.isConnected) {
     workspace.render();
     return;
@@ -363,7 +368,7 @@ export function _ensureLeafDom(workspace, leaf) {
   // ensure tab header exists
   if (!leaf._tabHeaderEl) {
     const header = workspace._createTabHeader(leaf);
-    parentTabs._headersInner.appendChild(header);
+    parentTabs._headersInner?.appendChild(header);
   }
   // insert header in right position
   workspace._syncTabsHeaders(parentTabs);
@@ -372,7 +377,7 @@ export function _ensureLeafDom(workspace, leaf) {
   leaf.updateTabHeader();
 }
 
-export function _createTabHeader(workspace, leaf) {
+export function _createTabHeader(workspace: Workspace, leaf: WorkspaceLeaf) {
   const header = createDiv('workspace-tab-header tappable');
   const inner = header.createDiv('workspace-tab-header-inner');
   const iconEl = inner.createDiv('workspace-tab-header-inner-icon');
@@ -392,7 +397,7 @@ export function _createTabHeader(workspace, leaf) {
   header.setAttr('tabindex', '0');
   const activate = () => {
     const tabs = leaf.parent;
-    if (tabs) tabs.currentTab = tabs.children.indexOf(leaf);
+    if (tabs instanceof WorkspaceTabs) tabs.currentTab = tabs.children.indexOf(leaf);
     workspace.setActiveLeaf(leaf, { focus: true });
   };
   header.onclick = (ev) => {
@@ -413,19 +418,19 @@ export function _createTabHeader(workspace, leaf) {
   return header;
 }
 
-export function _syncTabsHeaders(workspace, tabs) {
+export function _syncTabsHeaders(workspace: Workspace, tabs: WorkspaceTabs) {
   const inner = tabs._headersInner;
   if (!inner) return;
   const known = tabs._animatedLeaves;
   const current = new Set(tabs.children);
   const animate = !!known && !tabs.isStacked;
   // remove headers of removed leaves（堆叠态的头在 tab-container 里，两处都要清）
-  const containers = [inner, tabs._tabContainerEl].filter(Boolean);
+  const containers = [inner, tabs._tabContainerEl].filter((el) => !!el);
   for (const container of containers) {
-    for (const h of Array.from<HTMLElement>(container.children)) {
+    for (const h of Array.from(container.children)) {
       if (!h._leaf || tabs.children.includes(h._leaf)) continue;
       // 原版 updateTabDisplay：关闭/移出的标签在旧位置留一个克隆收窄 200ms
-      if (animate && known.has(h._leaf)) animateTabOut(h, container);
+      if (animate && known.has(h._leaf)) animateTabOut(h as HTMLElement, container);
       h.detach();
     }
   }
@@ -439,7 +444,7 @@ export function _syncTabsHeaders(workspace, tabs) {
   tabs._animatedLeaves = current;
 }
 
-export function _syncTabsVisibility(workspace, tabs) {
+export function _syncTabsVisibility(workspace: Workspace, tabs: WorkspaceTabs) {
   for (const leaf of tabs.children) {
     const isActive = tabs.activeLeaf === leaf;
     // 原版：堆叠态下所有 pane 都显示（横向滑动可见），非堆叠态只显示活动 pane
@@ -462,7 +467,7 @@ export function _syncTabsVisibility(workspace, tabs) {
 }
 
 /** 原版：pinned 标签显示 workspace-tab-header-status-icon.mod-pinned（lucide-pin，点击取消固定）且隐藏关闭钮。 */
-function syncPinnedStatus(workspace, leaf, header) {
+function syncPinnedStatus(workspace: Workspace, leaf: WorkspaceLeaf, header: HTMLElement) {
   const inner = header.querySelector('.workspace-tab-header-inner');
   if (!inner) return;
   let container = header.querySelector('.workspace-tab-header-status-container');
@@ -488,20 +493,20 @@ function syncPinnedStatus(workspace, leaf, header) {
   }
 }
 
-export function _syncAllTabs(workspace) {
-  const walk = (node) => {
+export function _syncAllTabs(workspace: Workspace) {
+  const walk = (node: WorkspaceNode) => {
     if (node instanceof WorkspaceTabs) workspace._syncTabsVisibility(node);
-    else if (node.children) node.children.forEach(walk);
+    else if ('children' in node) node.children.forEach(walk);
   };
   if (workspace.rootSplit) walk(workspace.rootSplit);
 }
 
-export function _createResizeHandle(workspace, split, childIndex, direction) {
+export function _createResizeHandle(workspace: Workspace, split: WorkspaceSplit, childIndex: number, direction: 'horizontal' | 'vertical') {
   return createWorkspaceResizeHandle(workspace, split, childIndex, direction);
 }
 
-export function _updateLeafSizes(workspace) {
-  workspace.iterateAllLeaves((leaf) => {
+export function _updateLeafSizes(workspace: Workspace) {
+  workspace.iterateAllLeaves((leaf: WorkspaceLeaf) => {
     if (leaf._leafEl) {
       leaf.width = leaf._leafEl.offsetWidth;
       leaf.height = leaf._leafEl.offsetHeight;
@@ -509,7 +514,7 @@ export function _updateLeafSizes(workspace) {
   });
 }
 
-export function _createRibbon(workspace) {
+export function _createRibbon(workspace: Workspace) {
   const ribbon = createDiv('workspace-ribbon side-dock-ribbon mod-left');
   const actions = ribbon.createDiv('side-dock-actions');
   workspace.ribbonActionsEl = actions;
@@ -530,7 +535,7 @@ export function _createRibbon(workspace) {
 // 功能区配置（原版 Zee）：隐藏项与顺序持久化在 localStorage
 const RIBBON_HIDDEN_KEY = 'opensidian-ribbon-hidden';
 const RIBBON_ORDER_KEY = 'opensidian-ribbon-order';
-function ribbonState(workspace) {
+function ribbonState(workspace: Workspace) {
   if (!workspace._ribbonState) {
     let hidden = [], order = [];
     try { hidden = JSON.parse(localStorage.getItem(RIBBON_HIDDEN_KEY) || '[]'); } catch (e) {}
@@ -542,11 +547,11 @@ function ribbonState(workspace) {
   }
   return workspace._ribbonState;
 }
-function applyRibbonOrder(workspace) {
+function applyRibbonOrder(workspace: Workspace) {
   if (!workspace.ribbonActionsEl) return;
   const state = ribbonState(workspace);
   const items = (workspace.ribbonItems || []).filter((i) => i.target === 'actions' && i.el.isConnected);
-  const ordered = [];
+  const ordered: RibbonItem[] = [];
   for (const key of state.order) {
     const item = items.find((i) => i.key === key);
     if (item && !ordered.includes(item)) ordered.push(item);
@@ -554,25 +559,25 @@ function applyRibbonOrder(workspace) {
   for (const item of items) if (!ordered.includes(item)) ordered.push(item);
   for (const item of ordered) workspace.ribbonActionsEl.appendChild(item.el);
 }
-export function getRibbonItems(workspace) {
+export function getRibbonItems(workspace: Workspace) {
   return (workspace.ribbonItems || []).filter((i) => i.target === 'actions' && i.el.isConnected);
 }
-export function isRibbonItemHidden(workspace, key) { return ribbonState(workspace).hidden.has(key); }
-export function setRibbonItemHidden(workspace, key, hidden) {
+export function isRibbonItemHidden(workspace: Workspace, key: string) { return ribbonState(workspace).hidden.has(key); }
+export function setRibbonItemHidden(workspace: Workspace, key: string, hidden: boolean) {
   const state = ribbonState(workspace);
   if (hidden) state.hidden.add(key); else state.hidden.delete(key);
   try { localStorage.setItem(RIBBON_HIDDEN_KEY, JSON.stringify([...state.hidden])); } catch (e) {}
   const item = (workspace.ribbonItems || []).find((i) => i.key === key);
   if (item) item.el.toggle(!hidden);
 }
-export function setRibbonOrder(workspace, keys) {
+export function setRibbonOrder(workspace: Workspace, keys: string[]) {
   const state = ribbonState(workspace);
   state.order = Array.isArray(keys) ? keys.slice() : [];
   try { localStorage.setItem(RIBBON_ORDER_KEY, JSON.stringify(state.order)); } catch (e) {}
   applyRibbonOrder(workspace);
 }
 
-export function addRibbonItem(workspace, icon, title, callback, target) {
+export function addRibbonItem(workspace: Workspace, icon: string, title: string, callback: RibbonAction, target?: string) {
   const el = createDiv('side-dock-ribbon-action clickable-icon');
   el.setAttr('aria-label', title);
   el.setAttr('title', title);
@@ -587,6 +592,7 @@ export function addRibbonItem(workspace, icon, title, callback, target) {
     }
   };
   const container = target === 'bottom' ? workspace.ribbonSettingsEl : workspace.ribbonActionsEl;
+  if (!container) throw Error('功能区尚未挂载');
   container.appendChild(el);
   // 登记到功能区配置：key 用 icon|title（title 为本地化文案，语言切换后隐藏状态可能重置）
   const key = icon + '|' + title;
@@ -598,7 +604,7 @@ export function addRibbonItem(workspace, icon, title, callback, target) {
   return el;
 }
 
-export function refreshHeaderVisibility(workspace) {
+export function refreshHeaderVisibility(workspace: Workspace) {
   const show = workspace.app.settings.config.showViewHeader !== false;
   workspace.containerEl.findAll('.view-header').forEach((el) => el.toggleClass('is-hidden', !show));
 }

@@ -4,9 +4,14 @@
  * [POS]: 标签和批量布局关闭边界。明确失败保留叶子，布局替换先在隔离树验证，再确认全部视图可保存。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
+import type { Workspace } from './workspace.js';
+import type { WorkspaceNode, WorkspaceLeaf } from './workspace-model.js';
+import { WorkspaceTabs, WorkspaceSplit } from './workspace-model.js';
+import type { ViewState } from '../../contracts.js';
+import type { WorkspaceLayoutNode } from './workspace-layout.js';
 import { Notice } from './notices.js';
 import { assertWorkspaceLayout } from './workspace-layout.js';
-const rejected = (error: unknown): false => {
+const rejected = (error: unknown) => {
   new Notice('无法关闭文档：' + (error instanceof Error ? error.message : String(error)));
   return false;
 };
@@ -14,12 +19,12 @@ function releaseView(view: { _children?: unknown[] } | null | undefined): void {
   for (const dispose of view?._children || []) if (typeof dispose === 'function') dispose();
   if (view) view._children = [];
 }
-export function detachLeafGuarded(workspace, leaf) {
+export function detachLeafGuarded(workspace: Workspace, leaf: WorkspaceLeaf) {
   if (leaf._detachPending) return leaf._detachPending;
-  if (!leaf.parent) return false;
+  if (!(leaf.parent instanceof WorkspaceTabs)) return false;
   const view = leaf.view;
-  const finish = accepted => {
-    if (accepted === false || leaf.view !== view || !leaf.parent) return false;
+  const finish = (accepted: boolean | void) => {
+    if (accepted === false || leaf.view !== view || !(leaf.parent instanceof WorkspaceTabs)) return false;
     const tabs = leaf.parent; releaseView(view); leaf._closed = true;
     leaf._tabHeaderEl?.detach(); leaf._leafEl?.detach(); leaf._resizeObserver?.disconnect();
     tabs.removeLeaf(leaf); workspace._leafMap.delete(leaf.id);
@@ -34,14 +39,14 @@ export function detachLeafGuarded(workspace, leaf) {
   };
   try {
     const result = view?.onClose();
-    if (!result?.then) return finish(result);
+    if (!result || typeof result !== 'object' || typeof result.then !== 'function') return finish(result === false ? false : undefined);
     const pending = result.then(finish).catch(rejected).finally(() => { if (leaf._detachPending === pending) leaf._detachPending = null; });
     leaf._detachPending = pending; return pending;
   } catch (error) { return rejected(error); }
 }
-export async function closeWorkspaceViews(workspace) {
-  const leaves = []; workspace.iterateAllLeaves(leaf => leaves.push(leaf));
-  const closed = [];
+export async function closeWorkspaceViews(workspace: Workspace) {
+  const leaves: WorkspaceLeaf[] = []; workspace.iterateAllLeaves((leaf: WorkspaceLeaf) => leaves.push(leaf));
+  const closed: Array<{leaf: WorkspaceLeaf; state: ViewState}> = [];
   const restore = async () => {
     for (const { leaf, state } of closed) {
       leaf.view = null; leaf._resizeObserver = null;
@@ -62,19 +67,21 @@ export async function closeWorkspaceViews(workspace) {
 }
 
 
-export async function prepareWorkspaceLayout(workspace, data: unknown, deserialize) {
+export async function prepareWorkspaceLayout(workspace: Workspace, data: unknown, deserialize: (this: Workspace, node: WorkspaceLayoutNode) => Promise<WorkspaceNode | null>) {
   assertWorkspaceLayout(data);
   // 反序列化只写隔离索引，不让无效布局触碰当前树或视图。
-  const staged = Object.create(workspace); staged._leafMap = new Map();
-  staged.deserializeNode = async nodeData => {
+  const staged: Workspace = Object.create(workspace); staged._leafMap = new Map();
+  staged.deserializeNode = async (nodeData: WorkspaceLayoutNode | null) => {
+    if (!nodeData) return null;
     const node = await deserialize.call(staged, nodeData);
-    if (nodeData?.type === 'tabs') node.setStacked(!!nodeData.stacked);
+    if (node instanceof WorkspaceTabs && nodeData.type === 'tabs') node.setStacked(!!nodeData.stacked);
     return node;
   };
   const main = await staged.deserializeNode(data.main);
   const left = await staged.deserializeNode(data.left);
   const right = await staged.deserializeNode(data.right);
-  const bind = node => { node.workspace = workspace; node.app = workspace.app; for (const child of node.children || []) bind(child); };
+  const bind = (node: WorkspaceNode) => { node.workspace = workspace; node.app = workspace.app; if ('children' in node) for (const child of node.children) bind(child); };
+  if (!(main instanceof WorkspaceSplit) || !(left instanceof WorkspaceSplit) || !(right instanceof WorkspaceSplit)) throw Error('布局根节点不是分栏');
   for (const node of [main, left, right]) bind(node);
   return { main, left, right, leafMap: staged._leafMap };
 }

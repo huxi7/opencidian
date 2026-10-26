@@ -14,6 +14,12 @@ import {
   sidePoint, offsetPoint, bezierFor, bezierPoint, nearestSide, SIDE_ROTATION, applyCanvasColor, genId,
 } from './canvas-utils.js';
 import { t } from '../core/i18n.js';
+import { Menu } from '../core/menu.js';
+import { CanvasNode } from './canvas-node.js';
+import type { CanvasBezier, CanvasPoint, CanvasBBox } from './canvas-utils.js';
+import { CanvasEdgeData } from './canvas-types.js';
+
+export interface CanvasEndpoint { side: string; node: CanvasNode; end: string; }
 
 export const END_NONE = 'none';
 export const END_ARROW = 'arrow';
@@ -23,28 +29,28 @@ const ARROW_POINTS = '0,0 6.5,10.4 -6.5,10.4';
 
 export class CanvasEdge {
   declare canvas: import('./canvas-view.js').CanvasView;
-  declare id: any;
-  declare from: any;
-  declare to: any;
+  declare id: string;
+  declare from: CanvasEndpoint;
+  declare to: CanvasEndpoint;
   declare color: string;
   declare label: string;
-  declare unknownData: any;
+  declare unknownData: Record<string, unknown>;
   declare initialized: boolean;
-  declare labelElement: any;
-  declare bezier: any;
-  declare path: any;
-  declare fromLineEnd: any;
-  declare toLineEnd: any;
-  declare lineGroupEl: any;
-  declare lineEndGroupEl: any;
+  declare labelElement: CanvasEdgeLabel | null;
+  declare bezier: CanvasBezier | null;
+  declare path: { display: SVGPathElement; interaction: SVGPathElement } | null;
+  declare fromLineEnd: { el: SVGGElement; type: string } | null;
+  declare toLineEnd: { el: SVGGElement; type: string } | null;
+  declare lineGroupEl: SVGGElement;
+  declare lineEndGroupEl: SVGGElement;
 
   /**
    * @param {CanvasView} canvas
    * @param {string} id
-   * @param {{side:string,node:any,end:string}} from
-   * @param {{side:string,node:any,end:string}} to
+   * @param {{side:string,node:CanvasNode,end:string}} from
+   * @param {{side:string,node:CanvasNode,end:string}} to
    */
-  constructor(canvas: import('./canvas-view.js').CanvasView, id, from, to) {
+  constructor(canvas: import('./canvas-view.js').CanvasView, id: string | undefined, from: CanvasEndpoint, to: CanvasEndpoint) {
     this.canvas = canvas;
     this.id = id || genId();
     this.from = from;
@@ -84,8 +90,8 @@ export class CanvasEdge {
 
   /* ------------------------------------------------------------------ data */
 
-  getData() {
-    const data = { ...this.unknownData, id: this.id, fromNode: this.from.node.id, fromSide: this.from.side, toNode: this.to.node.id, toSide: this.to.side };
+  getData(): CanvasEdgeData {
+    const data: CanvasEdgeData = { ...this.unknownData, id: this.id, fromNode: this.from.node.id, fromSide: this.from.side, toNode: this.to.node.id, toSide: this.to.side };
     if (this.from.end !== END_NONE) data.fromEnd = this.from.end;
     if (this.to.end !== END_ARROW) data.toEnd = this.to.end;
     if (this.color) data.color = this.color;
@@ -93,7 +99,7 @@ export class CanvasEdge {
     return data;
   }
 
-  setData(data) {
+  setData(data: CanvasEdgeData) {
     const { fromNode, fromSide, fromEnd, toNode, toSide, toEnd, color, label, ...rest } = data;
     const canvas = this.canvas;
     let dirty = false;
@@ -101,11 +107,11 @@ export class CanvasEdge {
     if (this.color !== nextColor) { this.color = nextColor; dirty = true; }
     if (this.label !== label) { this.label = label || ''; dirty = true; }
     if (fromNode && fromNode !== this.from.node.id && canvas.nodes.has(fromNode)) {
-      this.from.node = canvas.nodes.get(fromNode);
+      this.from.node = canvas.nodes.get(fromNode)!;
       canvas.markMoved(this);
     }
     if (toNode && toNode !== this.to.node.id && canvas.nodes.has(toNode)) {
-      this.to.node = canvas.nodes.get(toNode);
+      this.to.node = canvas.nodes.get(toNode)!;
       canvas.markMoved(this);
     }
     if (fromNode) {
@@ -122,7 +128,7 @@ export class CanvasEdge {
     if (dirty) canvas.markDirty(this);
   }
 
-  setColor(color, render) {
+  setColor(color: string, render?: boolean) {
     const value = color || '';
     if (this.color === value) return;
     this.color = value;
@@ -130,12 +136,12 @@ export class CanvasEdge {
     else this.canvas.markDirty(this);
   }
 
-  setLabel(label) {
+  setLabel(label: string) {
     if (this.label !== label) this.label = label;
   }
 
   /** 重接一条边的一端（连线拖拽时复用）。 */
-  update(from, to) {
+  update(from: CanvasEndpoint, to: CanvasEndpoint) {
     const canvas = this.canvas;
     if (this.from.node !== from.node) { canvas.edgeFrom.delete(this.from.node, this); canvas.edgeFrom.add(from.node, this); }
     if (this.to.node !== to.node) { canvas.edgeTo.delete(this.to.node, this); canvas.edgeTo.add(to.node, this); }
@@ -147,14 +153,14 @@ export class CanvasEdge {
   /* -------------------------------------------------------------- geometry */
 
   getBBox() {
-    const a = sidePoint(this.from.node.getBBox(), this.from.side);
-    const b = sidePoint(this.to.node.getBBox(), this.to.side);
+    const a = sidePoint(this.from.node.getBBox(), this.from.side) || { x: this.from.node.x, y: this.from.node.y };
+    const b = sidePoint(this.to.node.getBBox(), this.to.side) || { x: this.to.node.x, y: this.to.node.y };
     return { minX: Math.min(a.x, b.x), minY: Math.min(a.y, b.y), maxX: Math.max(a.x, b.x), maxY: Math.max(a.y, b.y) };
   }
 
   /** 贝塞尔 t=0.5 的点，标签定位用。 */
   getCenter() {
-    return bezierPoint(0.5, this.bezier);
+    return this.bezier ? bezierPoint(0.5, this.bezier) : { x: 0, y: 0 };
   }
 
   /* ------------------------------------------------------------ selection */
@@ -178,7 +184,7 @@ export class CanvasEdge {
   initialize() {
     const line = this.lineGroupEl;
     line.addEventListener('click', (e) => this.onClick(e));
-    line.addEventListener('contextmenu', (e) => this.onContextMenu(e));
+    line.addEventListener('contextmenu', (e: MouseEvent) => this.onContextMenu(e));
     line.addEventListener('pointerdown', (e) => this.onConnectionPointerdown(e));
     this.path = {
       interaction: line.createSvg('path', { cls: 'canvas-interaction-path' }),
@@ -201,9 +207,9 @@ export class CanvasEdge {
 
   updatePath() {
     const { from, to } = this;
-    const a = sidePoint(from.node.getBBox(), from.side);
+    const a = sidePoint(from.node.getBBox(), from.side) || { x: from.node.x, y: from.node.y };
     const s = offsetPoint(a, from.side, 7);
-    const l = sidePoint(to.node.getBBox(), to.side);
+    const l = sidePoint(to.node.getBBox(), to.side) || { x: to.node.x, y: to.node.y };
     const c = offsetPoint(l, to.side, 7);
     const bezier = this.bezier = bezierFor(s, from.side, c, to.side);
 
@@ -228,11 +234,12 @@ export class CanvasEdge {
     } else {
       d = `${d} M${c.x} ${c.y} L${l.x} ${l.y}`;
     }
+    if (!this.path) return;
     this.path.interaction.setAttr('d', d);
     this.path.display.setAttr('d', d);
   }
 
-  createEdgeEnd(type) {
+  createEdgeEnd(type: string) {
     if (type !== END_ARROW) return null;
     const el = this.lineEndGroupEl.createSvg('g', {}, (g) => {
       g.createSvg('polygon', { cls: 'canvas-path-end', attr: { points: ARROW_POINTS } });
@@ -242,7 +249,7 @@ export class CanvasEdge {
 
   /* --------------------------------------------------------------- events */
 
-  onClick(e) {
+  onClick(e: MouseEvent) {
     const canvas = this.canvas;
     if (e.button !== 0 || canvas.readonly) return;
     canvas.wrapperEl.focus({ preventScroll: true });
@@ -251,7 +258,7 @@ export class CanvasEdge {
     else canvas.selectOnly(this);
   }
 
-  onContextMenu(e) {
+  onContextMenu(e: MouseEvent) {
     if (e.defaultPrevented) return;
     const canvas = this.canvas;
     if (canvas.selection.has(this) && canvas.selection.size > 1) { canvas.onSelectionContextMenu(e); return; }
@@ -262,7 +269,7 @@ export class CanvasEdge {
     menu.showAtMouseEvent(e);
   }
 
-  showMenu(menu) {
+  showMenu(menu: Menu) {
     const canvas = this.canvas;
     if (!canvas.readonly) {
       menu.addItem((item) => item.setSection('danger').setTitle(t('plugins.canvas.action-remove')).setIcon('lucide-trash-2').setWarning(true)
@@ -274,8 +281,8 @@ export class CanvasEdge {
       .onClick(() => {
         // 视口中心离哪一端近，就跳到那一端所属节点
         const center = canvas.posCenter();
-        const a = sidePoint(this.from.node.getBBox(), this.from.side);
-        const b = sidePoint(this.to.node.getBBox(), this.to.side);
+        const a = sidePoint(this.from.node.getBBox(), this.from.side) || { x: this.from.node.x, y: this.from.node.y };
+        const b = sidePoint(this.to.node.getBBox(), this.to.side) || { x: this.to.node.x, y: this.to.node.y };
         const target = Math.hypot(center.x - a.x, center.y - a.y) > Math.hypot(center.x - b.x, center.y - b.y)
           ? this.to.node : this.from.node;
         canvas.zoomToBbox(target.getBBox());
@@ -288,19 +295,19 @@ export class CanvasEdge {
    * 虚影建在拖拽真正开始时（handlers.start）：原版把临时节点放在 oM 的工厂里，
    * 纯点击不留 .is-dummy 蓝框；边本身在拖拽期间临时改接虚影，收尾复原或删除。
    */
-  onConnectionPointerdown(e) {
+  onConnectionPointerdown(e: PointerEvent) {
     const canvas = this.canvas;
     if (!e.isPrimary || e.button !== 0 || canvas.readonly) return;
     e.preventDefault();
     const from = this.from;
     const to = this.to;
     const start = canvas.posFromClient({ x: e.clientX, y: e.clientY });
-    const fromPt = sidePoint(from.node.getBBox(), from.side);
-    const toPt = sidePoint(to.node.getBBox(), to.side);
+    const fromPt = sidePoint(from.node.getBBox(), from.side) || { x: from.node.x, y: from.node.y };
+    const toPt = sidePoint(to.node.getBBox(), to.side) || { x: to.node.x, y: to.node.y };
     const movingEnd = dist(start, fromPt) > dist(start, toPt) ? 'to' : 'from';
     const fixedEnd = movingEnd === 'from' ? to : from;
-    let dummy = null;
-    let snapped = null;
+    let dummy: CanvasNode | null = null;
+    let snapped: { node: CanvasNode; side: string } | null = null;
 
     canvas.handleDragWithPan(e, {
       start: () => {
@@ -309,7 +316,7 @@ export class CanvasEdge {
         canvas.canvasEl.addClass('is-connecting');
         canvas.deselectAll();
       },
-      move: (ev) => {
+      move: (ev: PointerEvent) => {
         if (!dummy) return;
         const pos = canvas.posFromEvt(ev);
         dummy.x = pos.x;
@@ -338,8 +345,8 @@ export class CanvasEdge {
   }
 }
 
-function dist(a, b) { return Math.hypot(a.x - b.x, a.y - b.y); }
-function expand(box, d) {
+function dist(a: CanvasPoint, b: CanvasPoint) { return Math.hypot(a.x - b.x, a.y - b.y); }
+function expand(box: CanvasBBox, d: number) {
   return { minX: box.minX - d, minY: box.minY - d, maxX: box.maxX + d, maxY: box.maxY + d };
 }
 
@@ -347,13 +354,13 @@ function expand(box, d) {
  * 边标签 — 原版 _5 类：contenteditable div，输入即写回 edge.label
  * ------------------------------------------------------------------------ */
 class CanvasEdgeLabel {
-  declare edge: any;
+  declare edge: CanvasEdge;
   declare isEditing: boolean;
   declare initialTextState: string;
-  declare wrapperEl: any;
-  declare textareaEl: any;
+  declare wrapperEl: HTMLDivElement;
+  declare textareaEl: HTMLDivElement;
 
-  constructor(edge) {
+  constructor(edge: CanvasEdge) {
     this.edge = edge;
     this.isEditing = false;
     this.initialTextState = '';
@@ -377,7 +384,7 @@ class CanvasEdgeLabel {
     this.render();
   }
 
-  setText(text) {
+  setText(text: string) {
     if (!this.isEditing) this.textareaEl.setText(text);
   }
 
@@ -390,8 +397,8 @@ class CanvasEdgeLabel {
     const range = document.createRange();
     range.selectNodeContents(el);
     const sel = window.getSelection();
-    sel.removeAllRanges();
-    sel.addRange(range);
+    sel?.removeAllRanges();
+    sel?.addRange(range);
     this.initialTextState = this.edge.label || '';
   }
 
@@ -416,9 +423,9 @@ class CanvasEdgeLabel {
     this.wrapperEl.toggleClass('is-themed', !!this.edge.color);
   }
 
-  destroy(silent?) {
+  destroy(silent?: boolean) {
     const edge = this.edge;
-    if (edge.label) delete edge.label;
+    if (edge.label) edge.label = '';
     if (this.initialTextState && !silent) edge.canvas.requestSave();
     this.wrapperEl.remove();
     edge.labelElement = null;

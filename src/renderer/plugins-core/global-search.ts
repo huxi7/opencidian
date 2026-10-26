@@ -7,18 +7,24 @@
  *        键盘导航按行模型跨虚拟边界移动；输入框挂 search-suggest.js 的算子建议与搜索历史；
  *        搜索范围为 Markdown 全部文件 + 白板文本节点（原版 NL.match 口径）；
  *        查询语法/命中判定委托 search-query.js，复制弹窗委托 search-copy.js。
+ *        搜索命令从活动宿主读取编辑器选区；选项变化经 layout-change 保存。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
+import type { SearchInfo, SearchResult, SearchEvaluation, SearchNode } from './search-types.js';
 import { View } from '../core/view.js';
 import { t, tt } from '../core/i18n.js';
 import { setIcon } from '../core/icons.js';
 import { Menu } from '../core/menu.js';
-import { Setting } from '../core/setting.js';
-import { TFolder } from '../core/vault.js';
+import type { Editor } from '../editor/editor.js';
+import { Setting, ToggleComponent } from '../core/setting.js';
+import { TFile, TFolder, VaultEntry } from '../core/vault.js';
 import { CopySearchResultsModal } from './search-copy.js';
 import { parseQuery, searchDocument, createSearchDocument, canvasNodeText, queryInfo } from './search-query.js';
 import { SearchResults } from './search-results.js';
 import { SearchSuggest } from './search-suggest.js';
+import { WorkspaceLeaf } from '../core/workspace-model.js';
+import { ViewState } from '../../contracts.js';
+import { EventRef } from '../core/events.js';
 
 export { CopySearchResultsModal } from './search-copy.js';
 export { searchFile, searchVault } from './search-query-match.js';
@@ -43,16 +49,16 @@ const SORT_OPTIONS = [
   ['byCreatedTimeReverse', 'plugins.file-explorer.label-sort-created-old-to-new', 'Created time (old to new)'],
 ];
 
-function setCaseIcon(el) {
+function setCaseIcon(el: HTMLElement) {
   el.innerHTML = CASE_ICON;
   return el.firstElementChild;
 }
 
-function formatCount(count) {
+function formatCount(count: number) {
   return t('plugins.search.label-result-count', { count: Number(count).toLocaleString() });
 }
 
-function renderInfoItem(parent, item) {
+function renderInfoItem(parent: HTMLElement, item: SearchInfo): void {
   const line = parent.createDiv();
   line.setText(t(item.label) + (item.value ? ' ' + item.value : ''));
   if (item.children && item.children.length) {
@@ -61,7 +67,7 @@ function renderInfoItem(parent, item) {
   }
 }
 
-function dateOrder(file, key) {
+function dateOrder(file: TFile, key: 'mtime' | 'ctime') {
   const stat = file.stat || {};
   return Number(stat[key] || 0);
 }
@@ -70,9 +76,9 @@ function dateOrder(file, key) {
 // Search view
 // ---------------------------------------------------------------------------
 export class SearchView extends View {
-  declare collapseToggle: any;
-  declare extraContextToggle: any;
-  declare explainToggle: any;
+  declare collapseToggle: ToggleComponent;
+  declare extraContextToggle: ToggleComponent;
+  declare explainToggle: ToggleComponent;
 
   declare icon: string;
   declare navigation: boolean;
@@ -82,33 +88,33 @@ export class SearchView extends View {
   declare _collapseAll: boolean;
   declare _extraContext: boolean;
   declare _sortOrder: string;
-  declare _results: any[];
+  declare _results: SearchResult[];
   declare _searchSeq: number;
   declare _searching: boolean;
   declare _applyingState: boolean;
-  declare _listeners: any[];
-  declare _onKeyDown: any;
-  declare _historyTimer: any;
+  declare _listeners: Array<{ unregister(): void }>;
+  declare _onKeyDown: (event: KeyboardEvent) => void;
+  declare _historyTimer: ReturnType<typeof setTimeout> | null;
   declare _suggest: SearchSuggest | null | undefined;
   declare _list: SearchResults | null | undefined;
-  declare inputEl: any;
-  declare clearButtonEl: any;
-  declare caseButtonEl: any;
-  declare filterButtonEl: any;
-  declare _showParams: any;
-  declare searchInfoEl: any;
-  declare paramsEl: any;
-  declare resultsInfoEl: any;
-  declare countEl: any;
-  declare resultCountEl: any;
-  declare sortSelect: any;
-  declare sortMeasureEl: any;
-  declare sortMeasureOptionEl: any;
-  declare resultEl: any;
-  declare childrenEl: any;
-  declare emptyEl: any;
+  declare inputEl: HTMLInputElement;
+  declare clearButtonEl: HTMLElement;
+  declare caseButtonEl: HTMLElement;
+  declare filterButtonEl: HTMLElement;
+  declare _showParams: boolean;
+  declare searchInfoEl: HTMLDivElement;
+  declare paramsEl: HTMLDivElement;
+  declare resultsInfoEl: HTMLDivElement;
+  declare countEl: HTMLElement;
+  declare resultCountEl: HTMLElement;
+  declare sortSelect: HTMLSelectElement;
+  declare sortMeasureEl: HTMLSelectElement;
+  declare sortMeasureOptionEl: HTMLOptionElement;
+  declare resultEl: HTMLDivElement;
+  declare childrenEl: HTMLDivElement;
+  declare emptyEl: HTMLDivElement;
 
-  constructor(leaf) {
+  constructor(leaf: WorkspaceLeaf) {
     super(leaf);
     this.icon = 'lucide-search';
     this.navigation = true;
@@ -141,7 +147,7 @@ export class SearchView extends View {
     };
   }
 
-  async setState(state, result) {
+  async setState(state: Record<string,unknown>, result: ViewState|undefined) {
     state = state || {};
     this._applyingState = true;
     try {
@@ -170,14 +176,14 @@ export class SearchView extends View {
     else if (this.inputEl) this._clearResults();
   }
 
-  setEphemeralState(state) {
+  setEphemeralState(state: Record<string,unknown>) {
     if (state && state.focus && this.inputEl) {
       this.inputEl.setSelectionRange(0, this.inputEl.value.length);
       this.inputEl.focus({ preventScroll: true });
     }
   }
 
-  setQuery(query) {
+  setQuery(query: string) {
     this._query = String(query || '');
     if (this.inputEl) this.inputEl.value = this._query;
     return this.runSearch();
@@ -217,7 +223,7 @@ export class SearchView extends View {
     for (const listener of this._listeners) listener.unregister && listener.unregister();
     this._listeners = [];
     this._results = [];
-    clearTimeout(this._historyTimer);
+    clearTimeout(this._historyTimer ?? undefined);
     this._historyTimer = null;
     if (this._suggest) this._suggest.destroy();
     this._suggest = null;
@@ -255,7 +261,7 @@ export class SearchView extends View {
     this.caseButtonEl.onclick = () => {
       this._matchCase = !this._matchCase;
       this._syncControls();
-      this.app.workspace.requestSaveLayout && this.app.workspace.requestSaveLayout();
+      this.app.workspace.trigger('layout-change');
       if (this.inputEl.value !== '') this.runSearch();
     };
 
@@ -268,12 +274,12 @@ export class SearchView extends View {
       this.paramsEl.toggle(this._showParams);
     };
 
-    let timer = null;
+    let timer: ReturnType<typeof setTimeout> | null = null;
     // 原版 k2.attach：输入框聚焦/输入时弹出算子建议与搜索历史。
     this._suggest = new SearchSuggest(this.app, this.inputEl);
     this.inputEl.addEventListener('input', () => {
       this._query = this.inputEl.value;
-      clearTimeout(timer);
+      clearTimeout(timer ?? undefined);
       timer = setTimeout(() => this.runSearch(), 0);
     });
     this.inputEl.addEventListener('keydown', (event) => {
@@ -292,7 +298,7 @@ export class SearchView extends View {
         }
       }
     });
-    this._listeners.push({ unregister: () => clearTimeout(timer) });
+    this._listeners.push({ unregister: () => clearTimeout(timer ?? undefined) });
   }
 
   _buildSearchInfo() {
@@ -305,7 +311,7 @@ export class SearchView extends View {
     this.paramsEl.hide();
     this._showParams = false;
     // 原版 search-params 只有三个开关：折叠结果 / 显示更多上下文 / 说明搜索含义。
-    const toggles: Array<[string, string, () => boolean, (value: boolean) => void]> = [
+    const toggles: Array<[string, 'collapseToggle' | 'extraContextToggle' | 'explainToggle', () => boolean, (value: boolean) => void]> = [
       ['plugins.search.label-collapse-results', 'collapseToggle', () => this._collapseAll, (value) => this.setCollapseAll(value)],
       ['plugins.search.label-more-context', 'extraContextToggle', () => this._extraContext, (value) => this.setExtraContext(value)],
       ['plugins.search.label-explain-search-term', 'explainToggle', () => this._explain, (value) => this.setExplainSearch(value)],
@@ -331,7 +337,7 @@ export class SearchView extends View {
     this.resultCountEl = this.countEl.createSpan();
     const more = this.countEl.createDiv('more-options-icon');
     setIcon(more, 'more-horizontal');
-    this.countEl.onclick = (event) => {
+    this.countEl.onclick = (event: MouseEvent) => {
       if (this.countEl.hasClass && this.countEl.hasClass('has-active-menu')) return;
       const menu = new Menu(this.app);
       menu.addSections(['action']);
@@ -356,7 +362,7 @@ export class SearchView extends View {
     this.sortMeasureOptionEl = this.sortMeasureEl.createEl('option');
     this.sortSelect.onchange = () => {
       this.setSortOrder(this.sortSelect.value);
-      this.app.workspace.requestSaveLayout && this.app.workspace.requestSaveLayout();
+      this.app.workspace.trigger('layout-change');
     };
     this._resizeSortSelect();
   }
@@ -409,7 +415,7 @@ export class SearchView extends View {
     this._searching = false;
   }
 
-  _setLoading(loading) {
+  _setLoading(loading: boolean) {
     this._searching = loading;
     if (this.resultEl) this.resultEl.toggleClass('is-loading', loading);
   }
@@ -451,7 +457,7 @@ export class SearchView extends View {
     }
     this._renderInfo(parsed);
     this.searchInfoEl.toggle(this._explain);
-    const results = [];
+    const results: SearchResult[] = [];
     const matchCase = parsed.forceCase === null ? this._matchCase : parsed.forceCase;
     const files = this.app.vault.getMarkdownFiles();
     let scanned = 0;
@@ -504,14 +510,14 @@ export class SearchView extends View {
 
   /** 原版 requestSaveSearch：搜索结束 5 秒后把当前查询写入最近搜索。 */
   _scheduleHistorySave() {
-    clearTimeout(this._historyTimer);
+    clearTimeout(this._historyTimer ?? undefined);
     this._historyTimer = setTimeout(() => {
       this._historyTimer = null;
       if (this._suggest) this._suggest.saveHistory(this._query);
     }, 5000);
   }
 
-  _renderInfo(parsed) {
+  _renderInfo(parsed: ReturnType<typeof parseQuery>) {
     this.searchInfoEl.empty();
     const items = queryInfo(parsed.ast);
     for (const item of items) renderInfoItem(this.searchInfoEl, item);
@@ -523,11 +529,11 @@ export class SearchView extends View {
     }
   }
 
-  _queryHasCaseOperator(ast) {
+  _queryHasCaseOperator(ast: SearchNode | null): boolean {
     if (!ast) return false;
     if (ast.type === 'case') return true;
-    if (ast.children) return ast.children.some((child) => this._queryHasCaseOperator(child));
-    if (ast.child) return this._queryHasCaseOperator(ast.child);
+    if ('children' in ast) return ast.children.some((child) => this._queryHasCaseOperator(child));
+    if ('child' in ast) return this._queryHasCaseOperator(ast.child);
     return false;
   }
 
@@ -537,15 +543,16 @@ export class SearchView extends View {
 
   _applySort() {
     const order = this._sortOrder;
-    const byName = (a, b) => a.file.basename.localeCompare(b.file.basename);
-    const compare = {
+    const byName = (a: { file: { basename: string; }; }, b: { file: { basename: string; }; }) => a.file.basename.localeCompare(b.file.basename);
+    const comparators: Record<string, (a: SearchResult, b: SearchResult) => number> = {
       alphabetical: byName,
-      alphabeticalReverse: (a, b) => -byName(a, b),
-      byModifiedTime: (a, b) => dateOrder(b.file, 'mtime') - dateOrder(a.file, 'mtime'),
-      byModifiedTimeReverse: (a, b) => dateOrder(a.file, 'mtime') - dateOrder(b.file, 'mtime'),
-      byCreatedTime: (a, b) => dateOrder(b.file, 'ctime') - dateOrder(a.file, 'ctime'),
-      byCreatedTimeReverse: (a, b) => dateOrder(a.file, 'ctime') - dateOrder(b.file, 'ctime'),
-    }[order] || byName;
+      alphabeticalReverse: (a: { file: { basename: string; }; }, b: { file: { basename: string; }; }) => -byName(a, b),
+      byModifiedTime: (a: SearchResult, b: SearchResult) => dateOrder(b.file, 'mtime') - dateOrder(a.file, 'mtime'),
+      byModifiedTimeReverse: (a: SearchResult, b: SearchResult) => dateOrder(a.file, 'mtime') - dateOrder(b.file, 'mtime'),
+      byCreatedTime: (a: SearchResult, b: SearchResult) => dateOrder(b.file, 'ctime') - dateOrder(a.file, 'ctime'),
+      byCreatedTimeReverse: (a: SearchResult, b: SearchResult) => dateOrder(a.file, 'ctime') - dateOrder(b.file, 'ctime'),
+    };
+    const compare = comparators[order] || byName;
     this._results.sort((a, b) => compare(a, b) || byName(a, b));
   }
 
@@ -560,7 +567,7 @@ export class SearchView extends View {
     this._list.setResults(this._results);
   }
 
-  _openFile(file, line, ch, event) {
+  _openFile(file: TFile|null|undefined, line: number | null | undefined, ch: number | undefined, event: MouseEvent | KeyboardEvent) {
     const newLeaf = !!(event && (event.metaKey || event.ctrlKey));
     const options: { newLeaf: boolean; eState?: { line: number; ch: number } } = { newLeaf };
     if (line !== null && line !== undefined) options.eState = { line, ch: ch || 0 };
@@ -568,7 +575,7 @@ export class SearchView extends View {
   }
 
   /** 原版 onResultContextMenu：结果行右键弹出链接菜单；删除文件项只在文件标题上出现。 */
-  _openResultMenu(event, file, el, allowDelete) {
+  _openResultMenu(event: MouseEvent, file: VaultEntry, el: HTMLElement, allowDelete: boolean) {
     event.preventDefault();
     const menu = this.app.workspace.buildLinkMenu();
     if (!this.app.workspace.handleLinkContextMenu(menu, file.path, '', event)) return;
@@ -584,7 +591,7 @@ export class SearchView extends View {
     menu.showAtMouseEvent(event);
   }
 
-  setSortOrder(order) {
+  setSortOrder(order: string) {
     if (!SORT_OPTIONS.some(([value]) => value === order)) return;
     this._sortOrder = order;
     this._syncControls();
@@ -592,25 +599,25 @@ export class SearchView extends View {
     this.renderResults();
   }
 
-  setCollapseAll(value) {
+  setCollapseAll(value: boolean) {
     this._collapseAll = !!value;
     if (this._list) this._list.setCollapseAll(this._collapseAll);
     this._syncControls();
-    this.app.workspace.requestSaveLayout && this.app.workspace.requestSaveLayout();
+    this.app.workspace.trigger('layout-change');
   }
 
-  setExtraContext(value) {
+  setExtraContext(value: boolean) {
     this._extraContext = !!value;
     if (this._list) this._list.setExtraContext(this._extraContext);
     this._syncControls();
-    this.app.workspace.requestSaveLayout && this.app.workspace.requestSaveLayout();
+    this.app.workspace.trigger('layout-change');
   }
 
-  setExplainSearch(value) {
+  setExplainSearch(value: boolean) {
     this._explain = !!value;
     this._syncControls();
     if (this.searchInfoEl) this.searchInfoEl.toggle(this._explain);
-    this.app.workspace.requestSaveLayout && this.app.workspace.requestSaveLayout();
+    this.app.workspace.trigger('layout-change');
   }
 
   getFiles() {
@@ -619,7 +626,7 @@ export class SearchView extends View {
 
   // ------------------------------------------------------------------ 键盘
 
-  _handleKeyDown(event) {
+  _handleKeyDown(event: KeyboardEvent) {
     if (event.defaultPrevented || !this._list) return;
     const inInput = event.target === this.inputEl;
     const row = this._list.focusedRow;
@@ -654,7 +661,7 @@ export class SearchView extends View {
     if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') {
       if (inInput) return;
       const result = row ? row.result : null;
-      if (!result) {
+      if (!result || !row) {
         event.preventDefault();
         if (event.key === 'ArrowLeft') this.setCollapseAll(true);
         else this.setCollapseAll(false);
@@ -675,39 +682,39 @@ export class SearchView extends View {
 // ---------------------------------------------------------------------------
 
 /** 原版 openGlobalSearch：确保左栏搜索视图存在，并带上查询词。 */
-async function openGlobalSearch(app: App, query) {
+async function openGlobalSearch(app: App, query: string|null|undefined) {
   let leaf = app.workspace.getLeavesOfType('search')[0];
   if (!leaf) leaf = await app.workspace.ensureSideLeaf('search', 'left', { reveal: true });
   if (query !== null && query !== undefined) {
     await leaf.setViewState({ type: 'search', state: { query } });
   }
   app.workspace.revealLeaf(leaf);
-  if (leaf.view && leaf.view.focus) leaf.view.focus();
+  if (leaf.view instanceof SearchView) leaf.view.focus();
   return leaf;
 }
 
 /** 原版命令与编辑器菜单取选区作查询词：含空格则整体加引号。 */
 function selectionQuery(app: App) {
-  const editor = app.workspace.activeEditor;
+  const editor = app.workspace.activeEditor?.editor;
   let text = '';
   if (editor && editor.getSelection && editor.getRange) {
     const range = editor.getSelection();
     if (range && range.anchor) text = editor.getRange(range.anchor, range.head) || '';
   }
-  if (!text && typeof window.getSelection === 'function') text = window.getSelection().toString();
+  if (!text && typeof window.getSelection === 'function') text = window.getSelection()?.toString() || '';
   text = String(text || '').trim();
   if (!text) return null;
   return text.includes(' ') ? '"' + text.replace(/\\/g, '\\\\').replace(/"/g, '\\"') + '"' : text;
 }
 
 /** 原版 E2.onEditorMenu：选区右键加“查找 …”，关键词截断到 25 字。 */
-function keywordLabel(text) {
+function keywordLabel(text: string) {
   const flat = text.replace(/\s+/g, ' ');
   return flat.length > 25 ? flat.slice(0, 25) : flat;
 }
 
 export function create(app: App) {
-  const refs = [];
+  const refs: EventRef[] = [];
   return {
     onload() {
       app.viewRegistry.registerView('search', (leaf) => new SearchView(leaf));
@@ -718,7 +725,7 @@ export function create(app: App) {
         callback: () => { openGlobalSearch(app, selectionQuery(app)); },
       });
       // 原版 E2.onFileMenu：文件树里文件夹右键加“在文件夹中查找”。
-      refs.push(app.workspace.on('file-menu', (menu, file, source) => {
+      refs.push(app.workspace.on('file-menu', (menu: Menu, file: VaultEntry, source: string) => {
         if (source !== 'file-explorer-context-menu') return;
         if (!(file instanceof TFolder) || file.isRoot()) return;
         menu.addItem((item) => item
@@ -728,7 +735,7 @@ export function create(app: App) {
           .onClick(() => { openGlobalSearch(app, 'path:"' + file.path + '/" '); }));
       }));
       // 原版 E2.onEditorMenu：编辑器选区右键加“查找 …”。
-      refs.push(app.workspace.on('editor-menu', (menu, editor) => {
+      refs.push(app.workspace.on('editor-menu', (menu: Menu, editor: Editor) => {
         const range = editor && editor.getSelection ? editor.getSelection() : null;
         const text = range && range.anchor ? editor.getRange(range.anchor, range.head) : '';
         if (!text || !text.trim()) return;

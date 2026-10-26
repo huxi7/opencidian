@@ -10,15 +10,17 @@
  *        onDeleteSelectedFiles（顺序 promptForDeletion）、f$（移动进文件夹）、v$（剔除被选中文件夹包含的项）。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
+import type { FileExplorerView } from './file-explorer.js';
+import type { FileTreeSelection } from './file-explorer-selection.js';
 import { t, tt, getNouns } from '../core/i18n.js';
 import { Menu } from '../core/menu.js';
 import { Notice } from '../core/notices.js';
 import { GenericSuggester } from '../core/suggest.js';
-import { TFolder, normalizePath, parentPathOf } from '../core/vault.js';
+import { TFolder, VaultEntry, normalizePath, parentPathOf } from '../core/vault.js';
 
 /** 原版 m$ + f$ 的跳过规则：自身、自身后代、已在本文件夹内的项都不可移动。 */
-export function movableItems(items, folder) {
-  return items.filter((item) => {
+export function movableItems(items: VaultEntry[], folder: TFolder) {
+  return items.filter((item: { path: string; }) => {
     if (item === folder) return false;
     if (item instanceof TFolder && folder.path !== '/' && (folder.path === item.path || folder.path.startsWith(item.path + '/'))) return false;
     if (parentPathOf(item.path) === folder.path) return false;
@@ -27,12 +29,12 @@ export function movableItems(items, folder) {
 }
 
 /** 原版 v$：剔除被另一个选中文件夹包含的项，得到顶层项。 */
-export function flattenTopLevel(items) {
-  return items.filter((item) => !items.some((other) => other !== item && other instanceof TFolder && item.path.startsWith(other.path)));
+export function flattenTopLevel(items: VaultEntry[]) {
+  return items.filter((item: { path: string; }) => !items.some((other) => other !== item && other instanceof TFolder && item.path.startsWith(other.path)));
 }
 
 /** 原版 x8.dragFiles：拖动项属于多选时返回整个选择集的载荷；否则返回 null 走单项拖动。 */
-export function dragPayloadFor(selection, item) {
+export function dragPayloadFor(selection: FileTreeSelection, item: VaultEntry) {
   if (selection.size < 2 || !selection.has(item.path)) return null;
   const items = selection.items();
   if (items.length < 2) return null;
@@ -44,13 +46,13 @@ export function dragPayloadFor(selection, item) {
 }
 
 /** 原版 dragManager.dragFile/dragFolder 的单项幽灵标题：md 用短名，其它文件用全名，文件夹用名字。 */
-export function dragTitleFor(item) {
+export function dragTitleFor(item: VaultEntry) {
   if (item instanceof TFolder) return item.name;
   return item.extension === 'md' ? item.basename : item.name;
 }
 
 /** 原版 dragManager.dragFiles 的幽灵标题："N files and M folders"。 */
-export function dragGhostTitle(items) {
+export function dragGhostTitle(items: VaultEntry[]) {
   const nouns = getNouns();
   const files = items.filter((it) => !(it instanceof TFolder)).length;
   const folders = items.length - files;
@@ -59,7 +61,7 @@ export function dragGhostTitle(items) {
 }
 
 /** 原版 f$：把 items 移动进 folder，逐项 renameFile，失败提示沿用拖拽移动的文案。 */
-export async function moveItemsToFolder(view, items, folder) {
+export async function moveItemsToFolder(view: Pick<FileExplorerView, 'app'>, items: VaultEntry[], folder: TFolder) {
   let moved = 0;
   for (const item of movableItems(flattenTopLevel(items), folder)) {
     const newPath = normalizePath((folder.path === '/' ? '' : folder.path + '/') + item.name);
@@ -71,7 +73,7 @@ export async function moveItemsToFolder(view, items, folder) {
 }
 
 /** 原版 onDeleteSelectedFiles：逐项走现有删除确认 / 回收站流程，跳过根目录与已消失的项。 */
-export async function deleteItemsSequentially(view, items) {
+export async function deleteItemsSequentially(view: Pick<FileExplorerView, 'app'>, items: VaultEntry[]) {
   let deleted = 0;
   for (const item of items) {
     if (item instanceof TFolder && item.isRoot()) continue;
@@ -83,7 +85,7 @@ export async function deleteItemsSequentially(view, items) {
 }
 
 /** 原版 actionNewFolderWithCount：在目标位置建新文件夹，把选择集移动进去，随后进入重命名。 */
-export async function createFolderWithSelection(view, targetItem, items) {
+export async function createFolderWithSelection(view: FileExplorerView, targetItem: VaultEntry, items: VaultEntry[]) {
   const parent = targetItem instanceof TFolder
     ? targetItem
     : (view.app.vault.getFolderByPath(parentPathOf(targetItem.path)) || view.app.vault.getRoot());
@@ -96,7 +98,7 @@ export async function createFolderWithSelection(view, targetItem, items) {
 }
 
 /** 原版多选右键菜单：新建文件夹含选中项（action-primary）/ 移动到…（files-menu）/ 删除（danger）。 */
-export function showMultiSelectionMenu(view, ev, clickedItem) {
+export function showMultiSelectionMenu(view: FileExplorerView, ev: MouseEvent, clickedItem: VaultEntry) {
   const items = view._selection.items();
   const targets = flattenTopLevel(items);
   const menu = new Menu(view.app);
@@ -112,34 +114,34 @@ export function showMultiSelectionMenu(view, ev, clickedItem) {
     .onClick(() => { deleteItemsSequentially(view, items); }));
   view.app.workspace.trigger('files-menu', menu, items, 'file-explorer-context-menu', null);
   const titleEl = view._titleEl(clickedItem.path);
-  if (titleEl) menu.setParentElement(titleEl);
+  if (titleEl) menu.setParentElement(titleEl as HTMLElement);
   view._selection.setFocus(clickedItem.path, false);
   menu.showAtMouseEvent(ev);
   return menu;
 }
 
 /** 原版 m0 移动弹窗的文件夹候选：排除各选中文件夹自身与后代，以及唯一父目录（移动过去是空操作）。 */
-export function folderChoicesFor(view, items) {
+export function folderChoicesFor(view: { app: { vault: { getRoot: () => TFolder; }; }; }, items: { path: string; }[]) {
   const folders = [view.app.vault.getRoot()];
-  const collect = (folder) => {
+  const collect = (folder: TFolder) => {
     for (const child of folder.children) {
       if (child instanceof TFolder) { folders.push(child); collect(child); }
     }
   };
   collect(view.app.vault.getRoot());
-  const parents = new Set(items.map((item) => parentPathOf(item.path)));
+  const parents = new Set(items.map((item: { path: string; }) => parentPathOf(item.path)));
   const parent = parents.size === 1 ? parents.values().next().value : null;
   return folders.filter((folder) => folder.path !== parent
     && !items.some((item) => item instanceof TFolder && folder.path.startsWith(item.path)));
 }
 
 /** 原版 m0 移动弹窗：选目标文件夹，返回 TFolder 或 null。 */
-export function chooseMoveTarget(view, items) {
+export function chooseMoveTarget(view: Pick<FileExplorerView, 'app'>, items: VaultEntry[]) {
   const options = folderChoicesFor(view, items).map((folder) => ({ label: folder.path === '/' ? '/' : folder.path, folder }));
-  return new Promise<{ folder: import('../core/vault.js').TFolder }>((resolve) => {
+  return new Promise<TFolder | null>((resolve) => {
     const m = new GenericSuggester(view.app, options, {
       placeholder: t('plugins.file-explorer.action-move-file') || 'Move file to...',
-      onChoose: resolve,
+      onChoose: choice => resolve(choice.folder),
     });
     m.open();
     m.onClose = () => resolve(null);

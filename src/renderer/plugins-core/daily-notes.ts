@@ -5,12 +5,14 @@
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 /* Core plugin: daily-notes — open or create today's daily note. */
+import { Command,CommandDefinition } from '../core/commands.js';
 import { t } from '../core/i18n.js';
 import { Notice } from '../core/notices.js';
 import { SettingGroup } from '../core/setting.js';
-import { normalizePath } from '../core/vault.js';
+import { normalizePath, TFile, TFolder, VaultEntry } from '../core/vault.js';
 
-const moment = require('moment');
+import moment, { type Moment } from 'moment';
+import type { EventRef } from '../core/events.js';
 
 export const nameKey = 'plugins.daily-notes';
 
@@ -25,7 +27,7 @@ const DATA_FILE = 'daily-notes.json';
  * 1. {{key}} 逐键替换（大小写不敏感），用于 {{title}} 等
  * 2. {{date[:FORMAT]}} / {{time[:FORMAT]}}：有内联格式用内联，否则用 options
  * ------------------------------------------------------------------------ */
-export function applyTemplate(text, vars, options: Record<string, any> = {}) {
+export function applyTemplate(text: string|null|undefined, vars: Record<string, unknown> | null | undefined, options: { dateFormat?: string; timeFormat?: string } = {}) {
   if (text === undefined || text === null) return '';
   let out = String(text);
   if (vars) {
@@ -36,7 +38,7 @@ export function applyTemplate(text, vars, options: Record<string, any> = {}) {
       out = out.replace(re, () => String(value));
     }
   }
-  let now = null;
+  let now: Moment | null = null;
   out = out.replace(/{{(date|time)(?::(.*?))?}}/gi, (match, kind, fmt) => {
     if (!now) now = moment();
     if (fmt) return now.format(fmt);
@@ -47,7 +49,7 @@ export function applyTemplate(text, vars, options: Record<string, any> = {}) {
 }
 
 /** 补齐 Markdown 后缀和父文件夹。创建仍交给 fileManager 的唯一命名入口。 */
-export async function createMarkdownNote(app: App, folder, name, content = '') {
+export async function createMarkdownNote(app: App, folder: TFolder, name: string, content = '') {
   if (!name || /[\\:*?"<>|\r\n]/.test(name) || name.startsWith('/') ||
       name.split('/').some((part) => !part.trim() || part.startsWith('.'))) {
     throw new Error('Invalid note name: ' + name);
@@ -67,11 +69,11 @@ export async function createMarkdownNote(app: App, folder, name, content = '') {
  * ------------------------------------------------------------------------ */
 class DailyNotes {
   declare app: App;
-  declare options: any;
-  declare _ribbonEl: any;
-  declare _commandIds: any[];
-  declare _creation: any;
-  declare _settingsRef: any;
+  declare options: typeof DEFAULT_OPTIONS;
+  declare _ribbonEl: HTMLDivElement | null;
+  declare _commandIds: string[];
+  declare _creation: Promise<TFile | null | void>;
+  declare _settingsRef: EventRef | null;
 
   constructor(app: App) {
     this.app = app;
@@ -106,7 +108,7 @@ class DailyNotes {
   }
 
   _registerCommands() {
-    const add = (command) => {
+    const add = (command: Command|CommandDefinition) => {
       this.app.commands.addCommand(command);
       this._commandIds.push(command.id);
     };
@@ -160,7 +162,7 @@ class DailyNotes {
   }
 
   /** 日记文件路径（不创建）。失败返回 null 并弹 Notice。 */
-  getDailyNotePath(date) {
+  getDailyNotePath(date?: Moment) {
     const m = date || moment();
     let name;
     try {
@@ -180,13 +182,13 @@ class DailyNotes {
   }
 
   /** 打开（不存在则创建）指定日期的日记。其他插件/命令可调用。 */
-  async getDailyNote(date?) {
+  async getDailyNote(date?: Moment) {
     const result = this._creation.then(() => this.createDailyNote(date));
     this._creation = result.catch(() => null);
     return result;
   }
 
-  async createDailyNote(date) {
+  async createDailyNote(date?: Moment) {
     const m = date || moment();
     let name;
     try {
@@ -221,18 +223,18 @@ class DailyNotes {
       }
       return await createMarkdownNote(this.app, folder, name);
     } catch (e) {
-      new Notice(String(e && e.message ? e.message : e));
+      new Notice(String(e instanceof Error ? e.message : e));
       return null;
     }
   }
 
-  async onOpenDailyNote(ev) {
+  async onOpenDailyNote(ev: Event | Pick<MouseEvent, 'metaKey' | 'ctrlKey'> | undefined) {
     const file = await this.getDailyNote();
-    if (file) await this.app.workspace.openFile(file, { newLeaf: !!(ev?.metaKey || ev?.ctrlKey), eState: { mode: 'source' } });
+    if (file) await this.app.workspace.openFile(file, { newLeaf: !!(ev && (('metaKey' in ev && ev.metaKey) || ('ctrlKey' in ev && ev.ctrlKey))), eState: { mode: 'source' } });
   }
 
   /* ------------------------------------------------------ prev/next 导航 */
-  iterateDailyNotes(callback) {
+  iterateDailyNotes(callback: (file: TFile, timestamp: number) => void) {
     const format = this.getFormat();
     const folder = this.getFolder();
     if (!folder) {
@@ -240,9 +242,9 @@ class DailyNotes {
       return;
     }
     const prefix = folder.path === '/' ? '' : folder.path + '/';
-    const walk = (node) => {
+    const walk = (node: TFolder) => {
       for (const child of node.children || []) {
-        if (child.children) { walk(child); continue; }
+        if (child instanceof TFolder) { walk(child); continue; }
         if (child.extension !== 'md') continue;
         const rel = child.path.startsWith(prefix) ? child.path.slice(prefix.length) : null;
         if (!rel) continue;
@@ -266,20 +268,20 @@ class DailyNotes {
     return m.isValid() ? m.valueOf() : null;
   }
 
-  gotoPreviousExisting(timestamp) {
-    let best = null;
+  gotoPreviousExisting(timestamp: number) {
+    let best: TFile | null = null;
     let bestTs = Number.NEGATIVE_INFINITY;
-    this.iterateDailyNotes((file, ts) => {
+    this.iterateDailyNotes((file, ts: number) => {
       if (ts < timestamp && ts > bestTs) { best = file; bestTs = ts; }
     });
     if (best) return this.app.workspace.openFile(best, { eState: { mode: 'source' } });
     else new Notice(t('plugins.daily-notes.msg-no-previous') || 'No older daily notes found.');
   }
 
-  gotoNextExisting(timestamp) {
-    let best = null;
+  gotoNextExisting(timestamp: number) {
+    let best: TFile | null = null;
     let bestTs = Number.POSITIVE_INFINITY;
-    this.iterateDailyNotes((file, ts) => {
+    this.iterateDailyNotes((file, ts: number) => {
       if (ts > timestamp && ts < bestTs) { best = file; bestTs = ts; }
     });
     if (best) return this.app.workspace.openFile(best, { eState: { mode: 'source' } });
@@ -290,7 +292,7 @@ class DailyNotes {
 /* --------------------------------------------------------------------------
  * 设置页（设置宿主经 module.settingTab(app, containerEl) 调用）
  * ------------------------------------------------------------------------ */
-export function settingTab(app: App, containerEl) {
+export function settingTab(app: App, containerEl: HTMLElement) {
   const options = app.settings.loadPluginData(DATA_FILE, DEFAULT_OPTIONS);
   const save = () => app.settings.savePluginData(DATA_FILE, options);
   const group = new SettingGroup(containerEl);
@@ -343,11 +345,11 @@ export function create(app: App) {
     deregisterCommands() { plugin.deregisterCommands(); },
     deregister() { plugin.onunload(); },
     // public API — other plugins and commands call these on the instance
-    getDailyNote: (date) => plugin.getDailyNote(date),
-    getDailyNotePath: (date) => plugin.getDailyNotePath(date),
+    getDailyNote: (date?: Moment) => plugin.getDailyNote(date),
+    getDailyNotePath: (date?: Moment) => plugin.getDailyNotePath(date),
     getCurrentFileDateTimestamp: () => plugin.getCurrentFileDateTimestamp(),
-    gotoPreviousExisting: (ts) => plugin.gotoPreviousExisting(ts),
-    gotoNextExisting: (ts) => plugin.gotoNextExisting(ts),
+    gotoPreviousExisting: (ts: number) => plugin.gotoPreviousExisting(ts),
+    gotoNextExisting: (ts: number) => plugin.gotoNextExisting(ts),
     getFormat: () => plugin.getFormat(),
     getFolder: () => plugin.getFolder(),
     getOptions: () => plugin.options,

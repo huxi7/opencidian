@@ -1,5 +1,5 @@
 /**
- * [INPUT]: 依赖 ./canvas-node.js 的 CanvasContentNode（基类）；依赖 ./canvas-minimap.js 的 renderCanvasMinimap；
+ * [INPUT]: canvas-node.js 的 hasCanvasEditor 保持宿主身份并收窄编辑器；依赖 ./canvas-node.js 的 CanvasContentNode（基类）；依赖 ./canvas-minimap.js 的 renderCanvasMinimap；
  *          依赖 ../core/i18n.js 的 t；依赖 ../core/icons.js 的 setIcon；
  *          依赖 ../markdown/reading.js 的 renderMarkdown；依赖 ../editor/editor.js 的 Editor；使用 core/dom.js 安装的元素助手。
  * [OUTPUT]: 导出 CanvasFileNode（md 渲染预览、canvas 渲染缩略图、图片/音视频直显、其余占位）与 takeLabelText（卡片上方标签文案）。
@@ -19,19 +19,22 @@
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 /* Canvas file card — md preview/editing, image/video/audio, or placeholder. */
-import { CanvasContentNode } from './canvas-node.js';
+import type { CanvasPoint } from './canvas-utils.js';
+import { CanvasContentNode, hasCanvasEditor } from './canvas-node.js';
 import { renderCanvasMinimap } from './canvas-minimap.js';
 import { t } from '../core/i18n.js';
 import { setIcon } from '../core/icons.js';
 import { renderMarkdown } from '../markdown/reading.js';
 import { Editor } from '../editor/editor.js';
+import { TFile } from '../core/vault.js';
+import { CanvasNodeData } from './canvas-types.js';
 
 const IMAGE_EXTENSIONS = ['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'bmp', 'avif'];
 const VIDEO_EXTENSIONS = ['mp4', 'webm', 'ogv', 'mov', 'mkv', 'avi'];
 const AUDIO_EXTENSIONS = ['mp3', 'wav', 'm4a', '3gp', 'flac', 'ogg', 'oga'];
 
 /** 原版 TFile.getShortName：md 用不含扩展名的短名，其余文件用全名。 */
-export function takeLabelText(file, subpath) {
+export function takeLabelText(file: TFile, subpath: string) {
   if (!file) return '';
   let label = file.extension === 'md' ? file.basename : file.name;
   if (subpath && file.extension === 'md') label += ' › ' + subpath.substring(1);
@@ -41,22 +44,22 @@ export function takeLabelText(file, subpath) {
 export class CanvasFileNode extends CanvasContentNode {
   declare filePath: string;
   declare subpath: string;
-  declare file: any;
-  declare labelEl: any;
-  declare minimapEl: any;
+  declare file: TFile | null;
+  declare labelEl: HTMLDivElement | null;
+  declare minimapEl: SVGSVGElement | null;
   declare _renderToken: number;
-  declare editor: any;
-  declare editorEl: any;
-  declare sourceEl: any;
+  declare editor: Editor | null;
+  declare editorEl: HTMLDivElement | null;
+  declare sourceEl: HTMLDivElement | null;
   declare _saveTimer: number;
   declare _lastSaved: string;
   declare placeholderText: string;
-  declare embedContent: any;
-  declare previewEl: any;
-  declare previewSizerEl: any;
+  declare embedContent: HTMLDivElement | null;
+  declare previewEl: HTMLDivElement | null;
+  declare previewSizerEl: HTMLDivElement | null;
   declare aspectRatio: number;
 
-  constructor(canvas: import('./canvas-view.js').CanvasView, id?) {
+  constructor(canvas: import('./canvas-view.js').CanvasView, id?: string) {
     super(canvas, id);
     this.filePath = '';
     this.subpath = '';
@@ -83,10 +86,10 @@ export class CanvasFileNode extends CanvasContentNode {
    */
   initializeEditing() {
     super.initializeEditing();
-    this.contentEl.addEventListener('click', (e) => this.onContentClick(e));
+    this.contentEl.addEventListener('click', (e: MouseEvent) => this.onContentClick(e));
   }
 
-  onContentClick(e) {
+  onContentClick(e: MouseEvent) {
     if (e.defaultPrevented || e.detail > 1 || e.shiftKey) return;
     if (this.isEditing || this.canvas.readonly || this.isInteractiveTarget(e)) return;
     if (!this.file || (this.file.extension || '').toLowerCase() !== 'md') return;
@@ -102,32 +105,32 @@ export class CanvasFileNode extends CanvasContentNode {
   /* ------------------------------------------------------------ 卡片标签 */
 
   /** 原版 D5 的标签落点：Mod 单击开新页/分栏，双击在当前页打开链接。 */
-  openFromLabel(leafType) {
+  openFromLabel(leafType: string|boolean) {
     if (!this.filePath) return;
-    this.app.workspace.getLeaf(leafType || false).openLinkText(this.filePath + this.subpath, '');
+    this.app.workspace.openLinkText(this.filePath + this.subpath, '', leafType || false);
   }
 
   /* -------------------------------------------------------------- 文件 */
 
-  setFilePath(filePath, subpath) {
+  setFilePath(filePath: string, subpath: string) {
     const nextSub = subpath || '';
     if (this.filePath === filePath && this.subpath === nextSub) return;
     if (this.isEditing) this.stopEditing();
     this.filePath = filePath;
     this.subpath = nextSub;
     const file = this.app.vault.getAbstractFileByPath(filePath);
-    this.file = file && file.extension !== undefined ? file : null;
+    this.file = file instanceof TFile ? file : null;
     this.placeholderText = this.file ? takeLabelText(this.file, this.subpath) : filePath;
     this.renderPlaceholder();
     this.renderFile();
     this.canvas.markDirty(this);
   }
 
-  setFile(file, subpath) {
-    if (file) this.setFilePath(file.path, subpath);
+  setFile(file: TFile, subpath: string|undefined) {
+    if (file) this.setFilePath(file.path, subpath || '');
   }
 
-  renderFile(textOverride?) {
+  renderFile(textOverride?: string|undefined) {
     if (this.isEditing) return;
     const token = ++this._renderToken;
     if (!this.contentEl) return;
@@ -158,11 +161,12 @@ export class CanvasFileNode extends CanvasContentNode {
       this.embedContent = this.contentEl.createDiv('markdown-embed-content');
       this.previewEl = this.embedContent.createDiv('markdown-preview-view markdown-rendered');
       this.previewSizerEl = this.previewEl.createDiv('markdown-preview-sizer');
+      const sizer = this.previewSizerEl;
       const reading = typeof textOverride === 'string'
         ? Promise.resolve(textOverride)
         : this.app.vault.cachedRead(file);
       reading
-        .then((text) => renderMarkdown(this.app, text, this.previewSizerEl, file.path))
+        .then((text) => { if (token === this._renderToken) return renderMarkdown(this.app, text, sizer, file.path); })
         .then(() => {
           if (token !== this._renderToken) return;
           this.renderInlineTitle();
@@ -178,19 +182,19 @@ export class CanvasFileNode extends CanvasContentNode {
       // 原版经 vault.getResourcePath（文件系统适配器）取 app:// 资源 URL
       el.src = this.app.vault.adapter.getResourcePath(file.path);
       el.draggable = false;
-      if (!isImage) el.controls = true;
+      if (el instanceof HTMLMediaElement) el.controls = true;
       if (isImage || VIDEO_EXTENSIONS.includes(ext)) {
         const apply = () => {
           if (token !== this._renderToken) return;
-          const width = isImage ? el.naturalWidth : el.videoWidth;
-          const height = isImage ? el.naturalHeight : el.videoHeight;
+          const width = el instanceof HTMLImageElement ? el.naturalWidth : el instanceof HTMLVideoElement ? el.videoWidth : 0;
+          const height = el instanceof HTMLImageElement ? el.naturalHeight : el instanceof HTMLVideoElement ? el.videoHeight : 0;
           this.fitAspectRatio(width, height);
         };
-        if (isImage) {
+        if (el instanceof HTMLImageElement) {
           // 缓存命中的图片同步可用：直接量，否则等 load
           if (el.complete && el.naturalWidth) apply();
           else el.addEventListener('load', apply, { once: true });
-        } else {
+        } else if (el instanceof HTMLVideoElement) {
           if (el.readyState >= 1 && el.videoWidth) apply();
           else el.addEventListener('loadedmetadata', apply, { once: true });
         }
@@ -227,7 +231,7 @@ export class CanvasFileNode extends CanvasContentNode {
   }
 
   /** 原版 D5.render 的 aspectRatio 分支：把卡片收成资源宽高比（不放大），记入当前历史条目。 */
-  fitAspectRatio(width, height) {
+  fitAspectRatio(width: number, height: number) {
     if (!width || !height) return;
     const ratio = width / height;
     this.aspectRatio = ratio;
@@ -238,7 +242,7 @@ export class CanvasFileNode extends CanvasContentNode {
     this.canvas.overrideHistory();
   }
 
-  renderFilePlaceholder(icon, text) {
+  renderFilePlaceholder(icon: string, text: string) {
     this.contentEl.addClass('canvas-file-placeholder');
     const iconEl = this.contentEl.createDiv('canvas-icon-placeholder');
     setIcon(iconEl, icon);
@@ -246,7 +250,7 @@ export class CanvasFileNode extends CanvasContentNode {
   }
 
   /** 双击：md 在卡片内编辑；图片/其他交给系统/标签页。 */
-  startEditing(pos) {
+  startEditing(pos?: CanvasPoint) {
     if (this.canvas.readonly || !this.file) { this.openFile(); return; }
     const ext = (this.file.extension || '').toLowerCase();
     if (ext !== 'md') { this.openFile(); return; }
@@ -274,7 +278,7 @@ export class CanvasFileNode extends CanvasContentNode {
   /* ------------------------------------------------------------ 卡片内编辑 */
 
   mountEditor() {
-    if (this.editor || !this.contentEl) return;
+    if (this.editor || !this.contentEl || !this.file) return;
     const file = this.file;
     const token = ++this._renderToken;
     this.contentEl.empty();
@@ -348,7 +352,7 @@ export class CanvasFileNode extends CanvasContentNode {
     this.canvas.markMoved(this);
   }
 
-  getActiveEditorHost() { return this.editor ? this : null; }
+  getActiveEditorHost() { return hasCanvasEditor(this) ? this : null; }
   getMode() { return 'source'; }
 
   blur() {
@@ -356,7 +360,7 @@ export class CanvasFileNode extends CanvasContentNode {
     super.blur();
   }
 
-  onReadonlyChange(readonly) {
+  onReadonlyChange(readonly: boolean|undefined) {
     if (readonly && this.isEditing) this.stopEditing();
   }
 
@@ -391,7 +395,7 @@ export class CanvasFileNode extends CanvasContentNode {
   }
 
   /** 原版 D5.render：缺失文件的标签是「警告图标 + 路径」片段，不是纯文本。 */
-  renderMissingLabel(path) {
+  renderMissingLabel(path: string) {
     this.updateNodeLabel(path);
     const labelEl = this.labelEl;
     if (!labelEl || !labelEl.isConnected) return;
@@ -405,7 +409,7 @@ export class CanvasFileNode extends CanvasContentNode {
     return { ...super.getData(), type: 'file', file: this.file ? this.file.path : this.filePath, subpath: this.subpath || undefined };
   }
 
-  setData(data) {
+  setData(data: CanvasNodeData) {
     super.setData(data);
     if (data.file) this.setFilePath(data.file, data.subpath || '');
   }

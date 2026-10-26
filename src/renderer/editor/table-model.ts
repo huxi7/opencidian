@@ -7,14 +7,16 @@
  */
 
 /** 列最小宽度。原版从 5 起算；这里取 7，使任意对齐的分隔行都至少三个连字符（居中是 `:---:`）。 */
+export type TableAlignment = 'left' | 'center' | 'right' | null;
+export interface TableModel { rows: string[][]; alignments: TableAlignment[]; }
 export const MIN_COL_WIDTH = 7;
 
-export function clamp(value, min, max) {
+export function clamp(value: number, min: number, max: number) {
   return Math.min(Math.max(value, min), max);
 }
 
 /** 拆一行表格：按未转义的 `|` 切分，去掉首尾空段，单元格取 trim 后的原文。 */
-export function splitRow(line) {
+export function splitRow(line: string | null | undefined) {
   let body = String(line == null ? '' : line).trim();
   if (body.startsWith('|')) body = body.slice(1);
   if (body.endsWith('|') && !body.endsWith('\\|')) body = body.slice(0, -1);
@@ -39,7 +41,7 @@ export function splitRow(line) {
 }
 
 /** 分隔行单元格 → 对齐：`:--` 左、`:-:` 中、`--:` 右、`---` 默认（null）。 */
-export function parseAlignment(cell) {
+export function parseAlignment(cell: string | null | undefined): TableAlignment {
   const value = String(cell == null ? '' : cell).trim();
   if (!/^:?-+:?$/.test(value)) return null;
   const start = value.startsWith(':');
@@ -51,7 +53,7 @@ export function parseAlignment(cell) {
 }
 
 /** 解析表格 Markdown 为 { rows, alignments }；rows[0] 是表头行，分隔行不入模型。无法解析时返回 null。 */
-export function parseTableText(text) {
+export function parseTableText(text: string): TableModel | null {
   const lines = String(text == null ? '' : text).split('\n').filter((line) => line.trim() !== '');
   if (lines.length < 2) return null;
   const header = splitRow(lines[0]);
@@ -69,7 +71,7 @@ export function parseTableText(text) {
 }
 
 /** 分隔行：镜像原版 makeAlignmentRow 的冒号与连字符写回。 */
-export function alignmentRow(alignments, widths) {
+export function alignmentRow(alignments: TableAlignment[], widths: number[]) {
   let line = '';
   for (let col = 0; col < alignments.length; col++) {
     const width = Math.max(MIN_COL_WIDTH, widths[col]);
@@ -84,7 +86,7 @@ export function alignmentRow(alignments, widths) {
 }
 
 /** 序列化回 Markdown：单元格按列宽补空格，左/中/右对齐决定留白位置。 */
-export function serializeTable(rows, alignments) {
+export function serializeTable(rows: string[][], alignments: TableAlignment[]) {
   const colCount = alignments.length;
   const widths = new Array(colCount).fill(MIN_COL_WIDTH);
   for (const row of rows) {
@@ -111,14 +113,14 @@ export function serializeTable(rows, alignments) {
 }
 
 /** 原版 ac：把数组元素从 from 移到 to。 */
-export function moveInArray(array, from, to) {
+export function moveInArray<T>(array: T[], from: number, to: number) {
   const value = array.splice(from, 1)[0];
   array.splice(to, 0, value);
   return array;
 }
 
 /** 单元格内容 → Markdown 文本：换行落成 `<br>`，未转义 `|` 补反斜杠（原版 HA 的写回口径）。 */
-export function cellTextFromInput(value) {
+export function cellTextFromInput(value: unknown) {
   return String(value == null ? '' : value)
     .replace(/\r\n?/g, '\n')
     .replace(/\n/g, '<br>')
@@ -128,7 +130,7 @@ export function cellTextFromInput(value) {
 }
 
 /** 原版 zA：把 `<br>` 还原成换行、`\|` 还原成 `|`，代码段内不改写。 */
-export function cellTextToInput(text) {
+export function cellTextToInput(text: string) {
   return String(text == null ? '' : text)
     .replace(/<br\s*\/?>/gi, '\n')
     .replace(/\\([\\|])/g, '$1');

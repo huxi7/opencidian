@@ -1,6 +1,6 @@
 /**
  * [INPUT]: 依赖 View、GraphEngine、GraphRenderer、图谱选项读写与剪贴板接口。
- * [OUTPUT]: 导出 GraphView 与 LocalGraphView；保留 graph/localgraph 视图类型。
+ * [OUTPUT]: 导出 GraphViewBase、GraphView 与 LocalGraphView；保留 graph/localgraph 视图类型。
  * [POS]: 图谱视图壳；全局选项写 graph.json，局部文件与选项随布局保存。
  *        面板菜单（原版 onPaneMenu）只追加「复制截图」一项，放在 action 段；
  *        原版没有局部图/导出/聚焦等图谱专属菜单项，其余来自通用叶子菜单。
@@ -13,48 +13,53 @@ import { debounce } from '../core/events.js';
 import { GraphEngine } from '../plugins-core/graph-engine.js';
 import { readGraphOptions, writeGraphOptions } from '../plugins-core/graph-options.js';
 import { GraphRenderer } from './graph-renderer.js';
+import { WorkspaceLeaf } from '../core/workspace-model.js';
+import { Menu } from '../core/menu.js';
+import { TFile } from '../core/vault.js';
 
 /* 原版 TQ.copyToClipboard：把画布导出为 PNG 写入剪贴板 */
 async function copyCanvasToClipboard(canvas: HTMLCanvasElement) {
-  const blob = await new Promise<Blob>((resolve) => canvas.toBlob(resolve, 'image/png'));
+  const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/png'));
   if (!blob) throw new Error('Failed to export the graph canvas');
   try {
     await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
   } catch (e) {
     // 窗口未聚焦等场景 clipboard 会拒绝；导出失败不产生未处理 rejection
-    console.warn('clipboard write failed', e && e.message);
+    console.warn('clipboard write failed', e instanceof Error ? e.message : String(e));
   }
 }
 
 // 视图：全局图谱（原版 bJ）与局部图谱（原版 kJ）
 /* 本项目 View 没有 registerEvent/registerInterval，这里补齐并统一销毁 */
-class GraphViewBase extends View {
-  declare dataEngine: any;
-  declare engine: any;
+export abstract class GraphViewBase extends View {
+  declare dataEngine: GraphEngine | null;
+  declare engine: GraphEngine | null;
 
   declare icon: string;
-  declare renderer: any;
+  declare renderer: GraphRenderer | null;
   declare _cleaned: boolean;
 
-  constructor(leaf) {
+  constructor(leaf: WorkspaceLeaf) {
     super(leaf);
     this.icon = 'git-fork';
     this.renderer = null;
     this._cleaned = false;
   }
+  abstract onOptionsChange(): void;
   onResize() { if (this.renderer) this.renderer.onResize(); }
-  registerEvent(ref) { if (ref && ref.unregister) this._children.push(() => ref.unregister()); }
-  registerDomEvent(el, type, callback) {
-    el.addEventListener(type, callback);
-    this._children.push(() => el.removeEventListener(type, callback));
+  registerEvent(ref: import('../core/events.js').EventRef) { if (ref && ref.unregister) this._children.push(() => ref.unregister()); }
+  registerDomEvent<K extends keyof WindowEventMap>(el: Window | HTMLElement, type: K, callback: (event: WindowEventMap[K]) => void) {
+    el.addEventListener(type, callback as EventListener);
+    this._children.push(() => el.removeEventListener(type, callback as EventListener));
   }
-  registerInterval(id) { this._children.push(() => clearInterval(id)); }
+  registerInterval(id: string|number|NodeJS.Timeout|undefined) { this._children.push(() => clearInterval(id)); }
   /* 原版 onPaneMenu：通用叶子菜单之外只加一条「复制截图」（action 段，图标 lucide-image） */
-  onPaneMenu(menu) {
+  onPaneMenu(menu: Menu) {
     menu.addItem((item) => item.setSection('action')
       .setTitle(t('plugins.graph-view.action-copy-screenshot')).setIcon('image')
       .onClick(async () => {
         try {
+          if (!this.renderer) return;
           await copyCanvasToClipboard(this.renderer.getTransparentScreenshot());
           new Notice(t('plugins.graph-view.msg-screenshot-copied'));
         } catch (error) {
@@ -79,10 +84,10 @@ class GraphViewBase extends View {
 
 export class GraphView extends GraphViewBase {
   declare navigation: boolean;
-  declare dataEngine: any;
-  declare renderer: any;
+  declare dataEngine: GraphEngine | null;
+  declare renderer: GraphRenderer | null;
 
-  constructor(leaf) {
+  constructor(leaf: WorkspaceLeaf) {
     super(leaf);
     this.navigation = true;
     this.dataEngine = null;
@@ -102,9 +107,11 @@ export class GraphView extends GraphViewBase {
   update() { if (this.dataEngine) this.dataEngine.render(); }
   /* 原版 showSearch：展开控制面板与筛选区并选中搜索框 */
   showSearch() {
+    if (!this.dataEngine) return;
     this.dataEngine.controlsEl.removeClass('is-close');
     this.dataEngine.filterOptions.setCollapsed(false);
-    this.dataEngine.filterOptions.search.autoSelect();
+    this.dataEngine.filterOptions.search.inputEl.focus();
+    this.dataEngine.filterOptions.search.inputEl.select();
   }
   onOptionsChange() {
     if (this._loaded && this.dataEngine) writeGraphOptions(this.app, this.dataEngine.getOptions());
@@ -112,13 +119,13 @@ export class GraphView extends GraphViewBase {
 }
 
 export class LocalGraphView extends GraphViewBase {
-  declare file: any;
-  declare renderedFile: any;
-  declare engine: any;
-  declare renderer: any;
-  declare _requestUpdate: any;
+  declare file: TFile | null;
+  declare renderedFile: TFile | null;
+  declare engine: GraphEngine | null;
+  declare renderer: GraphRenderer | null;
+  declare _requestUpdate: import('../core/events.js').Debounced<[], unknown, void> | undefined;
 
-  constructor(leaf) {
+  constructor(leaf: WorkspaceLeaf) {
     super(leaf);
     this.file = null;
     this.renderedFile = null;
@@ -136,9 +143,9 @@ export class LocalGraphView extends GraphViewBase {
       options: this.engine ? this.engine.getOptions() : {},
     };
   }
-  async setState(state) {
-    if (state && state.options && this.engine) this.engine.setOptions(state.options);
-    if (state && state.file !== undefined) this.loadFile(state.file ? this.app.vault.getFileByPath(state.file) : null);
+  async setState(state: Record<string,unknown>) {
+    if (state.options && typeof state.options === 'object' && !Array.isArray(state.options) && this.engine) this.engine.setOptions(state.options as Record<string, unknown>);
+    if (state && state.file !== undefined) this.loadFile(typeof state.file === 'string' ? this.app.vault.getFileByPath(state.file) : null);
     else this.loadFile(this.app.workspace.getActiveFile());
   }
   async onOpen() {
@@ -158,7 +165,7 @@ export class LocalGraphView extends GraphViewBase {
     this.registerEvent(this.app.vault.on('modify', (file) => { if (file === this.file) this.requestUpdate(); }));
     this.engine.load();
   }
-  loadFile(file) {
+  loadFile(file: TFile|null) {
     if (file === this.file) return;
     this.file = file;
     if (this.leaf.updateTabHeader) this.leaf.updateTabHeader();

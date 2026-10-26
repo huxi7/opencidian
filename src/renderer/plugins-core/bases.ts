@@ -9,30 +9,34 @@ import { EMPTY_BASE } from './bases-model.js';
 import { t } from '../core/i18n.js';
 import { exportBaseCsv } from './bases-csv.js';
 import { TFolder } from '../core/vault.js';
+import type { EventRef } from '../core/events.js';
+import type { Menu } from '../core/menu.js';
+import type { TFile } from '../core/vault.js';
 import { IS_MAC } from '../core/keymap.js';
-const newTab = event => !!(IS_MAC ? event?.metaKey : event?.ctrlKey);
+const newTab = (event: Event | undefined) => !!(event && (IS_MAC ? 'metaKey' in event && event.metaKey : 'ctrlKey' in event && event.ctrlKey));
 export const nameKey = 'plugins.bases';
-export function create(app: App) {
+interface BasesPlugin { app: App; ribbonEl: HTMLElement | null; menuRef: Pick<EventRef, 'unregister'> | null; onload(): void; onunload(): Promise<boolean | void>; createNewBase(targetFolder?: TFolder | null, openInNewTab?: boolean): Promise<TFile>; }
+export function create(app: App): BasesPlugin {
   return {
-    app,
+    app, ribbonEl: null, menuRef: null,
     onload() {
       if (this.ribbonEl) return;
       setBasesEnabled(app, true);
       app.viewRegistry.registerView('bases', leaf => new BasesView(leaf));
-      app.viewRegistry.getViewCreator('bases').extensions = ['base'];
+      const factory = app.viewRegistry.getViewCreator('bases'); if (factory) factory.extensions = ['base'];
       const title = t('plugins.bases.command-create-new') || 'Create new base';
       app.commands.addCommand({ id: 'bases:new-file', name: title, icon: 'lucide-layout-list', callback: event => this.createNewBase(null, newTab(event)) });
       this.ribbonEl = app.workspace.addRibbonItem('lucide-layout-list', title, event => this.createNewBase(null, newTab(event)));
       this.ribbonEl.setAttr('data-command-id', 'bases:new-file');
-      this.menuRef = app.workspace.on('file-menu', (menu, file, source) => {
+      this.menuRef = app.workspace.on('file-menu', (menu: Menu, file, source) => {
         if (source !== 'file-explorer-context-menu' || !(file instanceof TFolder)) return;
-        menu.addItem(item => item.setSection('action-primary').setIcon('lucide-layout-list')
+        menu.addItem((item) => item.setSection('action-primary').setIcon('lucide-layout-list')
           .setTitle(t('plugins.bases.action-new-base') || 'New base')
-          .onClick(event => this.createNewBase(file, newTab(event))));
+          .onClick((event: Event|undefined) => this.createNewBase(file, newTab(event))));
       });
       app.commands.addCommand({ id: 'bases:export-csv', name: t('plugins.bases.action-export-c-s-v'), icon: 'lucide-file-down', checkCallback: checking => {
-        const view = app.workspace.activeLeaf?.view, controller = view?.getViewType?.() === 'bases' && view.controller;
-        if (!controller || !controller.enabled || controller.closed || !['table', 'list', 'cards', 'kanban'].includes(controller.view?.type)) return false;
+        const view = app.workspace.activeLeaf?.view, controller = view instanceof BasesView ? view.controller : null;
+        if (!controller || !controller.isReady() || !controller.enabled || controller.closed || !['table', 'list', 'cards', 'kanban'].includes(controller.view?.type)) return false;
         if (!checking) exportBaseCsv(controller);
         return true;
       } });
@@ -43,7 +47,7 @@ export function create(app: App) {
       this.menuRef?.unregister(); this.menuRef = null;
       app.commands.removeCommand('bases:new-file'); app.commands.removeCommand('bases:export-csv'); app.viewRegistry.unregisterView('bases');
     },
-    async createNewBase(targetFolder = null, openInNewTab = false) {
+    async createNewBase(targetFolder: TFolder | null = null, openInNewTab = false) {
       const current = app.workspace.getActiveFile();
       const folder = targetFolder || app.fileManager.getNewFileParent(current?.path || '');
       const file = await app.fileManager.createNewFile(folder, 'Untitled.base', EMPTY_BASE);

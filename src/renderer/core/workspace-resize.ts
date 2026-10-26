@@ -4,17 +4,22 @@
  * [POS]: 工作区尺寸拖动边界。外侧栏只改自身宽度，内部拆分保存比例，取消与重绘释放全局监听。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
+import type { Workspace } from './workspace.js';
+import type { WorkspaceNode, WorkspaceLeaf, WorkspaceTabs as WorkspaceTabs, WorkspaceSplit as WorkspaceSplit } from './workspace-model.js';
 import { createDiv } from './dom.js';
 import { settleSidebarTransitions } from './workspace-sidebar-transition.js';
 const MIN_SIZE = 200;
-export function sidebarResizeTarget(workspace, split, index, direction) {
+export function sidebarResizeTarget(workspace: Workspace, split: WorkspaceSplit, index: number, direction: 'horizontal' | 'vertical'): { split: WorkspaceSplit; side: 'left' | 'right'; sign: number } | null {
   if (split !== workspace.rootSplit || direction !== 'vertical') return null;
   const before = split.children[index], after = split.children[index + 1];
-  if (before === workspace.leftSplit || before?.side === 'left') return { split: before, side: 'left', sign: 1 };
-  if (after === workspace.rightSplit || after?.side === 'right') return { split: after, side: 'right', sign: -1 };
+  const left = before === workspace.leftSplit ? workspace.leftSplit : before && 'side' in before && before.side === 'left' ? before : null;
+  const right = after === workspace.rightSplit ? workspace.rightSplit : after && 'side' in after && after.side === 'right' ? after : null;
+  if (left) return { split: left, side: 'left', sign: 1 };
+  if (right) return { split: right, side: 'right', sign: -1 };
   return null;
 }
-export function computeWorkspaceResizeSizes(original, index, delta) {
+
+export function computeWorkspaceResizeSizes(original: number[], index: number, delta: number) {
   const sizes = [...original];
   if (!Number.isFinite(delta) || !Number.isInteger(index) || index < 0 || index >= sizes.length - 1 || sizes.some(value => !Number.isFinite(value) || value <= 0)) return sizes;
   const before = sizes.map((_, position) => position).slice(0, index + 1).reverse();
@@ -26,12 +31,12 @@ export function computeWorkspaceResizeSizes(original, index, delta) {
   sizes[growing[0]] += allowed;
   return sizes;
 }
-export function cancelWorkspaceResize(workspace) { return workspace._workspaceResizeSession?.finish() ?? false; }
-export function createWorkspaceResizeHandle(workspace, split, childIndex, direction) {
+export function cancelWorkspaceResize(workspace: Workspace) { return workspace._workspaceResizeSession?.finish() ?? false; }
+export function createWorkspaceResizeHandle(workspace: Workspace, split: WorkspaceSplit, childIndex: number, direction: 'horizontal' | 'vertical') {
   const handle = createDiv('workspace-leaf-resize-handle');
   handle.addClass(direction === 'vertical' ? 'mod-vertical' : 'mod-horizontal'); handle.style.touchAction = 'none';
-  const start = event => {
-    if (event.button !== 0 || event.isPrimary === false) return;
+  const start = (event: MouseEvent | PointerEvent) => {
+    if (event.button !== 0 || ('isPrimary' in event && event.isPrimary === false)) return;
     if (workspace._workspaceResizeSession?.handle === handle) return;
     cancelWorkspaceResize(workspace); settleSidebarTransitions(workspace);
     const target = sidebarResizeTarget(workspace, split, childIndex, direction);
@@ -39,21 +44,24 @@ export function createWorkspaceResizeHandle(workspace, split, childIndex, direct
     const doc = handle.ownerDocument || document, win = doc.defaultView || window;
     const axis = direction === 'vertical' ? 'width' : 'height', coordinate = direction === 'vertical' ? 'clientX' : 'clientY';
     const children = [...split.children];
-    const element = node => node.containerEl || node._leafEl;
-    const measure = node => element(node)?.getBoundingClientRect()[axis] || element(node)?.[direction === 'vertical' ? 'offsetWidth' : 'offsetHeight'] || 0;
+    const element = (node: WorkspaceNode) => node.containerEl || ('_leafEl' in node ? node._leafEl : null);
+    const measure = (node: WorkspaceNode) => element(node)?.getBoundingClientRect()[axis] || element(node)?.[direction === 'vertical' ? 'offsetWidth' : 'offsetHeight'] || 0;
     const original = children.map(measure), origin = event[coordinate]; let next = [...original], changed = false, closed = false, temporaryWritten = false;
-    const originalStyles = children.map(node => { const style = element(node)?.style; return style ? { flex: style.flex, width: style.width, height: style.height, flexGrow: style.flexGrow } : null; });
-    const startWidth = target ? element(target.split).getBoundingClientRect().width : 0;
+    const originalStyles = children.map((node: WorkspaceNode) => { const style = element(node)?.style; return style ? { flex: style.flex, width: style.width, height: style.height, flexGrow: style.flexGrow } : null; });
+    const startWidth = target ? element(target.split)?.getBoundingClientRect().width || 0 : 0;
     if (!target && (original.length < 2 || original.some(value => value <= 0))) return;
     event.preventDefault(); event.stopPropagation?.();
-    const listeners = [];
-    const listen = (owner, type, callback) => { owner.addEventListener(type, callback); listeners.push([owner, type, callback]); };
+    const listeners: Array<[EventTarget, string, EventListener]> = [];
+    const listen = <K extends keyof WindowEventMap>(owner: EventTarget, type: K, callback: (event: WindowEventMap[K]) => unknown) => {
+      const listener: EventListener = event => callback(event as WindowEventMap[K]);
+      owner.addEventListener(type, listener); listeners.push([owner, type, listener]);
+    };
     const finish = () => {
       if (closed) return false; closed = true;
       for (const [owner, type, callback] of listeners) owner.removeEventListener(type, callback);
       if (workspace._workspaceResizeSession?.handle === handle) workspace._workspaceResizeSession = null;
       doc.body.removeClass('is-resizing', 'is-grabbing'); handle.removeClass('is-active');
-      try { if (handle.hasPointerCapture?.(event.pointerId)) handle.releasePointerCapture(event.pointerId); } catch {}
+      try { if ('pointerId' in event && handle.hasPointerCapture?.(event.pointerId)) handle.releasePointerCapture(event.pointerId); } catch {}
       if (temporaryWritten && !changed) for (let index = 0; index < children.length; index++) { const el = element(children[index]); if (el && originalStyles[index]) Object.assign(el.style, originalStyles[index]); }
       if (changed && !target) {
         const total = next.reduce((sum, value) => sum + value, 0);
@@ -69,8 +77,8 @@ export function createWorkspaceResizeHandle(workspace, split, childIndex, direct
       }
       return true;
     };
-    const move = current => {
-      if (current.buttons === 0 || !handle.isConnected || target && workspace[target.side + 'Split'] !== target.split) { finish(); return; }
+    const move = (current: MouseEvent) => {
+      if (current.buttons === 0 || !handle.isConnected || target && (target.side === 'left' ? workspace.leftSplit : workspace.rightSplit) !== target.split) { finish(); return; }
       if (!Number.isFinite(current[coordinate])) return;
       current.preventDefault();
       if (target) {
@@ -79,14 +87,14 @@ export function createWorkspaceResizeHandle(workspace, split, childIndex, direct
         if (dock.collapsed) { if (requested >= MIN_SIZE) { workspace.showSidebar(target.side); settleSidebarTransitions(workspace); changed = true; } return; }
         const maximum = Math.max(MIN_SIZE, (workspace.containerEl?.clientWidth || win.innerWidth || MIN_SIZE) * .8);
         const size = Math.max(MIN_SIZE, Math.min(maximum, requested));
-        dock.size = size; const el = element(dock); el.style.width = size + 'px'; el.style.flex = `0 0 ${size}px`; changed = true;
+        dock.size = size; const el = element(dock); if (!el) return; el.style.width = size + 'px'; el.style.flex = `0 0 ${size}px`; changed = true;
       } else {
         temporaryWritten = true;
         next = computeWorkspaceResizeSizes(original, childIndex, current[coordinate] - origin);
         for (let index = 0; index < children.length; index++) {
           const el = element(children[index]); if (el) { el.style.flex = '0 0 auto'; el.style[axis] = next[index] + 'px'; }
         }
-        changed = changed || next.some((value, index) => value !== original[index]);
+        changed = changed || next.some((value, index: number) => value !== original[index]);
       }
       workspace._updateLeafSizes();
     };
@@ -97,7 +105,7 @@ export function createWorkspaceResizeHandle(workspace, split, childIndex, direct
     listen(win, pointer ? 'pointerup' : 'mouseup', finish);
     if (pointer) { listen(win, 'mouseup', finish); listen(win, 'pointercancel', finish); listen(handle, 'lostpointercapture', finish); }
     listen(win, 'blur', finish);
-    try { if (pointer) handle.setPointerCapture?.(event.pointerId); } catch {}
+    try { if (pointer && 'pointerId' in event) handle.setPointerCapture?.(event.pointerId); } catch {}
   };
   handle.onmousedown = start; handle.addEventListener('pointerdown', start); return handle;
 }

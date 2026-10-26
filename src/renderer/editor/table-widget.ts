@@ -20,12 +20,15 @@
  * The widget is a pure view of the markdown block it replaces: every edit
  * re-parses the stored text, mutates the model and dispatches the new text.
  */
+import type { CellPosition, TableEditState, TableViewState, CarriedTableState } from './table-types.js';
+import type { Text } from '@codemirror/state';
+import type { EditorView } from '@codemirror/view';
 import { WidgetType } from '@codemirror/view';
 import { Menu } from '../core/menu.js';
 import { setIcon } from '../core/icons.js';
 import { t } from '../core/i18n.js';
 import { getMarkdownIt, attachMarkdownInteractions } from '../markdown/reading.js';
-import { clamp, moveInArray, parseTableText, serializeTable, splitRow } from './table-model.js';
+import { clamp, moveInArray, parseTableText, serializeTable, splitRow, TableModel } from './table-model.js';
 import { attachDragHandle } from './table-drag.js';
 import { attachCellSelection, appendPendingTableMenu, cellElement, clampBounds, selectionBounds } from './table-selection.js';
 import { beginCellEdit, enterFromCell, tabFromCell } from './table-edit.js';
@@ -36,7 +39,7 @@ export { parseTableText, serializeTable, splitRow };
 const compareText = new Intl.Collator(undefined, { usage: 'sort', sensitivity: 'base', numeric: true }).compare;
 
 /** 跨重建携带的视图状态（选区和换格焦点）；dispatch 后由新实例在 toDOM 里认领，未重建时 settle 落到当前实例。 */
-let carriedState = null;
+let carriedState: CarriedTableState | null = null;
 
 /** 触屏探测只做一次：原版 Gl.isMobile 的等价物，给 body 打 is-touch 供 CSS 门控手柄常显。 */
 let touchDetected = false;
@@ -50,7 +53,7 @@ function detectTouchDevice() {
 }
 
 /** 单元格内容：按行内 Markdown 渲染（链接/强调/wiki 链接），失败时退回纯文本。 */
-function renderCellHtml(app: App, text, sourcePath) {
+function renderCellHtml(app: App, text: string, sourcePath: string) {
   if (!text) return '';
   try {
     return getMarkdownIt().renderInline(text, { app, sourcePath, depth: 0 });
@@ -66,7 +69,7 @@ function renderCellHtml(app: App, text, sourcePath) {
  * 原版 deleteSelection 的两处 insert:"\n"：删掉首行时块首补空行，删掉末行时块尾补空行。
  * 原版无条件补；这里只在相邻行有正文（块间会被吃掉空行）时补，避免叠出连续空行。
  */
-function withBlankEdges(doc, range, text, edges) {
+function withBlankEdges(doc: Text, range: { from: number; to: number }, text: string, edges: { leading?: boolean; trailing?: boolean }) {
   const firstLine = doc.lineAt(range.from).number;
   const lastLine = doc.lineAt(range.to).number;
   let out = text;
@@ -75,7 +78,7 @@ function withBlankEdges(doc, range, text, edges) {
   return out;
 }
 
-function setTip(el, text) {
+function setTip(el: HTMLDivElement, text: string) {
   if (typeof el.setTooltip === 'function') el.setTooltip(text);
   else el.setAttr('aria-label', text);
 }
@@ -86,20 +89,20 @@ function setTip(el, text) {
 
 export class TableWidget extends WidgetType {
   declare app: App;
-  declare text: any;
-  declare sourcePath: any;
-  declare from: any;
-  declare to: any;
-  declare containerEl: any;
-  declare tableElement: any;
-  declare selectionAnchor: any;
-  declare selectionHead: any;
-  declare selectedCells: any[];
-  declare focusCell: any;
-  declare edit: any;
+  declare text: string;
+  declare sourcePath: string;
+  declare from: number;
+  declare to: number;
+  declare containerEl: HTMLDivElement | null;
+  declare tableElement: HTMLTableElement | null;
+  declare selectionAnchor: CellPosition | null;
+  declare selectionHead: CellPosition | null;
+  declare selectedCells: HTMLTableCellElement[];
+  declare focusCell: CellPosition | null;
+  declare edit: TableEditState | null;
   declare suppressClick: boolean;
 
-  constructor(app: App, text, sourcePath, from, to) {
+  constructor(app: App, text: string, sourcePath: string, from: number, to: number) {
     super();
     this.app = app;
     this.text = text;
@@ -116,11 +119,11 @@ export class TableWidget extends WidgetType {
     this.suppressClick = false;
   }
 
-  eq(other) {
+  eq(other: TableWidget) {
     return other.text === this.text && other.from === this.from && other.to === this.to;
   }
 
-  toDOM(view) {
+  toDOM(view: EditorView) {
     const container = createDiv({ cls: 'cm-embed-block cm-table-widget markdown-rendered' });
     container.tabIndex = -1;
     detectTouchDevice();
@@ -157,7 +160,7 @@ export class TableWidget extends WidgetType {
       const target = event.target as HTMLElement;
       if (target !== container && !(target.closest && target.closest('.table-cell-wrapper'))) return;
       if (target.closest && (target.closest('a') || target.closest('.tag'))) return;
-      const row = target.closest && target.closest('.table-cell-wrapper') ? target.closest('tr').rowIndex : 0;
+      const row = target.closest && target.closest('.table-cell-wrapper') ? (target.closest('tr')?.rowIndex || 0) : 0;
       this.placeCursor(view, row);
     });
     container.addEventListener('keydown', (event) => {
@@ -193,7 +196,7 @@ export class TableWidget extends WidgetType {
 
   // ---- DOM ---------------------------------------------------------------
 
-  buildCell(rowEl, tag, model, row, col, view) {
+  buildCell(rowEl: HTMLTableRowElement, tag: 'th' | 'td', model: TableModel, row: number, col: number, view: EditorView) {
     const cell = rowEl.createEl(tag);
     const align = model.alignments[col];
     if (align) cell.setAttr('align', align);
@@ -205,17 +208,17 @@ export class TableWidget extends WidgetType {
     return cell;
   }
 
-  buildDragHandle(cell, axis, row, col, view) {
+  buildDragHandle(cell: HTMLTableCellElement, axis: 'row' | 'col', row: number, col: number, view: EditorView) {
     const handle = cell.createDiv('table-' + axis + '-drag-handle');
     setIcon(handle, axis === 'col' ? 'lucide-grip-horizontal' : 'lucide-grip-vertical');
     handle.dataset.ignoreSwipe = 'true';
     handle.addEventListener('pointerdown', (event) => {
       if (!event.isPrimary || event.button !== 0 || event.defaultPrevented) return;
       const tableEl = this.tableEl();
-      if (!tableEl) return;
+      if (!tableEl || !this.containerEl) return;
       attachDragHandle(this, view, { event, handle, axis, row, col, container: this.containerEl, tableEl });
     });
-    handle.addEventListener('contextmenu', (event) => {
+    handle.addEventListener('contextmenu', (event: MouseEvent) => {
       event.preventDefault();
       event.stopPropagation();
       const model = parseTableText(this.text);
@@ -234,7 +237,7 @@ export class TableWidget extends WidgetType {
     });
   }
 
-  buildAddButton(wrapper, cls, title, action) {
+  buildAddButton(wrapper: HTMLDivElement, cls: string, title: string, action: { (): void; (): void; }) {
     const button = wrapper.createDiv(cls);
     setIcon(button, 'lucide-plus');
     setTip(button, title);
@@ -247,14 +250,14 @@ export class TableWidget extends WidgetType {
   /** 当前 DOM 里的表格元素；实例与 DOM 生命周期不完全重合，查不到就回退到子树查询。 */
   tableEl() {
     if (this.tableElement && this.tableElement.isConnected) return this.tableElement;
-    return this.containerEl ? this.containerEl.querySelector('table.table-editor') : null;
+    return this.containerEl ? this.containerEl.querySelector<HTMLTableElement>('table.table-editor') : null;
   }
 
   model() {
     return parseTableText(this.text);
   }
 
-  cellElement(row, col) {
+  cellElement(row: number, col: number) {
     return this.containerEl ? cellElement(this.containerEl, row, col) : null;
   }
 
@@ -272,10 +275,11 @@ export class TableWidget extends WidgetType {
   }
 
   /** 按组添加条目，只在非空组之间插入分隔线（原版 setSection 的视觉语义）。 */
-  addMenuGroups(menu, groups) {
-    groups.filter((group) => group.length).forEach((group, index) => {
+  addMenuGroups(menu: Menu, groups: Array<Array<{ section: string; icon: string; title: string; onClick: () => unknown } | null>>) {
+    groups.filter((group) => group.length).forEach((group, index: number) => {
       if (index > 0) menu.addSeparator();
       for (const entry of group) {
+        if (!entry) continue;
         menu.addItem((item) => item
           .setSection(entry.section)
           .setIcon(entry.icon)
@@ -285,7 +289,7 @@ export class TableWidget extends WidgetType {
     });
   }
 
-  makeRowMenu(menu, model, cell, view) {
+  makeRowMenu(menu: Menu, model: TableModel, cell: CellPosition, view: EditorView) {
     const rowCount = model.rows.length;
     this.addMenuGroups(menu, [
       [
@@ -309,7 +313,7 @@ export class TableWidget extends WidgetType {
     ]);
   }
 
-  makeSortMenu(menu, cell, view) {
+  makeSortMenu(menu: Menu, cell: CellPosition, view: EditorView) {
     this.addMenuGroups(menu, [[
       { section: 'table-sort', icon: 'lucide-arrow-down-az', title: t('table.action-sort-a-z'),
         onClick: () => this.sortColumn(view, cell.col, false) },
@@ -319,7 +323,7 @@ export class TableWidget extends WidgetType {
   }
 
   /** 无选区表格菜单：Row / Column 子菜单 + 两个排序项（原版 onContextMenu 无选区分支的 section 与图标）。 */
-  appendTableMenuItems(menu, cell, view) {
+  appendTableMenuItems(menu: Menu, cell: CellPosition, view: EditorView) {
     const model = this.model();
     if (!model) return;
     const rowItem = menu.addItem((item) => item
@@ -331,7 +335,7 @@ export class TableWidget extends WidgetType {
     this.makeSortMenu(menu, cell, view);
   }
 
-  makeColMenu(menu, model, cell, view) {
+  makeColMenu(menu: Menu, model: TableModel, cell: CellPosition, view: EditorView) {
     const colCount = model.alignments.length;
     const align = model.alignments[cell.col];
     this.addMenuGroups(menu, [
@@ -367,7 +371,7 @@ export class TableWidget extends WidgetType {
   // ---- document plumbing -------------------------------------------------
 
   /** 表格块在文档中的真实区间；位置被其它编辑改动时按文本回退查找，找不到返回 null。 */
-  range(view) {
+  range(view: EditorView) {
     const doc = view.state.doc;
     if (this.from <= this.to && this.to <= doc.length && doc.sliceString(this.from, this.to) === this.text) {
       return { from: this.from, to: this.to };
@@ -377,7 +381,7 @@ export class TableWidget extends WidgetType {
   }
 
   /** 写回整块文本；state 里的选区/焦点交给重建后的实例认领，blankEdges 只由删行路径给出。 */
-  dispatch(view, model, state?) {
+  dispatch(view: EditorView, model: TableModel, state?: TableViewState | null) {
     const range = this.range(view);
     if (!range) return false;
     const { blankEdges, ...carried } = state || {};
@@ -390,20 +394,20 @@ export class TableWidget extends WidgetType {
   }
 
   /** 没触发重建（文本等价）时，携带状态落到当前实例。 */
-  settle(view) {
+  settle(view: EditorView) {
     const staged = carriedState;
     if (!staged) return;
     if (staged.from === this.from && staged.text === this.text) this.applyState(view, staged);
     carriedState = null;
   }
 
-  applyState(view, state) {
+  applyState(view: EditorView, state?: TableViewState | null) {
     if (!state) return;
     if (state.selection) this.selectCells(view, state.selection.anchor, state.selection.head);
     if (state.focus) beginCellEdit(this, view, state.focus.row, state.focus.col, { selectAll: !!state.focus.selectAll });
   }
 
-  removeTable(view) {
+  removeTable(view: EditorView) {
     const range = this.range(view);
     if (!range) return;
     view.dispatch({ changes: { from: range.from, to: range.to, insert: '' }, selection: { anchor: range.from } });
@@ -411,7 +415,7 @@ export class TableWidget extends WidgetType {
   }
 
   /** 点击单元格/容器：光标落到对应源码行，部件让位给原始 Markdown（T0 验收锁定的行为）。 */
-  placeCursor(view, row) {
+  placeCursor(view: EditorView, row: number) {
     const range = this.range(view);
     if (!range) return;
     const doc = view.state.doc;
@@ -432,7 +436,7 @@ export class TableWidget extends WidgetType {
    * 原版 setActiveDragHandles/unsetActiveDragHandles：编辑中的行、列在首格打 mod-active-* 类，
    * 容器带 has-focus；触屏（body.is-touch）下这些手柄常显，桌面仍走 hover 显形。
    */
-  setActiveDragHandles(row, col) {
+  setActiveDragHandles(row: number, col: number) {
     this.unsetActiveDragHandles();
     const rowCell = this.cellElement(row, 0);
     if (rowCell) rowCell.addClass('mod-active-row-handle');
@@ -451,7 +455,7 @@ export class TableWidget extends WidgetType {
   // ---- selection ---------------------------------------------------------
 
   /** 原版 selectCells：单格 anchor===head 时只清空旧选区；否则按矩形打 is-selected 系列类。 */
-  selectCells(view, anchor, head, dragging?) {
+  selectCells(view: EditorView, anchor: CellPosition | null, head: CellPosition | null, dragging?: boolean) {
     this.deselectCells();
     if (!anchor || !head) return;
     if (anchor.row === head.row && anchor.col === head.col) return;
@@ -500,7 +504,7 @@ export class TableWidget extends WidgetType {
   // ---- selection actions -------------------------------------------------
 
   /** 原版 actionClearSelection：选中格文本清空，保持选区。 */
-  clearSelectedCells(view) {
+  clearSelectedCells(view: EditorView) {
     const model = this.model();
     const bounds = this.getSelectionBounds();
     if (!model || !bounds) return;
@@ -511,7 +515,7 @@ export class TableWidget extends WidgetType {
   }
 
   /** 原版 actionDeleteSelection → deleteSelection(-1)：整表删块、整行/整列删行/列、矩形清空单元格。 */
-  deleteSelection(view, edge) {
+  deleteSelection(view: EditorView, edge: number) {
     const model = this.model();
     const bounds = this.getSelectionBounds();
     if (!model || !bounds) return;
@@ -543,7 +547,7 @@ export class TableWidget extends WidgetType {
   }
 
   /** 对齐应用到选区覆盖的所有列（原版 makeAlignmentMenu 的列集合）。 */
-  setSelectionAlignment(view, align) {
+  setSelectionAlignment(view: EditorView, align: import('./table-model.js').TableAlignment) {
     const model = this.model();
     const bounds = this.getSelectionBounds();
     if (!model || !bounds) return;
@@ -553,7 +557,7 @@ export class TableWidget extends WidgetType {
 
   // ---- actions (each rebuilds the markdown from the current text) --------
 
-  insertRow(view, index, state?) {
+  insertRow(view: EditorView, index: number, state?: TableViewState | null) {
     const model = this.model();
     if (!model) return;
     const at = clamp(index, 0, model.rows.length);
@@ -562,14 +566,14 @@ export class TableWidget extends WidgetType {
     this.dispatch(view, model, next);
   }
 
-  duplicateRow(view, index) {
+  duplicateRow(view: EditorView, index: number) {
     const model = this.model();
     if (!model || index < 0 || index >= model.rows.length) return;
     model.rows.splice(index, 0, model.rows[index].slice());
     this.dispatch(view, model);
   }
 
-  moveRow(view, from, to, state?) {
+  moveRow(view: EditorView, from: number, to: number, state?: TableViewState | null) {
     const model = this.model();
     if (!model || to < 0 || to >= model.rows.length) return;
     moveInArray(model.rows, from, to);
@@ -577,7 +581,7 @@ export class TableWidget extends WidgetType {
   }
 
   /** 删行补空行（原版 deleteSelection 的块首/块尾 \n）；index 为删除前的行号。 */
-  removeRow(view, index) {
+  removeRow(view: EditorView, index: number) {
     const model = this.model();
     if (!model || index < 0 || index >= model.rows.length) return;
     if (model.rows.length === 1) {
@@ -589,7 +593,7 @@ export class TableWidget extends WidgetType {
     this.dispatch(view, model, { blankEdges });
   }
 
-  insertColumn(view, index, align) {
+  insertColumn(view: EditorView, index: number, align: import('./table-model.js').TableAlignment) {
     const model = this.model();
     if (!model) return;
     const at = clamp(index, 0, model.alignments.length);
@@ -598,7 +602,7 @@ export class TableWidget extends WidgetType {
     this.dispatch(view, model);
   }
 
-  duplicateColumn(view, index) {
+  duplicateColumn(view: EditorView, index: number) {
     const model = this.model();
     if (!model || index < 0 || index >= model.alignments.length) return;
     const align = model.alignments[index];
@@ -607,7 +611,7 @@ export class TableWidget extends WidgetType {
     this.dispatch(view, model);
   }
 
-  moveColumn(view, from, to, state?) {
+  moveColumn(view: EditorView, from: number, to: number, state?: TableViewState | null) {
     const model = this.model();
     if (!model || to < 0 || to >= model.alignments.length) return;
     moveInArray(model.alignments, from, to);
@@ -615,7 +619,7 @@ export class TableWidget extends WidgetType {
     this.dispatch(view, model, state);
   }
 
-  removeColumn(view, index) {
+  removeColumn(view: EditorView, index: number) {
     const model = this.model();
     if (!model || index < 0 || index >= model.alignments.length) return;
     if (model.alignments.length === 1) {
@@ -627,7 +631,7 @@ export class TableWidget extends WidgetType {
     this.dispatch(view, model);
   }
 
-  setAlignment(view, col, align) {
+  setAlignment(view: EditorView, col: number, align: import('./table-model.js').TableAlignment) {
     const model = this.model();
     if (!model || col < 0 || col >= model.alignments.length) return;
     model.alignments[col] = align;
@@ -635,7 +639,7 @@ export class TableWidget extends WidgetType {
   }
 
   /** 单元格文本写回：内容不变时只按 state 移动焦点，不写文档。 */
-  updateCell(view, row, col, text, state) {
+  updateCell(view: EditorView, row: number, col: number, text: string, state?: TableViewState | null) {
     const model = this.model();
     if (!model || !model.rows[row] || model.rows[row][col] === undefined) return false;
     if (model.rows[row][col] === text) {
@@ -648,7 +652,7 @@ export class TableWidget extends WidgetType {
   }
 
   /** 排序表体（保留表头），比较单元格原文；reverse 即 Z→A。 */
-  sortColumn(view, col, reverse) {
+  sortColumn(view: EditorView, col: number, reverse: boolean) {
     const model = this.model();
     if (!model || col < 0 || col >= model.alignments.length) return;
     const head = model.rows[0];

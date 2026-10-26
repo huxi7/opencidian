@@ -1,5 +1,5 @@
 /**
- * [INPUT]: 依赖 ./canvas-node.js 的 CanvasNode；依赖 ./canvas-edge.js 的 CanvasEdge；
+ * [INPUT]: canvas-data.js 校验剪贴板 JSON；依赖 ./canvas-node.js 的 CanvasNode；依赖 ./canvas-edge.js 的 CanvasEdge；
  *          依赖 ./canvas-utils.js 的 bboxOf/unionBBox/genId；调用 canvas.importData/createLinkNode/createTextNode/deleteSelection。
  * [OUTPUT]: 导出 CANVAS_MIME、getSelectionData(canvas)、cloneData(data, offset)、handleCanvasCopy/Cut/Paste(canvas, event)。
  * [POS]: views/ 画布剪贴板层（原版 CanvasView.handleCopy/handleCut/handlePaste）。
@@ -9,6 +9,8 @@
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 /* Canvas clipboard — original obsidian/canvas copy/cut/paste semantics. */
+import { parseCanvasData } from './canvas-data.js';
+import type { CanvasData } from './canvas-types.js';
 import { CanvasNode } from './canvas-node.js';
 import { CanvasEdge } from './canvas-edge.js';
 import { createFileNodes } from './canvas-drop.js';
@@ -23,7 +25,7 @@ export function getSelectionData(canvas: import('./canvas-view.js').CanvasView, 
   const nodes = items
     .filter((el) => el instanceof CanvasNode)
     .sort((a, b) => a.zIndex - b.zIndex)
-    .map((node) => node.getData());
+    .map((node: CanvasNode) => node.getData());
   const edgeSet = new Set<import('./canvas-edge.js').CanvasEdge>();
   for (const el of items) {
     if (!(el instanceof CanvasNode)) continue;
@@ -31,10 +33,10 @@ export function getSelectionData(canvas: import('./canvas-view.js').CanvasView, 
       if (selection.has(edge.from.node) && selection.has(edge.to.node)) edgeSet.add(edge);
     }
   }
-  const edges = Array.from(edgeSet).map((edge) => edge.getData());
+  const edges = Array.from(edgeSet).map((edge: CanvasEdge) => edge.getData());
   let center = { x: 0, y: 0 };
   if (items.some((el) => el instanceof CanvasNode)) {
-    const box = unionBBox(items.filter((el) => el instanceof CanvasNode).map((node) => bboxOf(node)));
+    const box = unionBBox(items.filter((el) => el instanceof CanvasNode).map((node: CanvasNode) => bboxOf(node)));
     center = { x: (box.minX + box.maxX) / 2, y: (box.minY + box.maxY) / 2 };
   }
   return { nodes, edges, center };
@@ -44,8 +46,8 @@ export function getSelectionData(canvas: import('./canvas-view.js').CanvasView, 
  * 原版 cloneData：深拷贝 payload，节点与边换新 id，边端点指向克隆节点，可选整体偏移。
  * 不修改入参，避免连续粘贴复用同一份对象。
  */
-export function cloneData(data, offset) {
-  const clone = JSON.parse(JSON.stringify(data));
+export function cloneData(data: CanvasData, offset: { x: number; y: number; }|null) {
+  const clone = parseCanvasData(JSON.stringify(data));
   const idMap = new Map();
   for (const node of clone.nodes || []) {
     const oldId = node.id;
@@ -63,23 +65,23 @@ export function cloneData(data, offset) {
 }
 
 /** 原版 handleCopy：焦点在画布 wrapper 且有选中内容时写 obsidian/canvas。 */
-export function handleCanvasCopy(canvas: import('./canvas-view.js').CanvasView, event) {
+export function handleCanvasCopy(canvas: import('./canvas-view.js').CanvasView, event: ClipboardEvent) {
   if (document.activeElement !== canvas.wrapperEl) return;
-  if (!canvas.selection.size) return;
+  if (!canvas.selection.size || !event.clipboardData) return;
   event.preventDefault();
   event.clipboardData.setData(CANVAS_MIME, JSON.stringify(getSelectionData(canvas)));
 }
 
 /** 原版 handleCut：先 copy，再删除选中节点/边。 */
-export function handleCanvasCut(canvas: import('./canvas-view.js').CanvasView, event) {
+export function handleCanvasCut(canvas: import('./canvas-view.js').CanvasView, event: ClipboardEvent) {
   if (canvas.readonly || document.activeElement !== canvas.wrapperEl) return;
-  if (!canvas.selection.size) return;
+  if (!canvas.selection.size || !event.clipboardData) return;
   handleCanvasCopy(canvas, event);
   canvas.deleteSelection();
 }
 
 /** 原版 handlePaste：外部文件 → 自定义画布数据 → URL 链接卡 → 文本卡。 */
-export function handleCanvasPaste(canvas: import('./canvas-view.js').CanvasView, event) {
+export function handleCanvasPaste(canvas: import('./canvas-view.js').CanvasView, event: ClipboardEvent) {
   if (event.defaultPrevented || canvas.readonly || document.activeElement !== canvas.wrapperEl) return;
   event.preventDefault();
   const data = event.clipboardData;
@@ -92,15 +94,15 @@ export function handleCanvasPaste(canvas: import('./canvas-view.js').CanvasView,
   }
   const raw = data.getData(CANVAS_MIME);
   if (raw) {
-    let payload;
-    try { payload = JSON.parse(raw); } catch (e) { return; }
+    let payload: CanvasData;
+    try { payload = parseCanvasData(raw); } catch (e) { return; }
     if (!payload || !Array.isArray(payload.nodes) || !Array.isArray(payload.edges)) return;
     if (!payload.nodes.length) return;
     const center = payload.center;
     const offset = center ? { x: pos.x - center.x, y: pos.y - center.y } : null;
     const imported = canvas.importData(cloneData(payload, offset), false);
     canvas.deselectAll();
-    imported.forEach((node) => canvas.select(node));
+    imported.forEach((node: CanvasNode) => canvas.select(node));
     canvas.requestSave();
     return;
   }
@@ -115,7 +117,7 @@ export function handleCanvasPaste(canvas: import('./canvas-view.js').CanvasView,
 }
 
 /** 外部剪贴板文件：写入附件目录后按 10 列排布建文件卡（原版 handlePaste 的 importAttachments 分支）。 */
-async function importClipboardFiles(canvas: import('./canvas-view.js').CanvasView, blobs, pos) {
+async function importClipboardFiles(canvas: import('./canvas-view.js').CanvasView, blobs: File[], pos: { x: number; y: number; }) {
   const imported = [];
   for (const blob of blobs) {
     const dot = blob.name.lastIndexOf('.');

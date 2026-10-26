@@ -7,25 +7,28 @@
  */
 /* Plugin-related settings tabs: Hotkeys / Core plugins. */
 import { tt } from '../core/i18n.js';
-import { Setting, SettingGroup, SettingTab } from '../core/setting.js';
+import { SearchComponent, Setting, SettingGroup, SettingTab } from '../core/setting.js';
 import { hotkeyToString, eventToHotkey, hotkeysEqual } from '../core/keymap.js';
 import { DEFAULT_HOTKEYS } from '../core/default-hotkeys.js';
 import { setIcon } from '../core/icons.js';
+import { SettingsHost } from './settings-view.js';
+import { Command } from '../core/commands.js';
+import { HotkeyBinding } from '../core/settings-types.js';
 
 /* --------------------------------------------------------------- shared */
 
 /** 打开快捷键页并按插件 id 前缀过滤（原版核心/社区插件行的 lucide-plus-circle 入口）。 */
-function openHotkeysFor(setting, pluginId) {
+function openHotkeysFor(setting: SettingsHost, pluginId: string) {
   const tab = setting.openTabById('hotkeys');
   if (tab && typeof tab.setQuery === 'function') tab.setQuery(pluginId);
 }
 
-/** 插件是否注册了命令：id 前缀命中；核心插件实例登记了 deregister/deregisterCommands 也视为有命令。 */
-function hasPluginCommands(app: App, pluginId) {
+/** 插件命令由注册表与对称撤销接口识别。 */
+function hasPluginCommands(app: App, pluginId: string) {
   if (Object.keys(app.commands.commands).some((cid) => cid.startsWith(pluginId + ':'))) return true;
   const entry = app.plugins.getInternalPlugin(pluginId);
   const instance = entry && entry.instance;
-  return !!(instance && (typeof instance.deregisterCommands === 'function' || typeof instance.deregister === 'function'));
+  return typeof instance?.deregisterCommands === 'function';
 }
 
 /* ----------------------------------------------------------------- Hotkeys */
@@ -40,23 +43,23 @@ const STATUS_FILTERS: Array<[string, () => string]> = [
 ];
 
 export class HotkeysTab extends SettingTab {
-  declare name: any;
+  declare name: string;
   declare id: string;
   declare icon: string;
-  declare searchComponent: any;
-  declare filterContainerEl: any;
-  declare filterEls: any;
-  declare activeStatusFilterEl: any;
-  declare hotkeyListEl: any;
+  declare searchComponent: SearchComponent | null;
+  declare filterContainerEl: HTMLDivElement | null;
+  declare filterEls: Record<string, HTMLDivElement>;
+  declare activeStatusFilterEl: HTMLDivElement | null;
+  declare hotkeyListEl: HTMLElement | null;
   declare statusFilter: string;
-  declare hotkeyFilter: any;
-  declare hotkeyFilterDecoratorEl: any;
-  declare filterHotkeyActiveEl: any;
-  declare commandBeingCustomized: any;
-  declare _captureHandler: any;
-  declare _customizeHandler: any;
+  declare hotkeyFilter: HotkeyBinding | null;
+  declare hotkeyFilterDecoratorEl: HTMLDivElement | null;
+  declare filterHotkeyActiveEl: HTMLSpanElement | null;
+  declare commandBeingCustomized: Command | null;
+  declare _captureHandler: ((event: KeyboardEvent) => void) | null;
+  declare _customizeHandler: ((event: KeyboardEvent) => void) | null;
 
-  constructor(app: App, setting) {
+  constructor(app: App, setting: SettingsHost) {
     super(app, setting);
     this.name = tt('setting.hotkeys.name', '快捷键');
     this.id = 'hotkeys';
@@ -92,16 +95,16 @@ export class HotkeysTab extends SettingTab {
       search.containerEl.addClass('mod-hotkey');
       this.hotkeyFilterDecoratorEl = search.containerEl.createDiv('input-right-decorator clickable-icon');
       this.renderHotkeyFilterDecorator();
-      this.hotkeyFilterDecoratorEl.addEventListener('click', (ev) => {
+      this.hotkeyFilterDecoratorEl.addEventListener('click', (ev: MouseEvent) => {
         if (ev.defaultPrevented || this.hotkeyFilter) return;
-        search.containerEl.appendChild(this.filterHotkeyActiveEl);
+        if (this.filterHotkeyActiveEl) search.containerEl.appendChild(this.filterHotkeyActiveEl);
         this.startFilteringByHotkey();
       });
       this.filterHotkeyActiveEl = createSpan({
         cls: 'setting-hotkey mod-active input-right-decorator',
         text: tt('setting.hotkeys.label-waiting-for-hotkey-press', '按下快捷键…'),
       });
-      this.filterHotkeyActiveEl.addEventListener('click', (ev) => {
+      this.filterHotkeyActiveEl.addEventListener('click', (ev: { preventDefault: () => void; }) => {
         ev.preventDefault();
         this.finishFilteringByHotkey();
       });
@@ -115,7 +118,7 @@ export class HotkeysTab extends SettingTab {
         if (mode === 'show-conflicts') chip.addClass('mod-error');
         chip.setAttr('tabIndex', '0');
         chip.addEventListener('click', () => this.setStatusFilter(mode));
-        chip.addEventListener('keydown', (ev) => {
+        chip.addEventListener('keydown', (ev: { key: string; }) => {
           if (ev.key === 'Enter' || ev.key === ' ') this.setStatusFilter(mode);
         });
         this.filterEls[mode] = chip;
@@ -127,7 +130,7 @@ export class HotkeysTab extends SettingTab {
 
     this.hotkeyListEl = group.listEl;
     this.updateHotkeyVisibility();
-    this.searchComponent.inputEl.focus();
+    this.searchComponent?.inputEl.focus();
   }
 
   hide() {
@@ -138,7 +141,7 @@ export class HotkeysTab extends SettingTab {
   /** 进入按快捷键筛选捕获态：吞掉按键并转成筛选条件；Esc 取消（同时清掉现有快捷键筛选）。 */
   startFilteringByHotkey() {
     if (this._captureHandler) return;
-    this._captureHandler = (ev) => {
+    this._captureHandler = (ev: KeyboardEvent) => {
       ev.preventDefault();
       ev.stopPropagation();
       if (ev.key === 'Escape') {
@@ -161,11 +164,11 @@ export class HotkeysTab extends SettingTab {
   }
 
   /** 原版 commandBeingCustomized：行内进入录制态，按键直接写入该命令；Esc 取消。 */
-  startCustomizingHotkey(command) {
+  startCustomizingHotkey(command: Command) {
     this.finishFilteringByHotkey();
     this.finishCustomizingHotkey();
     this.commandBeingCustomized = command;
-    this._customizeHandler = (ev) => {
+    this._customizeHandler = (ev: KeyboardEvent) => {
       ev.preventDefault();
       ev.stopPropagation();
       if (ev.key === 'Escape') {
@@ -206,7 +209,7 @@ export class HotkeysTab extends SettingTab {
       el.createSpan({ text: hotkeyToString(this.hotkeyFilter) });
       const clear = el.createSpan('hotkey-filter-clear');
       setIcon(clear, 'lucide-x');
-      clear.addEventListener('click', (ev) => {
+      clear.addEventListener('click', (ev: { preventDefault: () => void; }) => {
         ev.preventDefault();
         this.setHotkeyFilter(null);
       });
@@ -217,7 +220,7 @@ export class HotkeysTab extends SettingTab {
   }
 
   /** 原版 setActiveHotkeyFilter：清空值即移除装饰器芯片并重筛。 */
-  setHotkeyFilter(hotkey) {
+  setHotkeyFilter(hotkey: HotkeyBinding|null|undefined) {
     this.hotkeyFilter = hotkey || null;
     this.finishFilteringByHotkey();
     this.renderHotkeyFilterDecorator();
@@ -225,7 +228,7 @@ export class HotkeysTab extends SettingTab {
   }
 
   /** 原版 setActiveStatusFilter：只移动 is-active，不清除快捷键筛选。 */
-  setStatusFilter(mode) {
+  setStatusFilter(mode: string) {
     if (this.statusFilter === mode) return;
     this.statusFilter = mode;
     this.updateActiveFilterClass();
@@ -239,7 +242,7 @@ export class HotkeysTab extends SettingTab {
   }
 
   /** 原版 setQuery：写入搜索词、聚焦并重筛；核心插件页的快捷键入口按插件 id 前缀过滤。 */
-  setQuery(query) {
+  setQuery(query: string) {
     if (!this.searchComponent) return;
     this.searchComponent.inputEl.value = query;
     this.searchComponent.inputEl.focus();
@@ -253,7 +256,7 @@ export class HotkeysTab extends SettingTab {
     const listEl = this.hotkeyListEl;
     listEl.empty();
     const hotkeysSetting = app.settings.hotkeys || {};
-    const customOf = (commandId) => {
+    const customOf = (commandId: string) => {
       if (!Object.prototype.hasOwnProperty.call(hotkeysSetting, commandId)) return null;
       const value = hotkeysSetting[commandId];
       return Array.isArray(value) ? value : [];
@@ -263,7 +266,7 @@ export class HotkeysTab extends SettingTab {
 
     // 原版 oc：快捷键文本 → 绑定者 { id, name } 列表（先全量建表，再逐行判冲突）
     const owners = new Map();
-    const addOwner = (text, command) => {
+    const addOwner = (text: string, command: { id: string; name: string; }) => {
       if (!owners.has(text)) owners.set(text, []);
       owners.get(text).push(command);
     };
@@ -301,7 +304,7 @@ export class HotkeysTab extends SettingTab {
       const hasDefaults = Array.isArray(defaults) && defaults.length > 0;
       if (terms.length) {
         const haystack = (String(cmd.name) + ' ' + cmd.id).toLowerCase();
-        if (!terms.every((term) => haystack.includes(term))) continue;
+        if (!terms.every((term: string) => haystack.includes(term))) continue;
       }
       const bound = hasCustom ? custom : (defaults || []);
       if (filterText && !bound.some((hk) => hotkeyToString(hk) === filterText)) continue;
@@ -314,9 +317,9 @@ export class HotkeysTab extends SettingTab {
       const setting = new Setting(listEl);
       setting.setName(cmd.name);
       const row = setting.controlEl.createDiv('setting-command-hotkeys');
-      const buildChip = (hotkey, onDelete) => {
+      const buildChip = (hotkey: HotkeyBinding|null|undefined, onDelete: { (): void; (): void; (): void; }) => {
         const text = hotkeyToString(hotkey);
-        const others = (owners.get(text) || []).filter((owner) => owner.id !== cmd.id);
+        const others = (owners.get(text) || []).filter((owner: { id: string; }) => owner.id !== cmd.id);
         row.createSpan('setting-hotkey', (chip) => {
           if (others.length) {
             chip.addClass('has-conflict');
@@ -401,11 +404,11 @@ export class HotkeysTab extends SettingTab {
 /* ------------------------------------------------------------ Core plugins */
 
 export class CorePluginsTab extends SettingTab {
-  declare name: any;
+  declare name: string;
   declare id: string;
   declare icon: string;
 
-  constructor(app: App, setting) {
+  constructor(app: App, setting: SettingsHost) {
     super(app, setting);
     this.name = tt('setting.builtin-plugins', '核心插件');
     this.id = 'plugins';
@@ -437,8 +440,8 @@ export class CorePluginsTab extends SettingTab {
         const setting = new Setting(rowsEl);
         setting.setName(name);
         setting.setDesc(desc);
-        let gearEl = null;
-        let hotkeysEl = null;
+        let gearEl: HTMLDivElement|null = null;
+        let hotkeysEl: HTMLDivElement|null = null;
         setting.addExtraButton((b) => {
           gearEl = b.extraSettingsEl;
           b.setIcon('lucide-settings')
@@ -454,8 +457,8 @@ export class CorePluginsTab extends SettingTab {
         });
         const refreshVisibility = () => {
           const enabled = !!entry.enabled;
-          gearEl.toggle(enabled && hasSettingTab);
-          hotkeysEl.toggle(enabled && hasPluginCommands(app, id));
+          gearEl?.toggle(enabled && hasSettingTab);
+          hotkeysEl?.toggle(enabled && hasPluginCommands(app, id));
         };
         setting.addToggle((tog) => tog.setValue(!!entry.enabled).onChange(async (v) => {
           if (v) await app.plugins.enableInternalPlugin(id);
@@ -473,13 +476,13 @@ export class CorePluginsTab extends SettingTab {
         empty.setClass('mod-empty-state');
       }
     };
-    let search = null;
+    let search: SearchComponent|null = null;
     group.addSearch((component) => {
       search = component;
       component.setPlaceholder(tt('setting.core-plugin.placeholder-search-plugin', '搜索插件…'))
         .onChange((v) => { query = String(v || '').trim().toLowerCase(); renderRows(); });
     });
-    if (focusSearch) setTimeout(() => search.inputEl.focus(), 0);
+    if (focusSearch) setTimeout(() => search?.inputEl.focus(), 0);
     renderRows();
   }
 }

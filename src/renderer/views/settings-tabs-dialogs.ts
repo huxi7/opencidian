@@ -7,12 +7,13 @@
 /* Settings-tab support: dialogs, path suggesters, shared helpers. */
 import { tt } from '../core/i18n.js';
 import { Modal } from '../core/modals.js';
-import { Setting, SettingGroup } from '../core/setting.js';
+import { Setting, SettingGroup, SliderComponent } from '../core/setting.js';
 import { Notice } from '../core/notices.js';
 import { Desktop } from '../core/ipc.js';
 import { AbstractInputSuggest } from '../core/suggest.js';
 import { TFolder } from '../core/vault.js';
 import { setIcon } from '../core/icons.js';
+import { SettingsHost } from './settings-view.js';
 
 const fs = require('fs');
 const nodePath = require('path');
@@ -40,7 +41,7 @@ export class StartupTimeModal extends Modal {
     const totalMs = Math.max(0, performance.now() - (app.bootTime || performance.now()));
     const total = Math.round(totalMs) + 'ms';
     const statsEl = this.contentEl.createDiv('startup-stat-list');
-    const addStat = (label, value, desc?) => {
+    const addStat = (label: string, value: string|null, desc?: string|undefined) => {
       const row = statsEl.createDiv('startup-stat');
       const info = row.createDiv('startup-info');
       info.createSpan({ cls: 'startup-label', text: label });
@@ -81,9 +82,9 @@ export class StartupTimeModal extends Modal {
 
 /** 原版 Vim 验证弹窗：输入 :q 才允许开启 Vim 模式。 */
 export class VimTestModal extends Modal {
-  declare onConfirm: any;
+  declare onConfirm: (ok: boolean) => void;
 
-  constructor(app: App, onConfirm) {
+  constructor(app: App, onConfirm: (ok: boolean) => void) {
     super(app);
     this.onConfirm = onConfirm;
     this.setTitle(tt('setting.editor.label-confirm-enable-vim', '确认进入 Vim 模式'));
@@ -119,10 +120,10 @@ export class VimTestModal extends Modal {
  * 单输入框 + form-field-help 说明 + 完成/取消按钮。
  */
 export class AddExcludedFilterModal extends Modal {
-  declare onAdd: any;
-  declare inputEl: any;
+  declare onAdd: (value: string) => void;
+  declare inputEl: HTMLInputElement;
 
-  constructor(app: App, onAdd) {
+  constructor(app: App, onAdd: (value: string) => void) {
     super(app);
     this.onAdd = onAdd;
     this.setTitle(tt('setting.file.title-add-excluded-filter', '添加排除项'));
@@ -156,7 +157,7 @@ export class SpellcheckDictModal extends Modal {
   onOpen() { this.render(); }
   render() {
     this.contentEl.empty();
-    let words = [];
+    let words: string[] = [];
     try { words = Desktop.spellcheckDict() || []; } catch (e) { words = []; }
     words = [...words].sort((a, b) => String(a).localeCompare(String(b)));
     if (!words.length) {
@@ -183,10 +184,10 @@ export class SpellcheckDictModal extends Modal {
  * 现代主题 = themes/<name>/manifest.json 且 manifest.name 与目录同名；
  * 旧版主题 = themes/ 下的裸 .css 文件（显示带 “ (Legacy)” 后缀）。
  */
-export function readInstalledThemes(settingsDir) {
+export function readInstalledThemes(settingsDir: string) {
   const dir = nodePath.join(settingsDir, 'themes');
-  const themes = [];
-  const legacy = [];
+  const themes: Array<{ name: string; dir: string; legacy: boolean }> = [];
+  const legacy: Array<{ name: string; dir: null; legacy: boolean }> = [];
   try {
     if (!fs.existsSync(dir)) return { themes, legacy };
     for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
@@ -216,10 +217,10 @@ export function readInstalledThemes(settingsDir) {
  */
 export class ThemeManagerModal extends Modal {
   declare app: App;
-  declare onChange: any;
+  declare onChange: () => void;
   declare selected: string;
 
-  constructor(app: App, onChange) {
+  constructor(app: App, onChange: () => void) {
     super(app);
     this.app = app;
     this.onChange = onChange;
@@ -231,7 +232,7 @@ export class ThemeManagerModal extends Modal {
   onOpen() { this.render(); }
 
   /** 主题截图：读 theme/screenshot.png 转 data URL；缺失时用占位图标。 */
-  screenshotUrl(dir) {
+  screenshotUrl(dir: string | null | undefined) {
     if (!dir) return '';
     try {
       const file = nodePath.join(dir, 'screenshot.png');
@@ -245,7 +246,7 @@ export class ThemeManagerModal extends Modal {
     const app = this.app;
     const current = String(app.settings.appearance.cssTheme || '');
     const { themes, legacy } = readInstalledThemes(app.settings.dir);
-    const all = [{ name: '', label: tt('setting.appearance.label-default-theme', '默认'), legacy: false }, ...themes, ...legacy];
+    const all: Array<{ name: string; label?: string; dir?: string | null; legacy: boolean }> = [{ name: '', label: tt('setting.appearance.label-default-theme', '默认'), legacy: false }, ...themes, ...legacy];
     if (!this.selected) this.selected = current;
 
     const content = this.contentEl;
@@ -275,7 +276,7 @@ export class ThemeManagerModal extends Modal {
       .setText(tt('plugins.custom-css.label-search-summary', '显示 {{themeCount}}:', { themeCount }));
 
     for (const item of filtered) {
-      const label = item.name || item.label;
+      const label = item.name || item.label || '';
       const card = results.createDiv('community-item tappable');
       if (item.name === this.selected) card.addClass('mod-active');
       const nameEl = card.createDiv('community-item-name');
@@ -340,23 +341,23 @@ export function listFontCandidates() {
  *  - 字体建议：搜索框 + .setting-items 里的 mod-action tappable 行（含手输字体行）
  * 变更立即落盘（原版 onChange → setConfig(key, fonts.join(','))）。
  */
-export function openFontPage(setting, app: App, options) {
+export function openFontPage(setting: SettingsHost, app: App, options: { title?: string; key: string; }) {
   const { title, key } = options || {};
   const fonts = String((app.settings.appearance || {})[key] || '').split(',').map((x) => x.trim()).filter(Boolean);
-  const commit = (next) => app.settings.updateAppearance({ [key]: next.join(',') });
+  const commit = (next: string[]) => app.settings.updateAppearance({ [key]: next.join(',') });
   setting.openPage({
     title: title || '',
-    build: (contentEl) => renderFontPage(contentEl, app, fonts, commit),
+    build: (contentEl: HTMLElement) => renderFontPage(contentEl, app, fonts, commit),
   });
 }
 
 /** 字体页渲染（原版 Ire.display）。 */
-function renderFontPage(containerEl, app: App, fonts, commit) {
+function renderFontPage(containerEl: HTMLElement, app: App, fonts: string[], commit: (next: string[]) => void) {
   containerEl.empty();
   const descEl = containerEl.createEl('p', { cls: 'setting-page-desc' });
 
   /* 当前字体列表 */
-  let dragFont = null;
+  let dragFont: string|null = null;
   const listGroup = new SettingGroup(containerEl);
   listGroup.addClass('mod-list');
   const renderList = () => {
@@ -364,7 +365,7 @@ function renderFontPage(containerEl, app: App, fonts, commit) {
       ? tt('setting.appearance.label-font-applied', '列表中第一种字体将被应用。若该字体不存在于当前设备上，则顺延至存在于当前设备上的字体。')
       : tt('setting.appearance.label-no-custom-font-set', '当前未指定自定义字体。请在下方添加一个。'));
     listGroup.listEl.empty();
-    fonts.forEach((font) => {
+    fonts.forEach((font: string) => {
       const setting = new Setting(listGroup.listEl);
       setting.setName(font);
       setting.nameEl.style.fontFamily = font;
@@ -388,13 +389,13 @@ function renderFontPage(containerEl, app: App, fonts, commit) {
         b.extraSettingsEl.setAttr('tabindex', '-1');
       });
       // 原版：手柄拖拽重排
-      const handle = setting.controlEl.querySelector('.mod-drag-handle');
+      const handle = setting.controlEl.querySelector<HTMLElement>('.mod-drag-handle');
       if (handle) {
         handle.setAttr('draggable', 'true');
         handle.addEventListener('dragstart', (ev) => {
           dragFont = font;
           setting.settingEl.addClass('is-being-dragged');
-          try { ev.dataTransfer.setData('text/plain', font); } catch (e) {}
+          try { ev.dataTransfer?.setData('text/plain', font); } catch (e) {}
         });
         handle.addEventListener('dragend', () => setting.settingEl.removeClass('is-being-dragged'));
       }
@@ -424,7 +425,7 @@ function renderFontPage(containerEl, app: App, fonts, commit) {
   /* 字体建议 */
   const suggestGroup = new SettingGroup(containerEl);
   suggestGroup.addClass('mod-list');
-  let searchInput = null;
+  let searchInput: HTMLInputElement|null = null;
   suggestGroup.addSearch((search) => {
     searchInput = search.inputEl;
     search.setPlaceholder(tt('setting.appearance.option-font-placeholder', '请输入字体名称…'));
@@ -436,7 +437,7 @@ function renderFontPage(containerEl, app: App, fonts, commit) {
     suggestGroup.listEl.empty();
     suggestGroup.listEl.addClass('is-loading');
     const candidates = listFontCandidates();
-    const addSuggestion = (name, isManual) => {
+    const addSuggestion = (name: string, isManual: boolean) => {
       const row = new Setting(suggestGroup.listEl);
       row.setClass('mod-action');
       row.setClass('tappable');
@@ -472,7 +473,7 @@ function renderFontPage(containerEl, app: App, fonts, commit) {
 /* -------------------------------------------------------- helpers & suggesters */
 
 /** 原版 1.14.4 滑杆填充：--slider-fill-ratio 随值更新，setValue 也要同步。 */
-export function trackSliderFill(slider) {
+export function trackSliderFill(slider: SliderComponent) {
   const el = slider.sliderEl;
   const sync = () => {
     const min = Number(el.min) || 0;
@@ -489,7 +490,7 @@ export function trackSliderFill(slider) {
 }
 
 /** 原版正则条件检测：/pattern/ 形式。 */
-export function isRegexFilterValue(value) {
+export function isRegexFilterValue(value: string) {
   return /^\/.+\/$/.test(String(value || '').trim());
 }
 
@@ -497,7 +498,7 @@ export function isRegexFilterValue(value) {
  * 原版 SliderComponent 在输入框前放一个 .slider-value 文本（显示格式化后的当前值）。
  * core/setting.js 只读，这里在页签侧补齐，并随滑块输入同步。
  */
-export function addSliderValue(setting, slider, format) {
+export function addSliderValue(setting: Setting, slider: SliderComponent, format: (value: number) => string) {
   const valueEl = setting.controlEl.createSpan('slider-value');
   setting.controlEl.insertBefore(valueEl, slider.sliderEl);
   const sync = () => valueEl.setText(format(slider.getValue()));
@@ -513,7 +514,7 @@ export function addSliderValue(setting, slider, format) {
  * 未知字体在所有回退族下的宽度都与回退一致；已安装/已加载字体至少一个回退下的宽度不同。
  */
 const fontExistsCache = new Map();
-export function fontExists(font) {
+export function fontExists(font: string) {
   try {
     if (!font) return false;
     const family = String(font).split(',')[0].trim().replace(/^['"]|['"]$/g, '');
@@ -542,8 +543,8 @@ export function fontExists(font) {
 
 /** 递归收集仓库内文件夹相对路径（建议列表用）。 */
 function collectFolderPaths(app: App) {
-  const out = [];
-  const walk = (folder) => {
+  const out: string[] = [];
+  const walk = (folder: TFolder) => {
     for (const child of folder.children || []) {
       if (child instanceof TFolder) {
         if (child.path) out.push(child.path);
@@ -556,16 +557,16 @@ function collectFolderPaths(app: App) {
 }
 
 /** 文件路径建议（设置页文本框用，只读复用 suggest 基类）。 */
-export class FilePathSuggest extends AbstractInputSuggest {
-  getSuggestions(query) {
+export class FilePathSuggest extends AbstractInputSuggest<string> {
+  getSuggestions(query: string) {
     const q = String(query || '').toLowerCase();
     return this.app.vault.getFiles()
       .map((f) => f.path)
       .filter((p) => !q || p.toLowerCase().includes(q))
       .slice(0, 30);
   }
-  renderSuggestion(path, el) { el.setText(path); }
-  selectSuggestion(path) {
+  renderSuggestion(path: string, el: HTMLDivElement) { el.setText(path); }
+  selectSuggestion(path: string) {
     this.inputEl.value = path;
     this.inputEl.dispatchEvent(new Event('input', { bubbles: true }));
     this.close();
@@ -574,7 +575,7 @@ export class FilePathSuggest extends AbstractInputSuggest {
 
 /** 文件夹路径建议。 */
 export class FolderPathSuggest extends FilePathSuggest {
-  getSuggestions(query) {
+  getSuggestions(query: string) {
     const q = String(query || '').toLowerCase();
     return collectFolderPaths(this.app)
       .filter((p) => !q || p.toLowerCase().includes(q))
@@ -586,7 +587,7 @@ export class FolderPathSuggest extends FilePathSuggest {
 class ExcludedPathSuggest extends FilePathSuggest {
   declare onSelect: (item: unknown) => void;
 
-  selectSuggestion(path) {
+  selectSuggestion(path: string) {
     super.selectSuggestion(path);
     if (typeof this.onSelect === 'function') this.onSelect(path);
   }

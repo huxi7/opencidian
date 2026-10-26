@@ -13,7 +13,7 @@
     "dev": "npm run typecheck && node scripts/dev.mjs",
     "dist": "npm run build && electron-builder --mac",
     "dist:dir": "npm run build && electron-builder --mac dir",
-    "typecheck": "tsc --noEmit && tsc -p tsconfig.strict.json",
+    "typecheck": "tsc --noEmit",
     "test:unit": "node scripts/test-unit.mjs",
     "test:workspace": "node --experimental-vm-modules scripts/workspace-regression.mjs",
     "test:acceptance": "sh scripts/acceptance/full.sh",

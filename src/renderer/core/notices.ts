@@ -6,7 +6,7 @@
  */
 /* Notice — toast messages in the top right corner (matches the original pb class). */
 
-let container = null;
+let container: HTMLDivElement | null = null;
 
 function getContainer() {
   if (!container || !container.isConnected) {
@@ -18,12 +18,12 @@ function getContainer() {
 
 export class Notice {
   declare timerId: ReturnType<typeof setTimeout> | number;
-  declare buttonContainerEl: any;
-  declare containerEl: any;
-  declare messageEl: any;
-  declare noticeEl: any;
+  declare buttonContainerEl: HTMLDivElement | null;
+  declare containerEl: HTMLDivElement;
+  declare messageEl: HTMLDivElement;
+  declare noticeEl: HTMLDivElement;
 
-  constructor(message, timeout = 4000) {
+  constructor(message: unknown, timeout = 4000) {
     this.timerId = -1;
     this.buttonContainerEl = null;
     const host = getContainer();
@@ -40,13 +40,13 @@ export class Notice {
   }
 
   /** 重设文案；返回自身以支持链式调用。 */
-  setMessage(message) {
+  setMessage(message: unknown) {
     this.messageEl.setText(String(message));
     return this;
   }
 
   /** 重设定时；hover 期间暂停，移开后再等 1000ms（对齐原版）。 */
-  setAutoHide(timeout) {
+  setAutoHide(timeout: number) {
     const el = this.containerEl;
     if (this.timerId !== -1) {
       clearTimeout(this.timerId);
@@ -62,7 +62,7 @@ export class Notice {
   }
 
   /** 追加行动按钮：.notice-button-container > .notice-cta，点击先隐藏再回调。 */
-  addButton(text, callback) {
+  addButton(text: string, callback: (event: MouseEvent) => unknown) {
     if (!this.buttonContainerEl) this.buttonContainerEl = this.containerEl.createDiv('notice-button-container');
     this.buttonContainerEl.createDiv({ cls: 'notice-cta', text }).addEventListener('click', (ev) => {
       this.hide();

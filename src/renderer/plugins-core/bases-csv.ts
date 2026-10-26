@@ -4,6 +4,8 @@
  * [POS]: 数据库 CSV 导出边界。按当前列和筛选结果输出；取消不写盘。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
+import type { BaseQueryRow, BaseQueryResult } from './bases-types.js';
+import type { BasesController } from './bases-view.js';
 import { BaseDocument, propertyValue, queryBase } from './bases-model.js';
 import { formatBaseValue } from './bases-values.js';
 import { Desktop } from '../core/ipc.js';
@@ -11,24 +13,24 @@ import { tt } from '../core/i18n.js';
 import { Notice } from '../core/notices.js';
 const fs = require('fs');
 
-const quote = value => /[",\n\r]/.test(value) ? '"' + value.replace(/"/g, '""') + '"' : value;
+const quote = (value: string) => /[",\n\r]/.test(value) ? '"' + value.replace(/"/g, '""') + '"' : value;
 
 /** 原版 FF.toCSV：表头开启，逗号分隔，LF 换行，无 BOM 或尾换行。 */
-export function serializeBaseCsv(document, result) {
+export function serializeBaseCsv(document: BaseDocument, result: BaseQueryResult) {
   if (result.warnings?.length) throw new Error(result.warnings.join('\n'));
-  const headers = result.columns.map(property => String(document.data.properties?.[property]?.displayName || property.replace(/^note\./, '')));
-  const rows = result.rows.map(row => result.columns.map(property => {
+  const headers = result.columns.map((property: string) => String(document.data.properties?.[property]?.displayName || property.replace(/^note\./, '')));
+  const rows = result.rows.map((row: BaseQueryRow) => result.columns.map((property: string) => {
     try { return formatBaseValue(propertyValue(row.context, property)); }
     catch (_) { return ''; }
   }));
-  return [headers, ...rows].map(row => row.map(quote).join(',')).join('\n');
+  return [headers, ...rows].map((row: string[]) => row.map(quote).join(',')).join('\n');
 }
 
-export async function saveBaseCsv(controller, options: Record<string, any> = {}) {
+export async function saveBaseCsv(controller: BasesController, options: { filePath?: string } = {}) {
   if (controller.closed || !controller.enabled || !controller.view) return null;
   const basename = controller.view.name.replace(/[\\/:*?"<>|\x00-\x1f]/g, '_') || 'Base';
   const prompt = controller.promptCsvSavePath || Desktop.saveDialog;
-  const selected = options.filePath ? { filePath: options.filePath } : await prompt.call(controller, {
+  const selected = options.filePath ? { canceled: false, filePath: options.filePath } : await prompt.call(controller, {
     title: tt('plugins.bases.action-export-c-s-v', '导出 CSV…'),
     defaultPath: basename + '.csv', filters: [{ name: 'CSV', extensions: ['csv'] }],
   });
@@ -45,10 +47,10 @@ export async function saveBaseCsv(controller, options: Record<string, any> = {})
 }
 
 /** UI 入口显示真实失败；纯保存 API 保留拒绝结果供验收。 */
-export async function exportBaseCsv(controller, options?) {
+export async function exportBaseCsv(controller: BasesController, options?: { filePath?: string }) {
   try { return await saveBaseCsv(controller, options); }
   catch (error) {
-    new Notice(tt('interface.msg-failed-to-export', '导出 {{filename}} 失败。', { filename: (controller.view?.name || 'Base') + '.csv' }) + ' ' + error.message);
+    new Notice(tt('interface.msg-failed-to-export', '导出 {{filename}} 失败。', { filename: (controller.view?.name || 'Base') + '.csv' }) + ' ' + (error instanceof Error ? error.message : String(error)));
     return null;
   }
 }

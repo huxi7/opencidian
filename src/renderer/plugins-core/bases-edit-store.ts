@@ -6,8 +6,9 @@
  */
 import { BaseDocument } from './bases-model.js';
 import { Desktop } from '../core/ipc.js';
-const applicationQueues = new WeakMap();
-export function enqueueBaseFile(app: App, file, action) {
+import { TFile } from '../core/vault.js';
+const applicationQueues = new WeakMap<App, Map<string, Promise<unknown>>>();
+export function enqueueBaseFile<T>(app: App, file: TFile, action: () => T | Promise<T>): Promise<T> {
   let queues = applicationQueues.get(app);
   if (!queues) { queues = new Map(); applicationQueues.set(app, queues); }
   const key = file.path;
@@ -16,18 +17,18 @@ export function enqueueBaseFile(app: App, file, action) {
   operation.finally(() => { if (queues.get(key) === operation) queues.delete(key); }).catch(() => {});
   return operation;
 }
-export function resolveBaseView(document, identity) {
-  const matches = (document.data.views || []).map((view, index) => ({ view, index })).filter(item => item.view.name === identity.name);
+export function resolveBaseView(document: BaseDocument, identity: { name: string }) {
+  const matches = (document.data.views || []).map((view, index) => ({ view, index })).filter((item) => item.view.name === identity.name);
   if (matches.length !== 1) throw Error(matches.length ? '视图名称重复，请先为视图设置唯一名称。' : '视图已被重命名或删除，请重新打开配置。');
   return matches[0];
 }
-export function transactBaseDocument(app: App, file, action, onSaved = null) {
+export function transactBaseDocument(app: App, file: TFile, action: (current: BaseDocument) => BaseDocument | void | Promise<BaseDocument | void>, onSaved: ((document: BaseDocument) => void) | null = null): Promise<BaseDocument> {
   return enqueueBaseFile(app, file, async () => {
     for (let attempt = 0; attempt < 8; attempt++) {
       const current = new BaseDocument(await app.vault.read(file));
       const next = await action(current);
       if (next && next.source !== current.source) {
-        if (app.vault.getBasePath) {
+        if (typeof app.vault.getBasePath === 'function') {
           const result = await Desktop.compareAndSwapFile({ path: file.path, expected: current.source, text: next.source });
           if (result?.conflict) continue;
           if (!result?.ok) throw Error(result?.error || '数据库保存失败。');

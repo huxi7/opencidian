@@ -11,22 +11,24 @@
 const EPSILON = 1e-6;
 const MAX_DEPTH = 40;
 
-export class QuadNode {
-  declare x0: any;
-  declare y0: any;
-  declare x1: any;
-  declare y1: any;
-  declare data: any;
+interface QuadPoint { x: number; y: number; }
+export interface QuadBucket<T> { data: T | null; dataX: number; dataY: number; next: QuadBucket<T> | null; }
+export class QuadNode<T extends QuadPoint = QuadPoint> {
+  declare x0: number;
+  declare y0: number;
+  declare x1: number;
+  declare y1: number;
+  declare data: T | null;
   declare dataX: number;
   declare dataY: number;
-  declare next: any;
-  declare children: any;
+  declare next: QuadBucket<T> | null;
+  declare children: QuadNode<T>[] | null;
   declare value: number;
   declare massX: number;
   declare massY: number;
   declare r: number;
 
-  constructor(x0, y0, x1, y1) {
+  constructor(x0: number, y0: number, x1: number, y1: number) {
     this.x0 = x0;
     this.y0 = y0;
     this.x1 = x1;
@@ -43,28 +45,28 @@ export class QuadNode {
   }
 }
 
-function quadrantIndex(node, x, y) {
+function quadrantIndex(node: QuadNode, x: number, y: number) {
   const midX = (node.x0 + node.x1) / 2;
   const midY = (node.y0 + node.y1) / 2;
   return (y >= midY ? 2 : 0) + (x >= midX ? 1 : 0);
 }
 
-function createChildren(node) {
+function createChildren<T extends QuadPoint>(node: QuadNode<T>) {
   const midX = (node.x0 + node.x1) / 2;
   const midY = (node.y0 + node.y1) / 2;
   return [
-    new QuadNode(node.x0, node.y0, midX, midY),
-    new QuadNode(midX, node.y0, node.x1, midY),
-    new QuadNode(node.x0, midY, midX, node.y1),
-    new QuadNode(midX, midY, node.x1, node.y1),
+    new QuadNode<T>(node.x0, node.y0, midX, midY),
+    new QuadNode<T>(midX, node.y0, node.x1, midY),
+    new QuadNode<T>(node.x0, midY, midX, node.y1),
+    new QuadNode<T>(midX, midY, node.x1, node.y1),
   ];
 }
 
-function toBucket(node) {
+function toBucket<T extends QuadPoint>(node: QuadNode<T>): QuadBucket<T> {
   return { data: node.data, dataX: node.dataX, dataY: node.dataY, next: node.next };
 }
 
-function placeBucket(node, bucket, depth) {
+function placeBucket<T extends QuadPoint>(node: QuadNode<T>, bucket: QuadBucket<T>, depth: number) {
   let current = node;
   let level = depth;
   for (;;) {
@@ -95,7 +97,7 @@ function placeBucket(node, bucket, depth) {
 }
 
 /** 构建四叉树；空输入返回 null。边界取点集包围盒（退化轴以 EPSILON 加宽）。 */
-export function buildQuadtree(nodes, xOf = (n) => n.x, yOf = (n) => n.y) {
+export function buildQuadtree<T extends QuadPoint>(nodes: T[], xOf = (n: T) => n.x, yOf = (n: T) => n.y) {
   if (!nodes.length) return null;
   let x0 = Infinity;
   let y0 = Infinity;
@@ -111,7 +113,7 @@ export function buildQuadtree(nodes, xOf = (n) => n.x, yOf = (n) => n.y) {
   }
   if (x0 === x1) { x0 -= EPSILON; x1 += EPSILON; }
   if (y0 === y1) { y0 -= EPSILON; y1 += EPSILON; }
-  const root = new QuadNode(x0, y0, x1, y1);
+  const root = new QuadNode<T>(x0, y0, x1, y1);
   for (const node of nodes) {
     placeBucket(root, { data: node, dataX: xOf(node), dataY: yOf(node), next: null }, 0);
   }
@@ -119,12 +121,12 @@ export function buildQuadtree(nodes, xOf = (n) => n.x, yOf = (n) => n.y) {
 }
 
 /** 后序遍历（先子后父），供聚合计算使用。 */
-export function visitAfter(node, callback) {
+export function visitAfter<T extends QuadPoint>(node: QuadNode<T> | null, callback: (node: QuadNode<T>) => void) {
   if (!node) return;
   const stack = [node];
   const order = [];
   while (stack.length) {
-    const quad = stack.pop();
+    const quad = stack.pop()!;
     order.push(quad);
     if (quad.children) for (const child of quad.children) stack.push(child);
   }

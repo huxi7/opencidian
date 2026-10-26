@@ -5,9 +5,11 @@
  *        不使用 CM6 autocompletion，因此不会出现 .cm-completionInfo 或第二预览列。容器宽度由内容收缩（max 500），高度由条目与指令栏决定（max 300）。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
+import type { Extension } from '@codemirror/state';
+import type { Editor } from './editor.js';
 import { EditorView } from '@codemirror/view';
 import {
-  buildLinkContext, collectLinkSuggestions, buildLinkInsertion, emptyItem, noMatchLabel,
+  buildLinkContext, collectLinkSuggestions, buildLinkInsertion, emptyItem, noMatchLabel, type LinkContext, type LinkSuggestion, type LinkMode,
 } from './completions.js';
 import { setIcon } from '../core/icons.js';
 import { renderHighlightedText } from '../core/suggest.js';
@@ -17,28 +19,28 @@ const GAP = 5;
 const EDGE = 10;
 
 export class LinkSuggest {
-  declare editor: any;
+  declare editor: Editor;
   declare app: App;
-  declare view: any;
+  declare view: EditorView;
   declare isOpen: boolean;
-  declare context: any;
+  declare context: LinkContext | null;
   declare mode: string;
-  declare items: any[];
+  declare items: LinkSuggestion[];
   declare selectedIndex: number;
-  declare containerEl: any;
-  declare suggestionEl: any;
-  declare instructionsEl: any;
-  declare onKeyDownBound: any;
-  declare onScrollBound: any;
-  declare onResizeBound: any;
-  declare onBlurBound: any;
-  declare onWindowBlurBound: any;
-  declare onFocusOutBound: any;
-  declare onEditorMouseDownBound: any;
-  declare onDocumentMouseDownBound: any;
-  declare updateExtension: any;
+  declare containerEl: HTMLDivElement;
+  declare suggestionEl: HTMLDivElement;
+  declare instructionsEl: HTMLDivElement;
+  declare onKeyDownBound: (event: KeyboardEvent) => void;
+  declare onScrollBound: () => void;
+  declare onResizeBound: () => void;
+  declare onBlurBound: () => void;
+  declare onWindowBlurBound: () => void;
+  declare onFocusOutBound: (event: FocusEvent) => void;
+  declare onEditorMouseDownBound: () => void;
+  declare onDocumentMouseDownBound: (event: MouseEvent) => void;
+  declare updateExtension: Extension;
 
-  constructor(editor) {
+  constructor(editor: Editor) {
     this.editor = editor;
     this.app = editor.app;
     this.view = editor.cm;
@@ -62,13 +64,13 @@ export class LinkSuggest {
     this.onBlurBound = () => this.close();
     this.onWindowBlurBound = () => this.close();
     this.onFocusOutBound = (event) => {
-      if (!this.containerEl.contains(event.relatedTarget)) this.close();
+      if (!this.containerEl.contains(event.relatedTarget instanceof Node ? event.relatedTarget : null)) this.close();
     };
     this.onEditorMouseDownBound = () => this.close();
     this.onDocumentMouseDownBound = (event) => {
       if (!this.isOpen) return;
-      if (this.containerEl.contains(event.target)) return;
-      if (this.view.contentDOM.contains(event.target)) return;
+      if (this.containerEl.contains(event.target instanceof Node ? event.target : null)) return;
+      if (this.view.contentDOM.contains(event.target instanceof Node ? event.target : null)) return;
       this.close();
     };
 
@@ -147,7 +149,7 @@ export class LinkSuggest {
     this.applySelection(this.selectedIndex >= 0);
   }
 
-  renderItem(item, titleEl, noteEl, auxEl) {
+  renderItem(item: LinkSuggestion, titleEl: HTMLElement, noteEl: HTMLElement, auxEl: HTMLElement) {
     if (item.type === 'none') {
       titleEl.setText(noMatchLabel());
       return;
@@ -195,7 +197,7 @@ export class LinkSuggest {
       ]
       : [{ command: '↵', purpose: t('editor.link-suggestion.label-accept') }];
     for (const instruction of instructions) {
-      this.instructionsEl.createDiv('prompt-instruction', (el) => {
+      this.instructionsEl.createDiv('prompt-instruction', (el: { createSpan: (arg0: { cls?: string; text: string; }) => void; }) => {
         el.createSpan({ cls: 'prompt-instruction-command', text: instruction.command });
         el.createSpan({ text: instruction.purpose });
       });
@@ -206,7 +208,7 @@ export class LinkSuggest {
     return Array.from<HTMLElement>(this.suggestionEl.querySelectorAll('.suggestion-item'));
   }
 
-  applySelection(scroll) {
+  applySelection(scroll: boolean) {
     const elements = this.itemElements();
     elements.forEach((el, index) => el.toggleClass('is-selected', index === this.selectedIndex));
     if (scroll && this.selectedIndex >= 0) {
@@ -215,7 +217,7 @@ export class LinkSuggest {
     }
   }
 
-  setSelectedIndex(index) {
+  setSelectedIndex(index: number) {
     const count = this.items.length;
     if (!count) return;
     if (index < 0) index = count - 1;
@@ -253,7 +255,7 @@ export class LinkSuggest {
   }
 
   /** 原版 Ov：gap=5、左右 10px 边距、下方不够翻上方、两侧都不够时限制高度。 */
-  reposition(anchor) {
+  reposition(anchor: { top: number; left: number; right: number; bottom: number }) {
     const el = this.containerEl;
     const reference = el.offsetParent || document.documentElement;
     const scrollTop = reference.scrollTop || 0;
@@ -294,7 +296,7 @@ export class LinkSuggest {
     el.style.maxHeight = maxHeight;
   }
 
-  onKeyDown(event) {
+  onKeyDown(event: KeyboardEvent) {
     if (!this.isOpen || !this.isFocused()) return;
     if (event.defaultPrevented || event.isComposing) return;
     const key = event.key;
@@ -354,7 +356,7 @@ export class LinkSuggest {
       if (event.shiftKey) {
         event.preventDefault();
         event.stopPropagation();
-        this.accept({ type: 'none' }, event);
+        this.accept(emptyItem(), event);
         return;
       }
       if (this.selectedIndex >= 0) {
@@ -385,9 +387,9 @@ export class LinkSuggest {
     }
   }
 
-  onMouseMove(event) {
+  onMouseMove(event: MouseEvent) {
     if (!this.isOpen) return;
-    const item = event.target.closest ? event.target.closest('.suggestion-item') : null;
+    const item = event.target instanceof Element ? event.target.closest<HTMLElement>('.suggestion-item') : null;
     if (!item) return;
     const index = this.itemElements().indexOf(item);
     if (index < 0 || index === this.selectedIndex) return;
@@ -395,9 +397,9 @@ export class LinkSuggest {
     this.applySelection(false);
   }
 
-  onMouseClick(event) {
+  onMouseClick(event: MouseEvent) {
     if (!this.isOpen || event.defaultPrevented) return;
-    const item = event.target.closest ? event.target.closest('.suggestion-item') : null;
+    const item = event.target instanceof Element ? event.target.closest<HTMLElement>('.suggestion-item') : null;
     if (!item) return;
     event.preventDefault();
     const index = this.itemElements().indexOf(item);
@@ -406,7 +408,7 @@ export class LinkSuggest {
     if (value) this.accept(value, event);
   }
 
-  accept(item, event, marker = '') {
+  accept(item: LinkSuggestion, event: KeyboardEvent | MouseEvent, marker = '') {
     if (!this.context) return;
     const context = this.context;
     const insertion = buildLinkInsertion(item, context, { marker });

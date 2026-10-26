@@ -8,14 +8,17 @@
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 
+import type { TableWidget } from './table-widget.js';
+import type { EditorView } from '@codemirror/view';
+import type { TableDragContext } from './table-types.js';
 /** 原版 gg：自动滚动感应带的最大像素宽（随 devicePixelRatio 缩放）。 */
 const AUTO_SCROLL_ZONE = 16 * (globalThis.devicePixelRatio || 1);
 
-const eventPoint = (event) => ({ x: event.clientX, y: event.clientY });
-const clampValue = (value, min, max) => Math.min(Math.max(value, min), max);
+const eventPoint = (event: MouseEvent) => ({ x: event.clientX, y: event.clientY });
+const clampValue = (value: number, min: number, max: number) => Math.min(Math.max(value, min), max);
 
 /** 原版 yg(scroller, point, delta, 2)：指针贴边时按超出比例滚动容器。 */
-function autoScroll(scroller, point, delta) {
+function autoScroll(scroller: HTMLElement, point: { x: number; y: number }, delta: number) {
   const rect = scroller.getBoundingClientRect();
   const zoneY = Math.min(rect.height / 3, AUTO_SCROLL_ZONE);
   const zoneX = Math.min(rect.width / 3, AUTO_SCROLL_ZONE);
@@ -28,7 +31,7 @@ function autoScroll(scroller, point, delta) {
 }
 
 /** 一个矩形在拖拽轴上的 [min, max]（列取左右边，行取上下边）。 */
-export function axisRange(rect, isCol) {
+export function axisRange(rect: Pick<DOMRect, 'left' | 'right' | 'top' | 'bottom'>, isCol: boolean) {
   return { min: isCol ? rect.left : rect.top, max: isCol ? rect.right : rect.bottom };
 }
 
@@ -36,7 +39,7 @@ export function axisRange(rect, isCol) {
  * 拖拽手柄按下后的完整流程 —— 原版 createDragHandle 的 pointerdown 分支。
  * context = { event, handle, container, tableEl, axis: 'row'|'col', row, col }
  */
-export function attachDragHandle(widget, view, context) {
+export function attachDragHandle(widget: TableWidget, view: EditorView, context: TableDragContext) {
   const { event, handle, container, tableEl, axis, row, col } = context;
   const model = widget.model();
   if (!model) return;
@@ -50,6 +53,7 @@ export function attachDragHandle(widget, view, context) {
   const handleRect = handle.getBoundingClientRect();
   const tableRect = tableEl.getBoundingClientRect();
   const wrapper = tableEl.parentElement;
+  if (!wrapper) return;
   let borderWidth = parseInt(getComputedStyle(handle).getPropertyValue('--table-border-width'), 10);
   if (Number.isNaN(borderWidth)) borderWidth = 0;
   // 原版：候选箱体取自表头单元格（列拖拽）或全部行（行拖拽），坐标相对表格左上角
@@ -80,12 +84,12 @@ export function attachDragHandle(widget, view, context) {
   else widget.selectCells(view, { row, col: 0 }, { row, col: model.alignments.length - 1 }, true);
 
   let pointer = start;
-  let target = null;
-  let marker = null;
+  let target: (typeof boxes)[number] | null = null;
+  let marker: { setCssStyles: (arg0: { display: string; left: string; top: string; height: string; width?: undefined; }|{ display: string; left: string; top: string; width: string; height?: undefined; }) => void; detach: () => void; }|null = null;
   let frameId = 0;
   let lastFrame = 0;
 
-  const update = (time) => {
+  const update = (time: number) => {
     let delta = time - lastFrame;
     if (lastFrame === 0) delta = 50;
     lastFrame = time;
@@ -118,7 +122,7 @@ export function attachDragHandle(widget, view, context) {
       }
     }
   };
-  const frame = (time) => {
+  const frame = (time: number) => {
     frameId = win.requestAnimationFrame(frame);
     update(time);
   };
@@ -162,21 +166,21 @@ export function attachDragHandle(widget, view, context) {
     if (!isMouse) widget.deselectCells();
   };
 
-  const onMove = (moveEvent) => {
+  const onMove = (moveEvent: PointerEvent) => {
     if (moveEvent.pointerId !== event.pointerId) return;
     pointer = eventPoint(moveEvent);
     // 帧循环之外再同步更新一次：落点不依赖 rAF 的帧率（隐藏/被遮挡窗口会节流 rAF）
     update(performance.now());
   };
-  const onEnd = (endEvent) => {
-    if (!endEvent || endEvent.pointerId === undefined || endEvent.pointerId === event.pointerId) {
-      if (endEvent && endEvent.type === 'pointerup' && endEvent.button !== event.button) return;
+  const onEnd = (endEvent: PointerEvent | Event | undefined) => {
+    if (!endEvent || !('pointerId' in endEvent) || endEvent.pointerId === event.pointerId) {
+      if (endEvent && endEvent.type === 'pointerup' && 'button' in endEvent && endEvent.button !== event.button) return;
       cleanup();
       commit();
     }
   };
   const onCancel = () => cleanup();
-  const onKeyDown = (keyEvent) => { if (keyEvent.key === 'Escape') cleanup(); };
+  const onKeyDown = (keyEvent: { key: string; }) => { if (keyEvent.key === 'Escape') cleanup(); };
 
   win.addEventListener('pointermove', onMove);
   win.addEventListener('pointerup', onEnd);

@@ -27,7 +27,20 @@ interface DomCreators {
 }
 declare global {
   type App = import('./app.js').App;
+  var app: App;
+  var __fileToken: string | undefined;
+  var __electronTrash: ((absolutePath: string) => Promise<boolean>) | undefined;
   interface Element extends DomCreators {
+    _line?: number | null;
+    _result?: import('../plugins-core/search-types.js').SearchResult;
+    _moreButtons?: { before: HTMLElement; after: HTMLElement };
+    basesFilterDestroy?: () => void;
+    commitMetadata?: () => void | Promise<void>;
+    basesController?: import('../plugins-core/bases-view.js').BasesController;
+    richRenderSignal?: AbortSignal;
+    _baseRichCleanup?: () => void;
+    _tabDragBound?: boolean;
+    _dropBound?: boolean;
     refreshPropertyTypes?: () => void;
     __menu?: import('./menu.js').Menu;
     _leaf?: import('./workspace-model.js').WorkspaceLeaf;
@@ -79,8 +92,7 @@ declare global {
     __SETTINGS_POPOUT_FORCE__?: boolean;
     __runCommand?: (id: string) => unknown;
     app: import('./app.js').App;
-    OBS_ACT?: any;
+    OBS_ACT?: import('./app.js').AppAction | ((action: import('./app.js').AppAction) => void) | null;
     MathJax?: unknown;
   }
-  interface Error { code?: string; }
 }

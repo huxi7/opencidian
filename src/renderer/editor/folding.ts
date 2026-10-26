@@ -4,8 +4,8 @@
  * [POS]: editor/ 的折叠策略。设置约束所有折叠入口；选区按内到外折叠、外到内展开，一次一层。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
-import { countColumn, Prec, EditorState } from '@codemirror/state';
-import { keymap } from '@codemirror/view';
+import { countColumn, Prec, EditorState, type Text, type Line, type StateEffect, type Extension } from '@codemirror/state';
+import { keymap, type EditorView } from '@codemirror/view';
 import {
   foldService, foldNodeProp, foldGutter, foldKeymap, foldedRanges, unfoldEffect, foldEffect,
   syntaxTree, foldable,
@@ -22,14 +22,18 @@ const support = markdown({
 });
 export const markdownEditing = [support.language, pasteURLAsLink];
 
-const documentRanges = new WeakMap();
+interface FoldRange { from: number; to: number; }
+interface Heading { line: Line; level: number; }
+interface Indent { line: Line; indent: number; }
+interface FoldRanges { headings: Map<number, FoldRange>; indents: Map<number, FoldRange>; frontmatter: FoldRange | null; tabSize: number; }
+const documentRanges = new WeakMap<Text, FoldRanges>();
 
-function collectRanges(state) {
+function collectRanges(state: EditorState): FoldRanges {
   const cached = documentRanges.get(state.doc);
   if (cached && cached.tabSize === state.tabSize) return cached;
   const doc = state.doc;
-  const headings = new Map(), indents = new Map();
-  let frontmatter = null;
+  const headings = new Map<number, FoldRange>(), indents = new Map<number, FoldRange>();
+  let frontmatter: FoldRange | null = null;
   if (doc.line(1).text.trim() === '---') {
     for (let n = 2; n <= doc.lines; n++) {
       if (/^(?:---|\.\.\.)\s*$/.test(doc.line(n).text)) {
@@ -42,7 +46,7 @@ function collectRanges(state) {
   // CM6 可只解析视口；首次折叠仍须找到文档尾部的同级标题。
   const currentTree = syntaxTree(state);
   const tree = currentTree.length === doc.length ? currentTree : markdownLanguage.parser.parse(doc.toString());
-  const headers = [];
+  const headers: Heading[] = [];
   tree.iterate({
     enter(node) {
       if (/^(FencedCode|CodeBlock|HTMLBlock|Blockquote|ListItem)$/.test(node.name)) return false;
@@ -52,22 +56,22 @@ function collectRanges(state) {
       return false;
     },
   });
-  const openHeadings = [];
-  const finishHeading = (header, to) => {
+  const openHeadings: Heading[] = [];
+  const finishHeading = (header: Heading, to: number) => {
     if (to > header.line.to) headings.set(header.line.from, { from: header.line.to, to });
   };
   for (const header of headers) {
-    while (openHeadings.length && openHeadings.at(-1).level >= header.level) {
-      finishHeading(openHeadings.pop(), doc.line(header.line.number - 1).to);
+    while (openHeadings.length && openHeadings[openHeadings.length - 1].level >= header.level) {
+      finishHeading(openHeadings.pop()!, doc.line(header.line.number - 1).to);
     }
     openHeadings.push(header);
   }
   for (const header of openHeadings) finishHeading(header, doc.length);
 
   // 空行不改变缩进层级；Tab 按当前 tabSize 展开为列。
-  const parents = [];
-  let lastContent = null;
-  const finishIndent = (parent) => {
+  const parents: Indent[] = [];
+  let lastContent: Line | null = null;
+  const finishIndent = (parent: Indent) => {
     if (lastContent && lastContent.number > parent.line.number) {
       indents.set(parent.line.from, { from: parent.line.to, to: lastContent.to });
     }
@@ -76,24 +80,24 @@ function collectRanges(state) {
     const line = doc.line(n), first = line.text.search(/\S/);
     if (first < 0) continue;
     const indent = countColumn(line.text.slice(0, first), state.tabSize);
-    while (parents.length && parents.at(-1).indent >= indent) finishIndent(parents.pop());
+    while (parents.length && parents[parents.length - 1].indent >= indent) finishIndent(parents.pop()!);
     parents.push({ line, indent });
     lastContent = line;
   }
-  while (parents.length) finishIndent(parents.pop());
+  while (parents.length) finishIndent(parents.pop()!);
   const result = { headings, indents, frontmatter, tabSize: state.tabSize };
   documentRanges.set(doc, result);
   return result;
 }
 
-function rangeFor(state, start, heading, indent) {
+function rangeFor(state: EditorState, start: number, heading: boolean, indent: boolean): FoldRange | null {
   if (!heading && !indent) return null;
   const ranges = collectRanges(state);
   return (heading && ranges.headings.get(start)) || (indent && ranges.indents.get(start)) ||
     (start === 0 && ranges.frontmatter) || null;
 }
 
-function foldMarker(open) {
+function foldMarker(open: boolean) {
   const marker = document.createElement('span');
   marker.className = 'collapse-indicator' + (open ? '' : ' is-collapsed');
   marker.textContent = open ? '⌄' : '›';
@@ -101,8 +105,8 @@ function foldMarker(open) {
   return marker;
 }
 
-export function foldingExtensions(heading, indent) {
-  const extensions = [
+export function foldingExtensions(heading: boolean, indent: boolean) {
+  const extensions: Extension[] = [
     Prec.high(foldService.of((state, start) => rangeFor(state, start, heading, indent))),
     EditorState.transactionFilter.of(transaction => {
       const effects = transaction.effects.filter(effect => {
@@ -122,8 +126,8 @@ export function foldingExtensions(heading, indent) {
   return extensions;
 }
 
-export function unfoldDisabledFolds(state, heading, indent) {
-  const effects = [];
+export function unfoldDisabledFolds(state: EditorState, heading: boolean, indent: boolean) {
+  const effects: StateEffect<unknown>[] = [];
   foldedRanges(state).between(0, state.doc.length, (from, to) => {
     const range = rangeFor(state, state.doc.lineAt(from).from, heading, indent);
     if (!range || range.from !== from || range.to !== to) effects.push(unfoldEffect.of({ from, to }));
@@ -132,17 +136,17 @@ export function unfoldDisabledFolds(state, heading, indent) {
 }
 
 /** 原版foldMore/foldLess：每个选区只改变与其相交的一层，不触碰其他分支。 */
-export function foldSelectionStep(view, collapse) {
+export function foldSelectionStep(view: EditorView, collapse: boolean) {
   const { state } = view;
-  const ranges = [];
+  const ranges: FoldRange[] = [];
   for (let number = 1; number <= state.doc.lines; number++) {
     const line = state.doc.line(number);
     const range = foldable(state, line.from, line.to);
     if (range) ranges.push(range);
   }
-  const folded = new Set();
+  const folded = new Set<number>();
   foldedRanges(state).between(0, state.doc.length, from => { folded.add(from); });
-  const changes = new Map();
+  const changes = new Map<number, FoldRange>();
   for (const selection of state.selection.ranges) {
     const to = state.doc.lineAt(selection.to).to;
     const candidates = ranges.filter(range => selection.from <= range.to && to >= range.from);

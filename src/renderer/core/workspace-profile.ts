@@ -6,22 +6,25 @@
  * 每次展开重读已注册库；关闭菜单时释放监听并清除按钮活动态。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
+import type { Workspace } from './workspace.js';
+import type { WorkspaceNode, WorkspaceLeaf, WorkspaceTabs as WorkspaceTabs, WorkspaceSplit as WorkspaceSplit } from './workspace-model.js';
 import { Desktop, ipcSend } from './ipc.js';
 import { setIcon } from './icons.js';
 import { tt } from './i18n.js';
 import { Menu } from './menu.js';
 import { Notice } from './notices.js';
 
-const nodePath = require('path');
-const { clipboard } = require('electron');
-const profiles = new WeakMap();
+const nodePath: typeof import('node:path') = require('path');
+const { clipboard } = require('electron') as typeof import('electron');
+interface ProfileState { workspace: Workspace; containerEl: HTMLElement; switcherEl: HTMLElement; nameEl: HTMLElement; helpEl: HTMLElement; settingsEl: HTMLElement; menu: Menu | null; }
+const profiles = new WeakMap<Workspace, ProfileState>();
 const MENU_GAP = 4;
 const MENU_EDGE = 8;
 
 // ---------------------------------------------------------------------------
 // 稳定节点：重绘只迁移组件，不重复注册按钮事件。
 // ---------------------------------------------------------------------------
-export function createVaultProfile(workspace) {
+export function createVaultProfile(workspace: Workspace): HTMLElement {
   if (profiles.has(workspace)) return refreshVaultProfile(workspace);
 
   const containerEl = createDiv('workspace-sidedock-vault-profile');
@@ -36,7 +39,7 @@ export function createVaultProfile(workspace) {
   setIcon(helpEl, 'circle-help');
   setIcon(settingsEl, 'settings');
 
-  const state = { workspace, containerEl, switcherEl, nameEl, helpEl, settingsEl, menu: null };
+  const state: ProfileState = { workspace, containerEl, switcherEl, nameEl, helpEl, settingsEl, menu: null };
   profiles.set(workspace, state);
   switcherEl.setAttr('aria-haspopup', 'menu');
   switcherEl.setAttr('aria-expanded', 'false');
@@ -57,7 +60,7 @@ export function createVaultProfile(workspace) {
   return refreshVaultProfile(workspace);
 }
 
-export function refreshVaultProfile(workspace) {
+export function refreshVaultProfile(workspace: Workspace): HTMLElement {
   const state = profiles.get(workspace);
   if (!state) return createVaultProfile(workspace);
   const path = currentPath(workspace);
@@ -72,17 +75,17 @@ export function refreshVaultProfile(workspace) {
   return state.containerEl;
 }
 
-function currentPath(workspace) {
+function currentPath(workspace: Workspace) {
   return Desktop.vault()?.path || workspace.app.vaultPath
     || workspace.app.vault?.adapter?.getBasePath() || '';
 }
 
-function labelButton(element, label) {
+function labelButton(element: HTMLElement, label: string) {
   element.title = label;
   element.setAttr('aria-label', label);
 }
 
-function bindButton(element, action) {
+function bindButton(element: HTMLElement, action: () => unknown) {
   element.setAttr('role', 'button');
   element.setAttr('tabindex', '0');
   element.addEventListener('click', (event) => {
@@ -100,7 +103,7 @@ function bindButton(element, action) {
 // ---------------------------------------------------------------------------
 // 菜单内容：注册表只在展开时读取，不提供移除库入口。
 // ---------------------------------------------------------------------------
-function openVaultMenu(state) {
+function openVaultMenu(state: ProfileState) {
   if (state.menu) return;
   const path = currentPath(state.workspace);
   const entries = Object.values(Desktop.vaultList() || {});
@@ -123,7 +126,7 @@ function openVaultMenu(state) {
   showMenu(state, menu);
 }
 
-function openPathMenu(state) {
+function openPathMenu(state: ProfileState) {
   state.menu?.close();
   const path = currentPath(state.workspace);
   if (!path) return;
@@ -140,7 +143,7 @@ function openPathMenu(state) {
   showMenu(state, menu);
 }
 
-function addAction(menu, title, icon, action) {
+function addAction(menu: Menu, title: string, icon: string|null, action: () => unknown) {
   return menu.addItem((item) => {
     item.setTitle(title);
     if (icon) item.setIcon(icon);
@@ -155,15 +158,16 @@ function addAction(menu, title, icon, action) {
 // ---------------------------------------------------------------------------
 // 菜单生命周期：适配现有 Menu，不改变公共菜单基座。
 // ---------------------------------------------------------------------------
-function showMenu(state, menu) {
+function showMenu(state: ProfileState, menu: Menu) {
   const anchor = state.switcherEl;
   const rect = anchor.getBoundingClientRect();
   const dom = menu.showAtPosition({ x: rect.left, y: rect.top });
+  if (!dom) return;
   const close = () => menu.close();
   const onMouseDown = menu._docMouseDown;
   const onKeyDown = menu._docKeyDown;
   menu._docMouseDown = (event) => {
-    if (!anchor.contains(event.target)) onMouseDown(event);
+    if (!anchor.contains(event.target instanceof Node ? event.target : null)) onMouseDown?.(event);
   };
   menu._docKeyDown = (event) => {
     if (event.key === 'Tab') { close(); return; }
@@ -174,12 +178,12 @@ function showMenu(state, menu) {
         return;
       }
     }
-    onKeyDown(event);
+    onKeyDown?.(event);
   };
-  const listeners = [
-    ['mousedown', menu._docMouseDown],
-    ['contextmenu', menu._docContext],
-    ['keydown', menu._docKeyDown],
+  const listeners: Array<[string, EventListener | null | undefined]> = [
+    ['mousedown', menu._docMouseDown as EventListener],
+    ['contextmenu', menu._docContext as EventListener | undefined],
+    ['keydown', menu._docKeyDown as EventListener],
   ];
   const observer = new MutationObserver(() => {
     if (!anchor.isConnected || !anchor.getClientRects().length) close();
@@ -195,7 +199,7 @@ function showMenu(state, menu) {
     }
     // Menu 在下一任务注册监听；同一任务内关闭后仍须撤销迟到的注册。
     setTimeout(() => {
-      for (const [type, listener] of listeners) document.removeEventListener(type, listener, true);
+      for (const [type, listener] of listeners) listener && document.removeEventListener(type, listener, true);
     }, 0);
   };
   state.menu = menu;

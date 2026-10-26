@@ -9,18 +9,19 @@
 import { t } from '../core/i18n.js';
 import { setIcon } from '../core/icons.js';
 import { Menu } from '../core/menu.js';
+import { MarkdownView } from '../views/markdown-view.js';
 
 export const nameKey = 'plugins.editor-status';
 
 export function create(app: App) {
-  let itemEl = null;
-  let iconEl = null;
+  let itemEl: HTMLDivElement|null = null;
+  let iconEl: Element|null|undefined = null;
 
   function activeMarkdownView() {
-    return app.workspace.getActiveViewOfType('markdown') || null;
+    return app.workspace.getActiveViewOfType(MarkdownView) || null;
   }
 
-  function modeLabel(view) {
+  function modeLabel(view: MarkdownView) {
     switch (view.getMode()) {
       case 'preview': return t('plugins.editor-status.read') || 'Reading view';
       case 'source': return t('plugins.editor-status.edit-source') || 'Source mode';
@@ -28,7 +29,7 @@ export function create(app: App) {
     }
   }
 
-  function modeIcon(view) {
+  function modeIcon(view: MarkdownView) {
     // 原版：lucide-book-open / lucide-code-2 / lucide-edit-3
     switch (view.getMode()) {
       case 'preview': return 'lucide-book-open';
@@ -38,7 +39,7 @@ export function create(app: App) {
   }
 
   function update() {
-    if (!itemEl) return;
+    if (!itemEl || !iconEl) return;
     const view = activeMarkdownView();
     if (!view || !view.getMode) { itemEl.toggle(false); return; }
     itemEl.toggle(true);
@@ -49,11 +50,11 @@ export function create(app: App) {
     itemEl.setAttr('data-tooltip-position', 'top');
   }
 
-  function showMenu(ev) {
+  function showMenu(ev: MouseEvent) {
     const view = activeMarkdownView();
     if (!view) return;
     const menu = new Menu(app);
-    const setMode = (mode) => {
+    const setMode = (mode: string) => {
       view.mode = mode;
       if (mode !== 'preview') view._lastEditMode = mode;
       view._applyMode();
@@ -76,6 +77,7 @@ export function create(app: App) {
 
   return {
     onload() {
+      if (!app.workspace.statusBar) return;
       itemEl = app.workspace.statusBar.createDiv('status-bar-item plugin-editor-status mod-clickable');
       iconEl = itemEl.createSpan('status-bar-item-icon');
       itemEl.onclick = (ev) => showMenu(ev);

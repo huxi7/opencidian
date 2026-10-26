@@ -7,10 +7,11 @@
  */
 /* Core plugin: word-count — word & character counts in the status bar. */
 import { getNouns } from '../core/i18n.js';
+import { View } from '../core/view.js';
 
 export const nameKey = 'plugins.word-count';
 
-function countWords(text) {
+function countWords(text: string) {
   // Obsidian counts CJK characters individually and runs of latin as words
   if (!text) return 0;
   let words = 0;
@@ -24,9 +25,9 @@ function countWords(text) {
 }
 
 export function create(app: App) {
-  let itemEl = null;
-  let wordEl = null;
-  let charEl = null;
+  let itemEl: HTMLDivElement|null = null;
+  let wordEl: HTMLSpanElement|null = null;
+  let charEl: HTMLSpanElement|null = null;
 
   function activeView() {
     const view = app.workspace.getActiveViewOfType('markdown');
@@ -35,7 +36,7 @@ export function create(app: App) {
   }
 
   /** 原版 onSelection：有选区时只统计选区文本。 */
-  function selectionText(view) {
+  function selectionText(view: View) {
     const cm = view && view.editor && view.editor.cm;
     if (!cm || !cm.state) return null;
     const main = cm.state.selection && cm.state.selection.main;
@@ -44,7 +45,7 @@ export function create(app: App) {
   }
 
   function update() {
-    if (!itemEl) return;
+    if (!itemEl || !wordEl || !charEl) return;
     const view = activeView();
     if (!view) { itemEl.toggle(false); return; }
     const selection = selectionText(view);
@@ -59,6 +60,7 @@ export function create(app: App) {
 
   return {
     onload() {
+      if (!app.workspace.statusBar) return;
       itemEl = app.workspace.statusBar.createDiv('status-bar-item plugin-word-count');
       wordEl = itemEl.createSpan('status-bar-item-segment');
       charEl = itemEl.createSpan('status-bar-item-segment');

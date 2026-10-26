@@ -9,16 +9,18 @@
 import { t } from './i18n.js';
 import { installViewMoreAction } from './view-pane-menu.js';
 import { setIcon } from './icons.js';
+import { WorkspaceLeaf } from './workspace-model.js';
+import { Workspace } from './workspace.js';
 
 /**
  * 原版 View 构造器（1.14.4 app.js:1236469）落 view-header 三个子块。
  * 桌面态 left 只有 view-header-nav-buttons（移动端才多一个侧栏开关按钮）；
  * 空视图同样有 ← →（用户截图证），因此这里不做视图类型分支。
  */
-export function renderViewHeader(workspace, leaf, header) {
+export function renderViewHeader(workspace: Workspace, leaf: WorkspaceLeaf, header: HTMLDivElement) {
   const headerLeft = header.createDiv('view-header-left');
   const navButtons = headerLeft.createDiv('view-header-nav-buttons');
-  const makeNavButton = (icon, label, commandId) => {
+  const makeNavButton = (icon: string, label: string, commandId: string) => {
     const button = navButtons.createEl('button', {
       cls: 'clickable-icon',
       attr: { 'aria-label': label, 'aria-disabled': 'true' },
@@ -46,9 +48,9 @@ export function renderViewHeader(workspace, leaf, header) {
 }
 
 /** 原版 app.js:1051550 的 mod-fade 观察器：节流 10ms，按滚动位置切换渐隐蒙版。 */
-function installTitleFade(leaf, container, titleEl) {
+function installTitleFade(leaf: WorkspaceLeaf, container: HTMLDivElement, titleEl: HTMLElement) {
   container.addClass('mod-fade');
-  let timer = null;
+  let timer: NodeJS.Timeout|null = null;
   const update = () => {
     timer = null;
     const scrollLeft = titleEl.scrollLeft;
@@ -68,7 +70,7 @@ function installTitleFade(leaf, container, titleEl) {
  * 只渲染父文件夹路径；每段一个可点 view-header-breadcrumb，段后补 "/" 分隔符；
  * 无父路径（根目录/非文件视图）时留空，由 CSS :empty 隐藏。
  */
-function renderViewBreadcrumbs(workspace, leaf) {
+function renderViewBreadcrumbs(workspace: Workspace, leaf: WorkspaceLeaf) {
   const parentEl = leaf._viewTitleParentEl;
   if (!parentEl) return;
   parentEl.empty();
@@ -83,13 +85,13 @@ function renderViewBreadcrumbs(workspace, leaf) {
     crumb.setAttr('aria-label', name);          // 原版桌面端给面包屑设 aria-label
     crumb.addEventListener('click', () => revealFolderInExplorer(workspace, folderPath));
     // 原版右键弹文件夹 file-menu；本仓库复用文件树的面包菜单
-    crumb.addEventListener('contextmenu', (ev) => showFolderContextMenu(workspace, folderPath, ev));
+    crumb.addEventListener('contextmenu', (ev: MouseEvent) => showFolderContextMenu(workspace, folderPath, ev));
     parentEl.createSpan({ cls: 'view-header-breadcrumb-separator', text: '/' });
   });
 }
 
 /** 原版 breadcrumb click：在文件浏览器里揭示并展开该文件夹。 */
-function revealFolderInExplorer(workspace, folderPath) {
+function revealFolderInExplorer(workspace: Workspace, folderPath: string) {
   const folder = workspace.app.vault.getFolderByPath(folderPath);
   if (!folder) return;
   const explorerLeaf = workspace.getLeavesOfType('file-explorer')[0];
@@ -101,7 +103,7 @@ function revealFolderInExplorer(workspace, folderPath) {
 }
 
 /** 原版 breadcrumb contextmenu：文件夹上下文菜单（file-explorer 的 _showFolderMenu）。 */
-function showFolderContextMenu(workspace, folderPath, ev) {
+function showFolderContextMenu(workspace: Workspace, folderPath: string, ev: MouseEvent) {
   const folder = workspace.app.vault.getFolderByPath(folderPath);
   const explorerLeaf = workspace.getLeavesOfType('file-explorer')[0];
   const view = explorerLeaf && explorerLeaf.view;
@@ -113,9 +115,9 @@ function showFolderContextMenu(workspace, folderPath, ev) {
 
 /** 原版 View.updateNavButtons：禁用态跟随历史可用性。
     本仓库历史在 app 命令层（app:go-back/forward），用 checkCallback(true) 查询可用性。 */
-export function syncNavButtons(workspace, leaf) {
+export function syncNavButtons(workspace: Workspace, leaf: WorkspaceLeaf) {
   const app = workspace.app;
-  const available = (id) => {
+  const available = (id: string) => {
     const commands = app && app.commands;
     const cmd = commands && commands.findCommand ? commands.findCommand(id) : null;
     if (!cmd) return false;
@@ -126,7 +128,7 @@ export function syncNavButtons(workspace, leaf) {
   if (leaf._viewNavForwardEl) leaf._viewNavForwardEl.setAttr('aria-disabled', String(!available('app:go-forward')));
 }
 
-export function fillViewHeader(workspace, leaf) {
+export function fillViewHeader(workspace: Workspace, leaf: WorkspaceLeaf) {
   const view = leaf.view;
   if (!view) return;
   if (leaf._viewTitleEl) {
@@ -145,6 +147,6 @@ export function fillViewHeader(workspace, leaf) {
     actions.empty();
     view._fillViewActions && view._fillViewActions(actions);
     if (view.file) installViewMoreAction(view, actions);
-    if (focused) actions.querySelector(focused)?.focus({ preventScroll: true });
+    if (focused) actions.querySelector<HTMLElement>(focused)?.focus({ preventScroll: true });
   }
 }

@@ -4,22 +4,26 @@
  * [POS]: 卡片与看板共用封面适配器。资源和失败提示复用富值 DOM，不自行加载宿主文件。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
+import type { BaseQueryRow } from './bases-types.js';
+import type { ReadyBasesController as BasesController } from './bases-view.js';
 import { propertyValue } from './bases-model.js';
-import { BaseDisplay, BaseLink, baseValueType } from './bases-values.js';
+import { BaseDisplay, BaseLink } from './bases-values.js';
 import { renderBaseRichValue } from './bases-values-render.js';
+import { BaseFile } from './bases-values-file.js';
+import { App } from '../core/app.js';
 
-function resolveCoverFile(app: App, target, sourcePath) {
-  const path = target.split('#')[0], sourceFolder = sourcePath.split('/').slice(0, -1).join('/');
+function resolveCoverFile(app: App, target: string, sourcePath: string|undefined) {
+  const path = target.split('#')[0], sourceFolder = (sourcePath || '').split('/').slice(0, -1).join('/');
   const resolved = app.vault.getFileByPath(path) || app.metadataCache.getFirstLinkpathDest(path, sourcePath);
   if (resolved) return typeof resolved === 'string' ? app.vault.getFileByPath(resolved) : resolved;
   const relative = require('path').posix.join(sourceFolder, path);
   const nearby = app.vault.getFileByPath(relative);
   if (nearby) return nearby;
   // 元数据短名索引只登记笔记。图片短名从同一 Vault 文件表解析。
-  const basename = path.split('/').pop().toLowerCase();
+  const basename = (path.split('/').pop() || '').toLowerCase();
   return app.vault.getFiles().filter(file => file.name.toLowerCase() === basename).sort((a, b) => a.path.length - b.path.length || a.path.localeCompare(b.path))[0] || null;
 }
-export function renderBaseCover(controller, card, row, kanban = false) {
+export function renderBaseCover(controller: BasesController, card: HTMLElement, row: BaseQueryRow, kanban = false) {
   const view = controller.view, property = Object.hasOwn(view, 'image') ? view.image : view.imageProperty;
   if (!property) return;
   const cover = card.ownerDocument.createElement('div'); cover.className = 'bases-cards-cover';
@@ -34,7 +38,7 @@ export function renderBaseCover(controller, card, row, kanban = false) {
     else {
       let path;
       if (value instanceof BaseLink) path = value.kind === 'url' ? value.path : value.resolve()?.path || value.path;
-      else if (baseValueType(value) === 'file') path = value.path;
+      else if (value instanceof BaseFile) path = value.path;
       else if (typeof value === 'string') path = value;
       else throw new Error('封面属性需要图片路径或链接');
       if (/^#[a-f\d]{6}$/i.test(path)) { cover.style.backgroundColor = path; return; }
@@ -53,6 +57,6 @@ export function renderBaseCover(controller, card, row, kanban = false) {
       img.style.objectFit = view.imageFit === 'contain' ? 'contain' : 'cover'; img.draggable = false;
     }
   } catch (error) {
-    const message = cover.ownerDocument.createElement('div'); message.className = 'bases-warning'; message.textContent = error.message; cover.appendChild(message);
+    const message = cover.ownerDocument.createElement('div'); message.className = 'bases-warning'; message.textContent = (error instanceof Error ? error.message : String(error)); cover.appendChild(message);
   }
 }

@@ -4,10 +4,10 @@
  * [POS]: 忽略规则的共享叶子模块。元数据缓存向插件暴露统一入口。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
-export function createUserIgnoreMatcher(getFilters) {
-  let serialized = null;
-  let rules = [];
-  return (fileOrPath) => {
+export function createUserIgnoreMatcher(getFilters: () => unknown) {
+  let serialized: string | null = null;
+  let rules: RegExp[] = [];
+  return (fileOrPath: string | { path: string } | null | undefined) => {
     const path = typeof fileOrPath === 'string' ? fileOrPath : fileOrPath?.path;
     if (typeof path !== 'string') return false;
     const value = getFilters();

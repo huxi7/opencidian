@@ -14,20 +14,22 @@ import { ipcSend } from './ipc.js';
 import { Notice } from './notices.js';
 import { Modal } from './modals.js';
 import { checkForUpdates } from './update-check.js';
+import type { CommandDefinition } from './commands.js';
+import type { ViewState } from '../../contracts.js';
 import { WorkspaceTabs } from './workspace-model.js';
 import { registerDocumentWindowCommands } from './document-window.js';
 
 export function registerAppCommands(app: App) {
   registerDocumentWindowCommands(app);
-  const add = (spec) => app.commands.addCommand(spec);
+  const add = (spec: CommandDefinition) => app.commands.addCommand(spec);
   const ws = () => app.workspace;
 
   // ------------------------------------------------------------------
   // Navigation history (global, like the original's window history)
   // ------------------------------------------------------------------
-  const history = { stack: [], index: -1, navigating: false };
+  const history = { stack: [] as string[], index: -1, navigating: false };
 
-  function pushHistory(path) {
+  function pushHistory(path: string) {
     if (history.navigating) return;
     if (history.stack[history.index] === path) return;
     history.stack = history.stack.slice(0, history.index + 1);
@@ -38,11 +40,11 @@ export function registerAppCommands(app: App) {
 
   app.workspace.on('file-open', (file) => { if (file) pushHistory(file.path); });
 
-  async function navigate(delta) {
+  async function navigate(delta: number) {
     const next = history.index + delta;
     if (next < 0 || next >= history.stack.length) return;
     history.index = next;
-    const file = app.vault.getAbstractFileByPath(history.stack[next]);
+    const file = app.vault.getFileByPath(history.stack[next]);
     if (!file) return;
     history.navigating = true;
     try { await app.workspace.openFile(file); }
@@ -99,7 +101,7 @@ export function registerAppCommands(app: App) {
       modal.setTitle('Debug info');
       modal.contentEl.createEl('pre', { text: JSON.stringify({
         vault: app.vaultPath,
-        layout: app.workspace.getLayout ? 'available' : 'n/a',
+        layout: 'available',
         leaves: app.workspace._leafMap ? app.workspace._leafMap.size : 0,
       }, null, 2) });
       modal.open();
@@ -109,7 +111,7 @@ export function registerAppCommands(app: App) {
   // ------------------------------------------------------------------
   // Tabs / leaves
   // ------------------------------------------------------------------
-  const closedStack = [];
+  const closedStack: Array<{ type: string; state: Record<string, unknown>; side: 'left' | 'right' | 'center' }> = [];
 
   add({
     id: 'workspace:close',
@@ -120,7 +122,7 @@ export function registerAppCommands(app: App) {
       if (!app.workspace.canCloseLeaf(leaf)) return false;
       if (!checking) {
         const state = leaf.view && leaf.view.getState ? leaf.view.getState() : null;
-        const type = leaf.view && leaf.view.getViewType ? leaf.view.getViewType() : null;
+        const type = leaf.view?.getViewType() || 'empty';
         closedStack.push({ type, state: state || {}, side: app.workspace._sideOf(leaf) });
         if (closedStack.length > 20) closedStack.shift();
         leaf.detach && leaf.detach();
@@ -143,11 +145,11 @@ export function registerAppCommands(app: App) {
       if (!closedStack.length) return false;
       if (!checking) {
         const entry = closedStack.pop();
+        if (!entry) return false;
         const side = entry.side || 'center';
         let leaf;
         if (side === 'left' || side === 'right') {
-          leaf = app.workspace.ensureSideLeaf(entry.type, side, { reveal: true });
-          if (entry.state && leaf.view && leaf.view.setState) leaf.view.setState(entry.state);
+          void app.workspace.ensureSideLeaf(entry.type, side, { reveal: true }).then(leaf => leaf.view?.setState(entry.state));
         } else {
           leaf = app.workspace.getLeaf('tab');
           leaf.setViewState({ type: entry.type, state: entry.state });
@@ -209,7 +211,7 @@ export function registerAppCommands(app: App) {
       if (!leaf) return;
       const newLeaf = app.workspace.createLeafBySplit(leaf, 'vertical');
       const st = leaf.view && leaf.view.getState ? leaf.view.getState() : null;
-      await newLeaf.setViewState(st && st.file ? { type: leaf.view.getViewType(), state: { file: st.file, mode: st.mode } } : { type: 'empty' });
+      await newLeaf.setViewState(st && st.file ? { type: leaf.view?.getViewType() || 'empty', state: { file: st.file, mode: st.mode } } : { type: 'empty' });
       app.workspace.setActiveLeaf(newLeaf, { focus: true });
     },
   });
@@ -222,7 +224,7 @@ export function registerAppCommands(app: App) {
       if (!leaf) return;
       const newLeaf = app.workspace.createLeafBySplit(leaf, 'horizontal');
       const st = leaf.view && leaf.view.getState ? leaf.view.getState() : null;
-      await newLeaf.setViewState(st && st.file ? { type: leaf.view.getViewType(), state: { file: st.file, mode: st.mode } } : { type: 'empty' });
+      await newLeaf.setViewState(st && st.file ? { type: leaf.view?.getViewType() || 'empty', state: { file: st.file, mode: st.mode } } : { type: 'empty' });
       app.workspace.setActiveLeaf(newLeaf, { focus: true });
     },
   });
