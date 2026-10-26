@@ -29,6 +29,7 @@ git push origin v1.0.1
 5. 三平台全过后生成 SHA256SUMS，附件齐备才公开。
 
 安装包分别为 DMG、NSIS EXE 和 AppImage。
+AppImage 打包名使用 x86_64；上传时统一为下载名 x64。
 macOS Intel、Windows ARM64 与 Linux ARM64 尚未配置。
 安装包未签名，也未做 macOS 公证。
 Linux CI 使用虚拟显示；仅测试进程关闭 Chromium sandbox。

@@ -1,7 +1,8 @@
 /**
  * [INPUT]: GitHub 事件、发布标签、打包文件与内置 GITHUB_TOKEN。
  * [OUTPUT]: 三平台安装包和 SHA256SUMS；完整草稿才转为公开版本。
- * [POS]: 发布事务。按列表读取草稿，锁定标签源码；允许新工具重试旧标签，不覆盖公开版本。
+ * [POS]: 发布事务。按列表读取草稿，锁定标签源码，统一下载文件名；允许新工具重试旧标签。
+ * 不覆盖已经公开的 Release。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 import fs from 'node:fs';
@@ -59,6 +60,7 @@ if (command === 'prepare') {
   if (!spec) throw Error('未知发布目标');
   requireDraft(release());
   const file = path.join('release', spec.asset);
+  if (spec.buildAsset) fs.copyFileSync(path.join('release', spec.buildAsset), file);
   const bytes = fs.readFileSync(file);
   if (!bytes.length) throw Error('安装包为空');
   const digest = 'sha256:' + createHash('sha256').update(bytes).digest('hex');

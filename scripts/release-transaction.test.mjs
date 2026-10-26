@@ -1,6 +1,6 @@
 /**
  * [INPUT]: release.mjs 发布事务与隔离的 Git、GitHub、文件替身。
- * [OUTPUT]: 草稿读取、固定源码重试、上传摘要和公开保护的回归回执。
+ * [OUTPUT]: 草稿读取、固定源码重试、安装包文件名、摘要和公开保护回归。
  * [POS]: 执行真实发布分支，不联网、不创建标签、不写入真实 Release。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
@@ -25,7 +25,7 @@ const installers = RELEASE_TARGETS.map(item => ({ name: item.asset, state: 'uplo
 function simulate(command, options = {}) {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'opensidian-release-test-'));
   const outputFile = path.join(directory, 'output');
-  const calls = [], writes = [];
+  const calls = [], writes = [], copies = [];
   let draft = options.missing ? undefined : {
     id: 42, tag_name: 'v1.0.0', draft: !options.published,
     assets: structuredClone(options.assets ?? []), html_url: 'https://example.test/release/v1.0.0',
@@ -34,6 +34,7 @@ function simulate(command, options = {}) {
   const localFs = {
     ...fs,
     mkdtempSync: () => fs.mkdtempSync(path.join(directory, 'notes-')),
+    copyFileSync: (from, to) => copies.push([from, to]),
     readFileSync: (file, ...args) => String(file).startsWith('release' + path.sep) ? bytes : fs.readFileSync(file, ...args),
   };
   function execFileSync(binary, args) {
@@ -89,7 +90,7 @@ function simulate(command, options = {}) {
     return [line.slice(0, index), line.slice(index + 1)];
   })) : {};
   fs.rmSync(directory, { recursive: true, force: true });
-  return { error, calls, writes, draft, outputs };
+  return { error, calls, writes, copies, draft, outputs };
 }
 
 check('标签事件创建草稿并输出固定源码', () => {
@@ -139,7 +140,14 @@ check('上传通过列表与 ID 读取草稿并校验摘要', () => {
   const run = simulate('upload');
   assert.ifError(run.error);
   assert.equal(run.draft.assets[0].name, 'opensidian-linux-x64.AppImage');
+  assert.deepEqual(run.copies, [[path.join('release', 'opensidian-linux-x86_64.AppImage'), path.join('release', 'opensidian-linux-x64.AppImage')]]);
   assert.ok(run.calls.some(args => args[2] === 'repos/test/repo/releases/42'));
+});
+check('macOS 安装包保持原始文件名', () => {
+  const run = simulate('upload', { target: 'macos-arm64' });
+  assert.ifError(run.error);
+  assert.equal(run.copies.length, 0);
+  assert.equal(run.draft.assets[0].name, 'opensidian-macos-arm64.dmg');
 });
 check('上传摘要不一致立即失败', () => assert.match(simulate('upload', { badDigest: true }).error?.message ?? '', /远端安装包校验失败/));
 for (const command of ['prepare', 'upload', 'publish']) {

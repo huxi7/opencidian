@@ -31,6 +31,11 @@ for (const [platform, arch, binary] of [['darwin', 'arm64', 'OpenSidian'], ['win
   });
 }
 const assets = RELEASE_TARGETS.map(item => ({ name: item.asset, state: 'uploaded', size: 12, digest: 'sha256:' + 'a'.repeat(64) }));
+check('AppImage 上游架构名映射为稳定下载名', () => {
+  const linux = RELEASE_TARGETS.find(item => item.target === 'linux-x64');
+  assert.equal(linux.buildAsset, 'opensidian-linux-x86_64.AppImage');
+  assert.equal(linux.asset, 'opensidian-linux-x64.AppImage');
+});
 check('三平台附件齐全才允许发布', () => verifyAssets(assets));
 check('缺少一个平台拒绝发布', () => assert.throws(() => verifyAssets(assets.slice(1))));
 check('重复附件拒绝发布', () => assert.throws(() => verifyAssets([assets[0], assets[0], assets[2]])));
