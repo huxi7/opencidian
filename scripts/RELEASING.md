@@ -75,6 +75,7 @@ gh workflow run release.yml --ref main -f validation_tag=v1.0.0
 
 validation_tag 只向候选包注入版本。
 它不移动标签、不上传附件，也不改变公开 Release。
+三平台验证成功后，各候选安装包保存为 Actions 制品一天。
 公开版本保护仍生效；需要重发时先明确解决保护策略。
 
 唯一晶体源为 assets/app-symbol.svg。

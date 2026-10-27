@@ -1,5 +1,5 @@
 /**
- * [INPUT]: 隔离临时库中的画布与 Electron 截图 IPC。
+ * [INPUT]: 隔离临时库中的画布、共享晶体水印与 Electron 截图 IPC。
  * [OUTPUT]: {pass,count,checks}；断言失败抛错。
  * 接缝采样固定 pixelRatio:1；默认与 Retina 密度由 fidelity 场景验证。
  * [POS]: 验证整窗分块 PNG、跨块像素连续、真实正文与网页、取消和异常恢复。
@@ -59,6 +59,17 @@
     if (!red(rgb) && rgb[3] > 0) ink++;
   }
   ok(ink > 100, '导出包含浏览器真实排版正文');
+  const brandedFile = app.vaultPath + '/Branded.png';
+  canvas.promptImageSavePath = () => ({ canceled: false, filePath: brandedFile });
+  await canvas.generateHDImage({ frame: 'full', scale: 1, pixelRatio: 1, showLogo: true });
+  const branded = await loadPng(brandedFile);
+  let crystalPixels = 0;
+  for (let y = branded.height - 25; y < branded.height - 8; y++) for (let x = 10; x < 27; x++) {
+    const i = (y * branded.width + x) * 4;
+    if (branded.data[i + 2] > branded.data[i] + 10 && branded.data[i + 2] > branded.data[i + 1] + 20 &&
+        (branded.data[i] !== png.data[i] || branded.data[i + 1] !== png.data[i + 1] || branded.data[i + 2] !== png.data[i + 2])) crystalPixels++;
+  }
+  ok(crystalPixels >= 3, '真实导出的水印包含紫色晶体像素');
   ok(canvas.x === saved.x && canvas.y === saved.y && canvas.zoom === saved.zoom, '成功导出不改视口坐标');
   ok(canvas.canvasEl.style.transform === saved.transform, '成功导出恢复画布 transform');
   ok(canvas.wrapperEl.getAttribute('style') === saved.style, '成功导出恢复包装层样式');

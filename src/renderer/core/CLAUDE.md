@@ -6,6 +6,7 @@
 App 仅在正式主窗口延迟检查更新，执行时读取最新开关。开发、验收和附属窗口不自动联网。
 
 成员清单
+brand.ts: 应用晶体标志地址与图像加载。仓库选择页与画布导出共用 assets/app-symbol.svg。
 metadata-types.ts: 元数据共享契约。正文位置、链接与属性值供解析器和查询模块共用。
 settings-types.ts: 配置边界。已知偏好保持具体类型，未知扩展值保留为 unknown。
 workspace-types.ts: 标签拖拽会话与功能区动作协议。鼠标和键盘共用修饰键。

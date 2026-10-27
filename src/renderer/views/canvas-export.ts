@@ -1,5 +1,5 @@
 /**
- * [INPUT]: 画布几何与节点；导出弹层、分块截图、内存边界、自绘隐私字形与桌面保存入口。
+ * [INPUT]: 画布几何与节点；导出弹层、分块截图、内存边界、隐私字形、共享晶体标志与桌面保存入口。
  * [OUTPUT]: MAX_SIZE、canvasExportMetrics、renderCanvasImage、exportCanvasImage、saveCanvasImage。
  * [POS]: 画布图片导出编排。真实导出走整窗分块截图，保留浏览器渲染的完整场景。
  * renderCanvasImage 保留同步简化预览，供几何与像素单元验收使用，不参与真实落盘。
@@ -19,6 +19,7 @@ import { MAX_SIZE, assertCanvasExportBudget, canvasPixelRatio } from './canvas-e
 import { drawPrivacyText } from './canvas-export-privacy.js';
 export { MAX_SIZE } from './canvas-export-limits.js';
 import { t } from '../core/i18n.js';
+import { loadedAppSymbol, loadAppSymbol } from '../core/brand.js';
 import { Notice } from '../core/notices.js';
 import { Desktop } from '../core/ipc.js';
 import { IS_MAC } from '../core/keymap.js';
@@ -153,9 +154,10 @@ export async function saveCanvasImage(canvas: import('./canvas-view.js').CanvasV
   const filePath = result && !result.canceled && result.filePath ? result.filePath : null;
   if (!filePath) return null;
   const opts = options || {};
-  const decorate = opts.showLogo && opts.frame !== 'viewport' ? drawLogo : undefined;
   let image;
   try {
+    const symbol = opts.showLogo && opts.frame !== 'viewport' ? await loadAppSymbol() : null;
+    const decorate = symbol ? (ctx: CanvasRenderingContext2D, width: number, height: number) => drawLogo(ctx, width, height, symbol) : undefined;
     image = await renderCanvasTiles(canvas, canvasExportMetrics(canvas, opts), opts, decorate);
   } catch (error) {
     new Notice('图片导出失败：' + (error instanceof Error ? error.message : String(error)));
@@ -406,10 +408,10 @@ function drawFileCard(ctx: CanvasRenderingContext2D, node: CanvasFileNode, origi
 }
 
 /**
- * 左下角水印（原版 canvas-watermark 的 Obsidian logo）：本复刻画应用菱形标记 + 「OpenSidian」文字，
- * 尺寸随输出等比（原版按画布坐标固定 80px 内缩；一次性离屏绘制用输出比例代替分块缩放）。
+ * 左下角水印使用共享晶体标志与 OpenSidian 文字。
+ * 真正导出前等待图像加载；同步预览仅在素材已加载时绘制标志。
  */
-function drawLogo(ctx: CanvasRenderingContext2D, width: number, height: number) {
+function drawLogo(ctx: CanvasRenderingContext2D, width: number, height: number, symbol = loadedAppSymbol()) {
   const unit = Math.min(width, height);
   const size = Math.max(10, Math.round(unit * 0.022));
   const inset = Math.max(10, Math.round(unit * 0.028));
@@ -418,13 +420,7 @@ function drawLogo(ctx: CanvasRenderingContext2D, width: number, height: number) 
   const y = height - inset;
   ctx.save();
   ctx.fillStyle = logoColor();
-  ctx.beginPath();
-  ctx.moveTo(x + diamond / 2, y - diamond);
-  ctx.lineTo(x + diamond, y - diamond / 2);
-  ctx.lineTo(x + diamond / 2, y);
-  ctx.lineTo(x, y - diamond / 2);
-  ctx.closePath();
-  ctx.fill();
+  if (symbol) ctx.drawImage(symbol, x, y - diamond, diamond, diamond);
   ctx.font = `600 ${size}px ${logoFontFamily()}`;
   ctx.textAlign = 'left';
   ctx.textBaseline = 'alphabetic';

@@ -147,6 +147,7 @@ body.starter .notice-container { top: 38px; }
 }
 .splash-brand { flex: 0 0 content; padding: var(--size-4-5) 0; }
 .splash-brand-logo { display: flex; height: 94px; justify-content: center; }
+.splash-brand-logo img { align-self: center; width: 104px; height: 104px; }
 .splash-brand-logo-text {
   margin-top: var(--size-4-5);
   color: #fff;

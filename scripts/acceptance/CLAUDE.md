@@ -42,7 +42,7 @@ link-suggest.js: [[链接]] 单列浮窗（168 项）：无 .cm-completionInfo�
 settings-plugins.js: 快捷键页状态筛选芯片、按快捷键捕获筛选与 Esc、冲突芯片跳筛选；核心插件页齿轮/快捷键入口显隐与跳转；新增 locale 键逐条比对 zh+en 原版译文。
 settings-window.js: 设置独立窗口（50 项真实断言）：标题 `设置 - 库名 - 应用版本`、900×700、多库隔离、窗口内切换「在窗口中打开设置」的注销不死锁、主窗缓存同步、浅/深截图；macOS 红绿灯按 popout 32px 落在 (10,8)。
 vault-switcher.js: 仓库切换入口（13 项）：侧栏底部库名 →「管理仓库…」→ starter 窗口，注册表与菜单文案。
-vault-switcher.starter.js: starter 第二窗口 1.14.4（129 项、浅/深）：800×650/titlebar 30、最近仓库列 280/行高 76.49、打开/新建两屏、行菜单（重命名/移动/复制 ID/访达/移除）、键盘 Enter/Esc、空名称提示与位置预览、移除只删注册表不删文件夹、空态快速开始、语言/帮助行。
+vault-switcher.starter.js: starter 第二窗口。验证共享晶体素材解码、800×650 几何、最近仓库列表、打开/新建、行菜单、键盘、空态与语言/帮助。
 modal-ui.js: 通用模态基座（21 项）：mod-dim 遮罩与 0.85 覆盖色、大阴影、视口居中、背景点击关闭、拖选保护、ESC、重开复位、确认弹窗标题/双按钮。
 appearance.js: 外观页：主题 (Legacy)、主题管理弹窗（徽标/截图位/使用中）、字体三行子页面（当前字体列表/建议组/手输字体/缺失字体警示/立即落盘）、旧版主题真实生效（注入 themes/<x>.css 并带 data-css-theme）、主题色恢复默认。
 audio-recorder.js: 录音机插件验收。假 navigator.mediaDevices.getUserMedia 与 window.MediaRecorder 驱动：命令门、功能区切换 is-active、webm/m4a 扩展名与同秒重名序号、"Recording <时间戳>" 命名与嵌入链接、权限与设备错误映射（未连接麦克风/访问被拒绝/授权提示）、卸载释放与丢弃未完成录音、设置页开关与 core-plugins.json 持久化、重启读回。不接触真实麦克风。
@@ -102,7 +102,7 @@ probe-canvas-drop: 画布拖入诊断探针（残留虚影体检）。模拟文�
 
 bases.js: Bases P1。原版格式、嵌套筛选、排序、未知键保留与两种笔记嵌入，55 项。
 small-gaps.js: 底部反链、根 CSS、默认应用头按钮缺席/文件菜单保留与原生半透明，50 项。
-canvas-export.js: 整窗分块导出。跨块连续、正文、缩放、隐私、取消与异常恢复，24 项。
+canvas-export.js: 整窗分块导出。验证晶体水印像素、跨块连续、正文、缩放、隐私、取消与异常恢复。
 full.sh: 全量入口。定位仓库根并独占构建锁，参数原样传给 full.mjs。
 full.mjs: 枚举正式场景和链式阶段。--only 定向补跑并补齐读回前置；输出回执与汇总。
 

@@ -76,6 +76,10 @@ check('候选版本不进入发布事务', () => {
   assert(!JSON.stringify(workflow.jobs.publish).includes('validation_tag'));
   const upload = workflow.jobs.build.steps.find(step => step.name === 'Upload verified installer to draft');
   assert.equal(upload.if, "needs.prepare.outputs.release == 'true'");
+  const candidate = workflow.jobs.build.steps.find(step => step.name === 'Save validated candidate installer');
+  assert.equal(candidate.if, "needs.prepare.outputs.release != 'true' && inputs.validation_tag != ''");
+  assert.equal(candidate.with['if-no-files-found'], 'error');
+  assert.equal(candidate.with['retention-days'], 1);
 });
 check('旧标签重试也验证当前发布工具', () => {
   const step = workflow.jobs.build.steps.find(step => step.name === 'Verify release tools');

@@ -121,6 +121,18 @@ jobs:
         run: python scripts/verify-packaged-icons.py
       - name: Verify source is unchanged
         run: git diff --exit-code
+      - name: Save validated candidate installer
+        if: needs.prepare.outputs.release != 'true' && inputs.validation_tag != ''
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: candidate-${{ matrix.target }}
+          path: |
+            release/*.dmg
+            release/*.exe
+            release/*.AppImage
+          if-no-files-found: error
+          retention-days: 1
+          compression-level: 0
       - name: Upload verified installer to draft
         if: needs.prepare.outputs.release == 'true'
         run: node _analysis/release-tools/scripts/release.mjs upload ${{ matrix.target }}

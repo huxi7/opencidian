@@ -5,7 +5,7 @@
 全部 CSS。加载顺序由 index.html 决定：fonts → tokens → base → layout → components → download-attachments → tree → explorer → editor → markdown → popover → search → properties → graph → settings → settings-hotkeys → settings-dialogs → canvas → bookmarks → desktop-gaps → slides。所有颜色/间距/字体一律引用 tokens.css 中的变量，禁止硬编码色值(阴影与罕见例外除外)。
 
 成员清单
-starter.css: 仓库选择窗口 1.14.4 几何（800×650、titlebar 30、最近仓库列 280/行高 76.49、设置组 448/语言行 70、按钮 100×30）；打开/新建/空态与行菜单，通用控件复用 components/settings。
+starter.css: 仓库选择窗口几何与共享晶体标志尺寸。800×650、titlebar 30、最近仓库列 280/行高 76.49、设置组 448/语言行 70、按钮 100×30；通用控件复用 components/settings。
 fonts.css: @font-face。Inter(界面) 与 Source Code Pro(等宽)，字体文件在 assets/fonts/。
 tokens.css: 设计变量入口。按序导入 foundation 与 interface，保持原版数值。
 tokens-foundation.css: 字重与前半全局变量。保留原版规则顺序。1.14.4 全量基线：浅 base-25/30/35、深 base-00/10/20/25/30、--radius-xl 24、--tab-curve 10、--search-icon-size 16、--nav-item-radius 8、--mono-0/100、--font-preferred-size、--icon-m 16px / stroke 2px、桌面 --file-header-justify: start 与 --hotkey-* 组。

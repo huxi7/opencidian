@@ -31,7 +31,7 @@ make-app-icon.py: 从唯一晶体 SVG 导出透明 PNG、ICO 和原生图层。-
 icon-requirements.txt: 固定 Pillow、resvg-py 与 pefile。仅供矢量导出和安装包验收。
 app-icons.test.mjs: 平台图标、自定义回退、全部窗口和 macOS 原生图标恢复回归。
 verify-packaged-icons.py: 解包 DMG、NSIS 与 AppImage，核验内嵌图标、卸载程序和应用归档。
-smoke-packaged.mjs: 三平台目录包冒烟。ASAR 路径按系统归一化；版本从标签解析，Linux CI 使用虚拟显示。先核对身份、版本、许可证、图标、当前代码与全部样式哈希，再跑真实启动/编辑器/Bases/公式/CSV/SVG；回执后必须自行退出且 exitCode=0。输出 {pass,count,checks}；--no-screenshot 不截图，超时只清理自身进程组。
+smoke-packaged.mjs: 三平台目录包冒烟。ASAR 路径按系统归一化；版本从标签解析，Linux CI 使用虚拟显示。先核对身份、版本、许可证、晶体素材、当前代码与样式哈希，再跑真实启动/编辑器/Bases/公式/CSV/SVG；回执后必须自行退出且 exitCode=0。
 
 bases-formulas.test.mjs: Node 公式单测。固定 UTC、时钟与随机源，对照公开公式说明，覆盖 78 个说明键。
 bases-csv.test.mjs: Node CSV 单测。检查转义、富值、取消与写盘失败边界，不启动 Electron。

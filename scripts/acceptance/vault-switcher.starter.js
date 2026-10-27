@@ -1,5 +1,5 @@
 /**
- * [INPUT]: starter 第二窗口、预置仓库注册表（A/B/C 未打开）、原版 DOM 类名与计算样式。
+ * [INPUT]: starter 第二窗口、预置仓库注册表、共享晶体素材与计算样式。
  * [OUTPUT]: DOM/几何/菜单/打开/新建/空态/移除归档等断言；浅/深截图由 OBS_STARTER_* 钩子完成。
  * [POS]: vault-switcher 场景的第二窗口脚本。主窗只负责触发 starter；主进程在本脚本回执完成后才退出。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
@@ -121,7 +121,10 @@
     check(firstRowName === path.basename(mainEntry.path), '最近打开的库排在最上');
 
     // ---------------------------------------------------------------- brand
-    check(!!document.querySelector('.splash-brand-logo svg'), 'splash 晶体 logo');
+    const brandImage = document.querySelector('.splash-brand-logo img');
+    if (brandImage) await brandImage.decode();
+    check(!!brandImage && brandImage.src === 'app://opensidian.app/assets/app-symbol.svg', 'splash 使用共享晶体标志');
+    check(!!brandImage && brandImage.naturalWidth === 1024 && brandImage.naturalHeight === 1024, 'splash 晶体资源已成功解码');
     check(text(document.querySelector('.splash-brand-logo-text')) === 'OpenSidian', '品牌字 OpenSidian');
     check(/版本|Version/.test(text(document.querySelector('.splash-brand-version'))), '版本行');
 
