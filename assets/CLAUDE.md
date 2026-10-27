@@ -11,5 +11,6 @@ icons-obsidian.json: 原版自有图标路径数据。
 icon-aliases.json: 图标名称别名映射。
 fonts/: 界面与等宽字体。
 mathjax/: 官方 3.2.2 运行时、字体、许可与来源校验。
+readme/: README 产品展示图，使用隔离模拟库截取真实界面 (见 readme/CLAUDE.md)。
 
 [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md

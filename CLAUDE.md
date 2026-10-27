@@ -10,13 +10,13 @@ src/ - 全部源码 (2 子目录)
   main/ - Electron 主进程：窗口、app:// 协议、IPC、原生菜单、同库文档窗口与原子写回；dev-hooks 承接验收
   renderer/ - 渲染进程：应用主体 (7 子目录: core, editor, markdown, views, plugins-core, styles, locales)
 scripts/ - esbuild 构建与隔离 Electron 验收 (acceptance/)
-assets/ - 透明晶体源、图标表、字体与官方 MathJax 离线资源
+assets/ - 晶体源、图标表、字体、离线 MathJax 与 README 展示图
 build/ - macOS 原生分层图标、Windows/Linux 透明图标与摘要门禁
 dist/ - 构建输出；包含 main/ 主进程 JS、渲染器和图谱 Worker。
 </directory>
 
 <config>
-README.md - 项目介绍、开发与打包入口、源码结构和兼容边界
+README.md - 产品定位、下载、功能展示与源码运行入口
 LICENSE - 标准 AGPL v3 全文；授权标识为 AGPL-3.0。
 package.json - 依赖与开发入口；不保存发布版本，打包时从标签注入。
 tsconfig.json - 全量应用源码的严格类型检查配置。
