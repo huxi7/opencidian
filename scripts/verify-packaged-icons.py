@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""[INPUT]: 当前平台安装包、目录包与 build/icon.* 最终资源。
+"""[INPUT]: 当前平台安装包、目录包与平台图标资源。
 [OUTPUT]: 安装包内部图标比对与安装包 SHA-256 回执。
 [POS]: CI 图标验收。解包实际 DMG、NSIS 和 AppImage，不安装应用。
 [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
@@ -87,9 +87,18 @@ def verify_mac(temp):
         icon = info['CFBundleIconFile']
         if not icon.endswith('.icns'):
             icon += '.icns'
-        same_file(app / 'Resources' / icon, ROOT / 'build/icon.icns')
-        same_file(mount / '.VolumeIcon.icns', ROOT / 'build/icon.icns')
-        same_file(app / 'Resources/app.asar', ROOT / 'release/mac-arm64/OpenSidian.app/Contents/Resources/app.asar')
+        directory_app = ROOT / 'release/mac-arm64/OpenSidian.app/Contents'
+        check(info.get('CFBundleIconName') == 'Icon', 'macOS 声明原生图标目录')
+        check((app / 'Resources/Assets.car').stat().st_size > 0, 'macOS 包含 actool 编译的原生图标')
+        same_file(app / 'Resources/Assets.car', directory_app / 'Resources/Assets.car')
+        same_file(app / 'Resources' / icon, directory_app / 'Resources' / icon)
+        same_file(mount / '.VolumeIcon.icns', app / 'Resources' / icon)
+        same_file(app / 'Resources/app.asar', directory_app / 'Resources/app.asar')
+        run(['codesign', '--verify', '--deep', '--strict', app.parent], stderr=subprocess.STDOUT)
+        check(True, 'DMG 内应用通过深层严格签名验证')
+        signature = subprocess.run(['codesign', '--display', '--verbose=4', str(app.parent)], capture_output=True, text=True, check=True).stderr
+        check('Identifier=app.opensidian\n' in signature, 'DMG 内签名绑定 OpenSidian 身份')
+        check('Sealed Resources version=' in signature, 'DMG 内签名封存全部资源')
     finally:
         run(['hdiutil', 'detach', mount])
     return installer

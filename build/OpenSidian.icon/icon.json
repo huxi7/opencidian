@@ -1,0 +1,28 @@
+{
+  "fill": {
+    "linear-gradient": [
+      "srgb:0.11500,0.11500,0.13000,1.00000",
+      "srgb:0.03500,0.03500,0.04500,1.00000"
+    ],
+    "orientation": {
+      "start": { "x": 0.5, "y": 0 },
+      "stop": { "x": 0.5, "y": 1 }
+    }
+  },
+  "groups": [
+    {
+      "layers": [
+        {
+          "image-name": "crystal.svg",
+          "name": "OpenSidian crystal",
+          "position": { "scale": 0.82, "translation-in-points": [0, 0] },
+          "glass": false
+        }
+      ],
+      "shadow": { "kind": "neutral", "opacity": 0.35 },
+      "specular": true,
+      "translucency": { "enabled": false, "value": 0.5 }
+    }
+  ],
+  "supported-platforms": { "squares": ["macOS"] }
+}

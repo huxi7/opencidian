@@ -7,7 +7,9 @@
 成员清单
 RELEASING.md: 标签版本、三平台范围、发布步骤与失败恢复。
 release-config.mjs: 平台清单、文件名映射、标签版本与附件校验。AppImage 的 x86_64 映射为下载名 x64。
-package.mjs: 当前平台安装包入口。版本只注入打包元数据，禁止隐式发布；打包前核验图标摘要。
+package.mjs: 当前平台安装包入口。版本只注入元数据；核验图标摘要。macOS 要求 Xcode 26+，经 xcrun 定位 actool。
+verify-macos-signature.cjs: afterSign 门禁。深层严格校验签名、应用身份与资源封装；失败阻止安装包生成。
+macos-signature.test.mjs: 隔离微型应用验证真实 codesign。覆盖未封存、正确封存、错误身份与资源篡改；其他平台验证发布契约。
 release.mjs: 从列表定位草稿。锁定标签源码，统一下载名，上传并比对摘要；三端齐备后公开。
 release.test.mjs: 标签、候选版本隔离、附件完整性、源码与工具提交隔离、运行时版本回归。
 release-transaction.test.mjs: 隔离 GitHub 与 Git 替身，验证草稿查询、文件名映射、旧标签重试和公开保护。
@@ -25,9 +27,9 @@ dev.mjs: 开发模式。全量严格检查与增量编译共用一套配置；�
 with-lock.sh: 构建/验收互斥锁。并行子代理共享 $TMPDIR/opensidian-build.lock，先到先得，超时 30 分钟退出码 75；用法 `sh scripts/with-lock.sh "<命令>"`。
 
 acceptance/: full.sh 是全量入口。真实 Electron 场景，隔离库与日志判定见 acceptance/CLAUDE.md。 子进程带 `E2E=1`：窗口不激活应用（accessory + showInactive + focusable:false）且整窗透明（opacity:0 + 忽略鼠标）——测试完全不可见、不抢焦点；带 `OBS_ACT` 的直连探针也自动进入 E2E（main.ts 兜底）。
-make-app-icon.py: 从最终 PNG 母版导出三平台图标。--check 校验全部尺寸、透明度、像素与摘要。
-icon-requirements.txt: 固定 Pillow 与 pefile 版本；仅供导出和安装包验收。
-app-icons.test.mjs: 默认图标、自定义回退、全部窗口和 Dock 的隔离回归。
+make-app-icon.py: 从唯一晶体 SVG 导出透明 PNG、ICO 和原生图层。--check 校验像素、尺寸、图层与摘要。
+icon-requirements.txt: 固定 Pillow、resvg-py 与 pefile。仅供矢量导出和安装包验收。
+app-icons.test.mjs: 平台图标、自定义回退、全部窗口和 macOS 原生图标恢复回归。
 verify-packaged-icons.py: 解包 DMG、NSIS 与 AppImage，核验内嵌图标、卸载程序和应用归档。
 smoke-packaged.mjs: 三平台目录包冒烟。ASAR 路径按系统归一化；版本从标签解析，Linux CI 使用虚拟显示。先核对身份、版本、许可证、图标、当前代码与全部样式哈希，再跑真实启动/编辑器/Bases/公式/CSV/SVG；回执后必须自行退出且 exitCode=0。输出 {pass,count,checks}；--no-screenshot 不截图，超时只清理自身进程组。
 

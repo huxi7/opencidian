@@ -22,7 +22,13 @@
 
 首次启动时，选择已有的笔记文件夹，或新建一个库。无需安装 Node.js。
 
-安装包未签名，macOS 与 Windows 可能显示安全提示。建议先用备份库体验。
+macOS 包使用 ad-hoc 完整性签名，尚无 Developer ID 签名与 Apple 公证；Windows 包未签名。系统可能显示安全提示。建议先用备份库体验。
+
+macOS 的 ad-hoc 签名不让 Gatekeeper 自动信任下载。若被拦截，先对照 Release 的 `SHA256SUMS` 确认下载完整。确认来自本仓库后，校验应用签名，再单独解除这个应用的下载隔离：
+
+```sh
+codesign --verify --deep --strict /Applications/OpenSidian.app && xattr -dr com.apple.quarantine /Applications/OpenSidian.app
+```
 
 应用默认检查本仓库的新版本，并提示下载安装包，不会自动安装。可在「设置 → 关于」关闭自动检查；手动检查仍可用。
 
@@ -46,6 +52,8 @@ npm test                     # 类型检查、构建、单元测试与工作区�
 npm run test:acceptance       # 完整隔离 Electron 验收
 npm run dist                 # 为当前系统生成安装包
 ```
+
+macOS 原生图标编译需要 Xcode 26+，仅安装 Command Line Tools 不足以打包。
 
 产物位于 `release/`。推送 `vX.Y.Z` 标签后，GitHub 自动验证并发布三平台安装包，详见 [发布说明](scripts/RELEASING.md)。
 

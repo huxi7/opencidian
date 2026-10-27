@@ -80,6 +80,23 @@ jobs:
       - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
           python-version: '3.12'
+      - name: Select Xcode for native macOS icon
+        if: runner.os == 'macOS'
+        shell: python
+        run: |
+          import glob, os, pathlib, plistlib
+          candidates = []
+          for app in glob.glob('/Applications/Xcode*.app'):
+              info = plistlib.loads(pathlib.Path(app, 'Contents/Info.plist').read_bytes())
+              version = tuple(int(part) for part in info['CFBundleShortVersionString'].split('.'))
+              if version[0] >= 26:
+                  candidates.append((version, app))
+          if not candidates:
+              raise SystemExit('Native Icon Composer build requires Xcode 26+')
+          version, app = max(candidates)
+          with open(os.environ['GITHUB_ENV'], 'a') as env:
+              env.write(f'DEVELOPER_DIR={app}/Contents/Developer\n')
+          print(f'Using Xcode {version}: {app}')
       - name: Verify final icon pixels
         if: hashFiles('scripts/icon-requirements.txt') != ''
         run: |

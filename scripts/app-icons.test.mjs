@@ -17,7 +17,9 @@ const functions = source.slice(source.indexOf('function customIconPath()'), sour
     .replace(': Electron.BrowserWindowConstructorOptions', '');
 const updates = [];
 const config = {};
+const systemIcon = { native: true };
 const context = vm.createContext({ config, path, ASSETS_DIR: '/assets', IS_MAC: false,
+  nativeImage: { createEmpty: () => systemIcon },
   fs: { existsSync: file => file === '/custom.png' },
   BrowserWindow: { getAllWindows: () => ['vault', 'starter', 'settings', 'document'].map(name => ({ setIcon: icon => updates.push([name, icon]) })) },
   app: { dock: { setIcon: icon => updates.push(['dock', icon]) } },
@@ -41,10 +43,27 @@ test('恢复默认图标同步全部窗口', () => {
   assert.equal(updates.length, 4);
   assert(updates.every(([, icon]) => icon === path.join('/assets', 'app-icon.png')));
 });
-test('macOS Dock 使用最终默认图标', () => {
+test('macOS Dock 恢复应用原生图标', () => {
   context.IS_MAC = true;
   vm.runInContext('applyAppIcon()', context);
-  assert.deepEqual(updates.at(-1), ['dock', path.join('/assets', 'app-icon.png')]);
+  assert.deepEqual(updates.at(-1), ['dock', systemIcon]);
+});
+test('macOS 窗口不以 PNG 覆盖原生图标', () => {
+  assert.equal(vm.runInContext('frameWindowOptions().icon', context), undefined);
+});
+test('macOS 自定义图标覆盖 Dock，清除后恢复原生图标', () => {
+  config.customIcon = '/custom.png';
+  vm.runInContext('applyAppIcon()', context);
+  assert.deepEqual(updates.at(-1), ['dock', '/custom.png']);
+  delete config.customIcon;
+  vm.runInContext('applyAppIcon()', context);
+  assert.deepEqual(updates.at(-1), ['dock', systemIcon]);
+});
+test('macOS 自定义文件丢失时恢复原生图标', () => {
+  config.customIcon = '/missing.png';
+  vm.runInContext('applyAppIcon()', context);
+  assert.deepEqual(updates.at(-1), ['dock', systemIcon]);
+  delete config.customIcon;
 });
 const manifest = JSON.parse(fs.readFileSync('build/icons.sha256.json', 'utf8'));
 for (const [file, expected] of Object.entries(manifest)) test(`${file} 与批准摘要一致`, () => {

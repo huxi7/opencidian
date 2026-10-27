@@ -1,4 +1,4 @@
-# [INPUT]: package.json、dist/、src/、assets/、build/icon.* 与许可证原文。
+# [INPUT]: 运行文件、透明晶体图标、原生 Icon Composer 资源与许可证。
 # [OUTPUT]: release/ 下的 macOS DMG、Windows EXE 与 Linux AppImage。
 # [POS]: 打包边界配置；ASAR 包含运行文件和许可证。
 # [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
@@ -22,12 +22,14 @@ files:
   - "!**/*.map"
 
 asar: true
+afterSign: scripts/verify-macos-signature.cjs
 
 mac:
   category: public.app-category.productivity
-  icon: build/icon.icns
-  # 本地/开源分发不签名（正式分发需 Apple 开发者证书后再移除本行）
-  identity: null
+  icon: build/OpenSidian.icon
+  # 无证书时重新封存整个应用，避免残留 Electron 的无效签名。
+  identity: '-'
+  hardenedRuntime: false
   target:
     - dmg
   artifactName: opensidian-macos-${arch}.${ext}
@@ -53,5 +55,4 @@ linux:
   artifactName: opensidian-linux-${arch}.${ext}
 
 dmg:
-  icon: build/icon.icns
   title: OpenSidian

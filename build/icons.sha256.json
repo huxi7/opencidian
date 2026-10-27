@@ -1,7 +1,8 @@
 {
-  "assets/app-icon.png": "b800f185290255da1c2fe5383f76b71148251d5c9297c1d1822e4892715c59f4",
-  "build/icon.svg": "815a3911bfd6cef9ca4107d94a2e8f7ca9ce5fa98edcf51470c92af3598c33d9",
-  "build/icon.png": "b800f185290255da1c2fe5383f76b71148251d5c9297c1d1822e4892715c59f4",
-  "build/icon.ico": "1983264a6e8fb2c24c9b87ed7bbd85c5d57e3c8ee90f67ce478959b728fade53",
-  "build/icon.icns": "4c8c59e47daf5cb3f72242dd21bc7d55d9246fafa86ac69691e829a13f622fd3"
+  "assets/app-symbol.svg": "427086b30c4752a111571187d895aaf00a2ffa57617bd8a0213123d826dfc821",
+  "assets/app-icon.png": "6d0939e2ad441c07de1a6f4c8a1f27f1f916dd1bab4cc263bd6b5805f98cd1fd",
+  "build/icon.png": "6d0939e2ad441c07de1a6f4c8a1f27f1f916dd1bab4cc263bd6b5805f98cd1fd",
+  "build/icon.ico": "a8bd211b1922bb88101919b344d1f5554bc095aacdc82fdbab3b85eeb29a21ad",
+  "build/OpenSidian.icon/icon.json": "4d1e18af82add8135941145b5d5af539a5166fcf63d6ff13d02c782492df10e9",
+  "build/OpenSidian.icon/Assets/crystal.svg": "427086b30c4752a111571187d895aaf00a2ffa57617bd8a0213123d826dfc821"
 }

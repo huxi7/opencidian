@@ -4,7 +4,8 @@
 图标与字体保留原资源格式，业务代码不在此目录。
 
 成员清单
-app-icon.png: 最终 1024px RGBA 母版。窗口与 Dock 直接读取；导出脚本从此生成平台格式。
+app-symbol.svg: 唯一紫色晶体源。透明画布，无底板。
+app-icon.png: 1024px 透明晶体导出。供 Windows/Linux 窗口使用。
 icons.json: Lucide 图标数据。
 icons-obsidian.json: 原版自有图标路径数据。
 icon-aliases.json: 图标名称别名映射。

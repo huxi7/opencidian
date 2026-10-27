@@ -1,5 +1,5 @@
 /**
- * [INPUT]: 依赖 electron 的 app/BrowserWindow/ipcMain/protocol/shell/dialog/session；Node 内置 fs/path；assets/app-icon.png 提供默认应用图标；app-version 提供应用版本；窗口材质、截图、文档窗口、原生菜单和原子写回由独立模块提供；共享 IPC 契约约束请求数据
+ * [INPUT]: Electron 与 Node 文件能力；assets/app-icon.png 提供 Windows/Linux 图标；macOS 读取应用原生图标；app-version 提供版本；共享 IPC 契约约束请求数据
  * [OUTPUT]: 主进程全部 IPC handler（vault 注册表、文件读写、窗口控制、回收站、拼写检查词典/语言）、app:// 协议、devScreenshotHook（OBS_* 环境变量门控的调试钩子）、设置与文档独立窗口、原生菜单、跨窗口 CAS 与协议的装配
  * [POS]: 应用主进程入口。vault 注册表存于 userData/opensidian.json（启动时从旧产品名 "Obsidian Copy" 的 userData 迁移一次）；拼写检查自加词存 userData/spellcheck-words.json，语言选择存 opensidian.json 的 spellcheckLanguages。渲染进程经 renderer/core/ipc.js 调用此处 handler。原生菜单保留设置入口。dev-hooks 只在指定测试库窗口执行。E2E 回收降级库内回收站。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
@@ -31,7 +31,7 @@ import { registerCanvasCaptureIpc } from './canvas-capture';
 import { installAppMenu } from './app-menu';
 import { registerAppProtocol } from './app-protocol';
 import { getAppVersion } from './app-version';
-import { app, BrowserWindow, protocol, ipcMain, Menu, shell, dialog, session, nativeTheme, screen, net } from 'electron';
+import { app, BrowserWindow, protocol, ipcMain, Menu, shell, dialog, session, nativeTheme, screen, net, nativeImage } from 'electron';
 
 const APP_ROOT = path.join(__dirname, '..', '..');
 const RENDERER_DIR = path.join(APP_ROOT, 'src', 'renderer');
@@ -148,10 +148,11 @@ function customIconPath() {
   return (typeof p === 'string' && fs.existsSync(p)) ? p : null;
 }
 function applyAppIcon() {
-  const p = customIconPath() || path.join(ASSETS_DIR, 'app-icon.png');
+  const custom = customIconPath();
   try {
-    if (IS_MAC && app.dock) app.dock.setIcon(p);
-    else for (const w of BrowserWindow.getAllWindows()) { try { w.setIcon(p); } catch (e) {} }
+    // 空 NativeImage 在 macOS 恢复 bundle 原生图标，不把分层材质替换为 PNG。
+    if (IS_MAC && app.dock) app.dock.setIcon(custom || nativeImage.createEmpty());
+    else for (const w of BrowserWindow.getAllWindows()) { try { w.setIcon(custom || path.join(ASSETS_DIR, 'app-icon.png')); } catch (e) {} }
   } catch (e) { /* 平台不支持时忽略 */ }
 }
 
@@ -197,7 +198,7 @@ function saveVaultConfig(id: string, data: WindowBounds) {
  * hidden=隐藏边框（默认）| custom=OpenSidian 风格（内嵌红绿灯）| native=原生边框
  */
 function frameWindowOptions(): Electron.BrowserWindowConstructorOptions {
-  const icon = customIconPath() || path.join(ASSETS_DIR, 'app-icon.png');
+  const icon = IS_MAC ? undefined : customIconPath() || path.join(ASSETS_DIR, 'app-icon.png');
   const frame = config.frame || 'hidden';
   if (frame === 'native') return { icon, frame: true, titleBarStyle: 'default' };
   if (frame === 'custom') return { icon, frame: false, titleBarStyle: 'hiddenInset', trafficLightPosition: { x: 12, y: 12 } };

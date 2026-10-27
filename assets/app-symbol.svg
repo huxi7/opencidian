@@ -1,0 +1,26 @@
+<!--
+[INPUT]: 原始 OpenSidian 紫色晶体矢量。
+[OUTPUT]: 无底板、无圆角、透明画布的品牌标志。
+[POS]: 全平台唯一晶体源；平台底板由导出脚本与 Icon Composer 分别提供。
+[PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
+-->
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1254 1254" role="img" aria-label="OpenSidian crystal">
+<defs>
+ <linearGradient id="base" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#7936ee"/><stop offset="1" stop-color="#47159e"/></linearGradient>
+ <linearGradient id="upper" x1=".18" y1=".02" x2=".92" y2="1"><stop stop-color="#cbb0fb"/><stop offset=".6" stop-color="#bd9cf7"/><stop offset="1" stop-color="#b38ff4"/></linearGradient>
+ <linearGradient id="left" x1="0" y1="0" x2=".93" y2="1"><stop stop-color="#5622c3"/><stop offset=".65" stop-color="#7a40f7"/><stop offset="1" stop-color="#8e4eff"/></linearGradient>
+ <linearGradient id="right" x1=".1" y1="0" x2=".85" y2="1"><stop stop-color="#672ce8"/><stop offset=".47" stop-color="#8243fa"/><stop offset="1" stop-color="#a16bf5"/></linearGradient>
+ <linearGradient id="inner" x1=".75" y1="0" x2=".1" y2="1"><stop stop-color="#2b0b75"/><stop offset=".63" stop-color="#43129c"/><stop offset="1" stop-color="#6522d1"/></linearGradient>
+ <linearGradient id="bottom" x1=".15" y1=".1" x2=".95" y2="1"><stop stop-color="#2b0b7c"/><stop offset=".6" stop-color="#4211a2"/><stop offset="1" stop-color="#5a1bc1"/></linearGradient>
+ <clipPath id="crystal"><path d="M 619 99 C 634 97 642 100 656 115 L 921 386 C 950 414 962 443 960 492 C 957 615 975 682 1031 764 C 1058 805 1059 842 1024 889 L 830 1122 C 804 1157 781 1171 741 1162 L 441 1113 C 399 1104 390 1091 365 1055 L 229 861 C 204 828 189 806 208 764 C 239 695 277 623 290 552 C 308 455 286 430 323 379 L 580 121 C 596 107 608 100 619 99 Z"/></clipPath>
+</defs>
+<g clip-path="url(#crystal)">
+ <path fill="url(#base)" d="M 619 99 C 634 97 642 100 656 115 L 921 386 C 950 414 962 443 960 492 C 957 615 975 682 1031 764 C 1058 805 1059 842 1024 889 L 830 1122 C 804 1157 781 1171 741 1162 L 441 1113 C 399 1104 390 1091 365 1055 L 229 861 C 204 828 189 806 208 764 C 239 695 277 623 290 552 C 308 455 286 430 323 379 L 580 121 C 596 107 608 100 619 99 Z"/>
+ <path fill="url(#left)" d="M 323 379 C 300 420 307 468 290 552 C 278 632 229 710 208 764 C 181 815 224 855 253 846 C 321 833 442 702 548 599 C 485 527 412 490 344 445 C 312 424 312 396 323 379 Z"/>
+ <path fill="url(#inner)" d="M 548 599 C 607 659 644 746 691 857 C 668 958 543 1044 411 1102 C 393 1092 385 1079 365 1055 L 253 889 C 234 858 270 819 310 782 C 397 704 493 630 548 599 Z"/>
+ <path fill="url(#bottom)" d="M 691 857 C 763 909 846 925 940 957 L 830 1122 C 804 1157 781 1171 741 1162 L 441 1113 C 430 1111 420 1108 411 1102 C 561 1032 666 945 691 857 Z"/>
+ <path fill="url(#right)" d="M 619 99 L 921 386 C 950 414 962 443 960 492 C 957 615 975 682 1031 764 C 1058 805 1059 842 1024 889 L 940 957 C 849 928 767 897 728 865 C 651 801 658 698 548 599 C 621 482 689 272 665 154 C 661 124 642 102 619 99 Z"/>
+ <path fill="url(#upper)" d="M 619 99 C 664 96 675 168 670 259 C 666 378 605 535 548 599 C 481 523 394 488 343 445 C 321 426 303 410 323 379 L 580 121 C 596 107 608 100 619 99 Z"/>
+</g>
+
+</svg>

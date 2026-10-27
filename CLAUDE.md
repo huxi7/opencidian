@@ -10,8 +10,8 @@ src/ - 全部源码 (2 子目录)
   main/ - Electron 主进程：窗口、app:// 协议、IPC、原生菜单、同库文档窗口与原子写回；dev-hooks 承接验收
   renderer/ - 渲染进程：应用主体 (7 子目录: core, editor, markdown, views, plugins-core, styles, locales)
 scripts/ - esbuild 构建与隔离 Electron 验收 (acceptance/)
-assets/ - 应用图标母版、图标表、字体与官方 MathJax 离线资源
-build/ - 三平台最终图标、矢量设计稿与摘要门禁
+assets/ - 透明晶体源、图标表、字体与官方 MathJax 离线资源
+build/ - macOS 原生分层图标、Windows/Linux 透明图标与摘要门禁
 dist/ - 构建输出；包含 main/ 主进程 JS、渲染器和图谱 Worker。
 </directory>
 
@@ -21,7 +21,7 @@ LICENSE - 标准 AGPL v3 全文；授权标识为 AGPL-3.0。
 package.json - 依赖与开发入口；不保存发布版本，打包时从标签注入。
 tsconfig.json - 全量应用源码的严格类型检查配置。
 .gitattributes - 标记 MathJax 为 vendored；固定图标 SVG 的 LF 换行。
-electron-builder.yml - 三平台目录包与安装包；ASAR 包含运行文件和许可证原文
+electron-builder.yml - 三平台目录包与安装包；macOS 原生图标、ad-hoc 签名与资源封装门禁
 scripts/build.mjs - 将主进程与渲染器 TypeScript 编译至 dist/。
 scripts/package.mjs - 当前平台打包；版本从标签注入，开发包用 0.0.0-dev。
 scripts/release.mjs - 锁定标签源码；草稿直传、SHA-256 校验与三平台完整发布。
