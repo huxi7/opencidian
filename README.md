@@ -53,7 +53,7 @@ npm run test:acceptance       # 完整隔离 Electron 验收
 npm run dist                 # 为当前系统生成安装包
 ```
 
-macOS 原生图标编译需要 Xcode 26+，仅安装 Command Line Tools 不足以打包。
+macOS 原生图标编译需要 macOS 26+ 与 Xcode 26+，仅安装 Command Line Tools 不足以打包。
 
 产物位于 `release/`。推送 `vX.Y.Z` 标签后，GitHub 自动验证并发布三平台安装包，详见 [发布说明](scripts/RELEASING.md)。
 

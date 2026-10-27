@@ -12,6 +12,9 @@ import yaml from 'js-yaml';
 import { versionFromTag, packageVersion, packagedPaths, RELEASE_TARGETS, verifyAssets } from './release-config.mjs';
 const checks = [];
 const check = (name, run) => { run(); checks.push(name); };
+check('原生图标编译使用 macOS 26 构建机', () => {
+  assert.equal(RELEASE_TARGETS.find(item => item.target === 'macos-arm64').os, 'macos-26');
+});
 check('正式版本来自标签', () => assert.equal(versionFromTag('v1.0.0'), '1.0.0'));
 check('后续版本不读取 package.json', () => assert.equal(packageVersion({ RELEASE_TAG: 'v12.3.4' }), '12.3.4'));
 for (const tag of ['1.0.0', 'v01.0.0', 'v1.0', 'main', 'v1.0.0;exit', 'v1.0.0-beta']) {

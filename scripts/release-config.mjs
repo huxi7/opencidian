@@ -1,5 +1,5 @@
 /**
- * [INPUT]: 版本标签、运行平台与 GitHub 附件元数据。
+ * [INPUT]: 版本标签、运行平台与 GitHub 附件元数据；原生图标构建使用 macOS 26。
  * [OUTPUT]: 发布目标、安装包文件名映射、版本解析与附件完整性校验。
  * [POS]: 本地打包、CI 和发布共用事实源；不访问网络或修改源码。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
@@ -8,7 +8,7 @@ import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 
 export const RELEASE_TARGETS = [
-  { os: 'macos-15', target: 'macos-arm64', asset: 'opensidian-macos-arm64.dmg' },
+  { os: 'macos-26', target: 'macos-arm64', asset: 'opensidian-macos-arm64.dmg' },
   { os: 'windows-latest', target: 'windows-x64', asset: 'opensidian-windows-x64.exe' },
   { os: 'ubuntu-24.04', target: 'linux-x64', asset: 'opensidian-linux-x64.AppImage', buildAsset: 'opensidian-linux-x86_64.AppImage' },
 ];

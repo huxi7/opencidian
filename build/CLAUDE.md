@@ -10,7 +10,7 @@ icons.sha256.json: 源文件与导出资源摘要。打包前拒绝未经重新�
 OpenSidian.icon/icon.json 定义黑色渐变底板和晶体材质。
 OpenSidian.icon/Assets/crystal.svg 由唯一晶体源导出。
 用 scripts/make-app-icon.py 同步图层与透明图标。
-macOS 打包使用 Xcode 26+ 的 actool。
+macOS 26+ 构建机使用 Xcode 26+ 的 actool。
 打包器生成 Assets.car 与系统兼容表示。
 仓库不维护预制圆角 PNG 或 ICNS。
 

@@ -24,7 +24,7 @@ git push origin v1.0.1
 
 1. 校验标签与构建提交，创建草稿 Release。
 2. macOS ARM64、Windows x64 和 Linux x64 分别运行测试与打包。
-3. macOS 用 Xcode 26+ 编译原生图标并完成 ad-hoc 签名。
+3. macOS 26 构建机用 Xcode 26+ 编译原生图标并完成 ad-hoc 签名。
 4. 校验透明晶体像素；解包安装包核验原生图标、签名与资源封装。
 5. 启动各平台目录包，校验版本、文件哈希与实际笔记操作。
 6. 上传安装包到草稿，并比对 GitHub SHA-256 与本地文件。
@@ -80,7 +80,8 @@ validation_tag 只向候选包注入版本。
 唯一晶体源为 assets/app-symbol.svg。
 Windows/Linux 使用透明 PNG、ICO。
 macOS 使用 build/OpenSidian.icon，底板和晶体分层。
-Xcode 26+ 的 actool 生成原生圆角、材质与系统兼容表示。
+macOS 26+ 配合 Xcode 26+ 的 actool 生成原生图标资源。
+macOS 15 上仅选择 Xcode 26 仍会缺少运行时框架。
 仓库不维护预制 macOS 圆角图或 ICNS。
 本地仅有 Command Line Tools 时，macOS 打包会明确失败。
 CI 选择 Xcode 26+；不回退为通用 PNG 图标。

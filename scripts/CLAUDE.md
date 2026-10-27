@@ -6,7 +6,7 @@
 
 成员清单
 RELEASING.md: 标签版本、三平台范围、发布步骤与失败恢复。
-release-config.mjs: 平台清单、文件名映射、标签版本与附件校验。AppImage 的 x86_64 映射为下载名 x64。
+release-config.mjs: 平台清单、文件名映射、标签版本与附件校验。macOS 26 构建原生图标；AppImage 的 x86_64 映射为下载名 x64。
 package.mjs: 当前平台安装包入口。版本只注入元数据；核验图标摘要。macOS 要求 Xcode 26+，经 xcrun 定位 actool。
 verify-macos-signature.cjs: afterSign 门禁。深层严格校验签名、应用身份与资源封装；失败阻止安装包生成。
 macos-signature.test.mjs: 隔离微型应用验证真实 codesign。覆盖未封存、正确封存、错误身份与资源篡改；其他平台验证发布契约。
