@@ -5,6 +5,7 @@
 全部 CSS。加载顺序由 index.html 决定：fonts → tokens → base → layout → components → download-attachments → tree → explorer → editor → markdown → popover → search → properties → graph → settings → settings-hotkeys → settings-dialogs → canvas → bookmarks → desktop-gaps → slides。所有颜色/间距/字体一律引用 tokens.css 中的变量，禁止硬编码色值(阴影与罕见例外除外)。
 
 成员清单
+window-chrome.css: 四类桌面窗口共用标题栏。Windows/Linux 右侧三个 42px 控制按钮与 126px 净空一致；原生框与全屏隐藏自绘条。macOS 保留系统红绿灯和启动页拖动条。
 starter.css: 仓库选择窗口几何与共享晶体标志尺寸。800×650、titlebar 30、最近仓库列 280/行高 76.49、设置组 448/语言行 70、按钮 100×30；通用控件复用 components/settings。
 fonts.css: @font-face。Inter(界面) 与 Source Code Pro(等宽)，字体文件在 assets/fonts/。
 tokens.css: 设计变量入口。按序导入 foundation 与 interface，保持原版数值。
@@ -13,7 +14,7 @@ tokens-interface.css: 后半全局变量、明暗主题与字体族。颜色走 
 base.css: 重置、排版、滚动条(仅 body.styled-scrollbars 下生效，macOS 用系统 overlay 滚动条，逐字移植原版)、clickable-icon、拖拽幽灵与 .is-hidden。表单控件委托 form-controls.css。
 form-controls.css: 核心表单控件族（输入框、多行文本、按钮、下拉框、复选框、单选框、滑块与开关）。逐字对齐原版 1.14.4 app.css (7514-8145, 8581-8854, 10468-10613, 14392-14502)。
 layout.css: 外层 workspace-root 与中心 mod-root 分开。只给中心文档应用主背景。含原版堆叠标签页段(app.css 6506-6590)：头竖排(writing-mode)、tab-container 横向滑动、pane 宽度区间。标题栏段对齐原版：ribbon ::before 用 var(--titlebar-background)（左上 44×40 顶栏色）、ribbon 收起只换底色（--ribbon-background-collapsed）而隐藏归 .is-hidden、标签 fillet 用 border+radius 原语。标签栏段对齐 1.14.4 app.css:6918-7338：容器底线 + 内层 -1px 负下边距消缝、活动标签凹弧(clip-path)与 box-shadow 描边、「+」「⌄」外层定位/内层按钮盒、.mod-stacked 归零；view-header 段（左导航钮/面包屑/左对齐标题/mod-fade/聚焦底色；flex 0 1 auto，阅读区满高时缩到 38px）。状态栏图标项 min-height 18px。根标签图标 14px、关闭钮 16px（padding 2/radius-m）。标签落点复用 workspace-drop-overlay（10px 竖条，原版 getTabInsertLocation/showOverlay）。
-workspace-sidebar.css: 原版侧栏图标、库信息栏、开关与 macOS 留白。窄栏保留帮助和设置。含顶栏焦点联动变量组（titlebar/ribbon/toggle/tab 容器）与 ribbon ::before 顶栏色 override。ribbon/侧栏标签/开关图标统一 --icon-m 16px。侧栏标签 28×25、radius 8、padding 0 6；根级纵向手柄负右外边距覆盖 1px；右栏收起时开关 fixed 在右上。
+workspace-sidebar.css: 侧栏图标、库信息栏、开关与平台净空。全屏时归零窗口控制区。窄栏保留帮助和设置。含顶栏焦点联动变量组（titlebar/ribbon/toggle/tab 容器）与 ribbon ::before 顶栏色 override。ribbon/侧栏标签/开关图标统一 --icon-m 16px。侧栏标签 28×25、radius 8、padding 0 6；根级纵向手柄负右外边距覆盖 1px；右栏收起时开关 fixed 在右上。
 components.css: 菜单、弹窗、建议、通知、悬浮提示、设置外壳与快照历史。原版布局规则保持闭合。通知为右上角固定栈(app.css 7923-7978)，tooltip 含 mod-top/mod-left/mod-right 翻转与 tooltip-arrow(app.css 9324-9445)，建议弹层 .suggestion-container 取 --suggestion-background(app.css 8858-8867)。含 1.14.4 prompt 段（700px 宽、15vh 顶部、圆角/阴影/边框、指令栏无顶部分隔线）与空态 pill 段(.empty-state-action/.mod-pill/.empty-state-hotkey)。菜单 gap 8/nowrap、label 不铺底；模态遮罩瞬时；通知入场 100ms ease-in-out。
 download-attachments.css: 下载附件模态。.modal.mod-scrollable-content(app.css 8168-8184)与 .attachments-gallery/.download-attachment-item(app.css 3248-3312)逐字移植；末尾 .download-attachment-name 是本实现补的可见文件名标签。
 tree.css: .tree-item 体系(collapse-icon 尺寸与旋转、tree-item-self/icon/inner/children/flair)，逐字移植自原版 app.css 7263-7287 与 9446-9591。全部树视图共用。键盘焦点环除原版 mod-active 规则外，另挂 .nav-files-container:focus 兜底（workspace-leaf 现随活动叶写 mod-active，兜底保留）。
@@ -38,7 +39,7 @@ slides.css: 全窗口演示覆盖层。.slides-container/.slides-close-btn/.coll
 
 desktop-gaps.css: 文档底部反链与 macOS 半透明窗口样式。
 
-layout-shell.css: 窗口外壳、功能区与根分割规则。由 layout.css 前置导入。
+layout-shell.css: 功能区与根分割规则。导入 window-chrome.css；自身由 layout.css 前置导入。
 components-overlays.css: 菜单和弹窗规则。由 components.css 前置导入。
 
 [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md

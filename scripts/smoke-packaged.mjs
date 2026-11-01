@@ -1,7 +1,7 @@
 /**
  * [INPUT]: 三平台目录包、标签版本、共享晶体素材、隔离临时库与可选 --no-screenshot。
  * [OUTPUT]: {pass,count,checks}、运行日志与失败退出码；不生成截图。
- * [POS]: 打包产物的真实启动冒烟。ASAR 查询路径按系统归一化；先比对身份、图标、代码及样式，再校验编辑器、Bases、公式、CSV 和 SVG。
+ * [POS]: 打包产物的真实启动冒烟。ASAR 路径按系统归一化；比对身份、代码与样式，验证当前平台窗口按钮和侧栏避让，再校验编辑器、Bases、公式、CSV 和 SVG。
  * 回执后必须自行正常退出；超时只终止自建进程组，不接触用户应用。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
@@ -63,6 +63,27 @@ const js = String.raw`
   check(process.versions.electron === ${JSON.stringify(expectedElectron)}, 'Electron 与构建依赖版本一致');
   check(location.protocol === 'app:' && location.hostname === 'opensidian.app', '应用资源走 app 协议');
   check(fs.existsSync(path.join(process.resourcesPath, 'app.asar')), '运行 ASAR 产物');
+  const isMac = process.platform === 'darwin';
+  check(document.body.classList.contains(isMac ? 'mod-macos' : process.platform === 'win32' ? 'mod-windows' : 'mod-linux'), '窗口外壳使用实际运行平台');
+  const controls = document.querySelector('.titlebar-button-container.mod-right');
+  check(isMac ? !controls : !!controls, '当前平台仅绘制一套窗口按钮');
+  if (controls) {
+    const r = controls.getBoundingClientRect();
+    check(Math.abs(r.right - innerWidth) < 1 && Math.abs(r.top) < 1, '打包版窗口按钮位于右上角');
+    check(Math.abs(r.width - 126) < 1, '打包版窗口按钮匹配126px净空');
+    const buttons = [...controls.querySelectorAll('button')];
+    check(buttons.length === 3 && buttons.every(button => Math.abs(button.getBoundingClientRect().width - 42) < 1), '打包版三个窗口按钮等宽42px');
+    check(buttons.every(button => getComputedStyle(button).getPropertyValue('-webkit-app-region') === 'no-drag'), '打包版窗口按钮不被拖窗区域拦截');
+    const ws = app.workspace, collapsed = ws.rightSplit.collapsed;
+    for (const open of [true, false]) {
+      if (ws.rightSplit.collapsed === open) ws.toggleSidebar('right');
+      await wait(180);
+      const toggle = ws.rightSidebarToggleEl.getBoundingClientRect();
+      const caption = controls.getBoundingClientRect();
+      check(toggle.width > 0 && toggle.top < caption.bottom && toggle.right <= caption.left + 1, '打包版右侧栏' + (open ? '展开' : '收起') + '时开关避让窗口按钮');
+    }
+    if (ws.rightSplit.collapsed !== collapsed) ws.toggleSidebar('right');
+  }
   const body = '# packaged\n';
   const file = await app.vault.create('Packaged-Boot.md', body);
   check(await app.vault.read(file) === body, '创建笔记内容真实落盘');

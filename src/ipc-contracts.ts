@@ -1,12 +1,12 @@
 /**
  * [INPUT]: Electron 的对话框、PDF 和矩形类型，以及共享库数据契约。
- * [OUTPUT]: 导出 IPC 通道名、参数元组和返回值协议。
+ * [OUTPUT]: 导出 IPC 通道名、参数元组和返回值协议；frame 请求读写全局边框偏好。
  * [POS]: 进程间数据边界。主进程校验输入，渲染器按通道获得返回类型。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 import type { OpenDialogOptions, OpenDialogReturnValue, SaveDialogOptions, SaveDialogReturnValue,
   MessageBoxOptions, MessageBoxReturnValue, PrintToPDFOptions, Rectangle, Point } from 'electron';
-import type { VaultDescriptor, VaultWriteRequest, VaultWriteResult, ViewState, WindowBounds } from './contracts.js';
+import type { AppConfig, VaultDescriptor, VaultWriteRequest, VaultWriteResult, ViewState, WindowBounds } from './contracts.js';
 
 export interface DocumentWindowPayload {
   type: string; state: Record<string, unknown>; layout?: unknown;
@@ -59,6 +59,7 @@ export interface SyncChannels {
   'get-icon': Request<[], { path: string; ext: string; dataUrl: string | null } | null>;
   'set-icon': Request<[path: string | null], boolean>;
   'window-state': Request<[], { maximized: boolean; fullscreen: boolean; vibrancy: 'sidebar' | null }>;
+  frame: Request<[value?: AppConfig['frame']], NonNullable<AppConfig['frame']>>;
   'window-is-maximized': Request<[], boolean>;
   'settings-window-open': Request<[options?: SettingsWindowOptions], { ok: boolean; reused?: boolean }>;
   'settings-window-close': Request<[], boolean>;

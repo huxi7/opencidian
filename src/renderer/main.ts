@@ -1,5 +1,5 @@
 /**
- * [INPUT]: core/dom.js 与 core/tooltip.js(DOM 助手与全局提示层，均靠副作用安装)；App 与各注册模块；core/ipc.js 的设置窗口通道。
+ * [INPUT]: core/dom.js 与 core/tooltip.js(DOM 助手与全局提示层，均靠副作用安装)；App 与各注册模块；core/ipc.js 的设置窗口通道；window-chrome 在工作区挂载时裁决窗口模式。
  * [OUTPUT]: 无导出。构造 window.app、注册视图与命令、启动 App.initialize 并安装全局错误上报；`#settings-window` 时改为设置独立窗口形态。
  * [POS]: 渲染进程入口。语言在模块作用域即确定，必须先于任何界面模块构造；设置窗口与主窗口共用本文件，以 app.isSettingsWindow 分流。
  *        初始化未找到库时停止后续注册，不访问未就绪服务。
@@ -63,12 +63,6 @@ app.initialize().then(async ready => {
   if (app.isSettingsWindow) {
     // —— 设置独立窗口：模态铺满窗口（原版 body.is-popout-modal > .modal.mod-settings）——
     document.body.addClass('is-settings-window');
-    let frame = 'hidden';
-    try { frame = require('electron').ipcRenderer.sendSync('frame') || 'hidden'; } catch (e) {}
-    if (frame === 'native') {
-      // 原生标题栏由 OS 绘制：隐藏应用自绘标题条并去掉顶部留白（类名保留，避免布局基线漂移）
-      document.body.addClass('is-native-frame');
-    }
     app.setting.open();
     const pendingTab = Desktop.settingsWindowPendingTab();
     if (pendingTab) app.setting.openTabById(pendingTab);

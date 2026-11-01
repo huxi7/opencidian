@@ -1,5 +1,5 @@
 /**
- * [INPUT]: 共享设置窗口请求与 Electron BrowserWindow/ipcMain/screen；main.ts 注入的 frameWindowOptions/indexUrl/E2E/locale 查询
+ * [INPUT]: 共享设置窗口请求与 Electron BrowserWindow/ipcMain/screen；window-chrome 同步窗口状态；main.ts 注入平台边框、页面地址与库查询。
  * [OUTPUT]: setupSettingsWindows(ctx) → { vaultIdFor, closeFor, getSettingsWindow }
  * [POS]: 主进程的设置独立窗口管理器。每个 vault 至多一个窗口（原版：每个应用窗口各有自己的 popout），
  *        对齐 Obsidian 1.14.4 setWindowOpenHandler("about:blank"+"popup") 的 overrideBrowserWindowOptions：
@@ -11,6 +11,7 @@ import fs from 'fs';
 import path from 'path';
 import type { SettingsContext, SettingsEntry } from './main-types';
 import type { SettingsWindowOptions as SettingsPayload } from '../ipc-contracts.js';
+import { installWindowStateNotifications } from './window-chrome';
 
 function setupSettingsWindows(ctx: SettingsContext) {
   const { BrowserWindow, ipcMain, screen, indexUrl, frameWindowOptions, isE2E, vaultPathForId, getVaultWindow, getVersion, isChinese } = ctx;
@@ -81,7 +82,7 @@ function setupSettingsWindows(ctx: SettingsContext) {
       backgroundColor: typeof payload.background === 'string' && payload.background ? payload.background : '#00000000',
       ...frameOptions,                         // 原版 frame/titleBarStyle 跟随应用「窗口边框」设置
       // popout offset 32px @ zoom 1 → (10,8)；避免窗口首帧停在主窗坐标
-      ...(frameOptions.frame === false ? { trafficLightPosition: { x: 10, y: 8 } } : {}),
+      ...(process.platform === 'darwin' && frameOptions.frame === false ? { trafficLightPosition: { x: 10, y: 8 } } : {}),
       ...(isE2E ? { focusable: false, opacity: 0 } : {}),
       webPreferences: {
         contextIsolation: false,
@@ -92,6 +93,7 @@ function setupSettingsWindows(ctx: SettingsContext) {
         backgroundThrottling: false,
       },
     });
+    installWindowStateNotifications(win);
     const entry = { id, win, pendingTabId: payload.tabId || null };
     windows.set(id, entry);
     const show = () => {

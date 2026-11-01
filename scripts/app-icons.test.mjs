@@ -1,5 +1,5 @@
 /**
- * [INPUT]: 主进程窗口图标策略与最终图标摘要。
+ * [INPUT]: 主进程窗口图标策略、共享平台边框函数与最终图标摘要。
  * [OUTPUT]: 默认、自定义、缺失、恢复及全部窗口更新的回归回执。
  * [POS]: 隔离 Electron 替身验证图标选择；像素与安装包由 Python 验证。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
@@ -9,6 +9,7 @@ import path from 'node:path';
 import vm from 'node:vm';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
+import { transformSync } from 'esbuild';
 const checks = [];
 const test = (label, fn) => { fn(); checks.push(label); };
 const source = fs.readFileSync('src/main/main.ts', 'utf8');
@@ -16,9 +17,13 @@ const functions = source.slice(source.indexOf('function customIconPath()'), sour
   source.slice(source.indexOf('function frameWindowOptions()'), source.indexOf('function defaultWindowOptions'))
     .replace(': Electron.BrowserWindowConstructorOptions', '');
 const updates = [];
+const chrome = { exports: {} };
+vm.runInNewContext(transformSync(fs.readFileSync('src/main/window-chrome.ts', 'utf8'), { loader: 'ts', format: 'cjs' }).code,
+  { module: chrome, exports: chrome.exports });
 const config = {};
 const systemIcon = { native: true };
-const context = vm.createContext({ config, path, ASSETS_DIR: '/assets', IS_MAC: false,
+const context = vm.createContext({ config, path, ASSETS_DIR: '/assets', IS_MAC: false, process,
+  platformFrameWindowOptions: chrome.exports.frameWindowOptions,
   nativeImage: { createEmpty: () => systemIcon },
   fs: { existsSync: file => file === '/custom.png' },
   BrowserWindow: { getAllWindows: () => ['vault', 'starter', 'settings', 'document'].map(name => ({ setIcon: icon => updates.push([name, icon]) })) },

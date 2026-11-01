@@ -8,7 +8,7 @@
    starter.css — vault switcher window (Obsidian 1.14.4 starter.html)
    证据：app.css 19225-19500（.starter/.splash/.recent-vaults/open-vault-options）
          starter.js 442421-446700（行结构、菜单、重命名）
-   窗口固定 800×650；titlebar 30px 覆盖内容，红色/黄色/绿色窗口按钮由主进程绘制。
+   窗口固定 800×650；titlebar 30px 覆盖内容，macOS 红绿灯由主进程绘制；Windows/Linux 复用右侧窗口按钮。
    ========================================================================== */
 
 body.starter {
@@ -30,6 +30,8 @@ body.starter {
   -webkit-app-region: drag;
 }
 .starter .titlebar-inner { display: flex; flex: 1 1 auto; }
+body.starter.is-native-frame .recent-vaults { padding-top: 0; }
+body.starter:not(.mod-macos):not(.is-native-frame) .titlebar { padding-top: 0; }
 .starter .titlebar-inner .titlebar-text { display: none; }
 
 .starter-screen {

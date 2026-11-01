@@ -10,6 +10,7 @@
  * 左右侧栏带 mod-primary-split/mod-secondary-split（原版侧栏标签与库信息栏选择器）；根级纵向分隔条负右外边距覆盖 1px，不占中心区宽。
  * 拖宽委托 workspace-resize；dimension 控制内部比例，根侧栏只保存宽度。
  * DOM 重建先结束拖宽和独立侧栏动画；侧栏外观委托 sidebar-chrome 的 updateSidebarChrome；本文件保留 re-export 兼容入口。折叠只挂 is-collapsed 类，不写 inline display:none。
+ * 窗口模式、标题栏与焦点状态委托 window-chrome，平台按钮不参与工作区树。
  * mount 时装载 stacked 键的序列化装饰器（layout JSON 组装在 workspace.js）。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
@@ -20,26 +21,19 @@ import type { WorkspaceNode } from './workspace-model.js';
 import { WorkspaceSplit, WorkspaceTabs, WorkspaceLeaf, installStackedSerialization } from './workspace-model.js';
 import { tt } from './i18n.js';
 import { createVaultProfile } from './workspace-profile.js';
-import { Desktop, ipcOn } from './ipc.js';
+import { Desktop } from './ipc.js';
 import { setIcon } from './icons.js';
 import { updateSidebarChrome } from './workspace-sidebar-chrome.js';
 import { settleSidebarTransitions } from './workspace-sidebar-transition.js';
 import { createWorkspaceResizeHandle, cancelWorkspaceResize } from './workspace-resize.js';
 import { renderViewHeader, fillViewHeader, syncNavButtons } from './view-header.js';
 import { animateTabIn, animateTabOut } from './tab-animation.js';
-import { syncTrafficLightPosition } from './window-chrome.js';
+import { createWindowChrome } from './window-chrome.js';
 
 export function mount(workspace: Workspace, container: HTMLElement) {
   workspace.containerEl = container;
   installStackedSerialization(workspace);
   container.addClass('workspace');
-  // platform state classes, mirroring the original body classes
-  container.addClass('is-frameless');
-  container.addClass('is-hidden-frameless');
-  if (navigator.platform.startsWith('Mac')) container.addClass('mod-macos');
-  else if (navigator.platform.startsWith('Win')) container.addClass('mod-windows');
-  else container.addClass('mod-linux');
-
   workspace.ribbonEl = workspace._createRibbon();
   container.appendChild(workspace.ribbonEl);
 
@@ -55,71 +49,11 @@ export function mount(workspace: Workspace, container: HTMLElement) {
   workspace.statusBar = createDiv('status-bar');
   container.appendChild(workspace.statusBar);
 
-  // titlebar for frameless window
-  const titlebar = container.createDiv('titlebar');
-  const inner = titlebar.createDiv('titlebar-inner');
-  workspace.titlebarTextEl = inner.createDiv('titlebar-text');
-  const buttonContainer = inner.createDiv('titlebar-button-container');
-  if (!navigator.platform.startsWith('Mac')) {
-    const makeButton = (cls: string, icon: string, label: string, action: () => void) => {
-      const btn = buttonContainer.createDiv('titlebar-button clickable-icon ' + cls);
-      setIcon(btn, icon);
-      btn.setAttr('aria-label', label);
-      btn.onclick = (ev) => { ev.stopPropagation(); action(); };
-      return btn;
-    };
-    makeButton('mod-minimize', 'lucide-minus', tt('interface.window.minimize', '最小化'), () => Desktop.minimizeWindow());
-    const maxBtn = makeButton('mod-maximize', 'lucide-square', tt('interface.window.maximize', '最大化'), () => Desktop.maximizeWindow());
-    makeButton('mod-close', 'lucide-x', tt('interface.window.close', '关闭'), () => Desktop.closeWindow());
-    const refreshMaxIcon = () => { try { setIcon(maxBtn, Desktop.isWindowMaximized() ? 'lucide-copy' : 'lucide-square'); } catch (e) {} };
-    window.addEventListener('resize', refreshMaxIcon);
-    refreshMaxIcon();
-  } else {
-    // 原版 macOS：双击标题栏空白切换缩放（排除可点击元素）
-    const dbl = (ev: MouseEvent) => {
-      if ((ev.target as Element).closest('.clickable-icon, .workspace-tab-header, button, a, input, .titlebar-button')) return;
-      Desktop.maximizeWindow();
-    };
-    titlebar.addEventListener('dblclick', dbl);
-  }
+  workspace.titlebarTextEl = createWindowChrome(container);
 
   workspace.leftSplit.containerEl = null;
-  window.addEventListener('focus', () => container.addClass('is-focused'));
-  window.addEventListener('blur', () => container.removeClass('is-focused'));
-  if (document.hasFocus()) container.addClass('is-focused');
   // 历史栈在 app 命令层增长（file-open 时入栈）：开完文件后刷新 ← → 的可用性
   workspace.on('file-open', () => workspace._syncAllTabs());
-  installWindowState();
-}
-
-/** 原版 updateStatus：同步 is-maximized / is-fullscreen / --zoom-factor，并补偿 macOS 红绿灯位置。 */
-function installWindowState() {
-  if (typeof window === 'undefined' || typeof document === 'undefined') return;
-  // 回归测试的 VM 宿主没有定时器/DOM 事件系统：直接跳过窗口状态同步
-  if (typeof setTimeout !== 'function' || typeof clearTimeout !== 'function') return;
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  const sync = () => {
-    clearTimeout(timer);
-    timer = setTimeout(() => {
-      try {
-        let state = { maximized: false, fullscreen: false };
-        try { state = Desktop.windowState() || state; } catch (e) {}
-        document.body.toggleClass('is-maximized', !!state.maximized);
-        document.body.toggleClass('is-fullscreen', !!state.fullscreen);
-        let zoom = 1;
-        try { zoom = require('electron').webFrame.getZoomFactor() || 1; } catch (e) {}
-        document.body.style.setProperty('--zoom-factor', String(zoom));
-        syncTrafficLightPosition();
-      } catch (e) { /* 无 DOM/无 Electron 的宿主（回归测试）忽略 */ }
-    }, 50);
-  };
-  if (typeof window.addEventListener === 'function') {
-    window.addEventListener('resize', sync);
-    window.addEventListener('focus', sync);
-  }
-  if (typeof document.addEventListener === 'function') document.addEventListener('fullscreenchange', sync);
-  if (typeof ipcOn === 'function') ipcOn('window-state-changed', sync);
-  sync();
 }
 
 export function render(workspace: Workspace) {

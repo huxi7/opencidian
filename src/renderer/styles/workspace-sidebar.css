@@ -1,6 +1,6 @@
 /**
  * [INPUT]: 依赖 tokens、base 与 layout；消费工作区侧栏 DOM。
- * [OUTPUT]: 侧栏图标标签、标签组禁止拖窗、仓库底条、开关、背景与分隔线样式。
+ * [OUTPUT]: 侧栏图标标签、仓库底条与开关；平台净空随全屏状态归零。
  * [POS]: layout.css 顶部导入的侧栏模块。
  * 原版段逐字保留；适配段覆盖后加载的通用标签规则。
  * mod-sidedock 限定侧栏；workspace-root 只承载外层分割。
@@ -434,4 +434,9 @@ body.workspace .workspace-tab-header-container > .sidebar-toggle-button {
   min-height: 0;
   overflow: hidden;
   flex: 1 1 auto;
+}
+
+/* 全屏窗口没有 caption 控制区；右栏开关随标签行占位，不能保留 126px 空槽。 */
+body.workspace.is-hidden-frameless.is-fullscreen .workspace-tabs.mod-top-right-space > .workspace-tab-header-container {
+  padding-right: var(--size-4-2);
 }

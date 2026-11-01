@@ -1,6 +1,6 @@
 /**
  * [INPUT]: 依赖 core/dom 的元素助手、core/i18n 的语言与文案、core/ipc 的 Desktop 门面、core/menu 的菜单、
- *          core/setting 的 Setting 控件、core/tooltip 的悬浮提示、core/notices 的 Notice，以及 core/brand 的晶体标志。
+ *          core/setting 的 Setting 控件、core/tooltip 的悬浮提示、core/notices 的 Notice，以及 core/brand 的晶体标志；core/window-chrome 提供跨平台标题栏。
  * [OUTPUT]: 渲染 1.14.4 starter 窗口：最近仓库列表、快速开始、打开本地仓库、新建仓库、语言/帮助；导出无，调试时挂 window.__starterTest。
  * [POS]: 独立“仓库选择”窗口的唯一渲染入口。点击行打开库；行菜单负责重命名/移动/复制 ID/访达/移除。
  *        左侧 280px 列表与右侧 splash 的层级、文案、图标和几何按原版 app.css 19225-19500 与 starter.js 对齐。
@@ -17,6 +17,7 @@ import { Setting } from './core/setting.js';
 import { Notice } from './core/notices.js';
 import { setTooltip } from './core/tooltip.js';
 import { APP_SYMBOL_URL } from './core/brand.js';
+import { createWindowChrome } from './core/window-chrome.js';
 
 const nodePath = require('path');
 const fs = require('fs');
@@ -78,14 +79,7 @@ const MSG_CREATE_FAILED_AT = () => tt('interface.start-screen.msg-failed-to-crea
 // 窗口骨架：titlebar 覆盖在内容上（原版 .starter 把 body padding-top 归零）
 // ---------------------------------------------------------------------------
 const body = document.body;
-body.addClass('is-focused');
-if (IS_MAC) body.addClass('mod-macos');
-else if (IS_WIN) body.addClass('mod-windows');
-else body.addClass('mod-linux');
-
-const titlebar = body.createDiv('titlebar');
-const titlebarInner = titlebar.createDiv('titlebar-inner');
-titlebarInner.createDiv('titlebar-text').setText('OpenSidian');
+createWindowChrome(body, { maximizable: false }).setText('OpenSidian');
 
 const screenEl = body.createDiv('starter-screen');
 const screenInner = screenEl.createDiv('starter-screen-inner');

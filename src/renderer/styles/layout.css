@@ -39,10 +39,10 @@
   position: relative;
   -webkit-app-region: drag;
 }
-body.is-hidden-frameless .workspace-tabs.mod-top-left-space .workspace-tab-header-container {
+body.is-hidden-frameless:not(.is-fullscreen) .workspace-tabs.mod-top-left-space .workspace-tab-header-container {
   padding-left: calc(var(--size-4-2) + var(--frame-left-space));
 }
-body.is-hidden-frameless .workspace-tabs.mod-top-right-space .workspace-tab-header-container {
+body.is-hidden-frameless:not(.is-fullscreen) .workspace-tabs.mod-top-right-space .workspace-tab-header-container {
   padding-right: calc(var(--size-4-2) + var(--frame-right-space));
 }
 .workspace-tabs.mod-top .workspace-tab-header-spacer { -webkit-app-region: drag; }

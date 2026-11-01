@@ -23,6 +23,7 @@ dev-hooks.ts: OBS_* 门控动作、探针与截图。主窗先等装配，退出
 
 app-menu.ts: 原生菜单装配。关于窗口读取应用自身版本，不沿用参考产品版本。菜单命令交给活动渲染器；仓库入口由主进程注入。
 app-protocol.ts: app:// 资源协议。分派应用与库文件，支持 Range 与取消释放流；声明 SVG 媒体类型。
+window-chrome.ts: 平台边框与窗口状态通知。macOS 保留红绿灯；Windows/Linux 无边框隐藏菜单栏，由渲染器绘制右侧按钮。主窗、文档、设置和启动窗口共用状态事件。
 window-effects.ts: 原生半透明窗口 IPC。macOS 按发送方窗口切换 sidebar 材质。
 canvas-capture.ts: 整窗画布截图 IPC。只捕获发送方窗口内指定矩形。
 

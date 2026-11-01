@@ -43,9 +43,9 @@ workspace.ts: 布局装配、导航与序列化入口。后台新标签保持可
 workspace-sidebar.ts: 固定工具映射与关闭判定。恢复旧布局遗漏的入口，插件禁用才撤销对应工具。
 workspace-profile.ts: 稳定的库名、帮助与设置入口。每次展开读取库注册表，菜单调用真实打开库 IPC。
 workspace-model.ts: 分割树与叶子生命周期。后台插入按叶子身份保留当前项。尊重 setState/onClose 失败，根元素稳定，构造器身份唯一。
-window-chrome.ts: macOS 红绿灯位置同步。按原版 updateStatus（app.ts 1553478）从 --traffic-lights-offset-x/y 与 zoomFactor 计算：floor(offset*zoom/2-8)（x +2）；主窗 40px → (14,12)，设置 popout 32px → (10,8)。类变化（is-popout-modal）或缩放后必须重算。
-workspace-sidebar-chrome.ts: 侧栏折叠态外观唯一出口（mod-top 落位、开关迁移、分隔条宽度/透明度、功能区 is-collapsed 底色）；不持有模型状态，只读写 DOM 与 toggle 缓存。
-workspace-renderer.ts: 分别渲染文档标签和固定工具图标。稳定挂载底栏及左右开关，功能区支持鼠标与键盘。 叶子宿主是 .workspace-tab-container；标签头落位与堆叠排布由标签组的 updateTabDisplay 决定；非堆叠态 _syncTabsHeaders 调 tabs.syncHeaderOrder() 按 children 顺序重排标签头 DOM，模型顺序即视觉顺序；标签增删经 tab-animation.ts 做 200ms 宽度/透明度补间（原版 updateTabDisplay），首次渲染跳过；view-header 委托 view-header.ts。 标签栏「+」「⌄」按 1.14.4 结构：外层 div 定位、内层 span.clickable-icon 承按钮盒。 左右侧栏带 mod-primary/secondary；根级纵向手柄负右外边距覆盖 1px；折叠只挂 is-collapsed 类。侧栏 chrome 委托 workspace-sidebar-chrome.ts。 侧栏开关迁移用原版 y() 的 FLIP（幽灵+偏移动画，140ms swing）。installWindowState 同步 is-maximized/is-fullscreen/--zoom-factor，并经 window-chrome 重算红绿灯；resize/focus/fullscreenchange 触发。
+window-chrome.ts: 主窗、文档、设置与仓库选择页共用标题栏。按窗口模式挂平台类；原生框交给系统，Windows/Linux 自绘右侧按钮。主进程事件同步最大化与全屏；缩放后按 floor(offset*zoom/2-8) 重算 macOS 红绿灯。
+workspace-sidebar-chrome.ts: 侧栏折叠态外观唯一出口。遍历可见顶边标签组，迁移开关并分配平台净空；纵向分屏底排不占窗口控制区。同步分隔条与功能区底色。
+workspace-renderer.ts: 分别渲染文档标签和固定工具图标。稳定挂载底栏及左右开关，功能区支持鼠标与键盘。 叶子宿主是 .workspace-tab-container；标签头落位与堆叠排布由标签组的 updateTabDisplay 决定；非堆叠态 _syncTabsHeaders 调 tabs.syncHeaderOrder() 按 children 顺序重排标签头 DOM，模型顺序即视觉顺序；标签增删经 tab-animation.ts 做 200ms 宽度/透明度补间（原版 updateTabDisplay），首次渲染跳过；view-header 委托 view-header.ts。 标签栏「+」「⌄」按 1.14.4 结构：外层 div 定位、内层 span.clickable-icon 承按钮盒。 左右侧栏带 mod-primary/secondary；根级纵向手柄负右外边距覆盖 1px；折叠只挂 is-collapsed 类。侧栏 chrome 委托 workspace-sidebar-chrome.ts。 侧栏开关迁移用原版 y() 的 FLIP（幽灵+偏移动画，140ms swing）。窗口模式、标题栏与状态同步委托 window-chrome。
 view-header.ts: 视图头构造与填充（原版 View 构造器，1.14.4 app.ts:1236469）。三块：left 导航钮（←→，checkCallback 门控；空视图同样渲染）、title-container（父路径面包屑 span+“/”分隔，点击在文件树揭示、右键文件夹菜单；标题左对齐 + mod-fade 三态）、actions。fillViewHeader 同时同步导航禁用态与 actions 重绘。
 workspace-interactions.ts: 仅中心文档可关闭、新建、拆分或拖拽。侧栏图标不接入文档菜单。 标签落点按原版 getTabInsertLocation 求 index；落点用 workspace-drop-overlay 10px 竖条（::before 内缩 3px、50% accent）、body.is-grabbing、ghost 清理；跨组/分割移动委托 workspace.moveLeafToTabs；覆盖层边缘 max(尺寸/3,40)、center 为 10px 标签插入条。
 plugins.ts: 核心插件宿主。启停写配置；卸载拒绝时保留命令、设置页及真实开关状态，不加载第三方。

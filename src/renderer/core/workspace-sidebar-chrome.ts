@@ -1,6 +1,6 @@
 /**
  * [INPUT]: 依赖 ./workspace-model.js 的 WorkspaceTabs；依赖 ./dom.js 的 createDiv；依赖 ./icons.js 的 setIcon；依赖 ./i18n.js 的 tt；依赖 ./ipc.js 的 Desktop。
- * [OUTPUT]: 导出 updateSidebarChrome；统一侧栏折叠态外观（mod-top 落位、开关迁移、分隔条、功能区底色）。
+ * [OUTPUT]: 导出 updateSidebarChrome；统一侧栏折叠态外观。平台净空只落在可见顶边标签组。
  * [POS]: core/ 的侧栏 chrome 控制器。workspace-renderer 首次渲染后调用，Workspace.toggleSidebar 也调用；不持有模型状态，只读写 DOM 与 workspace 上的 toggle 缓存。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
@@ -82,29 +82,30 @@ function syncTopTabs(workspace: Workspace) {
   for (const tabs of groups) {
     if (tabs.containerEl) tabs.containerEl.removeClass('mod-top', 'mod-top-left-space', 'mod-top-right-space');
   }
+  const top: WorkspaceTabs[] = [];
   const walk = (node: WorkspaceNode) => {
-    if (node instanceof WorkspaceTabs) { if (node.containerEl) node.containerEl.addClass('mod-top'); return; }
+    if ('collapsed' in node && node.collapsed) return;
+    if (node instanceof WorkspaceTabs) {
+      if (node.containerEl) node.containerEl.addClass('mod-top');
+      top.push(node);
+      return;
+    }
     if (!('children' in node) || !node.children.length) return;
     // 横排（vertical）的每个孩子在同一个上排；纵排（horizontal）只有首个孩子在顶部
     if ('direction' in node && node.direction === 'vertical') for (const child of node.children) walk(child);
     else walk(node.children[0]);
   };
   walk(workspace.rootSplit);
+  return top;
 }
 
 /** 左栏收起后开关移至中心标题栏，底部操作保留在功能区。 */
 export function updateSidebarChrome(workspace: Workspace) {
-  syncTopTabs(workspace);
-  const centerTabs: WorkspaceTabs[] = [];
-  const collect = (node: WorkspaceNode) => {
-    if (node instanceof WorkspaceTabs) centerTabs.push(node);
-    else for (const child of ('children' in node ? node.children : [])) collect(child);
-  };
-  collect(workspace.centerSplit);
+  const topTabs = syncTopTabs(workspace);
   const leftTabs = workspace._firstTabsIn(workspace.leftSplit);
   const rightTabs = workspace._firstTabsIn(workspace.rightSplit);
-  const left = !workspace.leftSplit.collapsed && leftTabs ? leftTabs : centerTabs[0];
-  const right = !workspace.rightSplit.collapsed && rightTabs ? rightTabs : centerTabs.at(-1);
+  const left = topTabs[0];
+  const right = topTabs.at(-1);
   for (const side of ['left', 'right'] as const) {
     const split = side === 'left' ? workspace.leftSplit : workspace.rightSplit;
     workspace.containerEl.toggleClass(`is-${side}-sidedock-open`, !split.collapsed);
@@ -155,7 +156,7 @@ export function updateSidebarChrome(workspace: Workspace) {
   };
   applyDivider(dividers.left, workspace.leftSplit.collapsed);
   applyDivider(dividers.right, workspace.rightSplit.collapsed);
-  // 原版 updateFrameless：开关宿主与折叠侧首组都带平台留白类（红绿灯净空）
+  // 平台净空跟随顶边宿主；纵向分屏的底排标签不占用窗口控制区。
   for (const [group, key] of [[leftTabs, 'mod-top-left-space'], [rightTabs, 'mod-top-right-space']] as const) {
     if (group && group.containerEl) group.containerEl.addClass(key);
   }

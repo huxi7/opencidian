@@ -1,3 +1,56 @@
+# 窗口外壳跨平台修复
+
+日期：2026-11-01。以下结果来自本轮源码。
+
+## 修复范围
+
+Windows/Linux 的无边框窗口使用右上角按钮。
+三个按钮各宽 42px，总净空 126px。
+主窗口、文档窗口、设置窗口和启动页共用外壳。
+原生边框不再重复绘制应用按钮。
+启动页保持固定尺寸，禁用最大化。
+最大化、还原、全屏和页面重载同步窗口状态。
+
+上下分屏时，右开关与净空跟随顶边标签组。
+全屏时隐藏按钮并释放右侧净空。
+设置独立窗口保留标题，内容让出标题栏。
+macOS 保留现有红绿灯坐标与布局。
+custom 继续使用现有融合布局，不宣称完整复刻模式差异。
+
+## 本轮验证
+
+| 范围 | 结果 |
+| --- | --- |
+| 严格类型检查与构建 | 通过 |
+| Node 回归 | 24 组、822 项通过 |
+| 工作区 VM 回归 | 34 项通过 |
+| macOS 隔离 Electron 回归 | 7 场景、12 次执行、1321 项通过 |
+| 跨平台 DOM 与 CSS 矩阵 | 198 项通过 |
+
+Electron 回归覆盖侧栏、工具栏、分屏、设置、仓库选择、
+文档窗口与重启恢复。全部使用 --no-screenshot。
+原始回执在 `_analysis/window-chrome-20261101/`。
+
+平台矩阵使用真实 Chromium、应用 CSS 与共享窗口构造器。
+它替换平台标识和 IPC，不伪造元素尺寸。
+矩阵覆盖三平台、hidden/custom/native、按钮操作通道、
+最大化图标、全屏、上下分屏、侧栏折叠、125%/150% 缩放。
+设置标题与固定尺寸窗口的禁用操作也有断言。
+
+本轮运行宿主为 macOS。
+Windows/Linux 的原生拖动、贴靠、系统 DPI 和桌面环境仍待真机验收。
+本轮未生成、安装或发布新安装包。
+
+复跑：
+
+```sh
+npm test
+node scripts/acceptance/run.mjs platform-chrome --no-screenshot
+sh scripts/acceptance/full.sh --skip-build --only sidebar-chrome,sidebar-shell,sidebar-toolbars,layout-split,settings-window,vault-switcher,document-window --output _analysis/window-chrome-20261101
+```
+
+以下为 2026-10-26 的历史严格类型验收。
+
 # 全量 TypeScript 严格类型验收
 
 日期：2026-10-26。

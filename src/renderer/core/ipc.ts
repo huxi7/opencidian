@@ -68,6 +68,7 @@ export const Desktop = {
   getIcon: () => ipcSync('get-icon'),
   setIcon: (iconPath: string | null) => ipcSync('set-icon', iconPath),
   windowState: () => ipcSync('window-state'),
+  frame: () => ipcSync('frame'),
   setTranslucency: (enabled: boolean) => ipcSend('window-translucency', !!enabled),
   minimizeWindow: () => ipcSend('window-minimize'),
   maximizeWindow: () => ipcSend('window-maximize'),

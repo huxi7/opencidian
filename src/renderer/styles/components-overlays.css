@@ -248,7 +248,7 @@ body.is-popout-modal > .modal.mod-settings .modal-close-button { display: none; 
 /* 无边框模式：恢复应用自绘标题条（可拖动）并为它让出顶部高度；原生标题栏模式不加 */
 body.is-popout-modal.is-frameless.is-hidden-frameless:not(.is-fullscreen) { padding-top: var(--titlebar-height); }
 /* 原版 .modal-container 为 absolute（随 body 内边距下移）；本项目为 fixed，须显式让出标题条高度 */
-body.is-popout-modal.is-frameless.is-hidden-frameless:not(.is-native-frame) .modal-container { inset-block-start: var(--titlebar-height); }
+body.is-popout-modal.is-frameless.is-hidden-frameless:not(.is-native-frame):not(.is-fullscreen) .modal-container { inset-block-start: var(--titlebar-height); }
 body.is-frameless.is-hidden-frameless.is-popout-modal .titlebar {
   display: flex;
   height: var(--titlebar-height);
@@ -256,8 +256,9 @@ body.is-frameless.is-hidden-frameless.is-popout-modal .titlebar {
   border-bottom: var(--border-width) solid var(--divider-color);
 }
 /* 原生边框模式：OS 画标题栏，应用标题条隐藏且不占顶部高度 */
-body.is-popout-modal.is-frameless.is-hidden-frameless.is-native-frame { padding-top: 0; }
-body.is-frameless.is-hidden-frameless.is-popout-modal.is-native-frame .titlebar { display: none; }
+body.is-popout-modal.is-native-frame,
+body.is-popout-modal.is-fullscreen { padding-top: 0; }
+body.is-popout-modal.is-native-frame .titlebar { display: none; }
 /* 设置窗口只显示设置：工作区骨架（功能区/状态栏）不参与呈现 */
 body.is-settings-window .workspace-ribbon,
 body.is-settings-window .status-bar { display: none; }

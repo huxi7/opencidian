@@ -1,5 +1,5 @@
 /**
- * [INPUT]: Electron 与 Node 文件能力；assets/app-icon.png 提供 Windows/Linux 图标；macOS 读取应用原生图标；app-version 提供版本；共享 IPC 契约约束请求数据
+ * [INPUT]: Electron 与 Node 文件能力；window-chrome 选择平台边框与同步窗口状态；assets/app-icon.png 提供 Windows/Linux 图标；macOS 读取应用原生图标；app-version 提供版本；共享 IPC 契约约束请求数据
  * [OUTPUT]: 主进程全部 IPC handler（vault 注册表、文件读写、窗口控制、回收站、拼写检查词典/语言）、app:// 协议、devScreenshotHook（OBS_* 环境变量门控的调试钩子）、设置与文档独立窗口、原生菜单、跨窗口 CAS 与协议的装配
  * [POS]: 应用主进程入口。vault 注册表存于 userData/opensidian.json（启动时从旧产品名 "Obsidian Copy" 的 userData 迁移一次）；拼写检查自加词存 userData/spellcheck-words.json，语言选择存 opensidian.json 的 spellcheckLanguages。渲染进程经 renderer/core/ipc.js 调用此处 handler。原生菜单保留设置入口。dev-hooks 只在指定测试库窗口执行。E2E 回收降级库内回收站。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
@@ -31,6 +31,7 @@ import { registerCanvasCaptureIpc } from './canvas-capture';
 import { installAppMenu } from './app-menu';
 import { registerAppProtocol } from './app-protocol';
 import { getAppVersion } from './app-version';
+import { frameWindowOptions as platformFrameWindowOptions, installWindowStateNotifications } from './window-chrome';
 import { app, BrowserWindow, protocol, ipcMain, Menu, shell, dialog, session, nativeTheme, screen, net, nativeImage } from 'electron';
 
 const APP_ROOT = path.join(__dirname, '..', '..');
@@ -195,14 +196,11 @@ function saveVaultConfig(id: string, data: WindowBounds) {
 
 /**
  * 共用窗口外观：默认/自定义图标与边框（opensidian.json 的 frame 键）：
- * hidden=隐藏边框（默认）| custom=OpenSidian 风格（内嵌红绿灯）| native=原生边框
+ * hidden/custom 在 macOS 使用红绿灯，在 Windows/Linux 使用渲染器按钮；native 使用系统边框。
  */
 function frameWindowOptions(): Electron.BrowserWindowConstructorOptions {
   const icon = IS_MAC ? undefined : customIconPath() || path.join(ASSETS_DIR, 'app-icon.png');
-  const frame = config.frame || 'hidden';
-  if (frame === 'native') return { icon, frame: true, titleBarStyle: 'default' };
-  if (frame === 'custom') return { icon, frame: false, titleBarStyle: 'hiddenInset', trafficLightPosition: { x: 12, y: 12 } };
-  return { icon, frame: false, titleBarStyle: 'hidden', trafficLightPosition: { x: 14, y: 12 } };
+  return platformFrameWindowOptions(config.frame || 'hidden', process.platform, icon);
 }
 
 function defaultWindowOptions(id: string): Electron.BrowserWindowConstructorOptions {
@@ -243,6 +241,7 @@ function defaultWindowOptions(id: string): Electron.BrowserWindowConstructorOpti
 }
 
 function secCtxWin(win: Electron.BrowserWindow) {
+  installWindowStateNotifications(win);
   // 触摸板缩放锁：整页视觉缩放（捏合）必须不存在——Obsidian 的界面只走外观设置里的离散缩放级别。
   // "快速调整字体大小"（Ctrl+滚轮/捏合改字号，外观页可关）由渲染层 wheel 监听处理。
   try { win.webContents.setVisualZoomLevelLimits(1, 1).catch(() => {}); } catch (e) { /* ignore */ }
@@ -331,10 +330,6 @@ function openVaultWindow(id: string, focus = true) {
   win.on('resize', debouncedSave);
   win.on('move', debouncedSave);
   win.on('close', () => saveBounds());
-  // 窗口状态推送给渲染进程（is-maximized / is-fullscreen / 红绿灯位置同步）
-  const pushWindowState = () => { try { win.webContents.send('window-state-changed'); } catch (e) {} };
-  for (const evt of ['maximize', 'unmaximize', 'enter-full-screen', 'leave-full-screen', 'restore'] as const) win.on(evt as 'maximize', pushWindowState);
-
   secCtxWin(win);
   guardWindowClose(win, { isQuitting: () => quitting, cancelQuit: () => { quitting = false; documentWindows?.resetQuitSnapshot(); }, isE2E: E2E, canFlush: () => win.loaded === true });
   win.webContents.on('did-finish-load', () => { win.loaded = true; });
@@ -460,7 +455,7 @@ function setupIpc() {
   });
   ipcMain.on('insider-build', (e) => { e.returnValue = !!config.insider; });
   ipcMain.on('cli', (e) => { e.returnValue = !!config.cli; });
-  ipcMain.on('frame', (e, v: unknown) => { if (v === 'hidden' || v === 'custom' || v === 'native') { config.frame = v; } e.returnValue = config.frame; });
+  ipcMain.on('frame', (e, v: unknown) => { if (v === 'hidden' || v === 'custom' || v === 'native') { config.frame = v; saveConfig(); } e.returnValue = config.frame || 'hidden'; });
 
   ipcMain.on('vault', (e) => {
     const documentInfo = documentWindows?.infoFor(e.sender);
@@ -645,7 +640,7 @@ function setupIpc() {
   ipcMain.on('window-minimize', (e) => { const w = BrowserWindow.fromWebContents(e.sender); if (w) w.minimize(); });
   ipcMain.on('window-maximize', (e) => {
     const w = BrowserWindow.fromWebContents(e.sender);
-    if (w) { if (w.isMaximized()) w.unmaximize(); else w.maximize(); }
+    if (w && w.isMaximizable() && !w.isFullScreen()) { if (w.isMaximized()) w.unmaximize(); else w.maximize(); }
   });
   ipcMain.on('window-close', (e) => { const w = BrowserWindow.fromWebContents(e.sender); if (w) w.close(); });
   ipcMain.on('window-is-maximized', (e) => { const w = BrowserWindow.fromWebContents(e.sender); e.returnValue = w ? w.isMaximized() : false; });

@@ -1,9 +1,11 @@
 /*
- * [INPUT]: 标题栏、功能区与工作区分割 DOM；全局设计变量。
- * [OUTPUT]: 窗口外壳、功能区与根分割规则。
+ * [INPUT]: 功能区与工作区分割 DOM；全局设计变量。
+ * [OUTPUT]: 功能区与根分割规则；标题栏委托 window-chrome.css。
  * [POS]: layout.css 的前置规则，保持与标签规则的层叠顺序。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
+@import url('./window-chrome.css');
+
 /* ==========================================================================
    layout.css — app shell: ribbon, workspace splits, tabs, leaves, status bar
    Split semantics follow the original DOM:
@@ -16,114 +18,9 @@ body.workspace {
   flex-direction: row;
   align-items: stretch;
   background-color: var(--background-secondary);
-  --frame-left-space: calc(80px - var(--ribbon-width));
+  --frame-left-space: 0px;
   --frame-right-space: 0px;
 }
-
-/* ---------------------------------------------------------------- titlebar */
-.titlebar {
-  -webkit-app-region: drag;
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  display: flex;
-  background-color: var(--titlebar-background);
-  border-bottom: var(--titlebar-border-width) solid var(--titlebar-border-color);
-  z-index: var(--layer-sidedock);
-}
-.titlebar-inner {
-  color: var(--titlebar-text-color);
-  font-weight: var(--titlebar-text-weight);
-  width: 100%;
-  display: flex;
-  position: relative;
-}
-.is-focused .titlebar-inner { color: var(--titlebar-text-color-focused); }
-/* 原版 5626-5645：titlebar 文本绝对定位居中，镜像 document.title */
-.titlebar-text {
-  opacity: 0.85;
-  position: absolute;
-  width: 100%;
-  height: 100%;
-  top: 0;
-  inset-inline-start: 0;
-  flex-grow: 1;
-  gap: 0.15em;
-  font-size: var(--font-ui-small);
-  text-align: center;
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  padding: 0 125px;
-  overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
-}
-.is-hidden-frameless.mod-windows .titlebar-text,
-.is-hidden-frameless.mod-linux .titlebar-text { display: none; }
-.titlebar-button-container { display: flex; }
-.titlebar-button { -webkit-app-region: no-drag; padding: var(--size-2-2) var(--size-2-3); display: inline-flex; align-items: center; }
-.titlebar-button:hover { background-color: var(--background-modifier-hover); }
-
-/* Windows / Linux 控制按钮垫底色，防标签或滚动文字穿透 */
-.is-hidden-frameless:not(.is-fullscreen) .titlebar-button-container.mod-right {
-  background-color: var(--titlebar-background);
-}
-.is-hidden-frameless:not(.is-fullscreen).is-focused .titlebar-button-container.mod-right {
-  background-color: var(--titlebar-background-focused);
-}
-
-/* Windows / Linux 标题栏控制区域防拖拽阻断层 */
-.is-hidden-frameless:not(.is-fullscreen):not(.mod-macos) .workspace-tabs.mod-top-left-space .workspace-tab-header-container:before {
-  -webkit-app-region: no-drag;
-  content: '';
-  height: 100%;
-  left: 0;
-  top: 0;
-  position: absolute;
-  width: var(--frame-left-space);
-}
-.is-hidden-frameless:not(.is-fullscreen):not(.mod-macos) .workspace-tabs.mod-top-right-space .workspace-tab-header-container:after {
-  -webkit-app-region: no-drag;
-  content: '';
-  height: 100%;
-  right: 0;
-  top: 0;
-  position: absolute;
-  width: var(--frame-right-space);
-}
-
-/* Windows / Linux 窗口按钮原版尺寸与关闭态红底白字 */
-.mod-linux .titlebar-button-container,
-.mod-windows .titlebar-button-container {
-  height: 100%;
-}
-.mod-linux .titlebar-button,
-.mod-windows .titlebar-button {
-  padding: 0 16px;
-  display: flex;
-  align-items: center;
-}
-@media (hover: hover) {
-  .mod-linux .titlebar-button.mod-close:hover,
-  .mod-windows .titlebar-button.mod-close:hover {
-    background-color: var(--background-modifier-error);
-  }
-  .mod-linux .titlebar-button.mod-close:hover .svg-icon,
-  .mod-windows .titlebar-button.mod-close:hover .svg-icon {
-    fill: white;
-    stroke: white;
-  }
-}
-.mod-macos .titlebar-button {
-  border-radius: var(--radius-s);
-}
-
-/* frameless macOS: traffic lights overlay the header row, no visible titlebar */
-body.is-frameless.is-hidden-frameless.mod-macos .titlebar { display: none; }
-body.is-frameless.is-hidden-frameless:not(.mod-macos) .titlebar { height: var(--header-height); background: transparent; border: none; pointer-events: none; }
-body.is-frameless.is-hidden-frameless:not(.mod-macos) .titlebar-button-container { pointer-events: auto; }
 
 /* ------------------------------------------------------------------ ribbon */
 .workspace-ribbon {
